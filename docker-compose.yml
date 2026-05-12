@@ -1,0 +1,109 @@
+version: "3.9"
+
+services:
+  # ── PostgreSQL + pgvector ──────────────────────────────────
+  db:
+    image: pgvector/pgvector:pg16
+    container_name: light_db
+    environment:
+      POSTGRES_USER: light
+      POSTGRES_PASSWORD: light
+      POSTGRES_DB: light_grants
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+    ports:
+      - "5432:5432"
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U light -d light_grants"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  # ── Redis ─────────────────────────────────────────────────
+  redis:
+    image: redis:7-alpine
+    container_name: light_redis
+    ports:
+      - "6379:6379"
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  # ── Backend API ───────────────────────────────────────────
+  backend:
+    build:
+      context: ./backend
+      dockerfile: Dockerfile
+    container_name: light_backend
+    env_file: .env
+    environment:
+      DATABASE_URL: postgresql://light:light@db:5432/light_grants
+      REDIS_URL: redis://redis:6379/0
+    volumes:
+      - ./config.yaml:/app/config.yaml:ro
+      - ./backend:/app
+    ports:
+      - "8000:8000"
+    depends_on:
+      db:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    command: >
+      sh -c "alembic upgrade head &&
+             uvicorn app.main:app --host 0.0.0.0 --port 8000 --reload"
+
+  # ── Celery Worker ─────────────────────────────────────────
+  worker:
+    build:
+      context: ./backend
+      dockerfile: Dockerfile
+    container_name: light_worker
+    env_file: .env
+    environment:
+      DATABASE_URL: postgresql://light:light@db:5432/light_grants
+      REDIS_URL: redis://redis:6379/0
+    volumes:
+      - ./config.yaml:/app/config.yaml:ro
+      - ./backend:/app
+    depends_on:
+      db:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    command: celery -A app.workers.celery_app worker --loglevel=info --concurrency=4
+
+  # ── Celery Beat (scheduler) ───────────────────────────────
+  beat:
+    build:
+      context: ./backend
+      dockerfile: Dockerfile
+    container_name: light_beat
+    env_file: .env
+    environment:
+      DATABASE_URL: postgresql://light:light@db:5432/light_grants
+      REDIS_URL: redis://redis:6379/0
+    volumes:
+      - ./config.yaml:/app/config.yaml:ro
+      - ./backend:/app
+    depends_on:
+      - worker
+    command: celery -A app.workers.celery_app beat --loglevel=info
+
+  # ── Frontend ──────────────────────────────────────────────
+  frontend:
+    build:
+      context: ./frontend
+      dockerfile: Dockerfile
+    container_name: light_frontend
+    environment:
+      NEXT_PUBLIC_API_URL: http://localhost:8000
+    ports:
+      - "3000:3000"
+    depends_on:
+      - backend
+
+volumes:
+  pgdata:

@@ -1,0 +1,261 @@
+# ============================================================
+#  LiGHT Grant System — Master Configuration
+#  Edit this file to configure your deployment.
+#  All secrets should be set via environment variables (.env).
+# ============================================================
+
+# ----------------------------------------------------------
+# AI / Qwen Model Configuration
+# The system uses Qwen for ALL AI workflows:
+#   - Fit scoring & relevance classification
+#   - Call analysis & summarization
+#   - Go/no-go memo generation
+#   - Proposal outlining & section drafting
+#   - Compliance checking
+#   - Reviewer feedback analysis
+#   - Institutional memory agent
+#   - RAG-based retrieval & synthesis
+# ----------------------------------------------------------
+ai:
+  # Base URL of your Qwen OpenAI-compatible API endpoint.
+  # Examples:
+  #   vLLM:  http://your-cluster-host:8000/v1
+  #   Ollama: http://localhost:11434/v1
+  #   TGI:   http://your-cluster-host:8080/v1
+  base_url: "http://localhost:8000/v1"
+
+  # The model name as registered on your server.
+  # Examples: "Qwen/Qwen2.5-72B-Instruct", "qwen2.5:72b", "qwen2.5-72b-instruct"
+  model: "Qwen/Qwen2.5-72B-Instruct"
+
+  # API key — set to "EMPTY" for local deployments without auth,
+  # or use environment variable: QWEN_API_KEY
+  api_key: "EMPTY"
+
+  # Embeddings model for RAG vector search.
+  # Can be a separate embedding server or the same Qwen endpoint.
+  embeddings:
+    base_url: "http://localhost:8000/v1"
+    model: "Qwen/Qwen2.5-72B-Instruct"
+    # Dimension must match your chosen model's output
+    dimension: 4096
+
+  # Generation parameters (applied to all agents unless overridden)
+  generation:
+    temperature: 0.3
+    max_tokens: 4096
+    top_p: 0.9
+    timeout_seconds: 120
+
+  # Per-agent temperature overrides
+  agent_overrides:
+    call_analyzer:
+      temperature: 0.1       # Factual extraction — low temp
+      max_tokens: 2048
+    go_no_go:
+      temperature: 0.2
+      max_tokens: 1500
+    section_drafter:
+      temperature: 0.5       # Creative writing — higher temp
+      max_tokens: 4096
+    compliance_checker:
+      temperature: 0.1
+      max_tokens: 2048
+    fit_scorer:
+      temperature: 0.1
+      max_tokens: 512
+
+
+# ----------------------------------------------------------
+# Database
+# ----------------------------------------------------------
+database:
+  # PostgreSQL connection string
+  # Can be overridden by DATABASE_URL environment variable
+  url: "postgresql://light:light@localhost:5432/light_grants"
+
+  # pgvector extension must be installed for RAG retrieval
+  vector_extension: true
+  vector_index_type: "ivfflat"   # or "hnsw"
+
+
+# ----------------------------------------------------------
+# Redis (Celery broker + cache)
+# ----------------------------------------------------------
+redis:
+  url: "redis://localhost:6379/0"
+
+
+# ----------------------------------------------------------
+# Discovery Engine
+# ----------------------------------------------------------
+discovery:
+  # Default schedule for automated source scanning
+  default_schedule: "weekly"         # weekly | daily | custom
+  daily_scan_hour: 6                 # UTC hour for daily scans
+  weekly_scan_day: "monday"          # Day for weekly scans
+  weekly_scan_hour: 5                # UTC hour for weekly scans
+
+  # How many parallel source connectors to run
+  max_concurrent_scrapers: 5
+
+  # Duplicate detection thresholds
+  duplicate_title_similarity: 0.90   # Cosine similarity threshold
+  duplicate_url_exact: true
+
+  # Minimum fit score to auto-route to review queue (0–100)
+  auto_queue_threshold: 40
+
+
+# ----------------------------------------------------------
+# Fit Scoring Weights (must sum to 100)
+# ----------------------------------------------------------
+fit_scoring:
+  thematic_alignment: 35
+  eligibility_match: 20
+  deadline_feasibility: 10
+  strategic_funder_priority: 10
+  award_size: 10
+  geographic_relevance: 10
+  partner_feasibility: 5
+
+  # Score tiers
+  tiers:
+    high_priority:   80   # >= 80 → High priority
+    worth_reviewing: 60   # >= 60 → Worth reviewing
+    watchlist:       40   # >= 40 → Watchlist
+                          # <  40 → Low fit
+
+  # Team thematic priorities (used by Qwen fit scorer)
+  team_themes:
+    - "AI for health"
+    - "clinical AI"
+    - "global health"
+    - "digital health"
+    - "LMIC"
+    - "humanitarian"
+    - "machine learning"
+    - "medical imaging"
+    - "POCUS"
+    - "ultrasound"
+    - "tuberculosis"
+    - "TB"
+    - "maternal health"
+    - "newborn health"
+    - "implementation science"
+    - "responsible AI"
+    - "open source AI"
+    - "foundation models"
+    - "RAG"
+    - "federated learning"
+    - "edge AI"
+
+  # Preferred geographies
+  team_geographies:
+    - "sub-Saharan Africa"
+    - "South Asia"
+    - "Southeast Asia"
+    - "LMIC"
+    - "Switzerland"
+    - "Europe"
+    - "global"
+
+  # Preferred institution types
+  institution_type: "academic"
+  institution_name: "EPFL"
+
+
+# ----------------------------------------------------------
+# Notifications
+# ----------------------------------------------------------
+notifications:
+  email:
+    enabled: true
+    smtp_host: "smtp.gmail.com"
+    smtp_port: 587
+    from_address: "grants@your-institution.ch"
+    # SMTP password set via SMTP_PASSWORD env var
+
+  slack:
+    enabled: false
+    webhook_url: ""             # Set via SLACK_WEBHOOK_URL env var
+    channel: "#grants"
+
+  teams:
+    enabled: false
+    webhook_url: ""
+
+  # Default reminder schedule (days before deadline)
+  reminders:
+    external_deadline: [60, 30, 14, 7, 3, 1]
+    internal_deadline: [14, 7, 3, 1]
+    task_deadline: [7, 3, 1, 0]
+
+
+# ----------------------------------------------------------
+# RAG / Vector Retrieval
+# ----------------------------------------------------------
+rag:
+  # Section-level chunking
+  chunk_size: 800          # tokens
+  chunk_overlap: 100
+
+  # Number of results to retrieve per query
+  top_k: 8
+
+  # Hybrid search weights
+  keyword_weight: 0.3
+  vector_weight: 0.7
+
+  # Minimum similarity score to include a result
+  min_similarity: 0.60
+
+  # Respect AI retrieval permission flags on documents
+  enforce_ai_permissions: true
+
+
+# ----------------------------------------------------------
+# Document Parsing
+# ----------------------------------------------------------
+parsing:
+  supported_formats: ["pdf", "docx", "txt", "html", "csv"]
+  max_file_size_mb: 50
+  ocr_enabled: false        # Set true if you have tesseract installed
+  auto_parse_on_upload: true
+  auto_embed_on_parse: true
+
+
+# ----------------------------------------------------------
+# Security & Auth
+# ----------------------------------------------------------
+auth:
+  # JWT settings
+  secret_key: "CHANGE_ME_IN_PRODUCTION"   # Override via SECRET_KEY env var
+  algorithm: "HS256"
+  access_token_expire_minutes: 480        # 8 hours
+
+  # Google OAuth (optional — set credentials in .env)
+  google_oauth:
+    enabled: false
+    client_id: ""
+    redirect_uri: "http://localhost:3000/auth/callback"
+
+  # Session settings
+  allow_local_accounts: true    # Set false to require SSO only
+
+
+# ----------------------------------------------------------
+# Application
+# ----------------------------------------------------------
+app:
+  name: "LiGHT Grant System"
+  short_name: "LiGHT"
+  base_url: "http://localhost:3000"
+  api_url: "http://localhost:8000"
+  environment: "development"    # development | staging | production
+  debug: false
+  log_level: "INFO"
+
+  # Pagination defaults
+  default_page_size: 25
+  max_page_size: 200
