@@ -5,7 +5,7 @@ All AI calls in LiGHT go through this module.
 The base_url, model, and generation settings are read from config.yaml.
 To point at a different Qwen deployment, change config.yaml:ai.base_url.
 """
-from typing import Any, Optional
+from typing import Any, AsyncIterator, Optional
 import structlog
 from openai import AsyncOpenAI
 from tenacity import retry, stop_after_attempt, wait_exponential
@@ -74,6 +74,45 @@ async def chat_complete(
 
     logger.debug("Qwen response", agent=agent_name, tokens=response.usage.total_tokens if response.usage else None)
     return content
+
+
+async def chat_complete_stream(
+    messages: list[dict],
+    temperature: Optional[float] = None,
+    max_tokens: Optional[int] = None,
+    agent_name: Optional[str] = None,
+) -> AsyncIterator[str]:
+    """
+    Call Qwen via streaming chat completions. Yields text chunks as they arrive.
+
+    Usage:
+        async for chunk in chat_complete_stream(messages):
+            yield chunk
+    """
+    ai_cfg = settings.ai
+    gen = ai_cfg.generation
+
+    agent_overrides = ai_cfg.agent_overrides.get(agent_name or "", {})
+    temp = temperature if temperature is not None else agent_overrides.get("temperature", gen.temperature)
+    tokens = max_tokens if max_tokens is not None else agent_overrides.get("max_tokens", gen.max_tokens)
+
+    client = _get_client()
+
+    logger.debug("Qwen stream call", agent=agent_name, model=ai_cfg.model, messages=len(messages))
+
+    stream = await client.chat.completions.create(
+        model=ai_cfg.model,
+        messages=messages,
+        temperature=temp,
+        max_tokens=tokens,
+        top_p=gen.top_p,
+        stream=True,
+    )
+
+    async for chunk in stream:
+        delta = chunk.choices[0].delta
+        if delta and delta.content:
+            yield delta.content
 
 
 async def get_embedding(text: str) -> list[float]:

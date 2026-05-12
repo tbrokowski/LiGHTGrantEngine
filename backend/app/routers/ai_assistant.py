@@ -2,11 +2,13 @@
 AI Assistant endpoints — all Qwen-powered workflows.
 Each endpoint calls the appropriate agent and logs the AI run.
 """
+import json
 import uuid
-from typing import Optional
+from typing import Optional, List
 from datetime import datetime
 
 from fastapi import APIRouter, Depends, HTTPException
+from fastapi.responses import StreamingResponse
 from pydantic import BaseModel
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -73,6 +75,12 @@ class SimilarGrantsRequest(BaseModel):
 
 class MemoryAgentRequest(BaseModel):
     archive_id: str
+
+
+class RecommendPartnersRequest(BaseModel):
+    entity_type: str  # "opportunity" or "grant"
+    entity_id: str
+    top_n: int = 10
 
 
 # ── Endpoints ─────────────────────────────────────────────────────────────────
@@ -350,6 +358,74 @@ async def process_for_memory(
     return {**result_data, "ai_run_id": run_id, "model": _model_name()}
 
 
+@router.post("/recommend-partners")
+async def recommend_partners(
+    req: RecommendPartnersRequest,
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    """Recommend CRM partners for a grant opportunity using AI."""
+    from app.ai.agents.partner_recommender import recommend_partners as _recommend
+    from app.models.partner import Partner, PartnerGrantLink
+
+    # Load the entity
+    if req.entity_type == "opportunity":
+        entity = await _get_opportunity(req.entity_id, db)
+        title = entity.title
+        description = entity.description or entity.ai_summary or entity.short_summary or ""
+        funder = entity.funder or ""
+        themes = entity.thematic_areas or []
+        geographies = entity.geography or []
+    elif req.entity_type == "grant":
+        entity = await _get_grant(req.entity_id, db)
+        title = entity.title
+        description = entity.notes or ""
+        funder = entity.funder or ""
+        themes = entity.themes or []
+        geographies = entity.geographies or []
+    else:
+        raise HTTPException(400, "entity_type must be 'opportunity' or 'grant'")
+
+    # Fetch all partners with past collaboration counts
+    partners_q = select(Partner).where(Partner.status != "inactive")
+    all_partners = (await db.execute(partners_q)).scalars().all()
+
+    # Count past collaborations per partner
+    collab_counts: dict[str, int] = {}
+    if all_partners:
+        links_q = select(PartnerGrantLink.partner_id)
+        link_rows = (await db.execute(links_q)).scalars().all()
+        for pid in link_rows:
+            collab_counts[pid] = collab_counts.get(pid, 0) + 1
+
+    partners_data = [
+        {
+            "id": p.id,
+            "name": p.name,
+            "organization": p.organization or "",
+            "tags": p.tags or [],
+            "project_types": p.project_types or [],
+            "past_grants": collab_counts.get(p.id, 0),
+        }
+        for p in all_partners
+    ]
+
+    run_id = await _start_ai_run(db, current_user.id, req.entity_type, req.entity_id, "partner_recommender")
+
+    result = await _recommend(
+        grant_title=title,
+        grant_description=description,
+        grant_funder=funder,
+        grant_themes=themes,
+        grant_geographies=geographies,
+        partners=partners_data,
+        top_n=req.top_n,
+    )
+
+    await _complete_ai_run(db, run_id, result)
+    return {**result, "ai_run_id": run_id, "model": _model_name()}
+
+
 # ── Helpers ───────────────────────────────────────────────────────────────────
 
 async def _get_opportunity(opp_id: str, db: AsyncSession) -> Opportunity:
@@ -407,3 +483,186 @@ async def _complete_ai_run(
 def _model_name() -> str:
     from app.config import get_settings
     return get_settings().ai.model
+
+
+# ── Interactive editor endpoints ───────────────────────────────────────────────
+
+class ChatMessage(BaseModel):
+    role: str  # "user" | "assistant"
+    content: str
+
+
+class EditorChatRequest(BaseModel):
+    grant_id: str
+    messages: List[ChatMessage]
+    # Current full document as plain-text snapshot for context
+    document_context: Optional[str] = None
+    # Text highlighted/selected by user in the editor
+    selected_text: Optional[str] = None
+    # Which section is currently focused
+    active_section: Optional[str] = None
+
+
+class ImproveSelectionRequest(BaseModel):
+    grant_id: str
+    selected_text: str
+    instruction: str
+    section_name: Optional[str] = None
+    section_type: Optional[str] = None
+    document_context: Optional[str] = None
+
+
+EDITOR_SYSTEM_PROMPT = """You are an expert scientific grant writing assistant for the LiGHT group at EPFL (Global Health AI research).
+You help researchers write, refine, and improve grant proposals.
+
+You have access to:
+- The full current draft of the grant document
+- The researcher's highlighted/selected text (when provided)
+- Relevant prior grants and reusable language from the institutional archive
+
+Guidelines:
+- Write in a clear, compelling academic style appropriate for the target funder
+- Use [CUSTOMIZE: reason] to mark text that needs to be tailored
+- Use [VERIFY: item] for facts you're not certain about
+- Be concise and action-oriented in suggestions
+- When asked to draft or improve text, provide the content directly without excessive preamble
+- Reference the document context to maintain consistency and avoid contradictions"""
+
+
+@router.post("/editor-chat-stream")
+async def editor_chat_stream(
+    req: EditorChatRequest,
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    """
+    Streaming chat endpoint for the interactive grant editor.
+    Sends SSE chunks. Integrates full document context + RAG retrieval.
+    """
+    from app.ai.client import chat_complete_stream
+
+    grant = await _get_grant(req.grant_id, db)
+
+    # Build RAG context from the last user message
+    last_user_msg = next((m.content for m in reversed(req.messages) if m.role == "user"), "")
+    rag_context = ""
+    if last_user_msg:
+        rag_sections = await retrieve_similar_sections(
+            query=f"{last_user_msg} {req.active_section or ''}",
+            db=db,
+            top_k=3,
+        )
+        reusable = await retrieve_reusable_language(
+            query=last_user_msg,
+            db=db,
+            top_k=2,
+        )
+        if rag_sections:
+            rag_context += "\n\nRELEVANT PRIOR GRANTS FROM ARCHIVE:\n"
+            for s in rag_sections:
+                rag_context += f"\n[{s.get('section_type','?')} — {s.get('grant_title','?')}, {s.get('funder','?')}, {s.get('outcome','?')}]\n{s.get('full_text','')[:1200]}\n"
+        if reusable:
+            rag_context += "\n\nAPPROVED REUSABLE LANGUAGE:\n"
+            for b in reusable:
+                note = " [PARAPHRASE ONLY]" if b.get("paraphrase_only") else ""
+                rag_context += f"\n{b.get('title','?')}{note}:\n{b.get('full_text','')[:600]}\n"
+
+    # Compose system message with full grant context
+    system_parts = [EDITOR_SYSTEM_PROMPT]
+    system_parts.append(f"\n\nGRANT: {grant.title}")
+    if grant.funder:
+        system_parts.append(f"FUNDER: {grant.funder}")
+    if grant.call_requirements:
+        system_parts.append(f"\nCALL REQUIREMENTS:\n{grant.call_requirements[:2000]}")
+    if req.document_context:
+        system_parts.append(f"\n\nCURRENT DOCUMENT DRAFT:\n{req.document_context[:6000]}")
+    if req.selected_text:
+        system_parts.append(f"\n\nSELECTED TEXT (user is highlighting this):\n{req.selected_text}")
+    if req.active_section:
+        system_parts.append(f"\nACTIVE SECTION: {req.active_section}")
+    if rag_context:
+        system_parts.append(rag_context)
+
+    system_message = "\n".join(system_parts)
+
+    messages = [{"role": "system", "content": system_message}]
+    for m in req.messages:
+        messages.append({"role": m.role, "content": m.content})
+
+    async def generate():
+        try:
+            async for chunk in chat_complete_stream(messages, agent_name="editor_chat"):
+                yield f"data: {json.dumps({'content': chunk})}\n\n"
+            yield "data: [DONE]\n\n"
+        except Exception as e:
+            yield f"data: {json.dumps({'error': str(e)})}\n\n"
+
+    return StreamingResponse(
+        generate(),
+        media_type="text/event-stream",
+        headers={
+            "Cache-Control": "no-cache",
+            "X-Accel-Buffering": "no",
+        },
+    )
+
+
+@router.post("/improve-selection")
+async def improve_selection(
+    req: ImproveSelectionRequest,
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    """
+    One-shot endpoint: improve or rewrite a highlighted selection of text.
+    Returns the improved text directly (non-streaming).
+    """
+    from app.ai.client import chat_complete
+
+    grant = await _get_grant(req.grant_id, db)
+
+    rag_sections = await retrieve_similar_sections(
+        query=f"{req.instruction} {req.selected_text[:300]}",
+        db=db,
+        section_type=req.section_type,
+        top_k=3,
+    )
+
+    prior_str = ""
+    if rag_sections:
+        prior_str = "\n\nRELEVANT PRIOR MATERIAL:\n"
+        for s in rag_sections[:3]:
+            prior_str += f"\n[{s.get('section_type','?')} — {s.get('grant_title','?')}]\n{s.get('full_text','')[:800]}\n"
+
+    context_str = ""
+    if req.document_context:
+        context_str = f"\n\nFULL DOCUMENT CONTEXT:\n{req.document_context[:4000]}"
+
+    user_prompt = f"""Grant: {grant.title}
+Funder: {grant.funder or 'N/A'}
+Section: {req.section_name or 'N/A'}
+
+SELECTED TEXT TO IMPROVE:
+{req.selected_text}
+
+INSTRUCTION:
+{req.instruction}
+{context_str}
+{prior_str}
+
+Provide the improved version of the selected text only. Do not add explanations before or after — just the improved text."""
+
+    result = await chat_complete(
+        messages=[
+            {"role": "system", "content": EDITOR_SYSTEM_PROMPT},
+            {"role": "user", "content": user_prompt},
+        ],
+        agent_name="editor_chat",
+    )
+
+    return {
+        "improved_text": result,
+        "original_text": req.selected_text,
+        "rag_sources_used": len(rag_sections),
+        "model": _model_name(),
+    }

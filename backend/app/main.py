@@ -11,7 +11,7 @@ from app.config import get_settings
 from app.routers import (
     auth, users, sources, opportunities, grants,
     tasks, documents, archive, ai_assistant,
-    notifications, analytics, admin,
+    notifications, analytics, admin, partners,
 )
 
 settings = get_settings()
@@ -57,6 +57,7 @@ app.include_router(ai_assistant.router,  prefix=f"{API}/ai",            tags=["a
 app.include_router(notifications.router, prefix=f"{API}/notifications", tags=["notifications"])
 app.include_router(analytics.router,     prefix=f"{API}/analytics",     tags=["analytics"])
 app.include_router(admin.router,         prefix=f"{API}/admin",         tags=["admin"])
+app.include_router(partners.router,      prefix=f"{API}/partners",      tags=["partners"])
 
 
 @app.get("/health")

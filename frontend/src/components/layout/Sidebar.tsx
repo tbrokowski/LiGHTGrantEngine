@@ -7,6 +7,7 @@ const nav = [
   { href: '/opportunities', label: 'Opportunities', icon: '🔍' },
   { href: '/grants',        label: 'Active Grants', icon: '💼' },
   { href: '/archive',       label: 'Archive',       icon: '📚' },
+  { href: '/partners',      label: 'Partners',      icon: '🤝' },
   { href: '/settings',      label: 'Settings',      icon: '⚙️' },
 ];
 

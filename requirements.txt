@@ -1,0 +1,10 @@
+# Root environment for local startup tooling + model server.
+# App/runtime dependencies are sourced from backend/requirements.txt.
+-r backend/requirements.txt
+
+# Qwen model serving (used by start_app.sh)
+vllm
+
+# Explicit startup deps
+pyyaml
+docker

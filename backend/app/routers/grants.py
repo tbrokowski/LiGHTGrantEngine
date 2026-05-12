@@ -46,6 +46,17 @@ class GrantUpdate(BaseModel):
     decision_outcome: Optional[str] = None
     award_amount: Optional[float] = None
     notes: Optional[str] = None
+    call_requirements: Optional[str] = None
+
+
+class SectionUpsert(BaseModel):
+    """Create or update a single editor section."""
+    title: str
+    section_type: str = "other"
+    content_html: str = ""
+    content_text: str = ""
+    word_count: int = 0
+    order: int = 0
 
 
 class TaskCreateBody(BaseModel):
@@ -173,6 +184,68 @@ async def apply_task_template(
         created.append(title)
     await db.commit()
     return {"created_tasks": len(created), "tasks": created}
+
+
+@router.get("/{grant_id}/sections")
+async def get_sections(
+    grant_id: str,
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    """Return all editor sections for a grant as an ordered list."""
+    grant = await _get_grant_or_404(grant_id, db)
+    sections = grant.editor_sections or {}
+    ordered = sorted(sections.values(), key=lambda s: s.get("order", 0))
+    return {"sections": ordered, "grant_id": grant_id}
+
+
+@router.put("/{grant_id}/sections/{section_id}")
+async def upsert_section(
+    grant_id: str,
+    section_id: str,
+    data: SectionUpsert,
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    """Create or update a single section in the editor."""
+    grant = await _get_grant_or_404(grant_id, db)
+    sections = dict(grant.editor_sections or {})
+    sections[section_id] = {
+        "id": section_id,
+        **data.model_dump(),
+    }
+    grant.editor_sections = sections
+    await db.commit()
+    return {"id": section_id, "grant_id": grant_id}
+
+
+@router.delete("/{grant_id}/sections/{section_id}", status_code=204)
+async def delete_section(
+    grant_id: str,
+    section_id: str,
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    """Remove a section from the editor."""
+    grant = await _get_grant_or_404(grant_id, db)
+    sections = dict(grant.editor_sections or {})
+    sections.pop(section_id, None)
+    grant.editor_sections = sections
+    await db.commit()
+
+
+@router.put("/{grant_id}/sections")
+async def replace_all_sections(
+    grant_id: str,
+    data: dict,
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    """Bulk-replace all editor sections (used for reorder / full save)."""
+    grant = await _get_grant_or_404(grant_id, db)
+    grant.editor_sections = data.get("sections", {})
+    await db.commit()
+    return {"grant_id": grant_id, "section_count": len(grant.editor_sections)}
 
 
 @router.patch("/{grant_id}/tasks/{task_id}")

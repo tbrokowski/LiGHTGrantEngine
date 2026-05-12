@@ -41,6 +41,8 @@ services:
     environment:
       DATABASE_URL: postgresql://light:light@db:5432/light_grants
       REDIS_URL: redis://redis:6379/0
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
     volumes:
       - ./config.yaml:/app/config.yaml:ro
       - ./backend:/app
@@ -65,6 +67,8 @@ services:
     environment:
       DATABASE_URL: postgresql://light:light@db:5432/light_grants
       REDIS_URL: redis://redis:6379/0
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
     volumes:
       - ./config.yaml:/app/config.yaml:ro
       - ./backend:/app
@@ -85,6 +89,8 @@ services:
     environment:
       DATABASE_URL: postgresql://light:light@db:5432/light_grants
       REDIS_URL: redis://redis:6379/0
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
     volumes:
       - ./config.yaml:/app/config.yaml:ro
       - ./backend:/app

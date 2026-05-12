@@ -11,9 +11,11 @@ from .notification import Notification
 from .ai_run import AIRun
 from .comment import Comment
 from .funder import FunderProfile
+from .partner import Partner, PartnerUpdate, PartnerGrantLink
 
 __all__ = [
     "User", "Source", "SourceRun", "Opportunity", "OpportunityReview",
     "ActiveGrant", "Task", "Document", "ProposalSection", "GrantArchive",
     "ReusableLanguageBlock", "Notification", "AIRun", "Comment", "FunderProfile",
+    "Partner", "PartnerUpdate", "PartnerGrantLink",
 ]

@@ -78,6 +78,12 @@ class ActiveGrant(Base):
     award_amount: Mapped[float | None] = mapped_column(Float)
 
     notes: Mapped[str | None] = mapped_column(Text)
+
+    # Live editor: stores {section_id: {title, section_type, content_html, content_text, word_count, order}}
+    editor_sections: Mapped[dict] = mapped_column(JSON, default=dict)
+    # Free-form call requirements text used as RAG/AI context
+    call_requirements: Mapped[str | None] = mapped_column(Text)
+
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
     updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now(), onupdate=func.now())
 
