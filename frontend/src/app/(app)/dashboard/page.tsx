@@ -1,8 +1,12 @@
 'use client';
 import { useEffect, useState } from 'react';
 import Link from 'next/link';
+import { ChevronRight } from 'lucide-react';
 import { analytics, opportunities, grants } from '@/lib/api';
 import { useAuth } from '@/lib/auth';
+import FocusPanel, { type GrantItem } from '@/components/dashboard/FocusPanel';
+import Scratchpad from '@/components/dashboard/Scratchpad';
+import GrantTimeline from '@/components/dashboard/GrantTimeline';
 
 interface DashboardStats {
   new_opportunities_this_week: number;
@@ -23,38 +27,6 @@ interface QueueItem {
   is_read?: boolean;
 }
 
-interface GrantItem {
-  id: string;
-  title: string;
-  funder: string | null;
-  status: string;
-  external_deadline: string | null;
-}
-
-const STATUS_BG: Record<string, string> = {
-  scoping: 'bg-gray-100 text-gray-500',
-  go_no_go_pending: 'bg-amber-50 text-amber-600',
-  concept_note_drafting: 'bg-blue-50 text-blue-600',
-  full_proposal_drafting: 'bg-blue-50 text-blue-700',
-  internal_review: 'bg-violet-50 text-violet-600',
-  pi_review: 'bg-violet-50 text-violet-700',
-  submitted: 'bg-emerald-50 text-emerald-600',
-  awarded: 'bg-emerald-50 text-emerald-700',
-  rejected: 'bg-red-50 text-red-500',
-};
-
-const STATUS_LABEL: Record<string, string> = {
-  scoping: 'Scoping',
-  go_no_go_pending: 'Go/No-go',
-  concept_note_drafting: 'Concept note',
-  full_proposal_drafting: 'Drafting',
-  internal_review: 'Int. review',
-  pi_review: 'PI review',
-  submitted: 'Submitted',
-  awarded: 'Awarded',
-  rejected: 'Rejected',
-};
-
 const PRIORITY_COLOR: Record<string, string> = {
   high_priority: 'bg-red-100 text-red-600',
   worth_reviewing: 'bg-amber-100 text-amber-600',
@@ -64,9 +36,9 @@ const PRIORITY_COLOR: Record<string, string> = {
 
 const PRIORITY_LABEL: Record<string, string> = {
   high_priority: 'High',
-  worth_reviewing: 'Worth',
-  watchlist: 'Watch',
-  low_fit: 'Low',
+  worth_reviewing: 'Worth Reviewing',
+  watchlist: 'Watchlist',
+  low_fit: 'Low Fit',
 };
 
 function formatDate(d?: string | null) {
@@ -74,14 +46,6 @@ function formatDate(d?: string | null) {
   try {
     return new Date(d).toLocaleDateString('en-US', { month: 'short', day: 'numeric' });
   } catch { return d; }
-}
-
-function daysUntil(d?: string | null): number | null {
-  if (!d) return null;
-  try {
-    const diff = new Date(d).getTime() - Date.now();
-    return Math.ceil(diff / (1000 * 60 * 60 * 24));
-  } catch { return null; }
 }
 
 function greeting(name?: string | null) {
@@ -108,29 +72,12 @@ function ScoreBar({ score }: { score: number }) {
   );
 }
 
-// Inline SVG icons
-const Icons = {
-  review: (
-    <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={1.75}>
-      <path strokeLinecap="round" strokeLinejoin="round" d="M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2m-6 9l2 2 4-4" />
-    </svg>
-  ),
-  grants: (
-    <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={1.75}>
-      <path strokeLinecap="round" strokeLinejoin="round" d="M19 11H5m14 0a2 2 0 012 2v6a2 2 0 01-2 2H5a2 2 0 01-2-2v-6a2 2 0 012-2m14 0V9a2 2 0 00-2-2M5 11V9a2 2 0 012-2m0 0V5a2 2 0 012-2h6a2 2 0 012 2v2M7 7h10" />
-    </svg>
-  ),
-  calendar: (
-    <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={1.75}>
-      <path strokeLinecap="round" strokeLinejoin="round" d="M8 7V3m8 4V3m-9 8h10M5 21h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v12a2 2 0 002 2z" />
-    </svg>
-  ),
-  alert: (
-    <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={1.75}>
-      <path strokeLinecap="round" strokeLinejoin="round" d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z" />
-    </svg>
-  ),
-};
+function loadStarredIds(): Set<string> {
+  try {
+    const raw = localStorage.getItem('dashboard_starred');
+    return raw ? new Set(JSON.parse(raw)) : new Set();
+  } catch { return new Set(); }
+}
 
 export default function DashboardPage() {
   const { user } = useAuth();
@@ -139,277 +86,178 @@ export default function DashboardPage() {
   const [queue, setQueue] = useState<QueueItem[]>([]);
   const [grantList, setGrantList] = useState<GrantItem[]>([]);
   const [loading, setLoading] = useState(true);
+  const [starredIds, setStarredIds] = useState<Set<string>>(new Set());
+
+  useEffect(() => {
+    setStarredIds(loadStarredIds());
+
+    // Re-sync stars when localStorage changes (e.g. user stars something in FocusPanel)
+    const onStorage = () => setStarredIds(loadStarredIds());
+    window.addEventListener('storage', onStorage);
+    return () => window.removeEventListener('storage', onStorage);
+  }, []);
 
   useEffect(() => {
     Promise.all([
       analytics.dashboard().catch(() => ({ data: null })),
       opportunities.queue().catch(() => ({ data: [] })),
-      grants.list({ limit: 10 }).catch(() => ({ data: [] })),
+      grants.list({ limit: 50 }).catch(() => ({ data: [] })),
     ]).then(([statsRes, queueRes, grantsRes]) => {
       setStats(statsRes.data);
-      setQueue((queueRes.data as QueueItem[]).slice(0, 8));
-      setGrantList((grantsRes.data as GrantItem[]).slice(0, 8));
+      setQueue((queueRes.data as QueueItem[]).slice(0, 10));
+      setGrantList(grantsRes.data as GrantItem[]);
     }).finally(() => setLoading(false));
   }, []);
 
-  // Upcoming deadlines from active grants (sorted, next 4 with a deadline)
-  const upcomingDeadlines = grantList
-    .filter(g => g.external_deadline)
-    .sort((a, b) => new Date(a.external_deadline!).getTime() - new Date(b.external_deadline!).getTime())
-    .slice(0, 4);
-
-  const statCards = stats ? [
+  const statChips = stats ? [
     {
-      label: 'Pending review',
+      label: 'Pending Review',
       value: stats.high_fit_pending_review,
       href: '/opportunities',
-      alert: stats.high_fit_pending_review > 0,
-      icon: Icons.review,
-      iconBg: 'bg-blue-50 text-blue-500',
-      valueTint: stats.high_fit_pending_review > 0 ? 'text-blue-600' : 'text-gray-900',
+      tint: stats.high_fit_pending_review > 0 ? 'text-blue-600 bg-blue-50 border-blue-100' : 'text-gray-500 bg-gray-50 border-gray-100',
     },
     {
-      label: 'Active grants',
+      label: 'Active Grants',
       value: stats.active_grants,
       href: '/grants',
-      alert: false,
-      icon: Icons.grants,
-      iconBg: 'bg-emerald-50 text-emerald-500',
-      valueTint: 'text-gray-900',
+      tint: 'text-gray-700 bg-gray-50 border-gray-100',
     },
     {
-      label: 'Due in 30 days',
+      label: 'Due in 30d',
       value: stats.grants_due_within_30_days,
       href: '/grants',
-      alert: stats.grants_due_within_30_days > 0,
-      icon: Icons.calendar,
-      iconBg: stats.grants_due_within_30_days > 0 ? 'bg-amber-50 text-amber-500' : 'bg-gray-50 text-gray-400',
-      valueTint: stats.grants_due_within_30_days > 0 ? 'text-amber-600' : 'text-gray-900',
+      tint: stats.grants_due_within_30_days > 0 ? 'text-amber-600 bg-amber-50 border-amber-100' : 'text-gray-500 bg-gray-50 border-gray-100',
     },
     {
-      label: 'Overdue tasks',
+      label: 'Overdue Tasks',
       value: stats.overdue_tasks,
       href: '/grants',
-      alert: stats.overdue_tasks > 0,
-      icon: Icons.alert,
-      iconBg: stats.overdue_tasks > 0 ? 'bg-red-50 text-red-500' : 'bg-gray-50 text-gray-400',
-      valueTint: stats.overdue_tasks > 0 ? 'text-red-600' : 'text-gray-900',
+      tint: stats.overdue_tasks > 0 ? 'text-red-600 bg-red-50 border-red-100' : 'text-gray-500 bg-gray-50 border-gray-100',
     },
   ] : [];
 
   return (
-    <div className="px-8 py-8 max-w-6xl mx-auto">
+    <div className="px-6 py-8 max-w-7xl mx-auto space-y-6">
 
-      {/* Header */}
-      <div className="mb-7">
-        <p className="text-[10px] font-semibold text-gray-400 uppercase tracking-[0.15em] mb-1.5">{todayLabel()}</p>
-        <h1 className="text-2xl font-semibold text-gray-900 tracking-tight">{greeting(userName)}</h1>
-        <p className="text-sm text-gray-400 mt-0.5">Here&apos;s what needs your attention today.</p>
+      {/* ── Header ── */}
+      <div className="flex flex-col sm:flex-row sm:items-end sm:justify-between gap-4">
+        <div>
+          <p className="text-[10px] font-semibold text-gray-400 uppercase tracking-[0.15em] mb-1">{todayLabel()}</p>
+          <h1 className="text-2xl font-semibold text-gray-900 tracking-tight">{greeting(userName)}</h1>
+          <p className="text-sm text-gray-400 mt-0.5">Here&apos;s what needs your attention today.</p>
+        </div>
+
+        {/* Stat chips */}
+        <div className="flex flex-wrap gap-2 sm:justify-end">
+          {loading
+            ? [1,2,3,4].map(i => <div key={i} className="h-7 w-28 rounded-full bg-gray-100 animate-pulse" />)
+            : statChips.map(chip => (
+              <Link key={chip.label} href={chip.href}>
+                <span className={`inline-flex items-center gap-1.5 px-3 py-1 rounded-full border text-xs font-semibold transition-all hover:shadow-sm ${chip.tint}`}>
+                  <span className="tabular-nums">{chip.value}</span>
+                  <span className="font-normal opacity-70">{chip.label}</span>
+                </span>
+              </Link>
+            ))
+          }
+        </div>
       </div>
 
-      {/* New opportunities callout */}
-      {!loading && stats && stats.new_opportunities_this_week > 0 && (
-        <Link href="/opportunities">
-          <div className="mb-6 flex items-center gap-3 bg-gradient-to-r from-gray-900 to-gray-800 text-white px-5 py-3.5 rounded-xl hover:from-gray-800 hover:to-gray-700 transition-all shadow-sm">
-            <span className="flex h-2 w-2 relative shrink-0">
-              <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-white opacity-40" />
-              <span className="relative inline-flex rounded-full h-2 w-2 bg-white" />
-            </span>
-            <span className="text-xs font-bold tracking-wide uppercase text-white/60 shrink-0">New</span>
-            <span className="text-sm font-medium">
-              {stats.new_opportunities_this_week} opportunit{stats.new_opportunities_this_week === 1 ? 'y' : 'ies'} discovered this week
-            </span>
-            <svg className="ml-auto w-4 h-4 opacity-40 shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
-              <path strokeLinecap="round" strokeLinejoin="round" d="M9 5l7 7-7 7" />
-            </svg>
-          </div>
-        </Link>
-      )}
-
-      {/* Stat cards */}
-      {loading ? (
-        <div className="grid grid-cols-2 md:grid-cols-4 gap-4 mb-6">
-          {[1, 2, 3, 4].map(i => (
-            <div key={i} className="bg-white border border-gray-100 rounded-2xl p-5 shadow-sm animate-pulse">
-              <div className="flex items-center justify-between mb-4">
-                <div className="h-8 w-8 bg-gray-100 rounded-xl" />
-              </div>
-              <div className="h-8 w-10 bg-gray-100 rounded mb-2" />
-              <div className="h-3 w-20 bg-gray-100 rounded" />
-            </div>
-          ))}
-        </div>
-      ) : (
-        <div className="grid grid-cols-2 md:grid-cols-4 gap-4 mb-6">
-          {statCards.map(card => (
-            <Link key={card.label} href={card.href}>
-              <div className="group bg-white border border-gray-100 rounded-2xl p-5 shadow-sm hover:shadow-md hover:border-gray-200 transition-all">
-                <div className="flex items-center justify-between mb-3">
-                  <span className={`flex items-center justify-center h-8 w-8 rounded-xl ${card.iconBg}`}>
-                    {card.icon}
-                  </span>
-                  {card.alert && (
-                    <span className="h-1.5 w-1.5 rounded-full bg-amber-400 shrink-0" />
-                  )}
-                </div>
-                <p className={`text-3xl font-light leading-none tabular-nums mb-2 ${card.valueTint}`}>{card.value}</p>
-                <p className="text-xs font-medium text-gray-400">{card.label}</p>
-              </div>
-            </Link>
-          ))}
-        </div>
-      )}
-
       {/* Quick Actions */}
-      <div className="flex flex-wrap gap-2 mb-7">
+      <div className="flex flex-wrap gap-2">
         <Link href="/opportunities">
           <button className="flex items-center gap-1.5 text-xs font-medium text-gray-600 bg-white border border-gray-200 rounded-lg px-3 py-1.5 hover:border-gray-300 hover:text-gray-900 transition-all shadow-sm">
             Browse Opportunities
-            <svg className="w-3 h-3 opacity-50" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2.5}>
-              <path strokeLinecap="round" strokeLinejoin="round" d="M9 5l7 7-7 7" />
-            </svg>
+            <ChevronRight className="w-3 h-3 opacity-50" />
           </button>
         </Link>
         <Link href="/grants">
           <button className="flex items-center gap-1.5 text-xs font-medium text-gray-600 bg-white border border-gray-200 rounded-lg px-3 py-1.5 hover:border-gray-300 hover:text-gray-900 transition-all shadow-sm">
             View Pipeline
-            <svg className="w-3 h-3 opacity-50" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2.5}>
-              <path strokeLinecap="round" strokeLinejoin="round" d="M9 5l7 7-7 7" />
-            </svg>
+            <ChevronRight className="w-3 h-3 opacity-50" />
           </button>
         </Link>
         <Link href="/partners">
           <button className="flex items-center gap-1.5 text-xs font-medium text-gray-600 bg-white border border-gray-200 rounded-lg px-3 py-1.5 hover:border-gray-300 hover:text-gray-900 transition-all shadow-sm">
             Partners
-            <svg className="w-3 h-3 opacity-50" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2.5}>
-              <path strokeLinecap="round" strokeLinejoin="round" d="M9 5l7 7-7 7" />
-            </svg>
+            <ChevronRight className="w-3 h-3 opacity-50" />
           </button>
         </Link>
       </div>
 
-      {/* Upcoming Deadlines strip */}
-      {!loading && upcomingDeadlines.length > 0 && (
-        <div className="mb-6 bg-white border border-gray-100 rounded-2xl shadow-sm px-5 py-4">
-          <p className="text-xs font-semibold text-gray-400 uppercase tracking-wide mb-3">Upcoming Deadlines</p>
-          <div className="flex flex-wrap gap-2">
-            {upcomingDeadlines.map(g => {
-              const days = daysUntil(g.external_deadline);
-              const urgent = days !== null && days <= 14;
-              const overdue = days !== null && days < 0;
-              return (
-                <Link key={g.id} href={`/grants/${g.id}`}>
-                  <div className={`flex items-center gap-2 rounded-lg px-3 py-2 border transition-all hover:shadow-sm ${
-                    overdue ? 'border-red-100 bg-red-50' :
-                    urgent ? 'border-amber-100 bg-amber-50' :
-                    'border-gray-100 bg-gray-50'
-                  }`}>
-                    <div className={`h-1.5 w-1.5 rounded-full shrink-0 ${overdue ? 'bg-red-400' : urgent ? 'bg-amber-400' : 'bg-gray-300'}`} />
-                    <span className="text-xs font-medium text-gray-700 max-w-[160px] truncate">{g.title}</span>
-                    <span className={`text-xs font-semibold shrink-0 ${overdue ? 'text-red-500' : urgent ? 'text-amber-600' : 'text-gray-400'}`}>
-                      {overdue ? `${Math.abs(days!)}d overdue` : days === 0 ? 'Today' : `${days}d`}
-                    </span>
-                  </div>
-                </Link>
-              );
-            })}
-          </div>
+      {/* ── Focus + Scratchpad ── */}
+      <div className="grid grid-cols-1 lg:grid-cols-5 gap-5 items-stretch" style={{ minHeight: 280 }}>
+        <div className="lg:col-span-3">
+          <FocusPanel grants={grantList} loading={loading} />
         </div>
-      )}
-
-      {/* Two-panel layout */}
-      <div className="grid grid-cols-1 lg:grid-cols-2 gap-5">
-
-        {/* Review Queue panel */}
-        <div className="bg-white border border-gray-100 rounded-2xl shadow-sm overflow-hidden">
-          <div className="px-5 py-4 flex items-center justify-between border-b border-gray-50">
-            <h2 className="text-sm font-semibold text-gray-900">Review Queue</h2>
-            <Link href="/opportunities" className="text-xs text-gray-400 hover:text-gray-600 transition-colors">
-              View all →
-            </Link>
-          </div>
-          {loading ? (
-            <div className="px-5 py-10 text-center text-sm text-gray-300">Loading…</div>
-          ) : queue.length === 0 ? (
-            <div className="px-5 py-10 text-center">
-              <p className="text-sm text-gray-400">Queue is clear</p>
-              <p className="text-xs text-gray-300 mt-1">No opportunities pending review</p>
-            </div>
-          ) : (
-            <div className="divide-y divide-gray-50">
-              {queue.map(opp => (
-                <Link key={opp.id} href={`/opportunities/${opp.id}`}>
-                  <div className="px-5 py-3 hover:bg-gray-50/70 transition-colors flex items-center justify-between gap-3">
-                    <div className="min-w-0 flex-1 flex items-start gap-2">
-                      {!opp.is_read && (
-                        <span className="mt-1.5 w-2 h-2 rounded-full bg-blue-500 shrink-0" />
-                      )}
-                      <div className="min-w-0">
-                        <p className={`text-sm truncate leading-snug ${
-                          !opp.is_read ? 'font-semibold text-gray-900' : 'font-medium text-gray-600'
-                        }`}>{opp.title}</p>
-                        <p className="text-xs text-gray-400 mt-0.5 truncate">
-                          {[opp.funder, opp.deadline ? formatDate(opp.deadline) : null].filter(Boolean).join(' · ')}
-                        </p>
-                      </div>
-                    </div>
-                    <div className="shrink-0 flex items-center gap-2.5">
-                      {opp.fit_score != null && (
-                        <ScoreBar score={opp.fit_score} />
-                      )}
-                      {opp.priority && (
-                        <span className={`text-xs px-1.5 py-0.5 rounded-full font-medium ${PRIORITY_COLOR[opp.priority] ?? 'bg-gray-100 text-gray-400'}`}>
-                          {PRIORITY_LABEL[opp.priority] ?? opp.priority}
-                        </span>
-                      )}
-                    </div>
-                  </div>
-                </Link>
-              ))}
-            </div>
-          )}
-        </div>
-
-        {/* Active Grants panel */}
-        <div className="bg-white border border-gray-100 rounded-2xl shadow-sm overflow-hidden">
-          <div className="px-5 py-4 flex items-center justify-between border-b border-gray-50">
-            <h2 className="text-sm font-semibold text-gray-900">Active Grants</h2>
-            <Link href="/grants" className="text-xs text-gray-400 hover:text-gray-600 transition-colors">
-              View all →
-            </Link>
-          </div>
-          {loading ? (
-            <div className="px-5 py-10 text-center text-sm text-gray-300">Loading…</div>
-          ) : grantList.length === 0 ? (
-            <div className="px-5 py-10 text-center">
-              <p className="text-sm text-gray-400">No active grants</p>
-              <Link href="/opportunities" className="text-xs text-gray-400 hover:text-gray-600 underline-offset-2 hover:underline mt-1 block">
-                Convert an opportunity →
-              </Link>
-            </div>
-          ) : (
-            <div className="divide-y divide-gray-50">
-              {grantList.map(g => (
-                <Link key={g.id} href={`/grants/${g.id}`}>
-                  <div className="px-5 py-3 hover:bg-gray-50/70 transition-colors flex items-center justify-between gap-3">
-                    <div className="min-w-0 flex-1">
-                      <p className="text-sm font-medium text-gray-900 truncate leading-snug">{g.title}</p>
-                      <p className="text-xs text-gray-400 mt-0.5 truncate">
-                        {[g.funder, g.external_deadline ? formatDate(g.external_deadline) : null].filter(Boolean).join(' · ')}
-                      </p>
-                    </div>
-                    <div className="shrink-0">
-                      <span className={`text-[10px] font-semibold px-2 py-0.5 rounded-full whitespace-nowrap ${STATUS_BG[g.status] ?? 'bg-gray-100 text-gray-500'}`}>
-                        {STATUS_LABEL[g.status] ?? g.status.replace(/_/g, ' ')}
-                      </span>
-                    </div>
-                  </div>
-                </Link>
-              ))}
-            </div>
-          )}
+        <div className="lg:col-span-2">
+          <Scratchpad />
         </div>
       </div>
+
+      {/* ── Grant Timeline (Gantt) ── */}
+      <GrantTimeline grants={grantList} loading={loading} starredIds={starredIds} />
+
+      {/* ── Review Queue — New Opportunities This Week ── */}
+      <div className="bg-white border border-gray-100 rounded-2xl overflow-hidden">
+        <div className="px-5 py-4 flex items-center justify-between border-b border-gray-50">
+          <div className="flex items-center gap-2.5">
+            <h2 className="text-sm font-semibold text-gray-900">New Opportunities</h2>
+            {!loading && stats && stats.new_opportunities_this_week > 0 && (
+              <span className="inline-flex items-center gap-1 text-[10px] font-bold text-white bg-blue-500 px-2 py-0.5 rounded-full">
+                <span className="relative flex h-1.5 w-1.5">
+                  <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-white opacity-60" />
+                  <span className="relative inline-flex rounded-full h-1.5 w-1.5 bg-white" />
+                </span>
+                {stats.new_opportunities_this_week} this week
+              </span>
+            )}
+          </div>
+          <Link href="/opportunities" className="flex items-center gap-0.5 text-xs text-gray-400 hover:text-gray-600 transition-colors">
+            View all <ChevronRight className="w-3.5 h-3.5" />
+          </Link>
+        </div>
+
+        {loading ? (
+          <div className="px-5 py-10 text-center text-sm text-gray-300">Loading...</div>
+        ) : queue.length === 0 ? (
+          <div className="px-5 py-10 text-center">
+            <p className="text-sm text-gray-400">All caught up</p>
+            <p className="text-xs text-gray-300 mt-1">No new opportunities to review</p>
+          </div>
+        ) : (
+          <div className="divide-y divide-gray-50">
+            {queue.map(opp => (
+              <Link key={opp.id} href={`/opportunities/${opp.id}`}>
+                <div className="px-5 py-3 hover:bg-gray-50/70 transition-colors flex items-center justify-between gap-3">
+                  <div className="min-w-0 flex-1 flex items-start gap-2">
+                    {!opp.is_read && (
+                      <span className="mt-1.5 w-2 h-2 rounded-full bg-blue-500 shrink-0" />
+                    )}
+                    <div className="min-w-0">
+                      <p className={`text-sm truncate leading-snug ${
+                        !opp.is_read ? 'font-semibold text-gray-900' : 'font-medium text-gray-600'
+                      }`}>{opp.title}</p>
+                      <p className="text-xs text-gray-400 mt-0.5 truncate">
+                        {[opp.funder, opp.deadline ? formatDate(opp.deadline) : null].filter(Boolean).join(' · ')}
+                      </p>
+                    </div>
+                  </div>
+                  <div className="shrink-0 flex items-center gap-2.5">
+                    {opp.fit_score != null && <ScoreBar score={opp.fit_score} />}
+                    {opp.priority && (
+                      <span className={`text-xs px-1.5 py-0.5 rounded-full font-medium ${PRIORITY_COLOR[opp.priority] ?? 'bg-gray-100 text-gray-400'}`}>
+                        {PRIORITY_LABEL[opp.priority] ?? opp.priority}
+                      </span>
+                    )}
+                  </div>
+                </div>
+              </Link>
+            ))}
+          </div>
+        )}
+      </div>
+
     </div>
   );
 }

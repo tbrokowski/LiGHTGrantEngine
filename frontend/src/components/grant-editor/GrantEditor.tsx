@@ -332,6 +332,7 @@ export default function GrantEditor({ grant, onGrantUpdate, onHeadingsChange }: 
             citations={citations}
             showReview={showReview}
             showCitations={showCitations}
+            googleDocUrl={grant.google_doc_url}
             onDocumentChange={handleDocumentChange}
             onSelectionChange={setSelectedText}
             onActiveSectionChange={setActiveSection}

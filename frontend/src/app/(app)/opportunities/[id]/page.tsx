@@ -2,6 +2,7 @@
 import { useEffect, useState } from 'react';
 import { useRouter, useParams } from 'next/navigation';
 import Link from 'next/link';
+import { Sparkles, Check, AlertTriangle, Folder, ChevronRight, Loader2 } from 'lucide-react';
 import { opportunities, ai, api } from '@/lib/api';
 import { openDocumentContent } from '@/lib/documents';
 import SuggestedPartners from '@/components/crm/SuggestedPartners';
@@ -231,7 +232,7 @@ export default function OpportunityDetailPage() {
   const isShortlisted = opp?.status === 'potential_fit';
 
   if (loading) {
-    return <div className="flex justify-center py-24 text-sm text-gray-400">Loading…</div>;
+    return <div className="flex justify-center py-24 text-sm text-gray-400">Loading...</div>;
   }
   if (!opp) {
     return (
@@ -342,7 +343,11 @@ export default function OpportunityDetailPage() {
             disabled={reviewing}
             className="text-sm text-purple-700 border border-purple-200 bg-purple-50 px-3 py-1.5 rounded-md hover:bg-purple-100 transition-colors disabled:opacity-50"
           >
-            {reviewing ? 'Analysing…' : '✦ Deep Review'}
+            {reviewing ? (
+            <span className="flex items-center gap-1.5"><Loader2 className="w-3.5 h-3.5 animate-spin" />Analyzing...</span>
+          ) : (
+            <span className="flex items-center gap-1.5"><Sparkles className="w-3.5 h-3.5" />Deep Review</span>
+          )}
           </button>
           {opp.opportunity_url && (
             <button
@@ -376,7 +381,7 @@ export default function OpportunityDetailPage() {
             }`}
           >
             {tab === 'ai'
-              ? (deepReview ? '✦ AI Review' : 'AI Review')
+              ? 'AI Review'
               : tab === 'partners' ? 'Partners' : 'Overview'}
           </button>
         ))}
@@ -403,7 +408,7 @@ export default function OpportunityDetailPage() {
                   disabled={refetching}
                   className="text-xs text-blue-600 hover:text-blue-800 disabled:opacity-50"
                 >
-                  {refetching ? 'Queuing…' : 'Fetch from source →'}
+                  <span className="flex items-center gap-0.5">{refetching ? 'Queuing...' : <>Fetch from source <ChevronRight className="w-3 h-3" /></>}</span>
                 </button>
               )}
             </div>
@@ -444,7 +449,7 @@ export default function OpportunityDetailPage() {
                   rel="noopener noreferrer"
                   className="text-sm text-blue-600 hover:text-blue-800"
                 >
-                  View call document on funder site →
+                  View call document on funder site
                 </a>
               ) : null}
             </div>
@@ -562,18 +567,15 @@ export default function OpportunityDetailPage() {
           {reviewing && (
             <div className="bg-purple-50 border border-purple-100 rounded-lg p-6 text-center">
               <div className="inline-flex items-center gap-2 text-sm text-purple-700">
-                <svg className="w-4 h-4 animate-spin" fill="none" viewBox="0 0 24 24">
-                  <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
-                  <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z" />
-                </svg>
-                Running deep analysis — this takes 10–20 seconds…
+                <Loader2 className="w-4 h-4 animate-spin" />
+                Running deep analysis — this takes 10–20 seconds...
               </div>
             </div>
           )}
 
           {!deepReview && !reviewing && (
             <div className="bg-white border border-gray-200 rounded-lg p-8 text-center">
-              <div className="text-3xl mb-3">✦</div>
+              <Sparkles className="w-7 h-7 text-purple-400 mx-auto mb-3" />
               <h3 className="text-base font-semibold text-gray-800 mb-2">Deep AI Review</h3>
               <p className="text-sm text-gray-500 max-w-md mx-auto mb-5">
                 Get a comprehensive strategic assessment — fit score, strengths, risks, proposal strategy,
@@ -665,7 +667,7 @@ export default function OpportunityDetailPage() {
                 {(deepReview.strengths ?? []).length > 0 && (
                   <div className="bg-white border border-gray-200 rounded-lg p-5">
                     <h3 className="text-xs font-semibold text-gray-500 uppercase tracking-wide mb-3 flex items-center gap-1.5">
-                      <span className="text-green-500">✓</span> Strengths
+                      <Check className="w-3.5 h-3.5 text-green-500 shrink-0" /> Strengths
                     </h3>
                     <ul className="space-y-1.5">
                       {deepReview.strengths!.map((s, i) => (
@@ -680,7 +682,7 @@ export default function OpportunityDetailPage() {
                 {(deepReview.risks ?? []).length > 0 && (
                   <div className="bg-white border border-gray-200 rounded-lg p-5">
                     <h3 className="text-xs font-semibold text-gray-500 uppercase tracking-wide mb-3 flex items-center gap-1.5">
-                      <span className="text-amber-500">⚠</span> Risks
+                      <AlertTriangle className="w-3.5 h-3.5 text-amber-500 shrink-0" /> Risks
                     </h3>
                     <ul className="space-y-1.5">
                       {deepReview.risks!.map((r, i) => (
@@ -738,7 +740,7 @@ export default function OpportunityDetailPage() {
                     <ul className="space-y-1">
                       {deepReview.archive_references!.map((ref, i) => (
                         <li key={i} className="text-sm text-gray-600 flex gap-2">
-                          <span className="text-gray-300 shrink-0">📁</span>
+                          <Folder className="w-3.5 h-3.5 text-gray-300 shrink-0 mt-0.5" />
                           <span>{ref}</span>
                         </li>
                       ))}
@@ -752,9 +754,9 @@ export default function OpportunityDetailPage() {
                 <button
                   onClick={handleDeepReview}
                   disabled={reviewing}
-                  className="text-xs text-gray-400 hover:text-purple-600 transition-colors disabled:opacity-50"
+                  className="flex items-center gap-0.5 text-xs text-gray-400 hover:text-purple-600 transition-colors disabled:opacity-50"
                 >
-                  Re-run deep review →
+                  Re-run deep review <ChevronRight className="w-3.5 h-3.5" />
                 </button>
               </div>
             </>

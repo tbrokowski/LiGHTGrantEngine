@@ -1,6 +1,7 @@
 'use client';
 
 import { useRef, useState, useCallback } from 'react';
+import { AlertTriangle, BarChart2 } from 'lucide-react';
 import { BudgetTracker, BudgetLineItem, BUDGET_STATUSES, getStatusStyle, getStatusLabel } from './types';
 import { grants } from '@/lib/api';
 
@@ -258,8 +259,8 @@ export default function BudgetPanel({ grantId, budget, onRefresh, grantTitle }: 
           <div className="bg-white border border-gray-200 rounded-xl p-4 space-y-2">
             <h3 className="text-sm font-medium text-gray-700">Budget Documents</h3>
             {budget.spreadsheet_url ? (
-              <a href={budget.spreadsheet_url} target="_blank" rel="noopener noreferrer" className="text-sm text-indigo-600 hover:underline flex items-center gap-1">
-                📊 Budget Spreadsheet
+              <a href={budget.spreadsheet_url} target="_blank" rel="noopener noreferrer" className="text-sm text-indigo-600 hover:underline flex items-center gap-1.5">
+                <BarChart2 className="w-3.5 h-3.5" /> Budget Spreadsheet
               </a>
             ) : (
               <p className="text-sm text-gray-400">No spreadsheet linked</p>
@@ -280,7 +281,7 @@ export default function BudgetPanel({ grantId, budget, onRefresh, grantTitle }: 
               </div>
             )}
             {budget.cost_share_required && (
-              <p className="text-sm text-orange-600 font-medium">⚠ Cost-share required</p>
+              <p className="text-sm text-orange-600 font-medium flex items-center gap-1.5"><AlertTriangle className="w-3.5 h-3.5 shrink-0" /> Cost-share required</p>
             )}
             {budget.notes && (
               <div>

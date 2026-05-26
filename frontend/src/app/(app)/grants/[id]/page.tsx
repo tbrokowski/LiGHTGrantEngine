@@ -1,7 +1,7 @@
 'use client';
 import { useEffect, useState, useCallback, Suspense } from 'react';
 import dynamic from 'next/dynamic';
-import { useParams, useSearchParams } from 'next/navigation';
+import { useParams, useSearchParams, usePathname, useRouter } from 'next/navigation';
 import Link from 'next/link';
 import { grants } from '@/lib/api';
 import { useAuth } from '@/lib/auth';
@@ -13,6 +13,8 @@ import BudgetPanel from '@/components/grant-workspace/BudgetPanel';
 import MoreTab from '@/components/grant-workspace/MoreTab';
 import CollaboratorsPanel from '@/components/grant-workspace/CollaboratorsPanel';
 import StatusDropdown from '@/components/grant-workspace/StatusDropdown';
+import WorkPackagePanel from '@/components/workspace/WorkPackagePanel';
+import ReportingSchedule from '@/components/workspace/ReportingSchedule';
 import type {
   WorkspaceSummary,
   Task,
@@ -46,6 +48,7 @@ interface GrantDetail {
   pi_name?: string;
   status: string;
   priority?: string;
+  grant_stage?: string;
   external_deadline?: string;
   internal_deadline?: string;
   requested_amount?: number;
@@ -109,9 +112,13 @@ function DeadlineChip({ label, date }: { label: string; date: string }) {
   );
 }
 
+const ACTIVE_STAGES = ['active', 'awarded'];
+
 function GrantDetailContent() {
   const { id } = useParams<{ id: string }>();
   const searchParams = useSearchParams();
+  const pathname = usePathname();
+  const router = useRouter();
   const initialTab = (searchParams.get('tab') as WorkspaceTab) ?? 'overview';
   const { user } = useAuth();
 
@@ -137,17 +144,32 @@ function GrantDetailContent() {
       .then((r) => {
         setGrant(r.data);
         const tabParam = searchParams.get('tab');
-        if (!tabParam) {
-          const draftingStatuses = ['full_proposal_drafting', 'concept_note_drafting'];
-          if (draftingStatuses.includes(r.data.status)) {
-            setActiveTab('editor');
-            setLoadedTabs((prev) => new Set([...prev, 'editor']));
+
+        // Redirect to canonical sub-route if accessed from base /grants/[id]
+        const isBaseRoute = !pathname.endsWith('/write') && !pathname.endsWith('/workspace');
+        if (isBaseRoute && !tabParam) {
+          const stage = r.data.grant_stage;
+          if (stage && ACTIVE_STAGES.includes(stage)) {
+            router.replace(`/grants/${id}/workspace`);
+            return;
+          } else {
+            const draftingStatuses = ['full_proposal_drafting', 'concept_note_drafting'];
+            if (draftingStatuses.includes(r.data.status)) {
+              setActiveTab('editor');
+              setLoadedTabs((prev) => new Set([...prev, 'editor']));
+            }
           }
+        }
+
+        // Set default tab based on sub-route
+        if (pathname.endsWith('/write') && !tabParam) {
+          setActiveTab('editor');
+          setLoadedTabs((prev) => new Set([...prev, 'editor']));
         }
       })
       .catch(console.error)
       .finally(() => setLoading(false));
-  }, [id, searchParams]);
+  }, [id, searchParams, pathname, router]);
 
   const fetchSummary = useCallback(() => {
     if (!id) return;
@@ -462,6 +484,14 @@ function GrantDetailContent() {
             {/* Team */}
             {activeTab === 'team' && (
               <CollaboratorsPanel grantId={id} />
+            )}
+
+            {/* Planning (Work Packages + Reporting) */}
+            {activeTab === 'planning' && (
+              <div className="p-4 space-y-8">
+                <WorkPackagePanel grantId={id} />
+                <ReportingSchedule grantId={id} />
+              </div>
             )}
 
             {/* More */}

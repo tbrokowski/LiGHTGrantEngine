@@ -1,15 +1,18 @@
 """Grant source management endpoints."""
+import logging
 import uuid
 from typing import Optional
 from fastapi import APIRouter, Depends, HTTPException, BackgroundTasks
 from pydantic import BaseModel
-from sqlalchemy import select
+from sqlalchemy import select, desc
 from sqlalchemy.ext.asyncio import AsyncSession
 from app.database import get_db
 from app.models.source import Source, SourceRun
 from app.models.user import User
 from app.routers.auth import get_current_user
 from app.auth.permissions import require_org_admin
+
+logger = logging.getLogger(__name__)
 
 router = APIRouter()
 
@@ -78,6 +81,83 @@ async def list_sources(
 ):
     result = await db.execute(select(Source).order_by(Source.name))
     return [_source_to_dict(s) for s in result.scalars().all()]
+
+
+# ── Status / debug routes — defined BEFORE /{source_id} so FastAPI matches them first ──
+
+@router.get("/status/recent-runs")
+async def get_recent_runs(
+    limit: int = 20,
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    """Most recent source runs across all sources, for the frontend debug panel."""
+    result = await db.execute(
+        select(SourceRun, Source)
+        .join(Source, SourceRun.source_id == Source.id, isouter=True)
+        .order_by(desc(SourceRun.started_at))
+        .limit(limit)
+    )
+    rows = result.all()
+    return [
+        {
+            "id": r.id,
+            "source_id": r.source_id,
+            "source_name": s.name if s else r.source_id,
+            "started_at": r.started_at.isoformat() if r.started_at else None,
+            "ended_at": r.ended_at.isoformat() if r.ended_at else None,
+            "status": r.status,
+            "records_found": r.records_found,
+            "new_opportunities": r.new_opportunities,
+            "duplicates": r.duplicates,
+            "errors": r.errors or [],
+            "log_summary": r.log_summary,
+        }
+        for r, s in rows
+    ]
+
+
+@router.get("/status/summary")
+async def get_scan_summary(
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    """Dashboard-friendly scraping system health summary."""
+    from sqlalchemy import func
+    from app.models.opportunity import Opportunity
+    from datetime import datetime, timedelta
+
+    src_counts = (await db.execute(
+        select(Source.status, func.count(Source.id).label("n"))
+        .group_by(Source.status)
+    )).all()
+
+    total_opps = (await db.execute(select(func.count(Opportunity.id)))).scalar()
+
+    last_run_row = (await db.execute(
+        select(SourceRun).order_by(desc(SourceRun.started_at)).limit(1)
+    )).scalar_one_or_none()
+
+    cutoff = datetime.utcnow() - timedelta(hours=24)
+    recent_errors = (await db.execute(
+        select(func.count(SourceRun.id)).where(
+            SourceRun.status == "failed",
+            SourceRun.started_at >= cutoff,
+        )
+    )).scalar()
+
+    running = (await db.execute(
+        select(func.count(SourceRun.id)).where(SourceRun.status == "running")
+    )).scalar()
+
+    return {
+        "sources_by_status": {row[0]: row[1] for row in src_counts},
+        "total_opportunities": total_opps,
+        "running_scans": running,
+        "recent_errors_24h": recent_errors,
+        "last_run_at": last_run_row.started_at.isoformat() if last_run_row and last_run_row.started_at else None,
+        "last_run_status": last_run_row.status if last_run_row else None,
+    }
 
 
 @router.get("/{source_id}")
@@ -217,21 +297,23 @@ def _trigger_source_scan(source_id: str) -> None:
     try:
         from app.workers.celery_app import celery_app
         celery_app.send_task("app.workers.discovery_tasks.scan_source", args=[source_id])
-    except Exception:
-        pass
+        logger.info("Queued scan for source_id=%s", source_id)
+    except Exception as exc:
+        logger.error("Failed to queue scan for source_id=%s: %s", source_id, exc)
 
 
 def _trigger_all_sources_scan() -> None:
     try:
         from app.workers.celery_app import celery_app
-        celery_app.send_task("app.workers.discovery_tasks.scan_all_sources")
-    except Exception:
-        pass
+        result = celery_app.send_task("app.workers.discovery_tasks.scan_all_sources")
+        logger.info("Queued scan_all_sources task id=%s", result.id)
+    except Exception as exc:
+        logger.error("Failed to queue scan_all_sources: %s", exc)
 
 
 def _trigger_fan_out() -> None:
     try:
         from app.workers.celery_app import celery_app
         celery_app.send_task("app.workers.surfacing_tasks.fan_out_sources_to_all")
-    except Exception:
-        pass
+    except Exception as exc:
+        logger.warning("Failed to trigger fan_out: %s", exc)

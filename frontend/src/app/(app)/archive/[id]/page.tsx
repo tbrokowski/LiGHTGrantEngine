@@ -2,6 +2,7 @@
 import { useEffect, useState, useCallback, useMemo } from 'react';
 import { useParams } from 'next/navigation';
 import Link from 'next/link';
+import { ChevronDown, ChevronRight, X } from 'lucide-react';
 import { archive } from '@/lib/api';
 import { openDocumentContent } from '@/lib/documents';
 
@@ -180,7 +181,7 @@ export default function ArchiveDetailPage() {
     setExpandedSections(prev => ({ ...prev, [sectionId]: !prev[sectionId] }));
   }
 
-  if (loading) return <div className="flex justify-center py-24 text-sm text-gray-400">Loading…</div>;
+  if (loading) return <div className="flex justify-center py-24 text-sm text-gray-400">Loading...</div>;
   if (!entry) {
     return (
       <div className="px-8 py-16 text-center text-gray-500 text-sm">
@@ -299,7 +300,7 @@ export default function ArchiveDetailPage() {
                     disabled={openingDocId === doc.id}
                     className="text-xs px-3 py-1.5 rounded-lg border border-gray-200 text-gray-700 hover:bg-gray-50 disabled:opacity-50"
                   >
-                    {openingDocId === doc.id ? 'Opening…' : 'View file'}
+                    {openingDocId === doc.id ? 'Opening...' : 'View file'}
                   </button>
                   {doc.processing_status === 'processed' && doc.parsed_text && (
                     <button
@@ -341,7 +342,7 @@ export default function ArchiveDetailPage() {
                   disabled={reindexing}
                   className="text-xs px-3 py-1.5 rounded-lg border border-gray-200 text-gray-600 hover:bg-gray-50 disabled:opacity-50"
                 >
-                  {reindexing ? 'Re-indexing…' : 'Re-index'}
+                  {reindexing ? 'Re-indexing...' : 'Re-index'}
                 </button>
               )}
             </div>
@@ -405,9 +406,12 @@ export default function ArchiveDetailPage() {
                       <span className="text-sm font-medium text-gray-800">
                         {section.section_title || section.section_type}
                       </span>
-                      <span className="text-xs text-gray-400 tabular-nums shrink-0">
+                      <span className="flex items-center gap-1.5 text-xs text-gray-400 tabular-nums shrink-0">
                         {section.word_count ? `${section.word_count} words` : section.section_type}
-                        <span className="ml-2">{isExpanded ? '▼' : '▶'}</span>
+                        {isExpanded
+                          ? <ChevronDown className="w-3.5 h-3.5" />
+                          : <ChevronRight className="w-3.5 h-3.5" />
+                        }
                       </span>
                     </button>
                     {isExpanded && (
@@ -478,7 +482,7 @@ export default function ArchiveDetailPage() {
                 onClick={() => setTextPreviewDoc(null)}
                 className="text-gray-400 hover:text-gray-600 p-1 rounded-lg hover:bg-gray-100"
               >
-                ✕
+                <X className="w-4 h-4" />
               </button>
             </div>
             <div className="px-5 py-4 overflow-y-auto flex-1">

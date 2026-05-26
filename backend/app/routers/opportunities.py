@@ -183,6 +183,66 @@ async def review_queue_counts(
     return {"total": total, "unread": unread}
 
 
+@router.get("/graph-data")
+async def get_graph_data(
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+    funder: Optional[str] = None,
+    theme: Optional[str] = None,
+    min_score: Optional[float] = None,
+    geography: Optional[str] = None,
+    deadline_days: Optional[int] = None,
+):
+    """Return nodes + cluster metadata for the opportunity graph view."""
+    from app.models.opportunity_cluster import OpportunityCluster
+
+    q = select(Opportunity).where(
+        Opportunity.status.notin_(["archived", "duplicate"])
+    )
+    if funder:
+        q = q.where(Opportunity.funder.ilike(f"%{funder}%"))
+    if theme:
+        q = q.where(Opportunity.thematic_areas.contains([theme]))
+    if min_score is not None:
+        q = q.where(Opportunity.fit_score >= min_score)
+    if geography:
+        q = q.where(Opportunity.geography.contains([geography]))
+    if deadline_days is not None:
+        from datetime import date, timedelta
+        cutoff = date.today() + timedelta(days=deadline_days)
+        q = q.where(Opportunity.deadline <= cutoff)
+
+    q = q.limit(500)
+    result = await db.execute(q)
+    opps = result.scalars().all()
+
+    # Load clusters
+    clusters_result = await db.execute(select(OpportunityCluster))
+    clusters = {c.id: {"id": c.id, "label": c.label, "color": c.color}
+                for c in clusters_result.scalars().all()}
+
+    nodes = []
+    for o in opps:
+        nodes.append({
+            "id": o.id,
+            "title": o.title,
+            "funder": o.funder,
+            "deadline": str(o.deadline) if o.deadline else None,
+            "fit_score": o.fit_score,
+            "cluster_id": o.cluster_id,
+            "thematic_areas": o.thematic_areas or [],
+            "geography": o.geography or [],
+            "ai_summary": o.ai_summary or o.short_summary,
+            "status": o.status,
+        })
+
+    return {
+        "nodes": nodes,
+        "clusters": list(clusters.values()),
+        "total": len(nodes),
+    }
+
+
 @router.get("/shortlist")
 async def shortlist(
     db: AsyncSession = Depends(get_db),

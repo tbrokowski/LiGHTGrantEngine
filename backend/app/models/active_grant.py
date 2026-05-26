@@ -28,6 +28,15 @@ class ActiveGrantStatus(str, Enum):
     CLOSED = "closed"
 
 
+class GrantStage(str, Enum):
+    """High-level pipeline stage — drives which sub-tab the grant appears under."""
+    PROPOSAL = "proposal"      # Being written
+    PENDING = "pending"        # Submitted, awaiting decision
+    ACTIVE = "active"          # Funded / awarded
+    REJECTED = "rejected"      # Rejected outcome
+    ARCHIVED = "archived"      # Completed / closed
+
+
 class ActiveGrant(Base):
     __tablename__ = "active_grants"
 
@@ -102,6 +111,13 @@ class ActiveGrant(Base):
     google_doc_id: Mapped[str | None] = mapped_column(String(100))
     google_doc_url: Mapped[str | None] = mapped_column(String(1000))
     google_doc_last_synced: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+
+    # Pipeline stage (drives Proposals / Pending / Active sub-tabs)
+    grant_stage: Mapped[str] = mapped_column(String(30), default="proposal", server_default="proposal", nullable=False, index=True)
+    submitted_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    decision_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    stage_notes: Mapped[str | None] = mapped_column(Text, nullable=True)
+    reporting_deadlines: Mapped[list] = mapped_column(JSON, default=list)
 
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
     updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now(), onupdate=func.now())

@@ -1,6 +1,10 @@
 'use client';
 
 import { useState } from 'react';
+import {
+  Paperclip, FolderOpen, Link, LayoutTemplate, Users, Sparkles, File, FolderPlus,
+  type LucideIcon,
+} from 'lucide-react';
 import { WorkspaceFile } from './types';
 import { grants } from '@/lib/api';
 
@@ -19,14 +23,28 @@ const CATEGORIES = [
 
 const SOURCE_TYPES = ['uploaded', 'google_drive', 'external_url', 'template', 'partner_provided', 'ai_generated'];
 
-const SOURCE_ICONS: Record<string, string> = {
-  uploaded: '📎',
-  google_drive: '📁',
-  external_url: '🔗',
-  template: '📋',
-  partner_provided: '🤝',
-  ai_generated: '🤖',
+const SOURCE_ICONS: Record<string, LucideIcon> = {
+  uploaded: Paperclip,
+  google_drive: FolderOpen,
+  external_url: Link,
+  template: LayoutTemplate,
+  partner_provided: Users,
+  ai_generated: Sparkles,
 };
+
+const SOURCE_LABELS: Record<string, string> = {
+  uploaded: 'Uploaded',
+  google_drive: 'Google Drive',
+  external_url: 'External URL',
+  template: 'Template',
+  partner_provided: 'Partner Provided',
+  ai_generated: 'AI Generated',
+};
+
+function SourceIcon({ sourceType, className }: { sourceType: string; className?: string }) {
+  const Icon = SOURCE_ICONS[sourceType] ?? File;
+  return <Icon className={className ?? 'w-3.5 h-3.5 text-gray-400'} />;
+}
 
 function FileCard({ file, onDelete }: { file: WorkspaceFile; onDelete: () => void }) {
   return (
@@ -34,7 +52,7 @@ function FileCard({ file, onDelete }: { file: WorkspaceFile; onDelete: () => voi
       <div className="flex items-start justify-between gap-2">
         <div className="flex-1 min-w-0">
           <div className="flex items-center gap-1.5">
-            <span className="text-sm">{SOURCE_ICONS[file.source_type] ?? '📄'}</span>
+            <SourceIcon sourceType={file.source_type} />
             <a
               href={file.file_url}
               target="_blank"
@@ -139,17 +157,19 @@ export default function FileLibrary({ grantId, files, onRefresh }: Props) {
               href={driveFolderUrl}
               target="_blank"
               rel="noopener noreferrer"
-              className="text-xs px-3 py-1.5 border border-gray-200 rounded-lg text-indigo-600 hover:bg-gray-50 flex items-center gap-1"
+              className="text-xs px-3 py-1.5 border border-gray-200 rounded-lg text-indigo-600 hover:bg-gray-50 flex items-center gap-1.5"
             >
-              📁 Open Drive Folder
+              <FolderOpen className="w-3.5 h-3.5" />
+              Open Drive Folder
             </a>
           ) : (
             <button
               onClick={handleCreateDriveFolder}
               disabled={creatingFolder}
-              className="text-xs px-3 py-1.5 border border-gray-200 rounded-lg text-gray-600 hover:bg-gray-50 disabled:opacity-50"
+              className="text-xs px-3 py-1.5 border border-gray-200 rounded-lg text-gray-600 hover:bg-gray-50 disabled:opacity-50 flex items-center gap-1.5"
             >
-              {creatingFolder ? 'Creating…' : '📁 Create Drive Folder'}
+              <FolderPlus className="w-3.5 h-3.5" />
+              {creatingFolder ? 'Creating...' : 'Create Drive Folder'}
             </button>
           )}
           <button
@@ -177,7 +197,7 @@ export default function FileLibrary({ grantId, files, onRefresh }: Props) {
               onChange={(e) => setForm((f) => ({ ...f, source_type: e.target.value }))}
             >
               {SOURCE_TYPES.map((t) => (
-                <option key={t} value={t}>{SOURCE_ICONS[t]} {t.replace(/_/g, ' ')}</option>
+                <option key={t} value={t}>{SOURCE_LABELS[t] ?? t.replace(/_/g, ' ')}</option>
               ))}
             </select>
           </div>
@@ -221,7 +241,7 @@ export default function FileLibrary({ grantId, files, onRefresh }: Props) {
           <div className="flex gap-2">
             <button type="button" onClick={() => setShowForm(false)} className="text-xs text-gray-500">Cancel</button>
             <button type="submit" disabled={saving} className="text-xs px-3 py-1.5 bg-indigo-600 text-white rounded-lg disabled:opacity-50">
-              {saving ? 'Saving…' : 'Add'}
+              {saving ? 'Saving...' : 'Add'}
             </button>
           </div>
         </form>

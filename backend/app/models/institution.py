@@ -1,7 +1,7 @@
 import uuid
 from datetime import datetime
 
-from sqlalchemy import String, Boolean, DateTime, JSON, func
+from sqlalchemy import String, Boolean, DateTime, JSON, Integer, func
 from sqlalchemy.orm import Mapped, mapped_column
 
 from app.database import Base
@@ -17,4 +17,6 @@ class Institution(Base):
     access_code_expires_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
     is_personal: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False, server_default="false", index=True)
     grant_profile: Mapped[dict] = mapped_column(JSON, default=dict)
+    onboarding_complete: Mapped[bool] = mapped_column(Boolean, default=False, server_default="false", nullable=False)
+    ai_budget_cents: Mapped[int | None] = mapped_column(Integer, nullable=True)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())

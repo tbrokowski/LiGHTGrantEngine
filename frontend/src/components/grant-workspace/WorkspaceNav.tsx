@@ -7,6 +7,7 @@ export type WorkspaceTab =
   | 'files'
   | 'budget'
   | 'team'
+  | 'planning'
   | 'more';
 
 const TABS: { id: WorkspaceTab; label: string }[] = [
@@ -16,6 +17,7 @@ const TABS: { id: WorkspaceTab; label: string }[] = [
   { id: 'files', label: 'Files' },
   { id: 'budget', label: 'Budget' },
   { id: 'team', label: 'Team' },
+  { id: 'planning', label: 'Planning' },
   { id: 'more', label: 'More' },
 ];
 

@@ -43,7 +43,7 @@ export function InvitePanel({ institutionId }: { institutionId: string }) {
     setCodeLoading(true);
     try {
       const res = await organizations.generateAccessCode(institutionId);
-      setAccessCode(res.data.access_code);
+      setAccessCode(res.data.code);
     } catch {
       alert('Failed to generate access code.');
     } finally {

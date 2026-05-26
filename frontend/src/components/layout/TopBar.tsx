@@ -2,6 +2,7 @@
 import { useRef, useState } from 'react';
 import { useAuth } from '@/lib/auth';
 import { clearAuthSession } from '@/lib/auth-cookie';
+import UsageIndicator from '@/components/ai/UsageIndicator';
 
 export default function TopBar() {
   const { user } = useAuth();
@@ -14,9 +15,12 @@ export default function TopBar() {
   }
 
   return (
-    <header className="h-14 border-b border-gray-200 bg-white flex items-center justify-end px-6 shrink-0">
+    <header className="h-14 border-b border-gray-200 bg-white flex items-center justify-between px-6 shrink-0">
+      <div />
       {user && (
-        <div ref={ref} className="relative">
+        <div className="flex items-center gap-4">
+          <UsageIndicator />
+          <div ref={ref} className="relative">
           <button
             onClick={() => setOpen(o => !o)}
             className="flex items-center gap-1.5 text-sm text-gray-700 hover:text-gray-900 focus:outline-none py-1 px-2 rounded-md hover:bg-gray-50"
@@ -44,6 +48,7 @@ export default function TopBar() {
               </button>
             </div>
           )}
+          </div>
         </div>
       )}
     </header>

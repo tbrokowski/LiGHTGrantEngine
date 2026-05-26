@@ -446,23 +446,19 @@ async def invite_member_by_email(
     redis_client = await get_redis()
     await redis_client.setex(f"invite_token:{token[:32]}", 48 * 3600, token)
 
-    # Send invite email via Resend
-    frontend_url = getattr(settings, "frontend_url", "http://localhost:3000")
+    frontend_url = settings.base_url or "http://localhost:3000"
     invite_url = f"{frontend_url}/invite/{token}"
 
-    try:
-        from app.services.email import send_email
-        await send_email(
-            to=body.email,
-            subject=f"You're invited to join {inst.name} on LiGHT Grant Engine",
-            html=f"""
-            <p>You've been invited to join <strong>{inst.name}</strong> on LiGHT Grant Engine.</p>
-            <p><a href="{invite_url}">Click here to accept the invitation</a></p>
-            <p>This link expires in 48 hours.</p>
-            """,
-        )
-    except Exception:
-        pass
+    from app.services.email import send_email
+    await send_email(
+        to=body.email,
+        subject=f"You're invited to join {inst.name} on LiGHT Grant Engine",
+        html=f"""
+        <p>You've been invited to join <strong>{inst.name}</strong> on LiGHT Grant Engine.</p>
+        <p><a href="{invite_url}">Click here to accept the invitation</a></p>
+        <p>This link expires in 48 hours.</p>
+        """,
+    )
 
     return {"message": f"Invite sent to {body.email}", "invite_url": invite_url}
 
@@ -605,6 +601,56 @@ async def toggle_org_source(
     except Exception:
         pass
     return {"source_id": source_id, "is_enabled": body.is_enabled}
+
+
+@router.post("/{institution_id}/onboarding/complete")
+async def complete_org_onboarding(
+    institution_id: str,
+    body: dict,
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    """Save organization onboarding data and mark onboarding complete."""
+    if not is_org_admin(current_user) or current_user.institution_id != institution_id:
+        raise HTTPException(403, "Org admin access required.")
+
+    inst = await _get_institution_or_404(institution_id, db)
+    profile = dict(inst.grant_profile or {})
+
+    # Merge onboarding fields into grant_profile
+    for key in ["keywords", "domains", "methods", "populations", "funders",
+                "geographies", "strategic_priorities", "description"]:
+        if key in body:
+            profile[key] = body[key]
+
+    inst.grant_profile = profile
+    inst.onboarding_complete = True
+    await db.commit()
+    return {"onboarding_complete": True, "grant_profile": inst.grant_profile}
+
+
+@router.post("/{institution_id}/onboarding/ai-augment")
+async def ai_augment_org_profile(
+    institution_id: str,
+    body: dict,
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    """Use AI to improve and expand the organization's research profile keywords."""
+    if not is_org_admin(current_user) or current_user.institution_id != institution_id:
+        raise HTTPException(403, "Org admin access required.")
+
+    from app.ai.agents.profile_augmenter import augment_profile
+    raw_interests = body.get("raw_interests", "")
+    org_name = body.get("org_name", "")
+    org_description = body.get("description", "")
+
+    result = await augment_profile(
+        raw_interests=raw_interests,
+        org_name=org_name,
+        description=org_description,
+    )
+    return result
 
 
 @router.post("/{institution_id}/sources", status_code=201)

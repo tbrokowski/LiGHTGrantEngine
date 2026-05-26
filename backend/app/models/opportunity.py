@@ -132,6 +132,9 @@ class Opportunity(Base):
     # Vector embedding for semantic search
     embedding: Mapped[list | None] = mapped_column(Vector(1536), nullable=True)
 
+    # Cluster assignment for graph view
+    cluster_id: Mapped[int | None] = mapped_column(Integer, ForeignKey("opportunity_clusters.id"), nullable=True, index=True)
+
     # Metadata
     date_discovered: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now(), index=True)
     date_updated: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now(), onupdate=func.now())

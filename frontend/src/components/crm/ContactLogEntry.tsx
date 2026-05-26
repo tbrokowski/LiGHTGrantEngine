@@ -1,11 +1,13 @@
 'use client';
 
-const UPDATE_ICONS: Record<string, string> = {
-  email: '📧',
-  call: '📞',
-  meeting: '🤝',
-  note: '📝',
-  other: '💬',
+import { Mail, Phone, Users, FileText, MessageSquare, CalendarClock, type LucideIcon } from 'lucide-react';
+
+const UPDATE_ICONS: Record<string, LucideIcon> = {
+  email: Mail,
+  call: Phone,
+  meeting: Users,
+  note: FileText,
+  other: MessageSquare,
 };
 
 const UPDATE_COLORS: Record<string, string> = {
@@ -45,13 +47,15 @@ function isOverdue(dateStr?: string | null): boolean {
 }
 
 export default function ContactLogEntry({ update }: ContactLogEntryProps) {
-  const icon = UPDATE_ICONS[update.update_type] ?? UPDATE_ICONS.other;
+  const Icon = UPDATE_ICONS[update.update_type] ?? MessageSquare;
   const colorClass = UPDATE_COLORS[update.update_type] ?? UPDATE_COLORS.other;
 
   return (
     <div className={`rounded-lg border p-4 ${colorClass}`}>
       <div className="flex items-start gap-3">
-        <span className="text-lg mt-0.5">{icon}</span>
+        <span className="mt-0.5 text-gray-500 shrink-0">
+          <Icon className="w-4 h-4" />
+        </span>
         <div className="flex-1 min-w-0">
           <div className="flex items-center justify-between gap-2 mb-1">
             <span className="text-xs font-semibold text-gray-500 uppercase tracking-wide">
@@ -66,7 +70,7 @@ export default function ContactLogEntry({ update }: ContactLogEntryProps) {
             <div className={`mt-2 text-xs font-medium flex items-center gap-1 ${
               isOverdue(update.next_contact_date) ? 'text-red-600' : 'text-blue-600'
             }`}>
-              <span>📅</span>
+              <CalendarClock className="w-3.5 h-3.5 shrink-0" />
               <span>
                 {isOverdue(update.next_contact_date) ? 'Overdue — ' : 'Follow up: '}
                 {formatDate(update.next_contact_date)}

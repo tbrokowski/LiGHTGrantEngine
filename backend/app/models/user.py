@@ -2,7 +2,7 @@ import uuid
 from datetime import datetime
 from enum import Enum
 
-from sqlalchemy import String, Boolean, DateTime, JSON, ForeignKey, func
+from sqlalchemy import String, Boolean, DateTime, JSON, ForeignKey, Integer, Text, func
 from sqlalchemy.orm import Mapped, mapped_column
 
 from app.database import Base
@@ -39,3 +39,14 @@ class User(Base):
     # Institution membership
     institution_id: Mapped[str | None] = mapped_column(String, ForeignKey("institutions.id"), index=True)
     institution_role: Mapped[str] = mapped_column(String(50), default=InstitutionRole.MEMBER)
+    # Onboarding & verification
+    email_verified: Mapped[bool] = mapped_column(Boolean, default=False, server_default="false", nullable=False)
+    email_verification_token: Mapped[str | None] = mapped_column(String(200), nullable=True)
+    onboarding_complete: Mapped[bool] = mapped_column(Boolean, default=False, server_default="false", nullable=False)
+    # AI billing (personal usage only)
+    ai_usage_cents: Mapped[int] = mapped_column(Integer, default=0, server_default="0", nullable=False)
+    ai_usage_limit_cents: Mapped[int] = mapped_column(Integer, default=300, server_default="300", nullable=False)
+    # Google OAuth
+    google_access_token: Mapped[str | None] = mapped_column(Text, nullable=True)
+    google_refresh_token: Mapped[str | None] = mapped_column(Text, nullable=True)
+    google_token_expiry: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)

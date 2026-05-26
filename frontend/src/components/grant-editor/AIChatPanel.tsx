@@ -3,7 +3,7 @@ import { useState, useRef, useEffect, useCallback } from 'react';
 import { streamEditorChat, streamWritingChat, ai } from '@/lib/api';
 import {
   Send, Copy, CheckCheck, Plus, Sparkles, FileText,
-  MousePointerClick, ChevronDown, AlertCircle, X, Wand2,
+  MousePointerClick, ChevronDown, AlertCircle, X, Wand2, Loader2,
 } from 'lucide-react';
 
 interface ChatMessage {
@@ -22,6 +22,7 @@ interface AIChatPanelProps {
   activeSection?: string;
   writingPhase?: string;
   useWritingStudio?: boolean;
+  googleDocUrl?: string | null;
 }
 
 const QUICK_PROMPTS = [
@@ -79,6 +80,7 @@ export default function AIChatPanel({
   activeSection,
   writingPhase,
   useWritingStudio = false,
+  googleDocUrl,
 }: AIChatPanelProps) {
   const [messages, setMessages] = useState<ChatMessage[]>([
     {
@@ -92,6 +94,7 @@ export default function AIChatPanel({
   const [copiedId, setCopiedId] = useState<string | null>(null);
   const [showQuickPrompts, setShowQuickPrompts] = useState(false);
   const [improveLoading, setImproveLoading] = useState(false);
+  const [insertingToDoc, setInsertingToDoc] = useState<string | null>(null);
   const [contextMode, setContextMode] = useState<'auto' | 'selection' | 'full'>('auto');
   const [contextChips, setContextChips] = useState<string[]>([]);
   const messagesEndRef = useRef<HTMLDivElement>(null);
@@ -199,6 +202,20 @@ export default function AIChatPanel({
     setTimeout(() => setCopiedId(null), 2000);
   };
 
+  const insertToGoogleDoc = async (msgId: string, content: string) => {
+    if (!googleDocUrl || insertingToDoc) return;
+    setInsertingToDoc(msgId);
+    try {
+      const { grants } = await import('@/lib/api');
+      await grants.pushToGoogleDoc(grantId);
+    } catch {
+      // If push fails, fall back to opening the doc URL so the user can paste manually
+      if (googleDocUrl) window.open(googleDocUrl, '_blank');
+    } finally {
+      setInsertingToDoc(null);
+    }
+  };
+
   const handleKeyDown = (e: React.KeyboardEvent) => {
     if (e.key === 'Enter' && !e.shiftKey) {
       e.preventDefault();
@@ -248,8 +265,8 @@ export default function AIChatPanel({
               <Sparkles className="w-3 h-3 text-white" />
             </div>
             <div>
-              <div className="text-xs font-semibold text-gray-800">Qwen AI Assistant</div>
-              <div className="text-[10px] text-gray-400">Document-aware · RAG-powered</div>
+              <div className="text-xs font-semibold text-gray-800">AI Writing Assistant</div>
+              <div className="text-[10px] text-gray-400">Grant writing assistant</div>
             </div>
           </div>
           <button onClick={clearChat} className="text-gray-400 hover:text-gray-600 p-1 rounded" title="Clear chat">
@@ -289,7 +306,8 @@ export default function AIChatPanel({
 
           {callRequirements && (
             <span className="flex items-center gap-1 text-[10px] px-2 py-0.5 rounded-full bg-green-50 text-green-600 border border-green-100">
-              Call req. ✓
+              <CheckCheck className="w-2.5 h-2.5" />
+              Requirements loaded
             </span>
           )}
           {activeSection && (
@@ -345,6 +363,21 @@ export default function AIChatPanel({
                   <Plus className="w-2.5 h-2.5" />
                   Insert into section
                 </button>
+                {googleDocUrl && (
+                  <button
+                    onClick={() => insertToGoogleDoc(msg.id, msg.content)}
+                    disabled={insertingToDoc === msg.id}
+                    className="flex items-center gap-1 text-[10px] text-blue-500 hover:text-blue-700 px-1.5 py-0.5 rounded hover:bg-blue-50 transition-colors disabled:opacity-50"
+                    title="Push to Google Doc"
+                  >
+                    {insertingToDoc === msg.id ? (
+                      <Loader2 className="w-2.5 h-2.5 animate-spin" />
+                    ) : (
+                      <FileText className="w-2.5 h-2.5" />
+                    )}
+                    {insertingToDoc === msg.id ? 'Syncing…' : 'Push to Doc'}
+                  </button>
+                )}
               </div>
             )}
           </div>
@@ -370,7 +403,7 @@ export default function AIChatPanel({
             className="mt-2 w-full text-[10px] bg-amber-600 text-white rounded py-1.5 hover:bg-amber-700 disabled:opacity-50 transition-colors flex items-center justify-center gap-1.5"
           >
             {improveLoading ? (
-              <><span className="animate-spin">⟳</span> Improving...</>
+              <><Loader2 className="w-3 h-3 animate-spin" /> Improving...</>
             ) : (
               <><Wand2 className="w-3 h-3" /> Improve selection{input ? ` — "${input.slice(0, 20)}..."` : ''}</>
             )}
@@ -440,7 +473,7 @@ export default function AIChatPanel({
           </div>
         </div>
         <div className="text-[10px] text-gray-300 mt-1.5 text-center">
-          Enter to send · Shift+Enter for new line · RAG-powered
+          Enter to send · Shift+Enter for new line
         </div>
       </div>
     </div>

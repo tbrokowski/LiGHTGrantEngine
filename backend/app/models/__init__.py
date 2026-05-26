@@ -2,6 +2,7 @@ from .institution import Institution
 from .user import User
 from .source import Source, SourceRun
 from .opportunity import Opportunity, OpportunityReview
+from .opportunity_cluster import OpportunityCluster
 from .active_grant import ActiveGrant
 from .task import Task
 from .document import Document
@@ -27,9 +28,12 @@ from .grant_member import GrantMember
 from .institution_opportunity import InstitutionOpportunity
 from .institution_source import InstitutionSource
 from .preseed_run import PreseedRun
+from .email_verification import EmailVerification
+from .org_join_request import OrgJoinRequest
 
 __all__ = [
     "Institution", "User", "Source", "SourceRun", "Opportunity", "OpportunityReview",
+    "OpportunityCluster",
     "ActiveGrant", "Task", "Document", "ProposalSection", "GrantArchive",
     "ReusableLanguageBlock", "Notification", "AIRun", "Comment", "FunderProfile",
     "Partner", "PartnerUpdate", "PartnerGrantLink",
@@ -38,4 +42,5 @@ __all__ = [
     "GrantActivityLog", "GrantWritingConversation", "GrantCitation",
     "UserOpportunityState", "GrantMember",
     "InstitutionOpportunity", "InstitutionSource", "PreseedRun",
+    "EmailVerification", "OrgJoinRequest",
 ]

@@ -122,13 +122,96 @@ function toGanttTask(item: GanttItem, isCritical: boolean): GanttTask | null {
   };
 }
 
+// ── Work Package group row ───────────────────────────────────────────────────
+
+const WP_COLORS: string[] = [
+  '#6366f1', '#0ea5e9', '#10b981', '#f59e0b', '#ec4899', '#8b5cf6', '#14b8a6',
+];
+
+function getWpColor(idx: number) {
+  return WP_COLORS[idx % WP_COLORS.length];
+}
+
+function buildGroupedTasks(items: GanttItem[], criticalIds: Set<string>): GanttTask[] {
+  const hasPackages = items.some((i) => i.work_package);
+  if (!hasPackages) {
+    return items.flatMap((i) => {
+      const t = toGanttTask(i, criticalIds.has(i.id));
+      return t ? [t] : [];
+    });
+  }
+
+  const groups = new Map<string, GanttItem[]>();
+  const ungrouped: GanttItem[] = [];
+
+  for (const item of items) {
+    const wp = item.work_package?.trim();
+    if (wp) {
+      if (!groups.has(wp)) groups.set(wp, []);
+      groups.get(wp)!.push(item);
+    } else {
+      ungrouped.push(item);
+    }
+  }
+
+  const result: GanttTask[] = [];
+  let wpIdx = 0;
+
+  groups.forEach((wpItems, wpName) => {
+    const starts = wpItems.filter((i) => i.start_date).map((i) => new Date(i.start_date!).getTime());
+    const ends = wpItems.filter((i) => i.end_date).map((i) => new Date(i.end_date!).getTime());
+    if (!starts.length || !ends.length) {
+      wpIdx++;
+      return;
+    }
+    const groupStart = new Date(Math.min(...starts));
+    const groupEnd = new Date(Math.max(...ends));
+    if (groupEnd <= groupStart) groupEnd.setDate(groupEnd.getDate() + 1);
+    const color = getWpColor(wpIdx);
+
+    result.push({
+      id: `wp_${wpName}`,
+      name: `📦 ${wpName}`,
+      start: groupStart,
+      end: groupEnd,
+      type: 'project',
+      progress: 0,
+      hideChildren: false,
+      styles: {
+        backgroundColor: color,
+        backgroundSelectedColor: color,
+        progressColor: color,
+        progressSelectedColor: color,
+      },
+    } as GanttTask);
+
+    for (const item of wpItems) {
+      const t = toGanttTask(item, criticalIds.has(item.id));
+      if (t) {
+        result.push({ ...t, project: `wp_${wpName}` } as GanttTask);
+      }
+    }
+    wpIdx++;
+  });
+
+  for (const item of ungrouped) {
+    const t = toGanttTask(item, criticalIds.has(item.id));
+    if (t) result.push(t);
+  }
+
+  return result;
+}
+
 // ── Component ────────────────────────────────────────────────────────────────
 
 export default function GanttView({ grantId, items, onRefresh }: Props) {
   const [generating, setGenerating] = useState(false);
   const [exporting, setExporting] = useState(false);
   const [showCritical, setShowCritical] = useState(false);
+  const [groupByWorkPackage, setGroupByWorkPackage] = useState(true);
   const [viewMode, setViewMode] = useState<ViewMode>(ViewMode.Week);
+
+  const hasWorkPackages = useMemo(() => items.some((i) => i.work_package), [items]);
 
   const criticalIds = useMemo(
     () => (showCritical ? computeCriticalPath(items) : new Set<string>()),
@@ -137,11 +220,13 @@ export default function GanttView({ grantId, items, onRefresh }: Props) {
 
   const ganttTasks = useMemo(
     () =>
-      items.flatMap((i) => {
-        const t = toGanttTask(i, criticalIds.has(i.id));
-        return t ? [t] : [];
-      }),
-    [items, criticalIds],
+      groupByWorkPackage && hasWorkPackages
+        ? buildGroupedTasks(items, criticalIds)
+        : items.flatMap((i) => {
+            const t = toGanttTask(i, criticalIds.has(i.id));
+            return t ? [t] : [];
+          }),
+    [items, criticalIds, groupByWorkPackage, hasWorkPackages],
   );
 
   const handleGenerate = async () => {
@@ -232,6 +317,20 @@ export default function GanttView({ grantId, items, onRefresh }: Props) {
               </button>
             ))}
           </div>
+
+          {/* Work package group toggle */}
+          {hasWorkPackages && (
+            <button
+              onClick={() => setGroupByWorkPackage((v) => !v)}
+              className={`text-xs px-3 py-1.5 rounded-lg border transition-colors ${
+                groupByWorkPackage
+                  ? 'bg-indigo-50 text-indigo-700 border-indigo-200'
+                  : 'border-gray-200 text-gray-600 hover:bg-gray-50'
+              }`}
+            >
+              {groupByWorkPackage ? 'Ungroup WPs' : 'Group by WP'}
+            </button>
+          )}
 
           {/* Critical path toggle */}
           <button

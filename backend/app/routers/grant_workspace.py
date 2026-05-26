@@ -1605,6 +1605,53 @@ async def create_google_doc(
     }
 
 
+@router.post("/{grant_id}/docs/link")
+async def link_google_doc(
+    grant_id: str,
+    body: dict,
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+    _edit: None = Depends(grant_access(require_editor=True)),
+):
+    """Link an existing Google Doc URL to this grant."""
+    doc_url: str = body.get("doc_url", "").strip()
+    if not doc_url:
+        raise HTTPException(400, "doc_url is required")
+
+    # Extract doc ID from URL if present
+    doc_id: str | None = None
+    if "/d/" in doc_url:
+        doc_id = doc_url.split("/d/")[1].split("/")[0]
+
+    grant = await _get_grant_or_404(grant_id, db)
+    grant.google_doc_id = doc_id
+    grant.google_doc_url = doc_url
+    grant.google_doc_last_synced = datetime.utcnow()
+
+    await log_activity(
+        db, grant_id, "google_doc_linked", current_user.id,
+        description=f"Google Doc linked: {doc_url}",
+    )
+    await db.commit()
+    return {"doc_id": doc_id, "doc_url": doc_url, "linked": True}
+
+
+@router.delete("/{grant_id}/docs/unlink")
+async def unlink_google_doc(
+    grant_id: str,
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+    _edit: None = Depends(grant_access(require_editor=True)),
+):
+    """Remove the Google Doc link from this grant."""
+    grant = await _get_grant_or_404(grant_id, db)
+    grant.google_doc_id = None
+    grant.google_doc_url = None
+    grant.google_doc_last_synced = None
+    await db.commit()
+    return {"unlinked": True}
+
+
 @router.post("/{grant_id}/docs/push")
 async def push_to_google_doc(
     grant_id: str,

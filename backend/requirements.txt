@@ -43,6 +43,9 @@ openai==1.51.0
 tiktoken==0.7.0
 numpy==1.26.4
 
+# ML clustering for graph view
+scikit-learn==1.5.2
+
 # Email
 aiosmtplib==3.0.2
 

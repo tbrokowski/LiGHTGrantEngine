@@ -1,5 +1,6 @@
 'use client';
 import { useState } from 'react';
+import { Sparkles, Loader2 } from 'lucide-react';
 import { ai } from '@/lib/api';
 
 interface AIPanelProps {
@@ -16,6 +17,7 @@ export default function AIPanel({ opportunityId, grantId, archiveId }: AIPanelPr
   const [error, setError] = useState('');
   const [sectionName, setSectionName] = useState('');
   const [sectionReqs, setSectionReqs] = useState('');
+  const [proposalDraft, setProposalDraft] = useState('');
   const [query, setQuery] = useState('');
 
   const run = async (action: Action) => {
@@ -33,7 +35,7 @@ export default function AIPanel({ opportunityId, grantId, archiveId }: AIPanelPr
       else if (action === 'draft-section' && grantId)
         res = await ai.draftSection({ grant_id: grantId, section_name: sectionName, section_type: 'other', call_requirements: sectionReqs });
       else if (action === 'compliance' && grantId)
-        res = await ai.complianceCheck({ grant_id: grantId, proposal_draft: 'paste draft here' });
+        res = await ai.complianceCheck({ grant_id: grantId, proposal_draft: proposalDraft });
       else if (action === 'similar-grants')
         res = await ai.findSimilarGrants({ query, top_k: 6 });
       if (res) setResult(res.data);
@@ -47,8 +49,8 @@ export default function AIPanel({ opportunityId, grantId, archiveId }: AIPanelPr
   return (
     <div className="bg-purple-50 border border-purple-200 rounded-xl p-4">
       <div className="flex items-center gap-2 mb-3">
-        <span className="text-purple-600 font-semibold text-sm">✦ AI Assistant</span>
-        <span className="text-xs text-purple-400">Powered by Qwen</span>
+        <Sparkles className="w-4 h-4 text-purple-600 shrink-0" />
+        <span className="text-purple-600 font-semibold text-sm">AI Assistant</span>
       </div>
 
       <div className="flex flex-wrap gap-2 mb-3">
@@ -93,6 +95,14 @@ export default function AIPanel({ opportunityId, grantId, archiveId }: AIPanelPr
         </div>
       )}
 
+      {grantId && (
+        <div className="mb-3">
+          <textarea value={proposalDraft} onChange={e => setProposalDraft(e.target.value)}
+            placeholder="Paste proposal draft for compliance check..."
+            className="w-full text-xs border border-purple-200 rounded px-2 py-1.5 h-16 resize-none mb-1" />
+        </div>
+      )}
+
       <div className="mb-3">
         <input value={query} onChange={e => setQuery(e.target.value)}
           placeholder="Find similar past grants..."
@@ -103,7 +113,12 @@ export default function AIPanel({ opportunityId, grantId, archiveId }: AIPanelPr
         </button>
       </div>
 
-      {loading && <div className="text-xs text-purple-600 animate-pulse">Qwen is thinking...</div>}
+      {loading && (
+        <div className="flex items-center gap-1.5 text-xs text-purple-600">
+          <Loader2 className="w-3.5 h-3.5 animate-spin" />
+          Analyzing...
+        </div>
+      )}
       {error && <div className="text-xs text-red-600 mt-2">{error}</div>}
       {result && (
         <div className="mt-3 bg-white rounded-lg p-3 text-xs text-gray-800 max-h-64 overflow-y-auto">

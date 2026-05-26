@@ -13,7 +13,6 @@ import redis.asyncio as aioredis
 
 router = APIRouter()
 
-
 class UserCreate(BaseModel):
     name: str
     email: str
@@ -129,6 +128,46 @@ async def update_my_grant_preferences(
     current_user.grant_preferences = prefs
     await db.commit()
     return prefs
+
+
+@router.get("/me/ai-usage")
+async def get_ai_usage(current_user: User = Depends(get_current_user)):
+    """Return current user's AI usage vs limit."""
+    return {
+        "ai_usage_cents": current_user.ai_usage_cents,
+        "ai_usage_limit_cents": current_user.ai_usage_limit_cents,
+        "usage_dollars": current_user.ai_usage_cents / 100,
+        "limit_dollars": current_user.ai_usage_limit_cents / 100,
+        "usage_pct": round(current_user.ai_usage_cents / max(current_user.ai_usage_limit_cents, 1) * 100, 1),
+        "is_personal_institution": True,  # will be refined when institution.is_personal is checked
+    }
+
+
+class OnboardingCompleteBody(BaseModel):
+    grant_categories: Optional[list[str]] = None
+    keywords: Optional[list[str]] = None
+    workflow_type: Optional[str] = None
+
+
+@router.post("/me/onboarding/complete")
+async def complete_personal_onboarding(
+    body: OnboardingCompleteBody,
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    """Save personal onboarding data and mark onboarding complete."""
+    prefs = dict(current_user.grant_preferences or {})
+    if body.grant_categories:
+        prefs["grant_categories"] = body.grant_categories
+    if body.keywords:
+        prefs["keywords"] = body.keywords
+    if body.workflow_type:
+        prefs["workflow_type"] = body.workflow_type
+
+    current_user.grant_preferences = prefs
+    current_user.onboarding_complete = True
+    await db.commit()
+    return {"onboarding_complete": True}
 
 
 @router.delete("/{user_id}", status_code=204, dependencies=[Depends(require_org_admin())])

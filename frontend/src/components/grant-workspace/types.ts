@@ -72,6 +72,7 @@ export interface GanttItem {
   dependency_ids: string[];
   display_order: number;
   color_category: string | null;
+  work_package?: string | null;
 }
 
 export interface WorkspaceSection {

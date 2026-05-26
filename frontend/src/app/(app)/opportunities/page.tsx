@@ -1,10 +1,13 @@
 'use client';
 import { useEffect, useState, useCallback } from 'react';
 import { useRouter } from 'next/navigation';
+import { X, ChevronDown, ChevronUp, AlertCircle, CheckCircle, Loader2, Clock } from 'lucide-react';
 import { opportunities, sources } from '@/lib/api';
 import OpportunityRow from '@/components/opportunities/OpportunityRow';
 import FocusReview from '@/components/opportunities/FocusReview';
 import OpportunityFiltersBar from '@/components/opportunities/OpportunityFilters';
+import OpportunityGraphView, { GraphNode, GraphCluster } from '@/components/opportunities/OpportunityGraphView';
+import GraphFilters, { GraphFilterState } from '@/components/opportunities/GraphFilters';
 import {
   isExpired,
   type Opportunity,
@@ -12,6 +15,29 @@ import {
   type TabMode,
   type ViewMode,
 } from '@/components/opportunities/types';
+
+interface ScanRun {
+  id: string;
+  source_id: string;
+  source_name: string;
+  started_at: string | null;
+  ended_at: string | null;
+  status: string;
+  records_found: number | null;
+  new_opportunities: number | null;
+  duplicates: number | null;
+  errors: string[];
+  log_summary: string | null;
+}
+
+interface ScanSummary {
+  sources_by_status: Record<string, number>;
+  total_opportunities: number;
+  running_scans: number;
+  recent_errors_24h: number;
+  last_run_at: string | null;
+  last_run_status: string | null;
+}
 
 const EMPTY_FILTERS: OpportunityFilters = {
   search: '',
@@ -23,6 +49,7 @@ const EMPTY_FILTERS: OpportunityFilters = {
 };
 
 const VIEW_STORAGE_KEY = 'opportunities_view_mode';
+const EMPTY_GRAPH_FILTERS: GraphFilterState = { funder: '', theme: '', deadlineDays: '', minScore: '' };
 
 function applyFilters(items: Opportunity[], filters: OpportunityFilters) {
   return items.filter(o => {
@@ -58,11 +85,18 @@ export default function OpportunitiesPage() {
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
   const [refreshBanner, setRefreshBanner] = useState('');
+  const [scanLogs, setScanLogs] = useState<ScanRun[]>([]);
+  const [showScanLogs, setShowScanLogs] = useState(false);
+  const [scanSummary, setScanSummary] = useState<ScanSummary | null>(null);
   const [filters, setFilters] = useState<OpportunityFilters>(EMPTY_FILTERS);
   const [showFilters, setShowFilters] = useState(false);
   const [pastExpanded, setPastExpanded] = useState(false);
   const [unreadOnly, setUnreadOnly] = useState(true);
   const [focusIndex, setFocusIndex] = useState(0);
+  const [graphNodes, setGraphNodes] = useState<GraphNode[]>([]);
+  const [graphClusters, setGraphClusters] = useState<GraphCluster[]>([]);
+  const [graphLoading, setGraphLoading] = useState(false);
+  const [graphFilters, setGraphFilters] = useState<GraphFilterState>(EMPTY_GRAPH_FILTERS);
 
   useEffect(() => {
     const saved = localStorage.getItem(VIEW_STORAGE_KEY);
@@ -90,11 +124,33 @@ export default function OpportunitiesPage() {
     else loadShortlist();
   }, [activeTab, loadQueue, loadShortlist]);
 
-  function setView(mode: ViewMode) {
-    setViewMode(mode);
+  function setView(mode: ViewMode | 'graph') {
+    setViewMode(mode as ViewMode);
     localStorage.setItem(VIEW_STORAGE_KEY, mode);
     setFocusIndex(0);
+    if (mode === 'graph') loadGraphData();
   }
+
+  const loadGraphData = useCallback(() => {
+    setGraphLoading(true);
+    const params: Record<string, unknown> = {};
+    if (graphFilters.funder) params.funder = graphFilters.funder;
+    if (graphFilters.theme) params.theme = graphFilters.theme;
+    if (graphFilters.deadlineDays) params.deadline_days = graphFilters.deadlineDays;
+    if (graphFilters.minScore) params.min_score = graphFilters.minScore;
+    opportunities.graphData(params)
+      .then(r => {
+        setGraphNodes(r.data.nodes || []);
+        setGraphClusters(r.data.clusters || []);
+      })
+      .catch(console.error)
+      .finally(() => setGraphLoading(false));
+  }, [graphFilters]);
+
+  useEffect(() => {
+    if ((viewMode as string) === 'graph') loadGraphData();
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [graphFilters]);
 
   function setFilter<K extends keyof OpportunityFilters>(key: K, value: OpportunityFilters[K]) {
     setFilters(prev => ({ ...prev, [key]: value }));
@@ -129,6 +185,14 @@ export default function OpportunitiesPage() {
     }
   }
 
+  // In focus mode, marking as read should NOT remove the card from the list —
+  // that would shrink the array, change currentIndex, re-trigger mark-read,
+  // and create an infinite removal cascade. Just flip is_read locally instead.
+  async function handleMarkReadFocus(id: string) {
+    await opportunities.markRead(id);
+    markReadLocal(id);
+  }
+
   async function handleToggleBookmark(id: string, isBookmarked: boolean) {
     if (isBookmarked) {
       await opportunities.removeFromShortlist(id);
@@ -153,14 +217,35 @@ export default function OpportunitiesPage() {
     }
   }
 
+  const loadScanStatus = useCallback(async () => {
+    try {
+      const [runsRes, summaryRes] = await Promise.all([
+        sources.recentRuns(30),
+        sources.summary(),
+      ]);
+      setScanLogs(runsRes.data || []);
+      setScanSummary(summaryRes.data || null);
+    } catch {
+      // not critical
+    }
+  }, []);
+
   async function handleRefreshAll() {
     setRefreshing(true);
     setRefreshBanner('');
     try {
       const res = await sources.runAll();
       const count = res.data?.queued ?? '?';
-      setRefreshBanner(`Scan queued for ${count} active source${count !== 1 ? 's' : ''}. New opportunities will appear shortly.`);
-      setTimeout(() => setRefreshBanner(''), 8000);
+      setRefreshBanner(`Scan queued for ${count} active source${count !== 1 ? 's' : ''}. New opportunities will appear in a few minutes.`);
+      setShowScanLogs(true);
+      // Poll scan status to show live progress
+      await loadScanStatus();
+      const interval = setInterval(loadScanStatus, 8000);
+      setTimeout(() => {
+        clearInterval(interval);
+        setRefreshBanner('');
+        loadQueue();
+      }, 90000);
     } catch (err: unknown) {
       const status = (err as { response?: { status?: number } })?.response?.status;
       if (status === 403) {
@@ -172,6 +257,11 @@ export default function OpportunitiesPage() {
     } finally {
       setRefreshing(false);
     }
+  }
+
+  async function handleShowScanLogs() {
+    setShowScanLogs(v => !v);
+    if (!showScanLogs) await loadScanStatus();
   }
 
   useEffect(() => {
@@ -210,7 +300,81 @@ export default function OpportunitiesPage() {
       {refreshBanner && (
         <div className="mb-4 px-4 py-3 bg-blue-50 border border-blue-200 rounded-xl text-sm text-blue-700 flex items-center justify-between">
           <span>{refreshBanner}</span>
-          <button onClick={() => setRefreshBanner('')} className="ml-3 text-blue-400 hover:text-blue-600">✕</button>
+          <button onClick={() => setRefreshBanner('')} className="ml-3 text-blue-400 hover:text-blue-600"><X className="w-4 h-4" /></button>
+        </div>
+      )}
+
+      {/* Scan Debug Panel */}
+      {showScanLogs && (
+        <div className="mb-5 border border-gray-200 rounded-xl overflow-hidden bg-white">
+          <div className="flex items-center justify-between px-4 py-3 border-b border-gray-100 bg-gray-50">
+            <div className="flex items-center gap-3">
+              <span className="text-sm font-medium text-gray-700">Source Scan Log</span>
+              {scanSummary && (
+                <div className="flex items-center gap-3 text-xs text-gray-500">
+                  <span className="flex items-center gap-1">
+                    <span className="w-2 h-2 rounded-full bg-green-400 inline-block" />
+                    {scanSummary.sources_by_status?.active ?? 0} active
+                  </span>
+                  {(scanSummary.running_scans ?? 0) > 0 && (
+                    <span className="flex items-center gap-1 text-blue-600">
+                      <Loader2 className="w-3 h-3 animate-spin" />
+                      {scanSummary.running_scans} running
+                    </span>
+                  )}
+                  {(scanSummary.recent_errors_24h ?? 0) > 0 && (
+                    <span className="flex items-center gap-1 text-red-500">
+                      <AlertCircle className="w-3 h-3" />
+                      {scanSummary.recent_errors_24h} errors (24h)
+                    </span>
+                  )}
+                  <span>{scanSummary.total_opportunities?.toLocaleString()} opps in DB</span>
+                </div>
+              )}
+            </div>
+            <button onClick={() => setShowScanLogs(false)} className="text-gray-400 hover:text-gray-600">
+              <X className="w-4 h-4" />
+            </button>
+          </div>
+          <div className="max-h-64 overflow-y-auto">
+            {scanLogs.length === 0 ? (
+              <div className="px-4 py-6 text-center text-sm text-gray-400">No scan runs yet. Click &quot;Refresh Sources&quot; to start.</div>
+            ) : (
+              <table className="w-full text-xs">
+                <thead>
+                  <tr className="border-b border-gray-100 text-gray-400 uppercase tracking-wider">
+                    <th className="text-left px-4 py-2">Source</th>
+                    <th className="text-left px-4 py-2">Status</th>
+                    <th className="text-right px-4 py-2">Found</th>
+                    <th className="text-right px-4 py-2">New</th>
+                    <th className="text-left px-4 py-2">Started</th>
+                    <th className="text-left px-4 py-2">Error</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {scanLogs.map(run => (
+                    <tr key={run.id} className="border-b border-gray-50 hover:bg-gray-50">
+                      <td className="px-4 py-2 font-medium text-gray-700 max-w-[160px] truncate">{run.source_name}</td>
+                      <td className="px-4 py-2">
+                        {run.status === 'running' && <span className="flex items-center gap-1 text-blue-600"><Loader2 className="w-3 h-3 animate-spin" />running</span>}
+                        {run.status === 'success' && <span className="flex items-center gap-1 text-green-600"><CheckCircle className="w-3 h-3" />success</span>}
+                        {run.status === 'failed' && <span className="flex items-center gap-1 text-red-500"><AlertCircle className="w-3 h-3" />failed</span>}
+                        {!['running','success','failed'].includes(run.status) && <span className="text-gray-400">{run.status}</span>}
+                      </td>
+                      <td className="px-4 py-2 text-right text-gray-500">{run.records_found ?? '—'}</td>
+                      <td className="px-4 py-2 text-right text-gray-700 font-medium">{run.new_opportunities ?? '—'}</td>
+                      <td className="px-4 py-2 text-gray-400 whitespace-nowrap">
+                        {run.started_at ? new Date(run.started_at).toLocaleTimeString() : '—'}
+                      </td>
+                      <td className="px-4 py-2 text-red-500 max-w-[200px] truncate" title={run.errors?.[0]}>
+                        {run.errors?.[0] || run.log_summary || ''}
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            )}
+          </div>
         </div>
       )}
 
@@ -241,6 +405,16 @@ export default function OpportunitiesPage() {
             }`}
           >
             Filters {hasFilters ? '·' : ''}
+          </button>
+          <button
+            onClick={handleShowScanLogs}
+            className={`px-3 py-1.5 text-sm rounded-lg border transition-colors flex items-center gap-1 ${
+              showScanLogs ? 'border-gray-900 bg-gray-900 text-white' : 'border-gray-200 text-gray-500 hover:border-gray-400 hover:text-gray-700'
+            }`}
+            title="Show scan log"
+          >
+            {showScanLogs ? <ChevronUp className="w-3.5 h-3.5" /> : <ChevronDown className="w-3.5 h-3.5" />}
+            <Clock className="w-3.5 h-3.5" />
           </button>
           <button
             onClick={handleRefreshAll}
@@ -322,6 +496,15 @@ export default function OpportunitiesPage() {
               >
                 Focus
               </button>
+              <button
+                onClick={() => setView('graph' as ViewMode)}
+                className={`px-2.5 py-1 text-xs transition-colors ${
+                  (viewMode as string) === 'graph' ? 'bg-gray-100 text-gray-900' : 'text-gray-400 hover:text-gray-600'
+                }`}
+                title="Graph view"
+              >
+                Graph
+              </button>
             </div>
           )}
         </div>
@@ -334,16 +517,36 @@ export default function OpportunitiesPage() {
         show={showFilters}
       />
 
+      {/* Graph filter bar */}
+      {(viewMode as string) === 'graph' && (
+        <div className="mb-4">
+          <GraphFilters
+            filters={graphFilters}
+            onChange={setGraphFilters}
+            funders={[...new Set(graphNodes.map(n => n.funder).filter(Boolean) as string[])].slice(0, 20)}
+            themes={[...new Set(graphNodes.flatMap(n => n.thematic_areas))].slice(0, 20)}
+          />
+        </div>
+      )}
+
       {loading ? (
         <div className="bg-white border border-gray-200 rounded-xl overflow-hidden">
           <div className="px-5 py-16 text-center text-sm text-gray-400">Loading…</div>
+        </div>
+      ) : (viewMode as string) === 'graph' ? (
+        <div className="bg-white border border-gray-200 rounded-xl overflow-hidden flex flex-col" style={{ height: 600 }}>
+          {graphLoading ? (
+            <div className="flex-1 flex items-center justify-center text-sm text-gray-400">Loading graph…</div>
+          ) : (
+            <OpportunityGraphView nodes={graphNodes} clusters={graphClusters} />
+          )}
         </div>
       ) : activeTab === 'queue' && viewMode === 'focus' ? (
         <FocusReview
           items={upcoming}
           currentIndex={focusIndex}
           onIndexChange={setFocusIndex}
-          onMarkRead={handleMarkRead}
+          onMarkRead={handleMarkReadFocus}
           onToggleBookmark={handleToggleBookmark}
           onStartGrant={handleStartGrant}
         />

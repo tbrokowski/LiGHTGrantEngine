@@ -26,6 +26,7 @@ interface DraftPhaseProps {
   citations: Citation[];
   showReview: boolean;
   showCitations: boolean;
+  googleDocUrl?: string | null;
   onDocumentChange: (html: string, words: number, headings: string[]) => void;
   onSelectionChange: (text: string) => void;
   onActiveSectionChange: (section: string) => void;
@@ -49,6 +50,7 @@ export default function DraftPhase({
   citations,
   showReview,
   showCitations,
+  googleDocUrl,
   onDocumentChange,
   onSelectionChange,
   onActiveSectionChange,
@@ -105,6 +107,7 @@ export default function DraftPhase({
             onInsertText={onInsertText}
             callRequirements={callRequirements}
             useWritingStudio
+            googleDocUrl={googleDocUrl}
           />
         </div>
         {showReview && (

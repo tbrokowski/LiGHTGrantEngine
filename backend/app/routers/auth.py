@@ -1,5 +1,6 @@
 """Authentication endpoints."""
 import uuid
+import secrets
 from datetime import datetime, timedelta
 from typing import Optional
 
@@ -12,15 +13,17 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.config import get_settings
-from app.database import get_db
+from app.database import get_db, AsyncSessionLocal
 from app.models.user import User, UserRole, InstitutionRole
 from app.models.institution import Institution
 from app.models.org_join_request import OrgJoinRequest, JoinRequestStatus
+from app.models.email_verification import EmailVerification
 from app.services.organization_setup import (
     personal_workspace_name,
     invited_member_role,
     queue_org_scaffold,
 )
+from app.services.email import send_email
 
 router = APIRouter()
 settings = get_settings()
@@ -39,6 +42,8 @@ class Token(BaseModel):
     institution_role: Optional[str] = None
     # "active" | "pending_approval" — frontend uses this to show a waiting screen
     account_status: str = "active"
+    email_verified: bool = False
+    onboarding_complete: bool = False
 
 
 class TokenData(BaseModel):
@@ -114,6 +119,8 @@ async def login(
         name=user.name,
         institution_id=user.institution_id,
         institution_role=user.institution_role,
+        email_verified=user.email_verified,
+        onboarding_complete=user.onboarding_complete,
     )
 
 
@@ -196,6 +203,10 @@ async def register(
     if institution_id and user_role == UserRole.GRANT_LEAD:
         queue_org_scaffold(institution_id, user.id)
 
+    # Send verification email in a background task with its own DB session
+    import asyncio
+    asyncio.create_task(_send_verification_email(user.id, user.email, user.name))
+
     token = create_access_token({"sub": user.id, "role": user.role})
     return Token(
         access_token=token,
@@ -206,6 +217,8 @@ async def register(
         institution_id=user.institution_id,
         institution_role=user.institution_role,
         account_status=account_status,
+        email_verified=user.email_verified,
+        onboarding_complete=user.onboarding_complete,
     )
 
 
@@ -271,10 +284,11 @@ async def accept_invite(
         existing_user.institution_id = institution_id
         existing_user.institution_role = InstitutionRole.MEMBER
         existing_user.role = invited_member_role(role)
+        existing_user.email_verified = True
         await db.commit()
         user = existing_user
     else:
-        # Create new user
+        # Create new user — email is trusted because it came from an org invite link
         user = User(
             id=str(uuid.uuid4()),
             name=body.name,
@@ -283,6 +297,7 @@ async def accept_invite(
             role=invited_member_role(role),
             institution_id=institution_id,
             institution_role=InstitutionRole.MEMBER,
+            email_verified=True,
         )
         db.add(user)
         await db.commit()
@@ -296,6 +311,8 @@ async def accept_invite(
         name=user.name,
         institution_id=user.institution_id,
         institution_role=user.institution_role,
+        email_verified=user.email_verified,
+        onboarding_complete=user.onboarding_complete,
     )
 
 
@@ -308,6 +325,11 @@ async def me(current_user: User = Depends(get_current_user)):
         "role": current_user.role,
         "institution_id": current_user.institution_id,
         "institution_role": current_user.institution_role,
+        "email_verified": current_user.email_verified,
+        "onboarding_complete": current_user.onboarding_complete,
+        "ai_usage_cents": current_user.ai_usage_cents,
+        "ai_usage_limit_cents": current_user.ai_usage_limit_cents,
+        "google_access_token": "connected" if current_user.google_access_token else None,
     }
 
 
@@ -325,3 +347,170 @@ async def list_institutions(
     result = await db.execute(query.limit(20))
     insts = result.scalars().all()
     return [{"id": i.id, "name": i.name, "domain": i.domain} for i in insts]
+
+
+# ── Email verification ─────────────────────────────────────────────────────────
+
+class SendVerificationBody(BaseModel):
+    email: Optional[str] = None  # if omitted, use current_user.email
+
+
+async def _send_verification_email(user_id: str, email: str, name: str, db: AsyncSession | None = None) -> None:
+    """Create a verification token and send the email.
+
+    If db is None (or the caller passes the request-scoped session from a
+    background task), a fresh session is opened so we don't race with the
+    request teardown.
+    """
+    import uuid as _uuid
+
+    async def _do(session: AsyncSession) -> None:
+        token = secrets.token_urlsafe(32)
+        expires = datetime.utcnow() + timedelta(hours=24)
+        verification = EmailVerification(
+            id=str(_uuid.uuid4()),
+            user_id=user_id,
+            token=token,
+            expires_at=expires,
+        )
+        session.add(verification)
+        try:
+            await session.commit()
+        except Exception:
+            await session.rollback()
+            return
+
+        app_url = settings.base_url or "http://localhost:3000"
+        verify_url = f"{app_url}/verify-email?token={token}"
+        html = f"""
+        <p>Hi {name},</p>
+        <p>Please verify your email address by clicking the link below:</p>
+        <p><a href="{verify_url}">{verify_url}</a></p>
+        <p>This link expires in 24 hours.</p>
+        <p>If you did not create an account, you can ignore this email.</p>
+        """
+        await send_email(
+            to=email,
+            subject="Verify your Grant Engine email",
+            html=html,
+            text=f"Verify your email: {verify_url}",
+        )
+
+    if db is not None:
+        await _do(db)
+    else:
+        async with AsyncSessionLocal() as session:
+            await _do(session)
+
+
+@router.post("/send-verification")
+async def send_verification(
+    current_user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+):
+    """Send (or resend) a verification email to the current user."""
+    if current_user.email_verified:
+        return {"message": "Email already verified"}
+    await _send_verification_email(current_user.id, current_user.email, current_user.name, db)
+    return {"message": "Verification email sent"}
+
+
+@router.get("/verify-email")
+async def verify_email(
+    token: str,
+    db: AsyncSession = Depends(get_db),
+):
+    """Verify an email address via token."""
+    result = await db.execute(
+        select(EmailVerification).where(EmailVerification.token == token)
+    )
+    verification = result.scalar_one_or_none()
+    if not verification:
+        raise HTTPException(400, "Invalid verification token")
+    if verification.used_at:
+        raise HTTPException(400, "Verification token already used")
+    if verification.expires_at < datetime.utcnow():
+        raise HTTPException(400, "Verification token expired")
+
+    verification.used_at = datetime.utcnow()
+    user_result = await db.execute(select(User).where(User.id == verification.user_id))
+    user = user_result.scalar_one_or_none()
+    if user:
+        user.email_verified = True
+    await db.commit()
+    return {"message": "Email verified successfully"}
+
+
+# ── Google OAuth ───────────────────────────────────────────────────────────────
+
+@router.get("/google")
+async def google_oauth_start(current_user: User = Depends(get_current_user)):
+    """Redirect URL for starting Google OAuth flow."""
+    if not settings.google_client_id:
+        raise HTTPException(400, "Google OAuth not configured")
+    redirect_uri = f"{settings.base_url}/api/v1/auth/google/callback"
+    scope = "openid email https://www.googleapis.com/auth/drive.file https://www.googleapis.com/auth/documents"
+    url = (
+        "https://accounts.google.com/o/oauth2/v2/auth"
+        f"?client_id={settings.google_client_id}"
+        f"&redirect_uri={redirect_uri}"
+        f"&response_type=code"
+        f"&scope={scope}"
+        f"&access_type=offline"
+        f"&prompt=consent"
+        f"&state={current_user.id}"
+    )
+    return {"authorization_url": url}
+
+
+@router.get("/google/callback")
+async def google_oauth_callback(
+    code: str,
+    state: str,
+    db: AsyncSession = Depends(get_db),
+):
+    """Handle Google OAuth callback and store tokens."""
+    import httpx
+    if not settings.google_client_id or not settings.google_client_secret:
+        raise HTTPException(400, "Google OAuth not configured")
+
+    redirect_uri = f"{settings.base_url}/api/v1/auth/google/callback"
+    token_url = "https://oauth2.googleapis.com/token"
+    async with httpx.AsyncClient() as client:
+        resp = await client.post(token_url, data={
+            "code": code,
+            "client_id": settings.google_client_id,
+            "client_secret": settings.google_client_secret,
+            "redirect_uri": redirect_uri,
+            "grant_type": "authorization_code",
+        })
+        resp.raise_for_status()
+        token_data = resp.json()
+
+    user_result = await db.execute(select(User).where(User.id == state))
+    user = user_result.scalar_one_or_none()
+    if not user:
+        raise HTTPException(404, "User not found")
+
+    user.google_access_token = token_data.get("access_token")
+    user.google_refresh_token = token_data.get("refresh_token")
+    if token_data.get("expires_in"):
+        user.google_token_expiry = datetime.utcnow() + timedelta(seconds=token_data["expires_in"])
+
+    await db.commit()
+    # Redirect user back to settings
+    from fastapi.responses import RedirectResponse
+    return RedirectResponse(url=f"{settings.base_url}/settings?google_connected=true")
+
+
+@router.post("/google/disconnect")
+async def google_disconnect(
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    """Disconnect Google account."""
+    current_user.google_access_token = None
+    current_user.google_refresh_token = None
+    current_user.google_token_expiry = None
+    await db.commit()
+    return {"message": "Google account disconnected"}

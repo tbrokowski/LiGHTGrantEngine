@@ -1,5 +1,6 @@
 'use client';
 
+import { ChevronRight } from 'lucide-react';
 import { WorkspaceSummary, MILESTONE_STATUSES, getStatusStyle, getStatusLabel } from './types';
 
 interface Props {
@@ -90,7 +91,7 @@ export default function WorkspaceDashboard({ summary, onTabChange }: Props) {
           <span className={`inline-flex items-center px-2.5 py-1 rounded-full text-xs font-medium bg-indigo-100 text-indigo-700`}>
             {summary.budget_status.replace(/_/g, ' ')}
           </span>
-          <button onClick={() => onTabChange('budget')} className="text-xs text-indigo-600 hover:underline block">View budget →</button>
+          <button onClick={() => onTabChange('budget')} className="flex items-center gap-0.5 text-xs text-indigo-600 hover:underline">View budget <ChevronRight className="w-3.5 h-3.5" /></button>
         </div>
       </div>
 
@@ -128,8 +129,8 @@ export default function WorkspaceDashboard({ summary, onTabChange }: Props) {
               </div>
             ))}
           </div>
-          <button onClick={() => onTabChange('tasks')} className="text-xs text-indigo-600 hover:underline mt-3 block">
-            View timeline →
+          <button onClick={() => onTabChange('tasks')} className="flex items-center gap-0.5 text-xs text-indigo-600 hover:underline mt-3">
+            View timeline <ChevronRight className="w-3.5 h-3.5" />
           </button>
         </div>
       )}

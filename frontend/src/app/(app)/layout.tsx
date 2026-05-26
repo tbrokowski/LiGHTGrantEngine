@@ -1,5 +1,8 @@
 import Sidebar from '@/components/layout/Sidebar';
 import TopBar from '@/components/layout/TopBar';
+import EmailVerificationBanner from '@/components/auth/EmailVerificationBanner';
+import OnboardingGate from '@/components/onboarding/OnboardingGate';
+import UsageLimitWarning from '@/components/ai/UsageLimitWarning';
 import { AuthProvider } from '@/lib/auth';
 
 export default function AppLayout({ children }: { children: React.ReactNode }) {
@@ -9,6 +12,9 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
         <Sidebar />
         <div className="flex-1 flex flex-col min-w-0 overflow-hidden">
           <TopBar />
+          <EmailVerificationBanner />
+          <UsageLimitWarning />
+          <OnboardingGate />
           <main className="flex-1 overflow-y-auto">
             {children}
           </main>

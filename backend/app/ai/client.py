@@ -112,6 +112,62 @@ async def chat_complete_stream(
             yield delta.content
 
 
+# Cost rates in micro-dollars per token (multiply by 0.0001 to get cents)
+# gpt-4o-mini: $0.15/1M prompt, $0.60/1M completion → 0.015 and 0.06 cents per 1K tokens
+_MODEL_RATES: dict[str, dict[str, float]] = {
+    "gpt-4o-mini": {"prompt": 0.000015, "completion": 0.00006},   # cents per token
+    "gpt-4o": {"prompt": 0.0005, "completion": 0.0015},
+    "gpt-4": {"prompt": 0.003, "completion": 0.006},
+    "default": {"prompt": 0.000015, "completion": 0.00006},
+}
+
+
+def estimate_cost_cents(model: str, prompt_tokens: int, completion_tokens: int) -> int:
+    """Estimate cost in cents (integer) for a completion call."""
+    rates = _MODEL_RATES.get(model, _MODEL_RATES["default"])
+    total_cents = (prompt_tokens * rates["prompt"]) + (completion_tokens * rates["completion"])
+    return max(0, round(total_cents))
+
+
+@retry(stop=stop_after_attempt(3), wait=wait_exponential(multiplier=1, min=2, max=10))
+async def chat_complete_tracked(
+    messages: list[dict],
+    temperature: Optional[float] = None,
+    max_tokens: Optional[int] = None,
+    agent_name: Optional[str] = None,
+    json_mode: bool = False,
+) -> tuple[str, int, int, int]:
+    """
+    Like chat_complete but also returns (content, prompt_tokens, completion_tokens, cost_cents).
+    Use this for AI calls that need billing tracking.
+    """
+    ai_cfg = settings.ai
+    gen = ai_cfg.generation
+    agent_overrides = ai_cfg.agent_overrides.get(agent_name or "", {})
+    temp = temperature if temperature is not None else agent_overrides.get("temperature", gen.temperature)
+    tokens = max_tokens if max_tokens is not None else agent_overrides.get("max_tokens", gen.max_tokens)
+
+    kwargs: dict[str, Any] = {
+        "model": ai_cfg.model,
+        "messages": messages,
+        "temperature": temp,
+        "max_tokens": tokens,
+        "top_p": gen.top_p,
+    }
+    if json_mode:
+        kwargs["response_format"] = {"type": "json_object"}
+
+    async with _get_client() as client:
+        response = await client.chat.completions.create(**kwargs)
+
+    content = response.choices[0].message.content or ""
+    usage = response.usage
+    pt = usage.prompt_tokens if usage else 0
+    ct = usage.completion_tokens if usage else 0
+    cost = estimate_cost_cents(ai_cfg.model, pt, ct)
+    return content, pt, ct, cost
+
+
 async def get_embedding(text: str) -> list[float]:
     """
     Get a text embedding from the configured embeddings endpoint.

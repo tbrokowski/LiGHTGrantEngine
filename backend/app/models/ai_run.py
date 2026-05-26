@@ -1,7 +1,7 @@
 import uuid
 from datetime import datetime
 from enum import Enum
-from sqlalchemy import String, DateTime, Text, JSON, ForeignKey, func
+from sqlalchemy import String, DateTime, Text, JSON, Integer, ForeignKey, func
 from sqlalchemy.orm import Mapped, mapped_column
 from app.database import Base
 
@@ -24,6 +24,7 @@ class AgentType(str, Enum):
     MEMORY_AGENT = "memory_agent"
     FIT_SCORER = "fit_scorer"
     CALL_SUMMARIZER = "call_summarizer"
+    PROFILE_AUGMENTER = "profile_augmenter"
 
 
 class AIRunStatus(str, Enum):
@@ -48,5 +49,8 @@ class AIRun(Base):
     warnings: Mapped[list] = mapped_column(JSON, default=list)
     model_used: Mapped[str | None] = mapped_column(String(200))
     tokens_used: Mapped[int | None] = mapped_column()
+    cost_cents: Mapped[int] = mapped_column(Integer, default=0, server_default="0", nullable=False)
+    prompt_tokens: Mapped[int] = mapped_column(Integer, default=0, server_default="0", nullable=False)
+    completion_tokens: Mapped[int] = mapped_column(Integer, default=0, server_default="0", nullable=False)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
     completed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))

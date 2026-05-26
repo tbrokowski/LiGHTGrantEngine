@@ -22,6 +22,7 @@ from app.models.user import User
 from app.routers.auth import get_current_user
 from app.ai.rag.retriever import retrieve_similar_sections, retrieve_reusable_language
 from app.auth.permissions import get_user_grant_ids, is_org_admin, get_redis
+from app.ai.billing import check_ai_limit, accumulate_ai_usage
 import redis.asyncio as aioredis
 
 router = APIRouter()
@@ -107,6 +108,7 @@ async def analyze_call(
     current_user: User = Depends(get_current_user),
 ):
     """Agent 1: Analyze a grant call document."""
+    await check_ai_limit(current_user, db)
     from app.ai.agents.call_analyzer import analyze_call as _analyze
 
     opp = await _get_opportunity(req.opportunity_id, db)
@@ -227,6 +229,7 @@ async def go_no_go(
     redis: aioredis.Redis = Depends(get_redis),
 ):
     """Agent 3: Generate a go/no-go decision memo."""
+    await check_ai_limit(current_user, db)
     from app.ai.agents.go_no_go import generate_go_no_go_memo
 
     opp = await _get_opportunity(req.opportunity_id, db)
@@ -264,6 +267,7 @@ async def proposal_outline(
     redis: aioredis.Redis = Depends(get_redis),
 ):
     """Agent 4: Generate a proposal outline for an active grant."""
+    await check_ai_limit(current_user, db)
     from app.ai.agents.proposal_architect import generate_proposal_outline
 
     grant = await _get_grant(req.grant_id, db)
@@ -298,6 +302,7 @@ async def draft_section(
     redis: aioredis.Redis = Depends(get_redis),
 ):
     """Agent 5: Draft a proposal section with RAG context."""
+    await check_ai_limit(current_user, db)
     from app.ai.agents.section_drafter import draft_section as _draft
 
     grant = await _get_grant(req.grant_id, db)
@@ -343,6 +348,7 @@ async def compliance_check(
     current_user: User = Depends(get_current_user),
 ):
     """Agent 6: Check proposal compliance against call requirements."""
+    await check_ai_limit(current_user, db)
     from app.ai.agents.compliance_checker import check_compliance
 
     grant = await _get_grant(req.grant_id, db)
@@ -624,6 +630,7 @@ async def editor_chat_stream(
     Streaming chat endpoint for the interactive grant editor.
     Sends SSE chunks. Integrates full document context + RAG retrieval.
     """
+    await check_ai_limit(current_user, db)
     from app.ai.client import chat_complete_stream
 
     grant = await _get_grant(req.grant_id, db)
@@ -705,6 +712,7 @@ async def improve_selection(
     One-shot endpoint: improve or rewrite a highlighted selection of text.
     Returns the improved text directly (non-streaming).
     """
+    await check_ai_limit(current_user, db)
     from app.ai.client import chat_complete
 
     grant = await _get_grant(req.grant_id, db)

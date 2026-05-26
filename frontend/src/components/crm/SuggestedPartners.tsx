@@ -1,6 +1,7 @@
 'use client';
 import { useState } from 'react';
 import Link from 'next/link';
+import { Sparkles, Check } from 'lucide-react';
 import { partners as partnersApi } from '@/lib/api';
 import PartnerTagChip from './PartnerTagChip';
 
@@ -76,7 +77,7 @@ export default function SuggestedPartners({ entityType, entityId }: SuggestedPar
     <div className="bg-white border border-gray-200 rounded-2xl p-5">
       <div className="flex items-center justify-between mb-3">
         <div className="flex items-center gap-2">
-          <span className="text-lg">🤖</span>
+          <Sparkles className="w-4 h-4 text-purple-500" />
           <h3 className="text-base font-semibold text-gray-900">Suggested Partners</h3>
         </div>
         {!loaded && (
@@ -154,7 +155,7 @@ export default function SuggestedPartners({ entityType, entityId }: SuggestedPar
                   View Profile
                 </Link>
                 {linkedIds.has(rec.partner_id) ? (
-                  <span className="text-xs text-green-600 px-2 py-1">✓ Linked</span>
+                  <span className="flex items-center gap-1 text-xs text-green-600 px-2 py-1"><Check className="w-3 h-3" /> Linked</span>
                 ) : (
                   <button
                     onClick={() => handleLink(rec)}

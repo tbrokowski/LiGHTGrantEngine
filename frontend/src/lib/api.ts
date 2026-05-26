@@ -54,6 +54,21 @@ export const auth = {
   validateInvite: (token: string) => api.get(`/auth/invite/${token}`),
   acceptInvite: (data: { token: string; name: string; password: string }) =>
     api.post('/auth/accept-invite', data),
+  sendVerification: () => api.post('/auth/send-verification'),
+  verifyEmail: (token: string) => api.get('/auth/verify-email', { params: { token } }),
+  googleStart: () => api.get('/auth/google'),
+  googleDisconnect: () => api.post('/auth/google/disconnect'),
+};
+
+// ── Users ────────────────────────────────────────────────────────────────────
+// (additional methods beyond the existing users object)
+export const userOnboarding = {
+  complete: (data: {
+    grant_categories?: string[];
+    keywords?: string[];
+    workflow_type?: string;
+  }) => api.post('/users/me/onboarding/complete', data),
+  getAiUsage: () => api.get('/users/me/ai-usage'),
 };
 
 // ── Organizations ─────────────────────────────────────────────────────────────
@@ -87,6 +102,10 @@ export const organizations = {
     api.patch(`/organizations/${orgId}/sources/${sourceId}`, { is_enabled: isEnabled }),
   addOrgSource: (orgId: string, data: Record<string, unknown>) =>
     api.post(`/organizations/${orgId}/sources`, data),
+  completeOnboarding: (id: string, data: Record<string, unknown>) =>
+    api.post(`/organizations/${id}/onboarding/complete`, data),
+  aiAugmentProfile: (id: string, data: { raw_interests: string; org_name?: string; description?: string }) =>
+    api.post(`/organizations/${id}/onboarding/ai-augment`, data),
 };
 
 // ── Users ────────────────────────────────────────────────────────────────────
@@ -106,6 +125,7 @@ export const opportunities = {
   queue: (params?: { unread_only?: boolean }) => api.get('/opportunities/queue', { params }),
   queueCounts: () => api.get('/opportunities/queue/counts'),
   shortlist: () => api.get('/opportunities/shortlist'),
+  graphData: (params?: Record<string, unknown>) => api.get('/opportunities/graph-data', { params }),
   get: (id: string) => api.get(`/opportunities/${id}`),
   create: (data: Record<string, unknown>) => api.post('/opportunities/', data),
   update: (id: string, data: Record<string, unknown>) => api.patch(`/opportunities/${id}`, data),
@@ -122,6 +142,10 @@ export const grants = {
   get: (id: string) => api.get(`/grants/${id}`),
   create: (data: Record<string, unknown>) => api.post('/grants/', data),
   update: (id: string, data: Record<string, unknown>) => api.patch(`/grants/${id}`, data),
+  updateStage: (id: string, data: { stage: string; notes?: string }) =>
+    api.patch(`/grants/${id}/stage`, data),
+  updateReporting: (id: string, deadlines: unknown[]) =>
+    api.patch(`/grants/${id}/reporting`, { reporting_deadlines: deadlines }),
   archive: (id: string) => api.post(`/grants/${id}/archive`),
   delete: (id: string) => api.delete(`/grants/${id}`),
   promote: (id: string) => api.post(`/grants/${id}/promote`),
@@ -225,6 +249,10 @@ export const grants = {
     api.get(`/grants/${grantId}/docs/status`),
   createGoogleDoc: (grantId: string) =>
     api.post(`/grants/${grantId}/docs/create`),
+  linkGoogleDoc: (grantId: string, docUrl: string) =>
+    api.post(`/grants/${grantId}/docs/link`, { doc_url: docUrl }),
+  unlinkGoogleDoc: (grantId: string) =>
+    api.delete(`/grants/${grantId}/docs/unlink`),
   pushToGoogleDoc: (grantId: string) =>
     api.post(`/grants/${grantId}/docs/push`),
   pullFromGoogleDoc: (grantId: string) =>
@@ -291,6 +319,8 @@ export const sources = {
   runNow: (id: string) => api.post(`/sources/${id}/run-now`),
   runAll: () => api.post('/sources/run-all'),
   getRuns: (id: string) => api.get(`/sources/${id}/runs`),
+  recentRuns: (limit = 20) => api.get(`/sources/status/recent-runs?limit=${limit}`),
+  summary: () => api.get('/sources/status/summary'),
 };
 
 // ── Tasks ────────────────────────────────────────────────────────────────────

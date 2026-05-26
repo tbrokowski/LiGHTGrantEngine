@@ -198,6 +198,9 @@ if [[ -n "$SEED_XLSX_PATH" ]]; then
     docker compose exec backend python /app/scripts/seed_opportunities.py /tmp/Opportunities.xlsx
 fi
 
+echo "==> Bootstrapping institution + surfacing opportunities to review queue"
+docker compose exec backend sh -c "cd /app && python scripts/bootstrap_institution.py"
+
 echo ""
 echo "============================================="
 echo "  Startup complete"

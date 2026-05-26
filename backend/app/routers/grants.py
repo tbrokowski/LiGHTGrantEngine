@@ -2,7 +2,7 @@
 import uuid
 import logging
 from typing import Optional
-from datetime import date
+from datetime import date, datetime
 
 from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel
@@ -85,6 +85,22 @@ class GrantUpdate(BaseModel):
     award_amount: Optional[float] = None
     notes: Optional[str] = None
     call_requirements: Optional[str] = None
+    reporting_deadlines: Optional[list] = None
+
+
+class StageTransition(BaseModel):
+    stage: str  # proposal | pending | active | rejected | archived
+    notes: Optional[str] = None
+
+
+# Valid stage transitions
+_STAGE_TRANSITIONS: dict[str, list[str]] = {
+    "proposal": ["pending", "archived"],
+    "pending": ["active", "rejected", "proposal"],
+    "active": ["archived"],
+    "rejected": ["archived"],
+    "archived": [],
+}
 
 
 class SectionUpsert(BaseModel):
@@ -137,6 +153,7 @@ FULL_PROPOSAL_TEMPLATE = [
 @router.get("/")
 async def list_grants(
     status: Optional[str] = None,
+    stage: Optional[str] = None,
     include_inactive: bool = False,
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(get_current_user),
@@ -150,6 +167,8 @@ async def list_grants(
         ActiveGrant.is_personal.is_(True),
         ActiveGrant.created_by_id == current_user.id,
     )
+    if stage:
+        personal_q = personal_q.where(ActiveGrant.grant_stage == stage)
     personal_result = await db.execute(personal_q)
     for g in personal_result.scalars().all():
         grants_out.append(_grant_summary(g))
@@ -161,7 +180,9 @@ async def list_grants(
             ActiveGrant.is_personal.is_(False),
         )
 
-        if status:
+        if stage:
+            q = q.where(ActiveGrant.grant_stage == stage)
+        elif status:
             q = q.where(ActiveGrant.status == status)
         elif not include_inactive:
             q = q.where(ActiveGrant.status.notin_(INACTIVE_STATUSES))
@@ -265,6 +286,21 @@ async def update_grant(
         setattr(grant, k, v)
     await db.commit()
     return {"id": grant.id, "status": grant.status}
+
+
+@router.patch("/{grant_id}/reporting")
+async def update_reporting_deadlines(
+    grant_id: str,
+    data: dict,
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+    _: None = Depends(grant_access(require_editor=True)),
+):
+    """Update reporting deadlines (list of {title, date, status} objects)."""
+    grant = await _get_grant_or_404(grant_id, db)
+    grant.reporting_deadlines = data.get("reporting_deadlines", [])
+    await db.commit()
+    return {"id": grant.id, "reporting_deadlines": grant.reporting_deadlines}
 
 
 @router.post("/{grant_id}/archive")
@@ -430,6 +466,47 @@ async def promote_grant(
     return {"id": grant.id, "is_personal": grant.is_personal, "institution_id": grant.institution_id}
 
 
+@router.patch("/{grant_id}/stage")
+async def transition_stage(
+    grant_id: str,
+    data: StageTransition,
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+    _: None = Depends(grant_access(require_editor=True)),
+):
+    """Transition a grant to a new pipeline stage."""
+    grant = await _get_grant_or_404(grant_id, db)
+    current_stage = grant.grant_stage or "proposal"
+    new_stage = data.stage
+
+    allowed = _STAGE_TRANSITIONS.get(current_stage, [])
+    if new_stage not in allowed:
+        raise HTTPException(
+            400,
+            f"Cannot transition from '{current_stage}' to '{new_stage}'. "
+            f"Allowed transitions: {allowed}",
+        )
+
+    grant.grant_stage = new_stage
+    if data.notes:
+        grant.stage_notes = data.notes
+
+    now = datetime.utcnow()
+    if new_stage == "pending":
+        grant.submitted_at = now
+        # Auto-set status to submitted
+        grant.status = "submitted"
+    elif new_stage in ("active",):
+        grant.decision_at = now
+        grant.status = "awarded"
+    elif new_stage == "rejected":
+        grant.decision_at = now
+        grant.status = "rejected"
+
+    await db.commit()
+    return {"id": grant.id, "grant_stage": grant.grant_stage, "status": grant.status}
+
+
 @router.post("/{grant_id}/tasks", status_code=201)
 async def create_task(
     grant_id: str,
@@ -579,10 +656,19 @@ def _grant_summary(g: ActiveGrant) -> dict:
     return {
         "id": g.id, "title": g.title, "funder": g.funder,
         "status": g.status, "priority": g.priority,
+        "grant_stage": g.grant_stage,
         "external_deadline": str(g.external_deadline) if g.external_deadline else None,
         "internal_deadline": str(g.internal_deadline) if g.internal_deadline else None,
+        "submitted_at": str(g.submitted_at) if g.submitted_at else None,
+        "decision_at": str(g.decision_at) if g.decision_at else None,
         "pi_name": g.pi_name, "themes": g.themes,
         "is_personal": g.is_personal,
+        "program": g.program,
+        "requested_amount": g.requested_amount,
+        "currency": g.currency,
+        "award_amount": g.award_amount,
+        "created_at": str(g.created_at) if g.created_at else None,
+        "updated_at": str(g.updated_at) if g.updated_at else None,
     }
 
 

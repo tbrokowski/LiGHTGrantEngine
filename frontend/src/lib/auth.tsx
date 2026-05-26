@@ -9,6 +9,11 @@ export interface AuthUser {
   role: string;
   institution_id: string | null;
   institution_role: string | null;
+  email_verified: boolean;
+  onboarding_complete: boolean;
+  ai_usage_cents: number;
+  ai_usage_limit_cents: number;
+  google_access_token?: string | null;
 }
 
 interface AuthContextValue {

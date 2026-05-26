@@ -24,6 +24,8 @@ export default function FocusReview({
   const opp = items[currentIndex];
   const unreadCount = items.filter(o => !o.is_read).length;
   const prevIndexRef = useRef(currentIndex);
+  const didResetRef = useRef(false);
+  const markReadOnUnmountRef = useRef<{ items: Opportunity[]; onMarkRead?: (id: string) => void | Promise<void> }>({ items, onMarkRead });
 
   const goNext = useCallback(() => {
     if (currentIndex < items.length - 1) onIndexChange(currentIndex + 1);
@@ -51,14 +53,20 @@ export default function FocusReview({
     prevIndexRef.current = currentIndex;
   }, [currentIndex, items, onMarkRead]);
 
+  // Keep the unmount-ref current without triggering re-renders
+  useEffect(() => {
+    markReadOnUnmountRef.current = { items, onMarkRead };
+  }, [items, onMarkRead]);
+
   useEffect(() => {
     return () => {
       const idx = prevIndexRef.current;
-      if (items[idx] && !items[idx].is_read) {
-        onMarkRead?.(items[idx].id);
+      const { items: latestItems, onMarkRead: latestMarkRead } = markReadOnUnmountRef.current;
+      if (latestItems[idx] && !latestItems[idx].is_read) {
+        latestMarkRead?.(latestItems[idx].id);
       }
     };
-  }, [items, onMarkRead]);
+  }, []); // intentionally empty — runs only on unmount
 
   if (items.length === 0) {
     return (
@@ -68,10 +76,17 @@ export default function FocusReview({
     );
   }
 
-  if (!opp) {
-    onIndexChange(0);
-    return null;
-  }
+  // Reset to first card if index goes out of bounds (must be in an effect, not render)
+  useEffect(() => {
+    if (!opp && items.length > 0 && !didResetRef.current) {
+      didResetRef.current = true;
+      onIndexChange(0);
+    } else if (opp) {
+      didResetRef.current = false;
+    }
+  }, [opp, items.length, onIndexChange]);
+
+  if (!opp) return null;
 
   return (
     <div className="max-w-2xl mx-auto">
