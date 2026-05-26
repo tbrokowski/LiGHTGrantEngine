@@ -17,8 +17,13 @@ def _load_yaml(path: str = "/app/config.yaml") -> dict:
     if not config_path.exists():
         # Try relative path for local dev
         config_path = Path(__file__).parent.parent.parent / "config.yaml"
-    with open(config_path) as f:
-        return yaml.safe_load(f)
+    try:
+        with open(config_path) as f:
+            data = yaml.safe_load(f)
+            # yaml.safe_load returns None for empty files
+            return data if isinstance(data, dict) else {}
+    except FileNotFoundError:
+        return {}
 
 
 _raw: dict = _load_yaml()
@@ -104,25 +109,25 @@ class Settings(BaseSettings):
     2. Environment variables (override config.yaml)
     """
     # Database
-    database_url: str = _raw.get("database", {}).get("url", "postgresql://light:light@localhost:5432/light_grants")
+    database_url: str = (_raw.get("database") or {}).get("url", "postgresql://light:light@localhost:5432/light_grants")
 
     # Redis
-    redis_url: str = _raw.get("redis", {}).get("url", "redis://localhost:6379/0")
+    redis_url: str = (_raw.get("redis") or {}).get("url", "redis://localhost:6379/0")
 
     # Auth
-    secret_key: str = _raw.get("auth", {}).get("secret_key", "CHANGE_ME")
+    secret_key: str = (_raw.get("auth") or {}).get("secret_key", "CHANGE_ME")
     algorithm: str = "HS256"
     access_token_expire_minutes: int = 480
 
     # App
-    app_name: str = _raw.get("app", {}).get("name", "LiGHT Grant System")
-    environment: str = _raw.get("app", {}).get("environment", "development")
-    debug: bool = _raw.get("app", {}).get("debug", False)
-    log_level: str = _raw.get("app", {}).get("log_level", "INFO")
-    base_url: str = _raw.get("app", {}).get("base_url", "http://localhost:3000")
-    api_url: str = _raw.get("app", {}).get("api_url", "http://localhost:8000")
-    default_page_size: int = _raw.get("app", {}).get("default_page_size", 25)
-    max_page_size: int = _raw.get("app", {}).get("max_page_size", 200)
+    app_name: str = (_raw.get("app") or {}).get("name", "LiGHT Grant System")
+    environment: str = (_raw.get("app") or {}).get("environment", "development")
+    debug: bool = (_raw.get("app") or {}).get("debug", False)
+    log_level: str = (_raw.get("app") or {}).get("log_level", "INFO")
+    base_url: str = (_raw.get("app") or {}).get("base_url", "http://localhost:3000")
+    api_url: str = (_raw.get("app") or {}).get("api_url", "http://localhost:8000")
+    default_page_size: int = (_raw.get("app") or {}).get("default_page_size", 25)
+    max_page_size: int = (_raw.get("app") or {}).get("max_page_size", 200)
 
     # OpenAI API key override
     openai_api_key: Optional[str] = None
@@ -152,38 +157,38 @@ class Settings(BaseSettings):
 
     @property
     def ai(self) -> AIConfig:
-        cfg = _raw.get("ai", {})
+        cfg = dict(_raw.get("ai") or {})
         if self.openai_api_key:
             cfg["api_key"] = self.openai_api_key
         return AIConfig(**cfg)
 
     @property
     def fit_scoring(self) -> FitScoringConfig:
-        return FitScoringConfig(**_raw.get("fit_scoring", {}))
+        return FitScoringConfig(**(_raw.get("fit_scoring") or {}))
 
     @property
     def rag(self) -> RAGConfig:
-        return RAGConfig(**_raw.get("rag", {}))
+        return RAGConfig(**(_raw.get("rag") or {}))
 
     @property
     def notifications(self) -> NotificationConfig:
-        return NotificationConfig(**_raw.get("notifications", {}))
+        return NotificationConfig(**(_raw.get("notifications") or {}))
 
     @property
     def google_drive(self) -> GoogleDriveConfig:
-        return GoogleDriveConfig(**_raw.get("google_drive", {}))
+        return GoogleDriveConfig(**(_raw.get("google_drive") or {}))
 
     @property
     def citations(self) -> CitationsConfig:
-        return CitationsConfig(**_raw.get("citations", {}))
+        return CitationsConfig(**(_raw.get("citations") or {}))
 
     @property
     def discovery(self) -> dict:
-        return _raw.get("discovery", {})
+        return _raw.get("discovery") or {}
 
     @property
     def parsing(self) -> dict:
-        return _raw.get("parsing", {})
+        return _raw.get("parsing") or {}
 
 
 @lru_cache()

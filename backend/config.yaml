@@ -1,0 +1,191 @@
+ai:
+  base_url: https://api.openai.com/v1
+  model: gpt-4o-mini
+  api_key: EMPTY  # set OPENAI_API_KEY env var — this field is overridden by config.py
+  embeddings:
+    base_url: https://api.openai.com/v1
+    model: text-embedding-3-small
+    dimension: 1536
+  generation:
+    temperature: 0.3
+    max_tokens: 4096
+    top_p: 0.9
+    timeout_seconds: 120
+  agent_overrides:
+    call_analyzer:
+      temperature: 0.1
+      max_tokens: 2048
+    go_no_go:
+      temperature: 0.2
+      max_tokens: 1500
+    section_drafter:
+      temperature: 0.5
+      max_tokens: 4096
+    compliance_checker:
+      temperature: 0.1
+      max_tokens: 2048
+    fit_scorer:
+      temperature: 0.1
+      max_tokens: 512
+    opportunity_summarizer:
+      temperature: 0.3
+      max_tokens: 2000
+    style_profiler:
+      temperature: 0.2
+      max_tokens: 2048
+    style_reviewer:
+      temperature: 0.1
+      max_tokens: 2048
+    grant_reviewer:
+      temperature: 0.2
+      max_tokens: 3000
+    intro_architect:
+      temperature: 0.5
+      max_tokens: 4096
+    citation_agent:
+      temperature: 0.1
+      max_tokens: 2048
+    grant_writer:
+      temperature: 0.4
+      max_tokens: 4096
+    ai_scraper:
+      temperature: 0.0
+      max_tokens: 4096
+database:
+  url: postgresql://light:light@localhost:5432/light_grants
+  vector_extension: true
+  vector_index_type: ivfflat
+redis:
+  url: redis://localhost:6379/0
+discovery:
+  default_schedule: weekly
+  daily_scan_hour: 6
+  weekly_scan_day: monday
+  weekly_scan_hour: 5
+  max_concurrent_scrapers: 5
+  duplicate_title_similarity: 0.9
+  duplicate_url_exact: true
+  auto_queue_threshold: 40
+fit_scoring:
+  thematic_alignment: 35
+  eligibility_match: 20
+  deadline_feasibility: 10
+  strategic_funder_priority: 10
+  award_size: 10
+  geographic_relevance: 10
+  partner_feasibility: 5
+  tiers:
+    high_priority: 80
+    worth_reviewing: 60
+    watchlist: 40
+  team_themes:
+  - AI for health
+  - clinical AI
+  - global health
+  - digital health
+  - LMIC
+  - humanitarian
+  - machine learning
+  - medical imaging
+  - POCUS
+  - ultrasound
+  - tuberculosis
+  - TB
+  - maternal health
+  - newborn health
+  - implementation science
+  - responsible AI
+  - open source AI
+  - foundation models
+  - RAG
+  - federated learning
+  - edge AI
+  team_geographies:
+  - sub-Saharan Africa
+  - South Asia
+  - Southeast Asia
+  - LMIC
+  - Switzerland
+  - Europe
+  - global
+  institution_type: academic
+  institution_name: EPFL
+google_drive:
+  enabled: false
+  service_account_file: /path/to/service-account.json
+  parent_folder_id: ''
+  share_with: []
+notifications:
+  email:
+    enabled: true
+    smtp_host: smtp.gmail.com
+    smtp_port: 587
+    from_address: grants@your-institution.ch
+  slack:
+    enabled: false
+    webhook_url: ''
+    channel: '#grants'
+  teams:
+    enabled: false
+    webhook_url: ''
+  reminders:
+    external_deadline:
+    - 60
+    - 30
+    - 14
+    - 7
+    - 3
+    - 1
+    internal_deadline:
+    - 14
+    - 7
+    - 3
+    - 1
+    task_deadline:
+    - 7
+    - 3
+    - 1
+    - 0
+rag:
+  chunk_size: 800
+  chunk_overlap: 100
+  top_k: 8
+  keyword_weight: 0.3
+  vector_weight: 0.7
+  min_similarity: 0.6
+  enforce_ai_permissions: true
+citations:
+  openalex_base_url: https://api.openalex.org
+  pubmed_email: team@light.epfl.ch
+  max_results_per_query: 5
+  cache_ttl_hours: 24
+parsing:
+  supported_formats:
+  - pdf
+  - docx
+  - txt
+  - html
+  - csv
+  max_file_size_mb: 50
+  ocr_enabled: false
+  auto_parse_on_upload: true
+  auto_embed_on_parse: true
+auth:
+  secret_key: CHANGE_ME_IN_PRODUCTION
+  algorithm: HS256
+  access_token_expire_minutes: 480
+  google_oauth:
+    enabled: false
+    client_id: ''
+    redirect_uri: http://localhost:3000/auth/callback
+  allow_local_accounts: true
+app:
+  name: LiGHT Grant System
+  short_name: LiGHT
+  base_url: http://localhost:3000
+  api_url: http://localhost:8000
+  environment: development
+  debug: false
+  log_level: INFO
+  default_page_size: 25
+  max_page_size: 200
