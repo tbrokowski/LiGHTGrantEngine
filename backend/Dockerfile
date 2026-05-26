@@ -9,13 +9,11 @@ RUN apt-get update && apt-get install -y \
     libxfixes3 libxrandr2 libgbm1 libasound2 \
     && rm -rf /var/lib/apt/lists/*
 
-# Build context must be repo root (Railway default). Do not use root requirements.txt
-# — it only contains "-r backend/requirements.txt" for local tooling.
-COPY backend/requirements.txt .
+COPY requirements.txt .
 RUN pip install --no-cache-dir -r requirements.txt
 
 RUN playwright install chromium
 
-COPY backend/ .
+COPY . .
 
 EXPOSE 8000
