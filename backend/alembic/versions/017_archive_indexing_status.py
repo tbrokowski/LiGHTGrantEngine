@@ -3,7 +3,7 @@ from alembic import op
 import sqlalchemy as sa
 
 revision = "017_archive_indexing_status"
-down_revision = "016_grant_surfacing"
+down_revision = "016"
 branch_labels = None
 depends_on = None
 
