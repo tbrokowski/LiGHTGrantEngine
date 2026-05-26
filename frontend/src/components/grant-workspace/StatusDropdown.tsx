@@ -79,9 +79,10 @@ interface Props {
   grantId: string;
   status: string;
   onStatusChange: (newStatus: string) => void;
+  readOnly?: boolean;
 }
 
-export default function StatusDropdown({ grantId, status, onStatusChange }: Props) {
+export default function StatusDropdown({ grantId, status, onStatusChange, readOnly = false }: Props) {
   const [open, setOpen] = useState(false);
   const [saving, setSaving] = useState(false);
   const ref = useRef<HTMLDivElement>(null);
@@ -97,7 +98,7 @@ export default function StatusDropdown({ grantId, status, onStatusChange }: Prop
   }, []);
 
   const handleSelect = async (newStatus: string) => {
-    if (newStatus === status) { setOpen(false); return; }
+    if (readOnly || newStatus === status) { setOpen(false); return; }
     setSaving(true);
     setOpen(false);
     onStatusChange(newStatus); // optimistic
@@ -115,9 +116,9 @@ export default function StatusDropdown({ grantId, status, onStatusChange }: Prop
   return (
     <div className="relative" ref={ref}>
       <button
-        onClick={() => setOpen((o) => !o)}
-        disabled={saving}
-        className={`inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-xs font-medium transition-opacity ${style.badge} ${saving ? 'opacity-60' : 'hover:opacity-80'} cursor-pointer select-none`}
+        onClick={() => !readOnly && setOpen((o) => !o)}
+        disabled={saving || readOnly}
+        className={`inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-xs font-medium transition-opacity ${style.badge} ${saving ? 'opacity-60' : readOnly ? 'cursor-default' : 'hover:opacity-80 cursor-pointer'} select-none`}
       >
         <span className={`w-1.5 h-1.5 rounded-full ${style.dot}`} />
         {getLabel(status)}

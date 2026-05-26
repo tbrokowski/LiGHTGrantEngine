@@ -1,18 +1,17 @@
 'use client';
 import { useEffect, useState, useCallback, Suspense } from 'react';
+import dynamic from 'next/dynamic';
 import { useParams, useSearchParams } from 'next/navigation';
 import Link from 'next/link';
 import { grants } from '@/lib/api';
-import GrantEditor from '@/components/grant-editor/GrantEditor';
+import { useAuth } from '@/lib/auth';
 import type { EditorSection } from '@/lib/types';
 import WorkspaceNav, { WorkspaceTab } from '@/components/grant-workspace/WorkspaceNav';
 import WorkspaceDashboard from '@/components/grant-workspace/WorkspaceDashboard';
-import TasksHub from '@/components/grant-workspace/TasksHub';
 import FileLibrary from '@/components/grant-workspace/FileLibrary';
 import BudgetPanel from '@/components/grant-workspace/BudgetPanel';
 import MoreTab from '@/components/grant-workspace/MoreTab';
 import CollaboratorsPanel from '@/components/grant-workspace/CollaboratorsPanel';
-import TaskTimeline from '@/components/grant-workspace/TaskTimeline';
 import StatusDropdown from '@/components/grant-workspace/StatusDropdown';
 import type {
   WorkspaceSummary,
@@ -20,6 +19,21 @@ import type {
   WorkspaceFile,
   BudgetTracker,
 } from '@/components/grant-workspace/types';
+
+const GrantEditor = dynamic(() => import('@/components/grant-editor/GrantEditor'), {
+  loading: () => <div className="flex justify-center py-24 text-sm text-gray-400">Loading editor…</div>,
+  ssr: false,
+});
+
+const TasksHub = dynamic(() => import('@/components/grant-workspace/TasksHub'), {
+  loading: () => <div className="flex justify-center py-24 text-sm text-gray-400">Loading tasks…</div>,
+  ssr: false,
+});
+
+const TaskTimeline = dynamic(() => import('@/components/grant-workspace/TaskTimeline'), {
+  loading: () => <div className="flex justify-center py-8 text-sm text-gray-400">Loading timeline…</div>,
+  ssr: false,
+});
 
 export type { EditorSection };
 
@@ -55,6 +69,7 @@ interface GrantDetail {
   style_profile?: Record<string, unknown>;
   writing_phase?: string;
   last_review?: Record<string, unknown>;
+  is_personal?: boolean;
 }
 
 const PRIORITY_COLORS: Record<string, string> = {
@@ -98,10 +113,13 @@ function GrantDetailContent() {
   const { id } = useParams<{ id: string }>();
   const searchParams = useSearchParams();
   const initialTab = (searchParams.get('tab') as WorkspaceTab) ?? 'overview';
+  const { user } = useAuth();
 
   const [grant, setGrant] = useState<GrantDetail | null>(null);
   const [loading, setLoading] = useState(true);
   const [activeTab, setActiveTab] = useState<WorkspaceTab>(initialTab);
+  const [myGrantRole, setMyGrantRole] = useState<string | null>(null);
+  const [promoting, setPromoting] = useState(false);
 
   // Workspace data
   const [summary, setSummary] = useState<WorkspaceSummary | null>(null);
@@ -151,6 +169,17 @@ function GrantDetailContent() {
     grants.getBudget(id).then((r) => setBudget(r.data)).catch(console.error);
   }, [id]);
 
+  // Load grant member role for the current user
+  useEffect(() => {
+    if (!id || !user) return;
+    grants.listMembers(id)
+      .then(r => {
+        const me = (r.data as Array<{ user_id: string | null; role: string }>).find(m => m.user_id === user.id);
+        setMyGrantRole(me?.role ?? null);
+      })
+      .catch(() => {});
+  }, [id, user]);
+
   // Load grant, summary, and tasks on mount
   useEffect(() => {
     fetchGrant();
@@ -175,6 +204,20 @@ function GrantDetailContent() {
     setGrant((g) => g ? { ...g, status: newStatus } : g);
   }, []);
 
+  async function handlePromote() {
+    if (!id) return;
+    if (!confirm('Promote this draft to your organization\'s portfolio? It will become visible to other org members.')) return;
+    setPromoting(true);
+    try {
+      await grants.promote(id);
+      fetchGrant();
+    } catch {
+      alert('Failed to promote. Make sure you belong to an organization.');
+    } finally {
+      setPromoting(false);
+    }
+  }
+
   if (loading) {
     return <div className="flex justify-center py-24 text-sm text-gray-400">Loading…</div>;
   }
@@ -188,9 +231,31 @@ function GrantDetailContent() {
   }
 
   const isEditorTab = activeTab === 'editor';
+  const isOrgAdmin = user?.institution_role === 'admin';
+  const isGrantEditor = isOrgAdmin || user?.role === 'grant_lead' || myGrantRole === 'editor' || myGrantRole === 'owner';
 
   return (
     <div className={isEditorTab ? 'h-full flex flex-col' : 'flex flex-col min-h-0'}>
+      {/* ── Personal draft banner ───────────────────────────────────────────── */}
+      {grant.is_personal && (
+        <div className="shrink-0 flex items-center justify-between gap-4 px-6 py-2.5 bg-amber-50 border-b border-amber-100 text-sm">
+          <div className="flex items-center gap-2 text-amber-700">
+            <svg className="w-4 h-4 shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+              <path strokeLinecap="round" strokeLinejoin="round" d="M12 15v2m-6 4h12a2 2 0 002-2v-6a2 2 0 00-2-2H6a2 2 0 00-2 2v6a2 2 0 002 2zm10-10V7a4 4 0 00-8 0v4h8z" />
+            </svg>
+            <span className="font-medium">Personal draft</span>
+            <span className="text-amber-600 font-normal">— only you can see this grant. Promote it to share with your organization.</span>
+          </div>
+          <button
+            onClick={handlePromote}
+            disabled={promoting}
+            className="shrink-0 px-3 py-1.5 text-xs font-medium bg-amber-700 hover:bg-amber-800 disabled:opacity-50 text-white rounded-lg transition-colors"
+          >
+            {promoting ? 'Promoting…' : 'Promote to organization'}
+          </button>
+        </div>
+      )}
+
       {/* ── Header ─────────────────────────────────────────────────────────── */}
       <div className="px-6 pt-5 pb-0 border-b border-gray-200 bg-white shrink-0">
         <div className="max-w-7xl mx-auto">
@@ -258,6 +323,7 @@ function GrantDetailContent() {
                 grantId={id}
                 status={grant.status}
                 onStatusChange={handleStatusChange}
+                readOnly={!isGrantEditor}
               />
             </div>
           </div>

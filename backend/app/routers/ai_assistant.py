@@ -21,6 +21,8 @@ from app.models.ai_run import AIRun, AgentType, AIRunStatus
 from app.models.user import User
 from app.routers.auth import get_current_user
 from app.ai.rag.retriever import retrieve_similar_sections, retrieve_reusable_language
+from app.auth.permissions import get_user_grant_ids, is_org_admin, get_redis
+import redis.asyncio as aioredis
 
 router = APIRouter()
 
@@ -81,6 +83,19 @@ class RecommendPartnersRequest(BaseModel):
     entity_type: str  # "opportunity" or "grant"
     entity_id: str
     top_n: int = 10
+
+
+# ── Permission helper ─────────────────────────────────────────────────────────
+
+async def _get_accessible_grant_ids(
+    current_user: User,
+    db: AsyncSession,
+    redis: aioredis.Redis,
+) -> Optional[list[str]]:
+    """Return accessible grant IDs for RAG filtering (None for org admins = no filter)."""
+    if is_org_admin(current_user):
+        return None
+    return await get_user_grant_ids(current_user, db, redis)
 
 
 # ── Endpoints ─────────────────────────────────────────────────────────────────
@@ -156,18 +171,21 @@ async def go_no_go(
     req: GoNoGoRequest,
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(get_current_user),
+    redis: aioredis.Redis = Depends(get_redis),
 ):
     """Agent 3: Generate a go/no-go decision memo."""
     from app.ai.agents.go_no_go import generate_go_no_go_memo
 
     opp = await _get_opportunity(req.opportunity_id, db)
     run_id = await _start_ai_run(db, current_user.id, "opportunity", req.opportunity_id, AgentType.GO_NO_GO)
+    accessible_grant_ids = await _get_accessible_grant_ids(current_user, db, redis)
 
     # Retrieve similar past grants
     similar = await retrieve_similar_sections(
         query=f"{opp.title} {opp.description or ''}",
         db=db,
         top_k=5,
+        accessible_grant_ids=accessible_grant_ids,
     )
 
     call_analysis = {"thematic_areas": opp.thematic_areas, "risks": [], "budget_constraints": f"{opp.award_min}-{opp.award_max} {opp.currency or ''}",
@@ -190,14 +208,21 @@ async def proposal_outline(
     req: OutlineRequest,
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(get_current_user),
+    redis: aioredis.Redis = Depends(get_redis),
 ):
     """Agent 4: Generate a proposal outline for an active grant."""
     from app.ai.agents.proposal_architect import generate_proposal_outline
 
     grant = await _get_grant(req.grant_id, db)
     run_id = await _start_ai_run(db, current_user.id, "grant", req.grant_id, AgentType.PROPOSAL_ARCHITECT)
+    accessible_grant_ids = await _get_accessible_grant_ids(current_user, db, redis)
 
-    similar = await retrieve_similar_sections(query=f"{grant.title} {grant.funder or ''}", db=db, top_k=8)
+    similar = await retrieve_similar_sections(
+        query=f"{grant.title} {grant.funder or ''}",
+        db=db,
+        top_k=8,
+        accessible_grant_ids=accessible_grant_ids,
+    )
 
     result = await generate_proposal_outline(
         opportunity_title=grant.title,
@@ -217,12 +242,14 @@ async def draft_section(
     req: DraftSectionRequest,
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(get_current_user),
+    redis: aioredis.Redis = Depends(get_redis),
 ):
     """Agent 5: Draft a proposal section with RAG context."""
     from app.ai.agents.section_drafter import draft_section as _draft
 
     grant = await _get_grant(req.grant_id, db)
     run_id = await _start_ai_run(db, current_user.id, "grant", req.grant_id, AgentType.SECTION_DRAFTER)
+    accessible_grant_ids = await _get_accessible_grant_ids(current_user, db, redis)
 
     # Retrieve relevant prior sections and reusable language
     retrieved_sections = await retrieve_similar_sections(
@@ -230,6 +257,7 @@ async def draft_section(
         db=db,
         section_type=req.section_type,
         top_k=4,
+        accessible_grant_ids=accessible_grant_ids,
     )
     reusable_lang = await retrieve_reusable_language(
         query=req.call_requirements,
@@ -282,8 +310,10 @@ async def find_similar_grants(
     req: SimilarGrantsRequest,
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(get_current_user),
+    redis: aioredis.Redis = Depends(get_redis),
 ):
     """Agent 2: Retrieve similar past grants using RAG."""
+    accessible_grant_ids = await _get_accessible_grant_ids(current_user, db, redis)
     results = await retrieve_similar_sections(
         query=req.query,
         db=db,
@@ -291,6 +321,7 @@ async def find_similar_grants(
         funder=req.funder,
         outcome=req.outcome_filter,
         top_k=req.top_k,
+        accessible_grant_ids=accessible_grant_ids,
     )
     return {"results": results, "count": len(results), "model": _model_name()}
 
@@ -534,6 +565,7 @@ async def editor_chat_stream(
     req: EditorChatRequest,
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(get_current_user),
+    redis: aioredis.Redis = Depends(get_redis),
 ):
     """
     Streaming chat endpoint for the interactive grant editor.
@@ -542,6 +574,7 @@ async def editor_chat_stream(
     from app.ai.client import chat_complete_stream
 
     grant = await _get_grant(req.grant_id, db)
+    accessible_grant_ids = await _get_accessible_grant_ids(current_user, db, redis)
 
     # Build RAG context from the last user message
     last_user_msg = next((m.content for m in reversed(req.messages) if m.role == "user"), "")
@@ -551,6 +584,7 @@ async def editor_chat_stream(
             query=f"{last_user_msg} {req.active_section or ''}",
             db=db,
             top_k=3,
+            accessible_grant_ids=accessible_grant_ids,
         )
         reusable = await retrieve_reusable_language(
             query=last_user_msg,
@@ -612,6 +646,7 @@ async def improve_selection(
     req: ImproveSelectionRequest,
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(get_current_user),
+    redis: aioredis.Redis = Depends(get_redis),
 ):
     """
     One-shot endpoint: improve or rewrite a highlighted selection of text.
@@ -620,12 +655,14 @@ async def improve_selection(
     from app.ai.client import chat_complete
 
     grant = await _get_grant(req.grant_id, db)
+    accessible_grant_ids = await _get_accessible_grant_ids(current_user, db, redis)
 
     rag_sections = await retrieve_similar_sections(
         query=f"{req.instruction} {req.selected_text[:300]}",
         db=db,
         section_type=req.section_type,
         top_k=3,
+        accessible_grant_ids=accessible_grant_ids,
     )
 
     prior_str = ""

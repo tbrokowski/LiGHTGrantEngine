@@ -2,6 +2,7 @@
 import { useEffect, useState, useRef, useCallback } from 'react';
 import Link from 'next/link';
 import { archive } from '@/lib/api';
+import { useAuth } from '@/lib/auth';
 
 interface ArchiveEntry {
   id: string;
@@ -341,6 +342,9 @@ function NewArchiveModal({ onClose, onCreated }: { onClose: () => void; onCreate
 }
 
 export default function ArchivePage() {
+  const { user } = useAuth();
+  const canUpload = user?.role === 'admin' || user?.role === 'grant_lead' || user?.institution_role === 'admin';
+
   const [entries, setEntries] = useState<ArchiveEntry[]>([]);
   const [loading, setLoading] = useState(true);
   const [search, setSearch] = useState('');
@@ -409,15 +413,17 @@ export default function ArchivePage() {
             onChange={e => setSearch(e.target.value)}
             className="border border-gray-200 rounded-lg px-3 py-1.5 text-sm w-52 focus:outline-none focus:ring-1 focus:ring-gray-400 bg-white"
           />
-          <button
-            onClick={() => setShowModal(true)}
-            className="flex items-center gap-1.5 px-4 py-2 text-sm font-medium text-white bg-gray-900 rounded-xl hover:bg-gray-700 transition-colors whitespace-nowrap"
-          >
-            <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2.5}>
-              <path strokeLinecap="round" strokeLinejoin="round" d="M12 4v16m8-8H4" />
-            </svg>
-            Add entry
-          </button>
+          {canUpload && (
+            <button
+              onClick={() => setShowModal(true)}
+              className="flex items-center gap-1.5 px-4 py-2 text-sm font-medium text-white bg-gray-900 rounded-xl hover:bg-gray-700 transition-colors whitespace-nowrap"
+            >
+              <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2.5}>
+                <path strokeLinecap="round" strokeLinejoin="round" d="M12 4v16m8-8H4" />
+              </svg>
+              Add entry
+            </button>
+          )}
         </div>
       </div>
 

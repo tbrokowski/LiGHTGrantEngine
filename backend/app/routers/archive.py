@@ -12,10 +12,11 @@ from app.database import get_db
 from app.models.archive import GrantArchive
 from app.models.section import ProposalSection
 from app.models.document import Document, DocumentType, ProcessingStatus
-from app.models.user import User
+from app.models.user import User, UserRole
 from app.routers.auth import get_current_user
 from app.services.archive_ingestion import create_archive_and_ingest, reindex_archive_style
 from app.config import get_settings
+from app.auth.permissions import require_role
 
 router = APIRouter()
 
@@ -50,7 +51,7 @@ def _archive_dict(archive: GrantArchive, section_count: int = 0) -> dict:
     return data
 
 
-@router.get("/")
+@router.get("/")  # all org members can read the archive
 async def list_archive(
     funder: Optional[str] = None,
     outcome: Optional[str] = None,
@@ -81,7 +82,7 @@ async def list_archive(
     return [_archive_dict(a, counts.get(a.id, 0)) for a in archives]
 
 
-@router.post("/", status_code=201)
+@router.post("/", status_code=201, dependencies=[Depends(require_role(UserRole.GRANT_LEAD))])
 async def create_archive_entry(
     data: ArchiveCreate,
     db: AsyncSession = Depends(get_db),
@@ -93,7 +94,7 @@ async def create_archive_entry(
     return {"id": archive.id}
 
 
-@router.post("/create-with-document", status_code=201)
+@router.post("/create-with-document", status_code=201, dependencies=[Depends(require_role(UserRole.GRANT_LEAD))])
 async def create_archive_with_document(
     proposal_file: UploadFile = File(...),
     title: str = Form(...),
@@ -189,7 +190,7 @@ async def get_archive(
     return data
 
 
-@router.patch("/{archive_id}")
+@router.patch("/{archive_id}", dependencies=[Depends(require_role(UserRole.GRANT_LEAD))])
 async def update_archive(
     archive_id: str,
     data: dict,
@@ -212,7 +213,7 @@ class ArchiveIngestRequest(BaseModel):
     submitted_text: Optional[str] = None
 
 
-@router.post("/{archive_id}/ingest")
+@router.post("/{archive_id}/ingest", dependencies=[Depends(require_role(UserRole.GRANT_LEAD))])
 async def ingest_archive(
     archive_id: str,
     body: ArchiveIngestRequest = ArchiveIngestRequest(),
@@ -257,7 +258,7 @@ async def ingest_archive(
     return await reindex_archive_style(db, archive, pseudo)
 
 
-@router.post("/{archive_id}/reindex-style")
+@router.post("/{archive_id}/reindex-style", dependencies=[Depends(require_role(UserRole.GRANT_LEAD))])
 async def reindex_archive_style_endpoint(
     archive_id: str,
     body: ArchiveIngestRequest = ArchiveIngestRequest(),

@@ -1,6 +1,10 @@
 'use client';
 import { useEffect, useState } from 'react';
-import { sources } from '@/lib/api';
+import { sources, auth } from '@/lib/api';
+import { MembersPanel } from '@/components/settings/MembersPanel';
+import { JoinRequestsPanel } from '@/components/settings/JoinRequestsPanel';
+import { InvitePanel } from '@/components/settings/InvitePanel';
+import { ProfilePanel } from '@/components/settings/ProfilePanel';
 
 interface Source {
   id: string;
@@ -149,7 +153,18 @@ function ScraperConfigPanel({ sourceType, config, onChange }: ScraperConfigPanel
   return null;
 }
 
+type Tab = 'sources' | 'organization' | 'profile';
+
 export default function SettingsPage() {
+  const [activeTab, setActiveTab] = useState<Tab>('sources');
+  const [currentUser, setCurrentUser] = useState<{ institution_id?: string; institution_role?: string } | null>(null);
+
+  useEffect(() => {
+    auth.me().then(r => setCurrentUser(r.data)).catch(() => {});
+  }, []);
+
+  const isAdmin = currentUser?.institution_role === 'admin';
+
   const [sourceList, setSourceList] = useState<Source[]>([]);
   const [loading, setLoading] = useState(true);
   const [running, setRunning] = useState<string | null>(null);
@@ -258,11 +273,58 @@ export default function SettingsPage() {
 
   const selectedTypeInfo = SOURCE_TYPES.find(t => t.value === newType);
 
+  const tabs: { id: Tab; label: string; adminOnly?: boolean }[] = [
+    { id: 'sources', label: 'Data Sources', adminOnly: true },
+    { id: 'organization', label: 'Organization', adminOnly: true },
+    { id: 'profile', label: 'My Profile' },
+  ];
+
   return (
     <div className="px-8 py-8 max-w-5xl mx-auto">
+      <div className="mb-6">
+        <h1 className="text-2xl font-semibold text-gray-900">Settings</h1>
+        <p className="text-sm text-gray-500 mt-1">Manage your account and organization</p>
+      </div>
+
+      {/* Tab bar */}
+      <div className="border-b border-gray-200 mb-8">
+        <nav className="-mb-px flex gap-6">
+          {tabs
+            .filter(t => !t.adminOnly || isAdmin)
+            .map(t => (
+              <button
+                key={t.id}
+                onClick={() => setActiveTab(t.id)}
+                className={`pb-3 text-sm font-medium border-b-2 transition-colors ${
+                  activeTab === t.id
+                    ? 'border-gray-900 text-gray-900'
+                    : 'border-transparent text-gray-500 hover:text-gray-700'
+                }`}
+              >
+                {t.label}
+              </button>
+            ))}
+        </nav>
+      </div>
+
+      {/* Profile tab */}
+      {activeTab === 'profile' && <ProfilePanel />}
+
+      {/* Organization tab */}
+      {activeTab === 'organization' && currentUser?.institution_id && (
+        <div className="space-y-10">
+          <MembersPanel institutionId={currentUser.institution_id} />
+          <JoinRequestsPanel institutionId={currentUser.institution_id} />
+          <InvitePanel institutionId={currentUser.institution_id} />
+        </div>
+      )}
+
+      {/* Data Sources tab */}
+      {activeTab === 'sources' && (
+      <div>
       <div className="mb-8 flex items-start justify-between gap-4">
         <div>
-          <h1 className="text-2xl font-semibold text-gray-900">Settings</h1>
+          <h2 className="text-lg font-semibold text-gray-900">Data Sources</h2>
           <p className="text-sm text-gray-500 mt-1">Manage grant discovery sources</p>
         </div>
         <div className="flex flex-col items-end gap-1.5">
@@ -515,6 +577,8 @@ export default function SettingsPage() {
           </div>
         </div>
       </div>
+      </div>
+      )}
     </div>
   );
 }

@@ -3,6 +3,7 @@ import { useState, useEffect } from 'react';
 import { useRouter } from 'next/navigation';
 import Link from 'next/link';
 import { auth } from '@/lib/api';
+import { setAuthSession } from '@/lib/auth-cookie';
 
 export default function LoginPage() {
   const router = useRouter();
@@ -23,7 +24,7 @@ export default function LoginPage() {
     setLoading(true);
     try {
       const res = await auth.login(email, password);
-      localStorage.setItem('access_token', res.data.access_token);
+      setAuthSession(res.data.access_token);
       router.push('/dashboard');
     } catch {
       setError('Invalid email or password.');

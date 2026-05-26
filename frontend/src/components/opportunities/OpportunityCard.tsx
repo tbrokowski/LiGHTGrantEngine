@@ -1,10 +1,14 @@
 'use client';
 import Link from 'next/link';
-import ReactMarkdown from 'react-markdown';
-import remarkGfm from 'remark-gfm';
+import dynamic from 'next/dynamic';
 import ScoreBadge from './ScoreBadge';
 import FunderLogo from './FunderLogo';
 import { formatDate, formatAward, PRIORITY_COLORS, PRIORITY_LABELS, type Opportunity } from './types';
+
+const MarkdownContent = dynamic(() => import('./MarkdownContent'), {
+  loading: () => <p className="text-sm text-gray-400">Loading…</p>,
+  ssr: false,
+});
 
 interface OpportunityCardProps {
   opp: Opportunity;
@@ -41,7 +45,7 @@ export default function OpportunityCard({ opp, onClick, selected, variant = 'def
       {variant === 'focus' ? (
         opp.description ? (
           <div className="text-sm text-gray-600 leading-relaxed mb-4 max-h-72 overflow-y-auto prose prose-sm prose-gray max-w-none [&_p]:my-2 [&_ul]:my-2 [&_ol]:my-2">
-            <ReactMarkdown remarkPlugins={[remarkGfm]}>{opp.description}</ReactMarkdown>
+            <MarkdownContent>{opp.description}</MarkdownContent>
           </div>
         ) : opp.short_summary ? (
           <p className="text-sm text-gray-500 leading-relaxed mb-4">{opp.short_summary}</p>

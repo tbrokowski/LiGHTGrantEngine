@@ -9,6 +9,7 @@ from app.database import Base
 
 
 class GrantMemberRole(str, Enum):
+    OWNER = "owner"
     EDITOR = "editor"
     VIEWER = "viewer"
 

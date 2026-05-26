@@ -23,11 +23,21 @@ from app.models.budget_tracker import BudgetTracker
 from app.models.activity_log import GrantActivityLog
 from app.models.grant_writing import GrantWritingConversation, GrantCitation
 from app.models.document import Document, DocumentType, ProcessingStatus
-from app.models.user import User, InstitutionRole
-from app.models.grant_member import GrantMember
+from app.models.user import User, UserRole, InstitutionRole
+from app.models.grant_member import GrantMember, GrantMemberRole, GrantMemberStatus
 from app.routers.auth import get_current_user
 from app.ai.context.grant_context import strip_html
 from app.services.archive_ingestion import reindex_archive_style
+from app.auth.permissions import (
+    grant_access,
+    require_role,
+    is_org_admin,
+    get_redis,
+    invalidate_permission_cache,
+    get_user_grant_ids,
+    _grant_role_rank,
+)
+import redis.asyncio as aioredis
 
 router = APIRouter()
 logger = logging.getLogger(__name__)
@@ -57,6 +67,7 @@ class GrantCreate(BaseModel):
     currency: Optional[str] = None
     themes: list[str] = []
     geographies: list[str] = []
+    is_personal: bool = False
 
 
 class GrantUpdate(BaseModel):
@@ -131,39 +142,52 @@ async def list_grants(
     current_user: User = Depends(get_current_user),
 ):
     from sqlalchemy import or_, cast, String
-    from sqlalchemy.dialects.postgresql import JSONB
 
-    q = select(ActiveGrant)
-    if status:
-        q = q.where(ActiveGrant.status == status)
-    elif not include_inactive:
-        q = q.where(ActiveGrant.status.notin_(INACTIVE_STATUSES))
+    grants_out = []
 
-    # Institution admins and system admins see all grants in their institution
-    is_admin = (
-        current_user.role == "admin"
-        or current_user.institution_role == InstitutionRole.ADMIN
+    # ── Personal drafts: only the creator sees their own personal grants ──
+    personal_q = select(ActiveGrant).where(
+        ActiveGrant.is_personal.is_(True),
+        ActiveGrant.created_by_id == current_user.id,
     )
+    personal_result = await db.execute(personal_q)
+    for g in personal_result.scalars().all():
+        grants_out.append(_grant_summary(g))
 
-    if not is_admin:
-        # Regular members see: grants they lead, are on the team, or are invited to
-        member_grant_ids_q = select(GrantMember.grant_id).where(
-            GrantMember.user_id == current_user.id
+    # ── Org grants: institution-scoped, is_personal=False ──
+    if current_user.institution_id:
+        q = select(ActiveGrant).where(
+            ActiveGrant.institution_id == current_user.institution_id,
+            ActiveGrant.is_personal.is_(False),
         )
-        member_grant_ids = (await db.execute(member_grant_ids_q)).scalars().all()
 
-        q = q.where(
-            or_(
-                ActiveGrant.internal_lead_id == current_user.id,
-                ActiveGrant.id.in_(member_grant_ids),
-                # proposal_team is a JSON array of user IDs
-                ActiveGrant.proposal_team.cast(String).contains(current_user.id),
+        if status:
+            q = q.where(ActiveGrant.status == status)
+        elif not include_inactive:
+            q = q.where(ActiveGrant.status.notin_(INACTIVE_STATUSES))
+
+        if not is_org_admin(current_user):
+            member_grant_ids_q = select(GrantMember.grant_id).where(
+                GrantMember.user_id == current_user.id,
+                GrantMember.status == GrantMemberStatus.ACCEPTED,
             )
-        )
+            member_grant_ids = (await db.execute(member_grant_ids_q)).scalars().all()
 
-    q = q.order_by(desc(ActiveGrant.external_deadline))
-    result = await db.execute(q)
-    return [_grant_summary(g) for g in result.scalars().all()]
+            q = q.where(
+                or_(
+                    ActiveGrant.internal_lead_id == current_user.id,
+                    ActiveGrant.created_by_id == current_user.id,
+                    ActiveGrant.id.in_(member_grant_ids),
+                    ActiveGrant.proposal_team.cast(String).contains(current_user.id),
+                )
+            )
+
+        q = q.order_by(desc(ActiveGrant.external_deadline))
+        result = await db.execute(q)
+        for g in result.scalars().all():
+            grants_out.append(_grant_summary(g))
+
+    return grants_out
 
 
 @router.post("/", status_code=201)
@@ -171,12 +195,48 @@ async def create_grant(
     data: GrantCreate,
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(get_current_user),
+    redis: aioredis.Redis = Depends(get_redis),
 ):
-    grant = ActiveGrant(id=str(uuid.uuid4()), internal_lead_id=current_user.id, **data.model_dump())
+    from app.auth.permissions import _role_rank
+
+    # Personal grants can be created by any authenticated user.
+    # Org grants require at least GRANT_LEAD role.
+    if not data.is_personal:
+        if _role_rank(current_user.role) < _role_rank(UserRole.GRANT_LEAD):
+            raise HTTPException(
+                status_code=403,
+                detail="Creating organization grants requires 'grant_lead' role or higher.",
+            )
+
+    grant_data = data.model_dump()
+    # Personal grants have no institution until promoted
+    institution_id = None if data.is_personal else current_user.institution_id
+
+    grant = ActiveGrant(
+        id=str(uuid.uuid4()),
+        internal_lead_id=current_user.id,
+        institution_id=institution_id,
+        created_by_id=current_user.id,
+        **grant_data,
+    )
     db.add(grant)
+    await db.flush()
+
+    # Creator gets owner membership
+    member = GrantMember(
+        id=str(uuid.uuid4()),
+        grant_id=grant.id,
+        user_id=current_user.id,
+        email=current_user.email,
+        role=GrantMemberRole.OWNER,
+        status=GrantMemberStatus.ACCEPTED,
+        invited_by_id=current_user.id,
+    )
+    db.add(member)
     await db.commit()
     await db.refresh(grant)
-    return {"id": grant.id}
+    await invalidate_permission_cache(current_user.id, redis)
+    return {"id": grant.id, "is_personal": grant.is_personal}
 
 
 @router.get("/{grant_id}")
@@ -184,6 +244,7 @@ async def get_grant(
     grant_id: str,
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(get_current_user),
+    _: None = Depends(grant_access()),
 ):
     grant = await _get_grant_or_404(grant_id, db)
     tasks_q = select(Task).where(Task.grant_id == grant_id)
@@ -197,6 +258,7 @@ async def update_grant(
     data: GrantUpdate,
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(get_current_user),
+    _: None = Depends(grant_access(require_editor=True)),
 ):
     grant = await _get_grant_or_404(grant_id, db)
     for k, v in data.model_dump(exclude_none=True).items():
@@ -210,6 +272,7 @@ async def archive_grant(
     grant_id: str,
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(get_current_user),
+    _: None = Depends(grant_access(require_editor=True)),
 ):
     """Move an active grant to the archive and close the workspace."""
     grant = await _get_grant_or_404(grant_id, db)
@@ -284,11 +347,84 @@ async def delete_grant(
     grant_id: str,
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(get_current_user),
+    redis: aioredis.Redis = Depends(get_redis),
 ):
-    """Permanently delete a grant workspace and all related data."""
-    await _get_grant_or_404(grant_id, db)
+    """Permanently delete a grant workspace and all related data. Requires owner or org_admin."""
+    grant = await _get_grant_or_404(grant_id, db)
+
+    # Personal grant: only the creator can delete
+    if grant.is_personal:
+        if grant.created_by_id != current_user.id:
+            raise HTTPException(403, "Only the creator can delete a personal grant.")
+    elif not is_org_admin(current_user):
+        result = await db.execute(
+            select(GrantMember).where(
+                GrantMember.grant_id == grant_id,
+                GrantMember.user_id == current_user.id,
+                GrantMember.status == GrantMemberStatus.ACCEPTED,
+            )
+        )
+        member = result.scalar_one_or_none()
+        if not member or _grant_role_rank(member.role) < _grant_role_rank(GrantMemberRole.OWNER):
+            raise HTTPException(403, "Only grant owners or org admins can delete a grant.")
+
     await _delete_grant_data(db, grant_id)
     await db.commit()
+    await invalidate_permission_cache(current_user.id, redis)
+
+
+@router.post("/{grant_id}/promote")
+async def promote_grant(
+    grant_id: str,
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+    redis: aioredis.Redis = Depends(get_redis),
+):
+    """Promote a personal grant draft to the organization's portfolio."""
+    grant = await _get_grant_or_404(grant_id, db)
+
+    if not grant.is_personal:
+        raise HTTPException(400, "This grant is already part of the organization portfolio.")
+
+    if grant.created_by_id != current_user.id:
+        raise HTTPException(403, "Only the grant creator can promote it.")
+
+    if not current_user.institution_id:
+        raise HTTPException(
+            400,
+            "You must belong to an organization to promote a grant to the portfolio.",
+        )
+
+    grant.institution_id = current_user.institution_id
+    grant.is_personal = False
+
+    # Ensure creator has OWNER GrantMember row
+    existing_member = (
+        await db.execute(
+            select(GrantMember).where(
+                GrantMember.grant_id == grant_id,
+                GrantMember.user_id == current_user.id,
+            )
+        )
+    ).scalar_one_or_none()
+
+    if not existing_member:
+        owner = GrantMember(
+            id=str(uuid.uuid4()),
+            grant_id=grant_id,
+            user_id=current_user.id,
+            email=current_user.email,
+            role=GrantMemberRole.OWNER,
+            status=GrantMemberStatus.ACCEPTED,
+            invited_by_id=current_user.id,
+        )
+        db.add(owner)
+
+    await db.commit()
+    await db.refresh(grant)
+    await invalidate_permission_cache(current_user.id, redis)
+
+    return {"id": grant.id, "is_personal": grant.is_personal, "institution_id": grant.institution_id}
 
 
 @router.post("/{grant_id}/tasks", status_code=201)
@@ -297,6 +433,7 @@ async def create_task(
     data: TaskCreateBody,
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(get_current_user),
+    _: None = Depends(grant_access(require_editor=True)),
 ):
     await _get_grant_or_404(grant_id, db)
     task = Task(id=str(uuid.uuid4()), grant_id=grant_id, created_by_id=current_user.id, **data.model_dump())
@@ -310,6 +447,7 @@ async def apply_task_template(
     grant_id: str,
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(get_current_user),
+    _: None = Depends(grant_access(require_editor=True)),
 ):
     await _get_grant_or_404(grant_id, db)
     created = []
@@ -333,6 +471,7 @@ async def get_sections(
     grant_id: str,
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(get_current_user),
+    _: None = Depends(grant_access()),
 ):
     """Return all editor sections for a grant as an ordered list."""
     grant = await _get_grant_or_404(grant_id, db)
@@ -348,6 +487,7 @@ async def upsert_section(
     data: SectionUpsert,
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(get_current_user),
+    _: None = Depends(grant_access(require_editor=True)),
 ):
     """Create or update a single section in the editor."""
     grant = await _get_grant_or_404(grant_id, db)
@@ -367,6 +507,7 @@ async def delete_section(
     section_id: str,
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(get_current_user),
+    _: None = Depends(grant_access(require_editor=True)),
 ):
     """Remove a section from the editor."""
     grant = await _get_grant_or_404(grant_id, db)
@@ -382,6 +523,7 @@ async def replace_all_sections(
     data: dict,
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(get_current_user),
+    _: None = Depends(grant_access(require_editor=True)),
 ):
     """Bulk-replace all editor sections (used for reorder / full save)."""
     grant = await _get_grant_or_404(grant_id, db)
@@ -397,6 +539,7 @@ async def update_task(
     data: dict,
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(get_current_user),
+    _: None = Depends(grant_access(require_editor=True)),
 ):
     result = await db.execute(select(Task).where(Task.id == task_id, Task.grant_id == grant_id))
     task = result.scalar_one_or_none()
@@ -456,6 +599,7 @@ def _grant_summary(g: ActiveGrant) -> dict:
         "external_deadline": str(g.external_deadline) if g.external_deadline else None,
         "internal_deadline": str(g.internal_deadline) if g.internal_deadline else None,
         "pi_name": g.pi_name, "themes": g.themes,
+        "is_personal": g.is_personal,
     }
 
 

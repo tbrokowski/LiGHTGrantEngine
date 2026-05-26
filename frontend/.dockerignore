@@ -1,0 +1,9 @@
+node_modules
+.next
+out
+*.tgz
+tsconfig.tsbuildinfo
+.git
+.DS_Store
+assets
+npm-debug.log*

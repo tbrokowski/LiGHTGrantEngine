@@ -26,6 +26,7 @@ api.interceptors.response.use(
   (err) => {
     if (err.response?.status === 401 && typeof window !== 'undefined') {
       localStorage.removeItem('access_token');
+      document.cookie = 'has_session=; path=/; max-age=0; SameSite=Strict';
       window.location.href = '/login';
     }
     return Promise.reject(err);
@@ -45,14 +46,45 @@ export const auth = {
     institution_id?: string;
     institution_name?: string;
     institution_domain?: string;
+    join_message?: string;
   }) => api.post('/auth/register', data),
   me: () => api.get('/auth/me'),
   searchInstitutions: (q?: string) => api.get('/auth/institutions', { params: { q } }),
+  validateInvite: (token: string) => api.get(`/auth/invite/${token}`),
+  acceptInvite: (data: { token: string; name: string; password: string }) =>
+    api.post('/auth/accept-invite', data),
+};
+
+// ── Organizations ─────────────────────────────────────────────────────────────
+export const organizations = {
+  list: (q?: string) => api.get('/organizations/', { params: { q } }),
+  get: (id: string) => api.get(`/organizations/${id}`),
+  create: (data: { name: string; domain?: string }) => api.post('/organizations/', data),
+  members: (id: string) => api.get(`/organizations/${id}/members`),
+  updateMember: (orgId: string, userId: string, data: { role: string }) =>
+    api.patch(`/organizations/${orgId}/members/${userId}`, data),
+  removeMember: (orgId: string, userId: string) =>
+    api.delete(`/organizations/${orgId}/members/${userId}`),
+  joinRequests: (id: string) => api.get(`/organizations/${id}/join-requests`),
+  approveRequest: (orgId: string, reqId: string) =>
+    api.post(`/organizations/${orgId}/join-requests/${reqId}/approve`),
+  rejectRequest: (orgId: string, reqId: string) =>
+    api.post(`/organizations/${orgId}/join-requests/${reqId}/reject`),
+  generateAccessCode: (id: string) =>
+    api.post(`/organizations/${id}/access-code/generate`),
+  joinByCode: (code: string) => api.post('/organizations/join-by-code', { code }),
+  invite: (orgId: string, data: { email: string; role: string }) =>
+    api.post(`/organizations/${orgId}/invite`, data),
+  requestToJoin: (orgId: string, message?: string) =>
+    api.post(`/organizations/${orgId}/join-requests`, { institution_id: orgId, message }),
 };
 
 // ── Users ────────────────────────────────────────────────────────────────────
 export const users = {
   list: () => api.get('/users/'),
+  get: (id: string) => api.get(`/users/${id}`),
+  update: (id: string, data: Record<string, unknown>) => api.patch(`/users/${id}`, data),
+  deactivate: (id: string) => api.delete(`/users/${id}`),
 };
 
 // ── Opportunities ────────────────────────────────────────────────────────────
@@ -79,6 +111,7 @@ export const grants = {
   update: (id: string, data: Record<string, unknown>) => api.patch(`/grants/${id}`, data),
   archive: (id: string) => api.post(`/grants/${id}/archive`),
   delete: (id: string) => api.delete(`/grants/${id}`),
+  promote: (id: string) => api.post(`/grants/${id}/promote`),
   applyTemplate: (grantId: string) => api.post(`/grants/${grantId}/apply-template`),
   // Editor sections
   getSections: (grantId: string) => api.get(`/grants/${grantId}/sections`),

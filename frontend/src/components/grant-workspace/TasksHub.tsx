@@ -1,14 +1,31 @@
 'use client';
 
 import { useState, useCallback, useEffect, useMemo } from 'react';
+import dynamic from 'next/dynamic';
 import TaskManager from './TaskManager';
-import KanbanBoard from './KanbanBoard';
-import TaskTimeline from './TaskTimeline';
-import GanttView from './GanttView';
 import ChecklistPanel from './ChecklistPanel';
-import WorkloadView from './WorkloadView';
 import type { Task, ChecklistItem, GanttItem } from './types';
 import { grants } from '@/lib/api';
+
+const KanbanBoard = dynamic(() => import('./KanbanBoard'), {
+  loading: () => <div className="flex justify-center py-12 text-sm text-gray-400">Loading board…</div>,
+  ssr: false,
+});
+
+const TaskTimeline = dynamic(() => import('./TaskTimeline'), {
+  loading: () => <div className="flex justify-center py-12 text-sm text-gray-400">Loading timeline…</div>,
+  ssr: false,
+});
+
+const GanttView = dynamic(() => import('./GanttView'), {
+  loading: () => <div className="flex justify-center py-12 text-sm text-gray-400">Loading gantt…</div>,
+  ssr: false,
+});
+
+const WorkloadView = dynamic(() => import('./WorkloadView'), {
+  loading: () => <div className="flex justify-center py-8 text-sm text-gray-400">Loading analytics…</div>,
+  ssr: false,
+});
 
 type HubView = 'board' | 'list' | 'timeline' | 'gantt' | 'checklist';
 

@@ -23,8 +23,10 @@ from datetime import datetime
 from app.models.user import User
 from app.routers.auth import get_current_user
 from app.services.citation_lookup import search_citations
+from app.auth.permissions import grant_access
 
-router = APIRouter()
+# All writing routes require at minimum editor access
+router = APIRouter(dependencies=[Depends(grant_access(require_editor=True))])
 orchestrator = GrantWritingOrchestrator()
 context_mgr = GrantContextManager()
 

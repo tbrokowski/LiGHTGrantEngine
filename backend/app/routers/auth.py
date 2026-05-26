@@ -15,6 +15,7 @@ from app.config import get_settings
 from app.database import get_db
 from app.models.user import User, UserRole, InstitutionRole
 from app.models.institution import Institution
+from app.models.org_join_request import OrgJoinRequest, JoinRequestStatus
 
 router = APIRouter()
 settings = get_settings()
@@ -31,6 +32,8 @@ class Token(BaseModel):
     name: str
     institution_id: Optional[str] = None
     institution_role: Optional[str] = None
+    # "active" | "pending_approval" — frontend uses this to show a waiting screen
+    account_status: str = "active"
 
 
 class TokenData(BaseModel):
@@ -41,9 +44,10 @@ class RegisterBody(BaseModel):
     name: str
     email: str
     password: str
-    institution_id: Optional[str] = None      # join existing institution
+    institution_id: Optional[str] = None       # request to join (creates OrgJoinRequest)
     institution_name: Optional[str] = None     # create new institution (becomes admin)
     institution_domain: Optional[str] = None   # optional domain when creating
+    join_message: Optional[str] = None         # optional message for join request
 
 
 def verify_password(plain: str, hashed: str) -> bool:
@@ -119,14 +123,11 @@ async def register(
 
     institution_id: Optional[str] = None
     institution_role: str = InstitutionRole.MEMBER
+    account_status = "active"
+    user_role = UserRole.CONTRIBUTOR
 
-    if body.institution_id:
-        inst = (await db.execute(select(Institution).where(Institution.id == body.institution_id))).scalar_one_or_none()
-        if not inst:
-            raise HTTPException(status_code=404, detail="Institution not found")
-        institution_id = inst.id
-        institution_role = InstitutionRole.MEMBER
-    elif body.institution_name:
+    if body.institution_name:
+        # Create a new organization — caller becomes org_admin
         inst = Institution(
             id=str(uuid.uuid4()),
             name=body.institution_name,
@@ -136,22 +137,148 @@ async def register(
         await db.flush()
         institution_id = inst.id
         institution_role = InstitutionRole.ADMIN
+        user_role = UserRole.GRANT_LEAD
+    elif body.institution_id:
+        # Join by search: create account + submit join request (pending approval)
+        inst = (await db.execute(select(Institution).where(Institution.id == body.institution_id))).scalar_one_or_none()
+        if not inst:
+            raise HTTPException(status_code=404, detail="Institution not found")
+        # User is created WITHOUT institution yet — pending approval
+        account_status = "pending_approval"
 
     user = User(
         id=str(uuid.uuid4()),
         name=body.name,
         email=body.email,
         hashed_password=get_password_hash(body.password),
-        role=UserRole.CONTRIBUTOR,
+        role=user_role,
         institution_id=institution_id,
         institution_role=institution_role,
     )
     db.add(user)
+    await db.flush()
+
+    if body.institution_id and account_status == "pending_approval":
+        # Create OrgJoinRequest
+        join_req = OrgJoinRequest(
+            id=str(uuid.uuid4()),
+            institution_id=body.institution_id,
+            user_id=user.id,
+            email=user.email,
+            name=user.name,
+            message=body.join_message,
+            status=JoinRequestStatus.PENDING,
+        )
+        db.add(join_req)
+
     await db.commit()
+
+    if institution_id and user_role == UserRole.GRANT_LEAD:
+        # Trigger org scaffold for newly created organizations
+        try:
+            from app.workers.celery_app import celery_app
+            celery_app.send_task(
+                "app.workers.org_tasks.scaffold_new_organization",
+                args=[institution_id, user.id],
+            )
+        except Exception:
+            pass
 
     token = create_access_token({"sub": user.id, "role": user.role})
     return Token(
         access_token=token,
+        token_type="bearer",
+        user_id=user.id,
+        role=user.role,
+        name=user.name,
+        institution_id=user.institution_id,
+        institution_role=user.institution_role,
+        account_status=account_status,
+    )
+
+
+class AcceptInviteBody(BaseModel):
+    token: str
+    name: str
+    password: str
+
+
+@router.get("/invite/{token}")
+async def validate_invite_token(
+    token: str,
+    db: AsyncSession = Depends(get_db),
+):
+    """Validate an org invite token, returning email/role/institution_name."""
+    credentials_exc = HTTPException(400, "Invalid or expired invite token")
+    try:
+        payload = jwt.decode(token, settings.secret_key, algorithms=[settings.algorithm])
+        if payload.get("sub") != "invite":
+            raise credentials_exc
+        institution_id = payload.get("institution_id")
+        email = payload.get("email")
+        role = payload.get("role")
+        if not institution_id or not email:
+            raise credentials_exc
+    except JWTError:
+        raise credentials_exc
+
+    inst = (await db.execute(select(Institution).where(Institution.id == institution_id))).scalar_one_or_none()
+    if not inst:
+        raise credentials_exc
+
+    return {"email": email, "role": role, "institution_id": institution_id, "institution_name": inst.name}
+
+
+@router.post("/accept-invite", response_model=Token, status_code=201)
+async def accept_invite(
+    body: AcceptInviteBody,
+    db: AsyncSession = Depends(get_db),
+):
+    """Accept an org invite: create account (or link existing) and join org directly."""
+    credentials_exc = HTTPException(400, "Invalid or expired invite token")
+    try:
+        payload = jwt.decode(body.token, settings.secret_key, algorithms=[settings.algorithm])
+        if payload.get("sub") != "invite":
+            raise credentials_exc
+        institution_id = payload.get("institution_id")
+        email = payload.get("email")
+        role = payload.get("role", UserRole.CONTRIBUTOR)
+        if not institution_id or not email:
+            raise credentials_exc
+    except JWTError:
+        raise credentials_exc
+
+    inst = (await db.execute(select(Institution).where(Institution.id == institution_id))).scalar_one_or_none()
+    if not inst:
+        raise HTTPException(404, "Organization not found")
+
+    # Check if user already exists
+    existing_user = (await db.execute(select(User).where(User.email == email))).scalar_one_or_none()
+    if existing_user:
+        # Link existing user to org
+        existing_user.institution_id = institution_id
+        existing_user.institution_role = InstitutionRole.MEMBER
+        if role and existing_user.role == UserRole.REVIEWER:
+            existing_user.role = role
+        await db.commit()
+        user = existing_user
+    else:
+        # Create new user
+        user = User(
+            id=str(uuid.uuid4()),
+            name=body.name,
+            email=email,
+            hashed_password=get_password_hash(body.password),
+            role=role or UserRole.CONTRIBUTOR,
+            institution_id=institution_id,
+            institution_role=InstitutionRole.MEMBER,
+        )
+        db.add(user)
+        await db.commit()
+
+    token_str = create_access_token({"sub": user.id, "role": user.role})
+    return Token(
+        access_token=token_str,
         token_type="bearer",
         user_id=user.id,
         role=user.role,

@@ -7,8 +7,9 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 from app.database import get_db
 from app.models.source import Source, SourceRun
-from app.models.user import User
+from app.models.user import User, UserRole
 from app.routers.auth import get_current_user
+from app.auth.permissions import require_org_admin
 
 router = APIRouter()
 
@@ -41,14 +42,14 @@ async def list_sources(db: AsyncSession = Depends(get_db), current_user: User = 
         "refresh_frequency": s.refresh_frequency, "is_high_priority": s.is_high_priority,
     } for s in sources]
 
-@router.post("/", status_code=201)
+@router.post("/", status_code=201, dependencies=[Depends(require_org_admin())])
 async def create_source(data: SourceCreate, db: AsyncSession = Depends(get_db), current_user: User = Depends(get_current_user)):
     source = Source(id=str(uuid.uuid4()), owner_id=current_user.id, **data.model_dump())
     db.add(source)
     await db.commit()
     return {"id": source.id}
 
-@router.post("/run-all")
+@router.post("/run-all", dependencies=[Depends(require_org_admin())])
 async def run_all_sources(bg: BackgroundTasks, db: AsyncSession = Depends(get_db), current_user: User = Depends(get_current_user)):
     """Queue an immediate scan of all active sources."""
     result = await db.execute(select(Source).where(Source.status == "active"))
@@ -57,7 +58,7 @@ async def run_all_sources(bg: BackgroundTasks, db: AsyncSession = Depends(get_db
     bg.add_task(_trigger_all_sources_scan)
     return {"message": f"Scan queued for {count} active source{'s' if count != 1 else ''}", "queued": count}
 
-@router.patch("/{source_id}")
+@router.patch("/{source_id}", dependencies=[Depends(require_org_admin())])
 async def update_source(source_id: str, data: SourceUpdate, db: AsyncSession = Depends(get_db), current_user: User = Depends(get_current_user)):
     result = await db.execute(select(Source).where(Source.id == source_id))
     source = result.scalar_one_or_none()
@@ -68,7 +69,7 @@ async def update_source(source_id: str, data: SourceUpdate, db: AsyncSession = D
     await db.commit()
     return {"id": source.id}
 
-@router.post("/{source_id}/run-now")
+@router.post("/{source_id}/run-now", dependencies=[Depends(require_org_admin())])
 async def run_source_now(source_id: str, bg: BackgroundTasks, db: AsyncSession = Depends(get_db), current_user: User = Depends(get_current_user)):
     result = await db.execute(select(Source).where(Source.id == source_id))
     source = result.scalar_one_or_none()
@@ -77,7 +78,7 @@ async def run_source_now(source_id: str, bg: BackgroundTasks, db: AsyncSession =
     bg.add_task(_trigger_source_scan, source_id)
     return {"message": f"Scan triggered for {source.name}"}
 
-@router.post("/{source_id}/toggle")
+@router.post("/{source_id}/toggle", dependencies=[Depends(require_org_admin())])
 async def toggle_source(source_id: str, db: AsyncSession = Depends(get_db), current_user: User = Depends(get_current_user)):
     """Toggle a source between active and paused."""
     result = await db.execute(select(Source).where(Source.id == source_id))
@@ -88,7 +89,7 @@ async def toggle_source(source_id: str, db: AsyncSession = Depends(get_db), curr
     await db.commit()
     return {"id": source.id, "status": source.status}
 
-@router.delete("/{source_id}", status_code=204)
+@router.delete("/{source_id}", status_code=204, dependencies=[Depends(require_org_admin())])
 async def delete_source(source_id: str, db: AsyncSession = Depends(get_db), current_user: User = Depends(get_current_user)):
     """Permanently delete a source and its run history."""
     result = await db.execute(select(Source).where(Source.id == source_id))

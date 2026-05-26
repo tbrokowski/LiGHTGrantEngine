@@ -23,8 +23,11 @@ from app.models.activity_log import GrantActivityLog
 from app.models.user import User
 from app.models.grant_member import GrantMember, GrantMemberRole, GrantMemberStatus
 from app.routers.auth import get_current_user
+from app.auth.permissions import grant_access, invalidate_permission_cache, get_redis
+import redis.asyncio as aioredis
 
-router = APIRouter()
+# All workspace routes require at minimum read membership on the grant
+router = APIRouter(dependencies=[Depends(grant_access())])
 
 
 # ── Shared helpers ─────────────────────────────────────────────────────────────
@@ -136,6 +139,7 @@ async def create_task(
     data: TaskCreate,
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(get_current_user),
+    _edit: None = Depends(grant_access(require_editor=True)),
 ):
     await _get_grant_or_404(grant_id, db)
     task = Task(id=str(uuid.uuid4()), grant_id=grant_id, created_by_id=current_user.id, **data.model_dump())
@@ -152,6 +156,7 @@ async def update_task(
     data: TaskUpdate,
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(get_current_user),
+    _edit: None = Depends(grant_access(require_editor=True)),
 ):
     result = await db.execute(select(Task).where(Task.id == task_id, Task.grant_id == grant_id))
     task = result.scalar_one_or_none()
@@ -173,6 +178,7 @@ async def delete_task(
     task_id: str,
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(get_current_user),
+    _edit: None = Depends(grant_access(require_editor=True)),
 ):
     result = await db.execute(select(Task).where(Task.id == task_id, Task.grant_id == grant_id))
     task = result.scalar_one_or_none()
@@ -229,8 +235,23 @@ async def invite_grant_member(
     data: GrantMemberInvite,
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(get_current_user),
+    redis: aioredis.Redis = Depends(get_redis),
+    _edit: None = Depends(grant_access(require_editor=True)),
 ):
-    await _get_grant_or_404(grant_id, db)
+    grant = await _get_grant_or_404(grant_id, db)
+
+    # Auto-promote personal grant to org portfolio when a collaborator is invited
+    if grant.is_personal:
+        if not current_user.institution_id:
+            raise HTTPException(
+                400,
+                "You must belong to an organization before inviting collaborators to a grant. "
+                "The grant will be promoted to your organization's portfolio.",
+            )
+        grant.institution_id = current_user.institution_id
+        grant.is_personal = False
+        await db.flush()
+        await invalidate_permission_cache(current_user.id, redis)
 
     # Check if this email is already a member of this grant
     existing = await db.execute(
@@ -261,6 +282,8 @@ async def invite_grant_member(
         f"Invited {data.email} as {data.role}"
     )
     await db.commit()
+    if user:
+        await invalidate_permission_cache(user.id, redis)
 
     return {
         "id": member.id,
@@ -273,12 +296,15 @@ async def invite_grant_member(
     }
 
 
-@router.delete("/{grant_id}/members/{member_id}", status_code=204)
-async def remove_grant_member(
+@router.patch("/{grant_id}/members/{member_id}")
+async def update_grant_member(
     grant_id: str,
     member_id: str,
+    data: GrantMemberInvite,
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(get_current_user),
+    redis: aioredis.Redis = Depends(get_redis),
+    _edit: None = Depends(grant_access(require_editor=True)),
 ):
     result = await db.execute(
         select(GrantMember).where(
@@ -289,12 +315,44 @@ async def remove_grant_member(
     member = result.scalar_one_or_none()
     if not member:
         raise HTTPException(404, "Member not found")
+    if member.role == GrantMemberRole.OWNER:
+        raise HTTPException(400, "Cannot change the role of the grant owner.")
+    member.role = data.role
+    await db.commit()
+    if member.user_id:
+        await invalidate_permission_cache(member.user_id, redis)
+    return {"id": member.id, "role": member.role}
+
+
+@router.delete("/{grant_id}/members/{member_id}", status_code=204)
+async def remove_grant_member(
+    grant_id: str,
+    member_id: str,
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+    redis: aioredis.Redis = Depends(get_redis),
+    _edit: None = Depends(grant_access(require_editor=True)),
+):
+    result = await db.execute(
+        select(GrantMember).where(
+            GrantMember.id == member_id,
+            GrantMember.grant_id == grant_id,
+        )
+    )
+    member = result.scalar_one_or_none()
+    if not member:
+        raise HTTPException(404, "Member not found")
+    if member.role == GrantMemberRole.OWNER:
+        raise HTTPException(400, "Cannot remove the grant owner.")
+    user_id = member.user_id
     await log_activity(
         db, grant_id, "member_removed", current_user.id, "grant_member", member_id,
         f"Removed member {member.email}"
     )
     await db.delete(member)
     await db.commit()
+    if user_id:
+        await invalidate_permission_cache(user_id, redis)
 
 
 # ── Milestones ─────────────────────────────────────────────────────────────────
@@ -341,6 +399,7 @@ async def create_milestone(
     data: MilestoneCreate,
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(get_current_user),
+    _edit: None = Depends(grant_access(require_editor=True)),
 ):
     await _get_grant_or_404(grant_id, db)
     m = Milestone(id=str(uuid.uuid4()), grant_id=grant_id, **data.model_dump())
@@ -357,6 +416,7 @@ async def update_milestone(
     data: MilestoneUpdate,
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(get_current_user),
+    _edit: None = Depends(grant_access(require_editor=True)),
 ):
     result = await db.execute(select(Milestone).where(Milestone.id == milestone_id, Milestone.grant_id == grant_id))
     m = result.scalar_one_or_none()
@@ -375,6 +435,7 @@ async def delete_milestone(
     milestone_id: str,
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(get_current_user),
+    _edit: None = Depends(grant_access(require_editor=True)),
 ):
     result = await db.execute(select(Milestone).where(Milestone.id == milestone_id, Milestone.grant_id == grant_id))
     m = result.scalar_one_or_none()
@@ -437,6 +498,7 @@ async def create_gantt_item(
     data: GanttItemCreate,
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(get_current_user),
+    _edit: None = Depends(grant_access(require_editor=True)),
 ):
     await _get_grant_or_404(grant_id, db)
     item = GanttItem(id=str(uuid.uuid4()), grant_id=grant_id, **data.model_dump())
@@ -450,6 +512,7 @@ async def generate_gantt(
     grant_id: str,
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(get_current_user),
+    _edit: None = Depends(grant_access(require_editor=True)),
 ):
     """Generate a default Gantt timeline from grant deadlines and tasks."""
     grant = await _get_grant_or_404(grant_id, db)
@@ -522,6 +585,7 @@ async def update_gantt_item(
     data: GanttItemUpdate,
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(get_current_user),
+    _edit: None = Depends(grant_access(require_editor=True)),
 ):
     result = await db.execute(select(GanttItem).where(GanttItem.id == item_id, GanttItem.grant_id == grant_id))
     item = result.scalar_one_or_none()
@@ -539,6 +603,7 @@ async def delete_gantt_item(
     item_id: str,
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(get_current_user),
+    _edit: None = Depends(grant_access(require_editor=True)),
 ):
     result = await db.execute(select(GanttItem).where(GanttItem.id == item_id, GanttItem.grant_id == grant_id))
     item = result.scalar_one_or_none()
@@ -605,6 +670,7 @@ async def create_workspace_section(
     data: WorkspaceSectionCreate,
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(get_current_user),
+    _edit: None = Depends(grant_access(require_editor=True)),
 ):
     await _get_grant_or_404(grant_id, db)
     s = WorkspaceSection(id=str(uuid.uuid4()), grant_id=grant_id, **data.model_dump())
@@ -621,6 +687,7 @@ async def update_workspace_section(
     data: WorkspaceSectionUpdate,
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(get_current_user),
+    _edit: None = Depends(grant_access(require_editor=True)),
 ):
     result = await db.execute(select(WorkspaceSection).where(WorkspaceSection.id == section_id, WorkspaceSection.grant_id == grant_id))
     s = result.scalar_one_or_none()
@@ -639,6 +706,7 @@ async def delete_workspace_section(
     section_id: str,
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(get_current_user),
+    _edit: None = Depends(grant_access(require_editor=True)),
 ):
     result = await db.execute(select(WorkspaceSection).where(WorkspaceSection.id == section_id, WorkspaceSection.grant_id == grant_id))
     s = result.scalar_one_or_none()
@@ -721,6 +789,7 @@ async def create_checklist_item(
     data: ChecklistItemCreate,
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(get_current_user),
+    _edit: None = Depends(grant_access(require_editor=True)),
 ):
     await _get_grant_or_404(grant_id, db)
     item = ChecklistItem(id=str(uuid.uuid4()), grant_id=grant_id, **data.model_dump())
@@ -735,6 +804,7 @@ async def generate_checklist(
     grant_id: str,
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(get_current_user),
+    _edit: None = Depends(grant_access(require_editor=True)),
 ):
     """Generate a default submission checklist."""
     await _get_grant_or_404(grant_id, db)
@@ -762,6 +832,7 @@ async def update_checklist_item(
     data: ChecklistItemUpdate,
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(get_current_user),
+    _edit: None = Depends(grant_access(require_editor=True)),
 ):
     result = await db.execute(select(ChecklistItem).where(ChecklistItem.id == item_id, ChecklistItem.grant_id == grant_id))
     item = result.scalar_one_or_none()
@@ -782,6 +853,7 @@ async def delete_checklist_item(
     item_id: str,
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(get_current_user),
+    _edit: None = Depends(grant_access(require_editor=True)),
 ):
     result = await db.execute(select(ChecklistItem).where(ChecklistItem.id == item_id, ChecklistItem.grant_id == grant_id))
     item = result.scalar_one_or_none()
@@ -848,6 +920,7 @@ async def add_file(
     data: WorkspaceFileCreate,
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(get_current_user),
+    _edit: None = Depends(grant_access(require_editor=True)),
 ):
     await _get_grant_or_404(grant_id, db)
     f = WorkspaceFile(id=str(uuid.uuid4()), grant_id=grant_id, uploaded_by=current_user.id, **data.model_dump())
@@ -864,6 +937,7 @@ async def update_file(
     data: WorkspaceFileUpdate,
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(get_current_user),
+    _edit: None = Depends(grant_access(require_editor=True)),
 ):
     result = await db.execute(select(WorkspaceFile).where(WorkspaceFile.id == file_id, WorkspaceFile.grant_id == grant_id))
     f = result.scalar_one_or_none()
@@ -881,6 +955,7 @@ async def delete_file(
     file_id: str,
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(get_current_user),
+    _edit: None = Depends(grant_access(require_editor=True)),
 ):
     result = await db.execute(select(WorkspaceFile).where(WorkspaceFile.id == file_id, WorkspaceFile.grant_id == grant_id))
     f = result.scalar_one_or_none()
@@ -960,6 +1035,7 @@ async def create_partner(
     data: PartnerCreate,
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(get_current_user),
+    _edit: None = Depends(grant_access(require_editor=True)),
 ):
     await _get_grant_or_404(grant_id, db)
     p = WorkspacePartner(id=str(uuid.uuid4()), grant_id=grant_id, **data.model_dump())
@@ -977,6 +1053,7 @@ async def update_partner(
     data: PartnerUpdate,
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(get_current_user),
+    _edit: None = Depends(grant_access(require_editor=True)),
 ):
     result = await db.execute(select(WorkspacePartner).where(WorkspacePartner.id == partner_id, WorkspacePartner.grant_id == grant_id))
     p = result.scalar_one_or_none()
@@ -997,6 +1074,7 @@ async def delete_partner(
     partner_id: str,
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(get_current_user),
+    _edit: None = Depends(grant_access(require_editor=True)),
 ):
     result = await db.execute(select(WorkspacePartner).where(WorkspacePartner.id == partner_id, WorkspacePartner.grant_id == grant_id))
     p = result.scalar_one_or_none()
@@ -1013,6 +1091,7 @@ async def add_partner_material(
     data: PartnerMaterialCreate,
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(get_current_user),
+    _edit: None = Depends(grant_access(require_editor=True)),
 ):
     result = await db.execute(select(WorkspacePartner).where(WorkspacePartner.id == partner_id, WorkspacePartner.grant_id == grant_id))
     if not result.scalar_one_or_none():
@@ -1031,6 +1110,7 @@ async def update_partner_material(
     data: PartnerMaterialUpdate,
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(get_current_user),
+    _edit: None = Depends(grant_access(require_editor=True)),
 ):
     result = await db.execute(select(PartnerMaterial).where(PartnerMaterial.id == material_id, PartnerMaterial.partner_id == partner_id))
     m = result.scalar_one_or_none()
@@ -1049,6 +1129,7 @@ async def delete_partner_material(
     material_id: str,
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(get_current_user),
+    _edit: None = Depends(grant_access(require_editor=True)),
 ):
     result = await db.execute(select(PartnerMaterial).where(PartnerMaterial.id == material_id, PartnerMaterial.partner_id == partner_id))
     m = result.scalar_one_or_none()
@@ -1099,6 +1180,7 @@ async def update_budget(
     data: BudgetUpdate,
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(get_current_user),
+    _edit: None = Depends(grant_access(require_editor=True)),
 ):
     await _get_grant_or_404(grant_id, db)
     result = await db.execute(select(BudgetTracker).where(BudgetTracker.grant_id == grant_id))
@@ -1162,6 +1244,7 @@ async def parse_budget_spreadsheet(
     file: UploadFile = File(...),
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(get_current_user),
+    _edit: None = Depends(grant_access(require_editor=True)),
 ):
     """Parse an uploaded XLSX/CSV budget spreadsheet and return line items."""
     await _get_grant_or_404(grant_id, db)
@@ -1190,6 +1273,7 @@ async def generate_budget_line_items(
     grant_id: str,
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(get_current_user),
+    _edit: None = Depends(grant_access(require_editor=True)),
 ):
     """Use AI to generate call-aligned budget line items from grant call requirements and tasks."""
     from sqlalchemy import select as sa_select
@@ -1296,6 +1380,7 @@ async def create_drive_folder(
     grant_id: str,
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(get_current_user),
+    _edit: None = Depends(grant_access(require_editor=True)),
 ):
     """Create a structured Google Drive folder tree for this grant and store the URL."""
     grant = await _get_grant_or_404(grant_id, db)
@@ -1351,6 +1436,7 @@ async def save_editor_document(
     body: EditorDocumentUpdate,
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(get_current_user),
+    _edit: None = Depends(grant_access(require_editor=True)),
 ):
     """Save the unified grant document HTML and optionally sync workspace sections."""
     grant = await _get_grant_or_404(grant_id, db)
@@ -1471,6 +1557,7 @@ async def create_google_doc(
     grant_id: str,
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(get_current_user),
+    _edit: None = Depends(grant_access(require_editor=True)),
 ):
     """Create a Google Doc for this grant (or return existing) and link it."""
     grant = await _get_grant_or_404(grant_id, db)
@@ -1523,6 +1610,7 @@ async def push_to_google_doc(
     grant_id: str,
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(get_current_user),
+    _edit: None = Depends(grant_access(require_editor=True)),
 ):
     """Push current editor_document HTML to the linked Google Doc."""
     grant = await _get_grant_or_404(grant_id, db)
@@ -1560,6 +1648,7 @@ async def pull_from_google_doc(
     grant_id: str,
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(get_current_user),
+    _edit: None = Depends(grant_access(require_editor=True)),
 ):
     """Pull content from the linked Google Doc and update editor_document."""
     grant = await _get_grant_or_404(grant_id, db)

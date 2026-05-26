@@ -4,25 +4,37 @@ import Link from 'next/link';
 import { usePathname } from 'next/navigation';
 import { useEffect, useState } from 'react';
 import { opportunities } from '@/lib/api';
+import { useAuth } from '@/lib/auth';
 
-const NAV = [
+interface NavItem {
+  href: string;
+  label: string;
+  adminOnly?: boolean;
+}
+
+const NAV: NavItem[] = [
   { href: '/dashboard', label: 'Dashboard' },
   { href: '/opportunities', label: 'Opportunities' },
   { href: '/grants', label: 'Grants' },
   { href: '/archive', label: 'Archive' },
   { href: '/partners', label: 'Partners' },
-  { href: '/settings', label: 'Settings' },
+  { href: '/settings', label: 'Settings', adminOnly: true },
 ];
 
 export default function Sidebar() {
   const path = usePathname();
+  const { user } = useAuth();
   const [queueCount, setQueueCount] = useState<number | null>(null);
+
+  const isAdmin = user?.institution_role === 'admin';
 
   useEffect(() => {
     opportunities.queueCounts()
       .then(r => setQueueCount(r.data?.unread ?? null))
       .catch(() => null);
   }, []);
+
+  const visibleNav = NAV.filter(item => !item.adminOnly || isAdmin);
 
   return (
     <aside className="w-52 shrink-0 flex flex-col h-full bg-white border-r border-gray-100">
@@ -33,7 +45,7 @@ export default function Sidebar() {
         </p>
       </div>
       <nav className="flex-1 px-2 py-3 space-y-0.5 overflow-y-auto">
-        {NAV.map(({ href, label }) => {
+        {visibleNav.map(({ href, label }) => {
           const active = path === href || path.startsWith(href + '/');
           const isOpportunities = href === '/opportunities';
           return (
@@ -46,7 +58,6 @@ export default function Sidebar() {
                   : 'text-gray-500 hover:text-gray-900 hover:bg-gray-50'
               }`}
             >
-              {/* Left accent bar for active state */}
               {active && (
                 <span className="absolute left-0 top-1/2 -translate-y-1/2 h-4 w-0.5 bg-gray-900 rounded-r-full" />
               )}

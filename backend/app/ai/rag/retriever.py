@@ -1,6 +1,12 @@
 """
 RAG Retrieval Layer — permission-aware hybrid search over the grant archive.
 Supports style, content, and format retrieval modes.
+
+All public retrieval functions accept an optional `accessible_grant_ids` parameter.
+When provided, ProposalSection results are filtered to only include sections that:
+  - come from a grant archive entry (archive_id IS NOT NULL) — org-wide
+  - OR come from a document whose grant_id is NULL (not grant-specific)
+  - OR come from a document whose grant_id is in accessible_grant_ids
 """
 from typing import Optional
 
@@ -11,6 +17,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.ai.client import get_embedding
 from app.config import get_settings
 from app.models.archive import GrantArchive
+from app.models.document import Document
 from app.models.section import ProposalSection
 from app.models.language import ReusableLanguageBlock
 
@@ -98,6 +105,30 @@ def _hybrid_score(vector_sim: float, keyword_sim: float, section: ProposalSectio
     return base * _quality_boost(section) + _outcome_boost(section.outcome)
 
 
+def _grant_access_filter(accessible_grant_ids: Optional[list[str]]) -> Optional[object]:
+    """
+    Returns a SQLAlchemy filter clause that restricts ProposalSection results
+    to sections the caller has access to.  Returns None (no extra filter) when
+    accessible_grant_ids is not provided (i.e. org-admin bypass).
+    """
+    if accessible_grant_ids is None:
+        return None
+
+    accessible_doc_ids_subq = (
+        select(Document.id).where(
+            or_(
+                Document.grant_id.is_(None),
+                Document.grant_id.in_(accessible_grant_ids),
+            )
+        )
+    ).scalar_subquery()
+
+    return or_(
+        ProposalSection.archive_id.isnot(None),
+        ProposalSection.document_id.in_(accessible_doc_ids_subq),
+    )
+
+
 async def _vector_candidates(
     db: AsyncSession,
     query_embedding: list[float],
@@ -129,6 +160,7 @@ async def retrieve_style_exemplars(
     section_type: Optional[str] = None,
     funder: Optional[str] = None,
     top_k: Optional[int] = None,
+    accessible_grant_ids: Optional[list[str]] = None,
 ) -> list[dict]:
     """
     Metadata-first retrieval for writing voice and tone.
@@ -144,6 +176,9 @@ async def retrieve_style_exemplars(
         filters.append(ProposalSection.section_type == section_type)
     if funder:
         filters.append(ProposalSection.funder.ilike(f"%{funder}%"))
+    grant_filter = _grant_access_filter(accessible_grant_ids)
+    if grant_filter is not None:
+        filters.append(grant_filter)
 
     style_query = f"grant writing {section_type or 'proposal'} institutional voice"
     query_embedding = await get_embedding(style_query)
@@ -189,6 +224,7 @@ async def retrieve_content_exemplars(
     themes: Optional[list[str]] = None,
     top_k: Optional[int] = None,
     require_ai_retrieval: bool = True,
+    accessible_grant_ids: Optional[list[str]] = None,
 ) -> list[dict]:
     """Topic-relevant retrieval for substantive content inspiration."""
     rag_cfg = settings.rag
@@ -201,6 +237,9 @@ async def retrieve_content_exemplars(
         filters.append(ProposalSection.section_type == section_type)
     if funder:
         filters.append(ProposalSection.funder.ilike(f"%{funder}%"))
+    grant_filter = _grant_access_filter(accessible_grant_ids)
+    if grant_filter is not None:
+        filters.append(grant_filter)
 
     query_embedding = await get_embedding(query)
     query_words = query.split()[:8]
@@ -275,6 +314,7 @@ async def retrieve_similar_sections(
     outcome: Optional[str] = None,
     top_k: Optional[int] = None,
     require_ai_retrieval: bool = True,
+    accessible_grant_ids: Optional[list[str]] = None,
 ) -> list[dict]:
     """Backward-compatible wrapper — delegates to content exemplar retrieval."""
     results = await retrieve_content_exemplars(
@@ -284,6 +324,7 @@ async def retrieve_similar_sections(
         funder=funder,
         top_k=top_k,
         require_ai_retrieval=require_ai_retrieval,
+        accessible_grant_ids=accessible_grant_ids,
     )
     if outcome:
         results = [r for r in results if r.get("outcome") == outcome] + [

@@ -1,6 +1,7 @@
 'use client';
 import { useRef, useState } from 'react';
 import { useAuth } from '@/lib/auth';
+import { clearAuthSession } from '@/lib/auth-cookie';
 
 export default function TopBar() {
   const { user } = useAuth();
@@ -8,10 +9,8 @@ export default function TopBar() {
   const ref = useRef<HTMLDivElement>(null);
 
   function signOut() {
-    if (typeof window !== 'undefined') {
-      localStorage.removeItem('access_token');
-      window.location.href = '/login';
-    }
+    clearAuthSession();
+    window.location.href = '/login';
   }
 
   return (

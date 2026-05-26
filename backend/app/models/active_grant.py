@@ -34,6 +34,11 @@ class ActiveGrant(Base):
     id: Mapped[str] = mapped_column(String, primary_key=True, default=lambda: str(uuid.uuid4()))
     opportunity_id: Mapped[str | None] = mapped_column(String, ForeignKey("opportunities.id"))
 
+    # Org scoping
+    institution_id: Mapped[str | None] = mapped_column(String, ForeignKey("institutions.id"), index=True)
+    created_by_id: Mapped[str | None] = mapped_column(String, ForeignKey("users.id"), index=True)
+    is_personal: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False, server_default="false", index=True)
+
     # Core info
     title: Mapped[str] = mapped_column(String(500), nullable=False)
     funder: Mapped[str | None] = mapped_column(String(300))

@@ -3,6 +3,7 @@ import { useState, useEffect, useCallback } from 'react';
 import { useRouter } from 'next/navigation';
 import Link from 'next/link';
 import { auth } from '@/lib/api';
+import { setAuthSession } from '@/lib/auth-cookie';
 
 type InstitutionMode = 'none' | 'join' | 'create';
 
@@ -23,8 +24,10 @@ export default function RegisterPage() {
   const [selectedInst, setSelectedInst] = useState<Institution | null>(null);
   const [newInstName, setNewInstName] = useState('');
   const [newInstDomain, setNewInstDomain] = useState('');
+  const [joinMessage, setJoinMessage] = useState('');
   const [error, setError] = useState('');
   const [loading, setLoading] = useState(false);
+  const [pendingApproval, setPendingApproval] = useState(false);
 
   useEffect(() => {
     if (typeof window !== 'undefined' && localStorage.getItem('access_token')) {
@@ -69,19 +72,51 @@ export default function RegisterPage() {
       const payload: Parameters<typeof auth.register>[0] = { name, email, password };
       if (mode === 'join' && selectedInst) {
         payload.institution_id = selectedInst.id;
+        if (joinMessage.trim()) payload.join_message = joinMessage;
       } else if (mode === 'create') {
         payload.institution_name = newInstName;
         if (newInstDomain.trim()) payload.institution_domain = newInstDomain;
       }
       const res = await auth.register(payload);
-      localStorage.setItem('access_token', res.data.access_token);
-      router.push('/dashboard');
+      setAuthSession(res.data.access_token);
+      if (res.data.account_status === 'pending_approval') {
+        setPendingApproval(true);
+      } else {
+        router.push('/dashboard');
+      }
     } catch (err: unknown) {
       const msg = (err as { response?: { data?: { detail?: string } } })?.response?.data?.detail;
       setError(msg || 'Registration failed. Please try again.');
     } finally {
       setLoading(false);
     }
+  }
+
+  if (pendingApproval) {
+    return (
+      <div className="min-h-screen bg-white flex items-center justify-center p-8">
+        <div className="max-w-md w-full text-center space-y-6">
+          <div className="w-16 h-16 bg-amber-100 rounded-full flex items-center justify-center mx-auto">
+            <svg className="w-8 h-8 text-amber-600" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z" />
+            </svg>
+          </div>
+          <div>
+            <h2 className="text-2xl font-semibold text-gray-900 mb-2">Request submitted</h2>
+            <p className="text-gray-500 text-sm leading-relaxed">
+              Your request to join <strong>{selectedInst?.name}</strong> has been sent to the organization admin for approval.
+              You&apos;ll receive an email once your request is reviewed.
+            </p>
+          </div>
+          <p className="text-xs text-gray-400">
+            You can close this page. Check your email for updates.
+          </p>
+          <Link href="/login" className="inline-block text-sm text-gray-900 font-medium underline underline-offset-2">
+            Back to sign in
+          </Link>
+        </div>
+      </div>
+    );
   }
 
   return (
@@ -219,6 +254,23 @@ export default function RegisterPage() {
                       ×
                     </button>
                   </div>
+                )}
+                {selectedInst && (
+                  <div>
+                    <label className="block text-xs font-medium text-gray-600 mb-1">Message for admin (optional)</label>
+                    <textarea
+                      value={joinMessage}
+                      onChange={e => setJoinMessage(e.target.value)}
+                      rows={2}
+                      className="w-full px-3 py-2 border border-gray-300 rounded-md text-sm focus:outline-none focus:ring-2 focus:ring-gray-900 resize-none"
+                      placeholder="Briefly describe your role or why you're joining…"
+                    />
+                  </div>
+                )}
+                {selectedInst && (
+                  <p className="text-xs text-amber-600 bg-amber-50 border border-amber-200 rounded px-2.5 py-1.5">
+                    Your account will be created but access requires admin approval.
+                  </p>
                 )}
               </div>
             )}

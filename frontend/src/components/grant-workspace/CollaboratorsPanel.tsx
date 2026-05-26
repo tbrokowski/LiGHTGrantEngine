@@ -46,7 +46,10 @@ export default function CollaboratorsPanel({ grantId }: Props) {
   const [error, setError] = useState('');
   const [success, setSuccess] = useState('');
 
-  const canManage = isInstitutionAdmin(user) || user?.role === 'admin' || user?.role === 'grant_lead';
+  // Grant editors and org admins / grant leads can manage collaborators
+  const myMember = members.find(m => m.user_id === user?.id);
+  const isGrantEditor = myMember?.role === 'editor' || myMember?.role === 'owner';
+  const canManage = isInstitutionAdmin(user) || user?.role === 'grant_lead' || isGrantEditor;
 
   const fetchMembers = useCallback(async () => {
     try {

@@ -14,6 +14,7 @@ interface Grant {
   internal_deadline: string | null;
   requested_amount: number | null;
   currency: string | null;
+  is_personal: boolean;
   tasks?: { status: string }[];
 }
 
@@ -187,7 +188,16 @@ interface NewGrantForm {
   currency: string;
 }
 
-function NewGrantModal({ onClose, onCreated }: { onClose: () => void; onCreated: (id: string) => void }) {
+function NewGrantModal({
+  onClose,
+  onCreated,
+  defaultPersonal = false,
+}: {
+  onClose: () => void;
+  onCreated: (id: string) => void;
+  defaultPersonal?: boolean;
+}) {
+  const [isPersonal, setIsPersonal] = useState(defaultPersonal);
   const [form, setForm] = useState<NewGrantForm>({
     title: '',
     funder: '',
@@ -216,6 +226,7 @@ function NewGrantModal({ onClose, onCreated }: { onClose: () => void; onCreated:
       const payload: Record<string, unknown> = {
         title: form.title.trim(),
         status: form.status,
+        is_personal: isPersonal,
       };
       if (form.funder) payload.funder = form.funder;
       if (form.pi_name) payload.pi_name = form.pi_name;
@@ -244,6 +255,33 @@ function NewGrantModal({ onClose, onCreated }: { onClose: () => void; onCreated:
         </div>
         <form onSubmit={handleSubmit} className="px-6 py-5 space-y-4">
           {error && <p className="text-sm text-red-600 bg-red-50 rounded-lg px-3 py-2">{error}</p>}
+
+          {/* Personal vs org toggle */}
+          <div className="flex items-center gap-1 bg-gray-100 rounded-xl p-1">
+            <button
+              type="button"
+              onClick={() => setIsPersonal(false)}
+              className={`flex-1 text-xs font-medium py-1.5 rounded-lg transition-colors ${
+                !isPersonal ? 'bg-white text-gray-900 shadow-sm' : 'text-gray-500 hover:text-gray-700'
+              }`}
+            >
+              Organization grant
+            </button>
+            <button
+              type="button"
+              onClick={() => setIsPersonal(true)}
+              className={`flex-1 text-xs font-medium py-1.5 rounded-lg transition-colors ${
+                isPersonal ? 'bg-white text-gray-900 shadow-sm' : 'text-gray-500 hover:text-gray-700'
+              }`}
+            >
+              Personal draft
+            </button>
+          </div>
+          {isPersonal && (
+            <p className="text-xs text-amber-600 bg-amber-50 border border-amber-100 rounded-lg px-3 py-2">
+              Personal drafts are private — only you can see them. You can promote to the organization later.
+            </p>
+          )}
 
           <div>
             <label className="block text-xs font-medium text-gray-500 mb-1.5">
@@ -342,7 +380,7 @@ function NewGrantModal({ onClose, onCreated }: { onClose: () => void; onCreated:
               disabled={saving}
               className="flex-1 px-4 py-2 text-sm font-medium text-white bg-gray-900 rounded-xl hover:bg-gray-700 disabled:opacity-50 transition-colors"
             >
-              {saving ? 'Creating…' : 'Create Grant'}
+              {saving ? 'Creating…' : isPersonal ? 'Create personal draft' : 'Create Grant'}
             </button>
           </div>
         </form>
@@ -489,6 +527,72 @@ function GrantCard({
 }
 
 // ────────────────────────────────────────────────────────────────
+// Personal Draft Card
+// ────────────────────────────────────────────────────────────────
+
+function PersonalGrantCard({
+  grant,
+  onDelete,
+  onPromote,
+}: {
+  grant: Grant;
+  onDelete: (id: string) => void | Promise<void>;
+  onPromote: (id: string) => void | Promise<void>;
+}) {
+  const [busy, setBusy] = useState<'delete' | 'promote' | null>(null);
+
+  async function handleDelete() {
+    if (!confirm(`Permanently delete "${grant.title}"?`)) return;
+    setBusy('delete');
+    try { await onDelete(grant.id); } finally { setBusy(null); }
+  }
+
+  async function handlePromote() {
+    if (!confirm(`Promote "${grant.title}" to your organization's portfolio? It will become visible to other org members.`)) return;
+    setBusy('promote');
+    try { await onPromote(grant.id); } finally { setBusy(null); }
+  }
+
+  return (
+    <div className="group flex items-center gap-4 bg-white border border-dashed border-gray-200 rounded-xl px-4 py-3 hover:border-gray-300 transition-colors">
+      <Link href={`/grants/${grant.id}`} className="flex-1 min-w-0">
+        <p className="text-sm font-medium text-gray-800 truncate">{grant.title}</p>
+        {grant.funder && (
+          <p className="text-xs text-gray-400 mt-0.5 truncate">{grant.funder}</p>
+        )}
+      </Link>
+      <div className="flex items-center gap-2 shrink-0">
+        <button
+          onClick={handlePromote}
+          disabled={!!busy}
+          title="Promote to organization"
+          className="text-xs font-medium text-indigo-600 hover:text-indigo-800 border border-indigo-200 hover:border-indigo-400 px-2.5 py-1 rounded-lg transition-colors disabled:opacity-40"
+        >
+          {busy === 'promote' ? 'Promoting…' : 'Promote to org'}
+        </button>
+        <button
+          onClick={handleDelete}
+          disabled={!!busy}
+          title="Delete draft"
+          className="text-xs text-red-400 hover:text-red-600 px-2 py-1 rounded-lg hover:bg-red-50 transition-colors disabled:opacity-40"
+        >
+          {busy === 'delete' ? '…' : 'Delete'}
+        </button>
+        <Link
+          href={`/grants/${grant.id}`}
+          className="text-gray-200 group-hover:text-gray-400 transition-colors"
+        >
+          <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={1.5}>
+            <path strokeLinecap="round" strokeLinejoin="round" d="M8.25 4.5l7.5 7.5-7.5 7.5" />
+          </svg>
+        </Link>
+      </div>
+    </div>
+  );
+}
+
+
+// ────────────────────────────────────────────────────────────────
 // Main Page
 // ────────────────────────────────────────────────────────────────
 
@@ -499,14 +603,25 @@ export default function GrantsPage() {
   const [activeGroup, setActiveGroup] = useState('all');
   const [search, setSearch] = useState('');
   const [showModal, setShowModal] = useState(false);
+  const [defaultPersonal, setDefaultPersonal] = useState(false);
 
-  useEffect(() => {
-    setLoading(true);
+  function loadGrants() {
     grants.list({})
       .then(r => setAllGrants(r.data))
       .catch(console.error)
       .finally(() => setLoading(false));
+  }
+
+  useEffect(() => {
+    setLoading(true);
+    loadGrants();
+  // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
+
+  function openModal(personal: boolean) {
+    setDefaultPersonal(personal);
+    setShowModal(true);
+  }
 
   function handleCreated(id: string) {
     router.push(`/grants/${id}`);
@@ -530,9 +645,24 @@ export default function GrantsPage() {
     }
   }
 
+  async function handlePromote(id: string) {
+    try {
+      await grants.promote(id);
+      // Reload so the grant moves from My Drafts → org portfolio
+      setLoading(true);
+      loadGrants();
+    } catch {
+      alert('Failed to promote grant. Make sure you belong to an organization.');
+    }
+  }
+
+  // Split into personal and org
+  const personalGrants = allGrants.filter(g => g.is_personal);
+  const orgGrants = allGrants.filter(g => !g.is_personal);
+
   const filtered = useMemo(() => {
     const group = FILTER_GROUPS.find(g => g.id === activeGroup);
-    let result = allGrants;
+    let result = orgGrants;
 
     if (group && group.statuses.length > 0) {
       result = result.filter(g => group.statuses.includes(g.status));
@@ -549,18 +679,18 @@ export default function GrantsPage() {
     }
 
     return result;
+  // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [allGrants, activeGroup, search]);
 
-  // Summary stats (always from full list)
-  const totalCount = allGrants.length;
-  const dueSoonCount = allGrants.filter(g => {
+  // Summary stats (org grants only)
+  const dueSoonCount = orgGrants.filter(g => {
     const d = daysUntil(g.external_deadline);
     return d !== null && d >= 0 && d <= 30;
   }).length;
-  const inReviewCount = allGrants.filter(g =>
+  const inReviewCount = orgGrants.filter(g =>
     g.status === 'internal_review' || g.status === 'pi_review',
   ).length;
-  const awardedCount = allGrants.filter(g => g.status === 'awarded').length;
+  const awardedCount = orgGrants.filter(g => g.status === 'awarded').length;
 
   return (
     <div className="px-8 py-8 max-w-4xl mx-auto">
@@ -568,79 +698,117 @@ export default function GrantsPage() {
         <NewGrantModal
           onClose={() => setShowModal(false)}
           onCreated={handleCreated}
+          defaultPersonal={defaultPersonal}
         />
       )}
 
       {/* ── Header ── */}
       <div className="flex items-center justify-between mb-6">
-        <h1 className="text-xl font-semibold text-gray-900 tracking-tight">Active Grants</h1>
-        <button
-          onClick={() => setShowModal(true)}
-          className="flex items-center gap-1.5 px-4 py-2 text-sm font-medium text-white bg-gray-900 rounded-xl hover:bg-gray-700 transition-colors"
-        >
-          <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2.5}>
-            <path strokeLinecap="round" strokeLinejoin="round" d="M12 4v16m8-8H4" />
-          </svg>
-          New Grant
-        </button>
+        <h1 className="text-xl font-semibold text-gray-900 tracking-tight">Grants</h1>
+        <div className="flex items-center gap-2">
+          <button
+            onClick={() => openModal(true)}
+            className="flex items-center gap-1.5 px-3 py-2 text-sm font-medium text-gray-700 bg-white border border-gray-200 rounded-xl hover:bg-gray-50 transition-colors"
+          >
+            <svg className="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2.5}>
+              <path strokeLinecap="round" strokeLinejoin="round" d="M12 4v16m8-8H4" />
+            </svg>
+            Personal draft
+          </button>
+          <button
+            onClick={() => openModal(false)}
+            className="flex items-center gap-1.5 px-4 py-2 text-sm font-medium text-white bg-gray-900 rounded-xl hover:bg-gray-700 transition-colors"
+          >
+            <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2.5}>
+              <path strokeLinecap="round" strokeLinejoin="round" d="M12 4v16m8-8H4" />
+            </svg>
+            New Grant
+          </button>
+        </div>
       </div>
 
+      {/* ── My Drafts section ── */}
+      {!loading && personalGrants.length > 0 && (
+        <div className="mb-8">
+          <div className="flex items-center gap-2 mb-3">
+            <h2 className="text-xs font-semibold text-gray-500 uppercase tracking-wider">My Drafts</h2>
+            <span className="text-xs text-gray-400 bg-gray-100 px-1.5 py-0.5 rounded-full">{personalGrants.length}</span>
+            <span className="text-xs text-gray-400">— private, only visible to you</span>
+          </div>
+          <div className="space-y-2">
+            {personalGrants.map(g => (
+              <PersonalGrantCard
+                key={g.id}
+                grant={g}
+                onDelete={handleDelete}
+                onPromote={handlePromote}
+              />
+            ))}
+          </div>
+        </div>
+      )}
+
       {/* ── Summary stat chips ── */}
-      {!loading && (
+      {!loading && orgGrants.length > 0 && (
         <div className="flex gap-3 mb-7 flex-wrap">
-          <StatChip label="Total" value={totalCount} />
+          <StatChip label="Total" value={orgGrants.length} />
           <StatChip label="Due in 30 days" value={dueSoonCount} highlight={dueSoonCount > 0} />
           <StatChip label="In Review" value={inReviewCount} />
           <StatChip label="Awarded" value={awardedCount} />
         </div>
       )}
 
+      {/* ── Org portfolio label ── */}
+      {!loading && (personalGrants.length > 0 || orgGrants.length > 0) && (
+        <div className="flex items-center gap-2 mb-4">
+          <h2 className="text-xs font-semibold text-gray-500 uppercase tracking-wider">Organization Portfolio</h2>
+          <span className="text-xs text-gray-400 bg-gray-100 px-1.5 py-0.5 rounded-full">{orgGrants.length}</span>
+        </div>
+      )}
+
       {/* ── Filter row ── */}
-      <div className="flex items-center gap-3 mb-5 flex-wrap">
-        {/* Group pills */}
-        <div className="flex items-center gap-1.5 bg-gray-100 p-1 rounded-xl">
-          {FILTER_GROUPS.map(g => (
-            <button
-              key={g.id}
-              onClick={() => setActiveGroup(g.id)}
-              className={`px-3 py-1.5 text-xs font-medium rounded-lg transition-colors whitespace-nowrap ${
-                activeGroup === g.id
-                  ? 'bg-white text-gray-900 shadow-sm'
-                  : 'text-gray-500 hover:text-gray-700'
-              }`}
+      {!loading && orgGrants.length > 0 && (
+        <div className="flex items-center gap-3 mb-5 flex-wrap">
+          <div className="flex items-center gap-1.5 bg-gray-100 p-1 rounded-xl">
+            {FILTER_GROUPS.map(g => (
+              <button
+                key={g.id}
+                onClick={() => setActiveGroup(g.id)}
+                className={`px-3 py-1.5 text-xs font-medium rounded-lg transition-colors whitespace-nowrap ${
+                  activeGroup === g.id
+                    ? 'bg-white text-gray-900 shadow-sm'
+                    : 'text-gray-500 hover:text-gray-700'
+                }`}
+              >
+                {g.label}
+              </button>
+            ))}
+          </div>
+          <div className="relative flex-1 min-w-[180px] max-w-xs">
+            <svg
+              className="absolute left-3 top-1/2 -translate-y-1/2 w-3.5 h-3.5 text-gray-300 pointer-events-none"
+              fill="none"
+              viewBox="0 0 24 24"
+              stroke="currentColor"
+              strokeWidth={2}
             >
-              {g.label}
-            </button>
-          ))}
+              <path strokeLinecap="round" strokeLinejoin="round" d="M21 21l-5.197-5.197m0 0A7.5 7.5 0 105.196 15.803 7.5 7.5 0 0015.803 15.803z" />
+            </svg>
+            <input
+              type="text"
+              value={search}
+              onChange={e => setSearch(e.target.value)}
+              placeholder="Search by title or funder…"
+              className="w-full pl-8 pr-3 py-1.5 text-sm border border-gray-200 rounded-xl text-gray-800 placeholder-gray-300 focus:outline-none focus:ring-1 focus:ring-gray-300 bg-white"
+            />
+          </div>
+          {!loading && (
+            <span className="text-xs text-gray-400 ml-auto">
+              {filtered.length} grant{filtered.length !== 1 ? 's' : ''}
+            </span>
+          )}
         </div>
-
-        {/* Search */}
-        <div className="relative flex-1 min-w-[180px] max-w-xs">
-          <svg
-            className="absolute left-3 top-1/2 -translate-y-1/2 w-3.5 h-3.5 text-gray-300 pointer-events-none"
-            fill="none"
-            viewBox="0 0 24 24"
-            stroke="currentColor"
-            strokeWidth={2}
-          >
-            <path strokeLinecap="round" strokeLinejoin="round" d="M21 21l-5.197-5.197m0 0A7.5 7.5 0 105.196 15.803 7.5 7.5 0 0015.803 15.803z" />
-          </svg>
-          <input
-            type="text"
-            value={search}
-            onChange={e => setSearch(e.target.value)}
-            placeholder="Search by title or funder…"
-            className="w-full pl-8 pr-3 py-1.5 text-sm border border-gray-200 rounded-xl text-gray-800 placeholder-gray-300 focus:outline-none focus:ring-1 focus:ring-gray-300 bg-white"
-          />
-        </div>
-
-        {/* Result count */}
-        {!loading && (
-          <span className="text-xs text-gray-400 ml-auto">
-            {filtered.length} grant{filtered.length !== 1 ? 's' : ''}
-          </span>
-        )}
-      </div>
+      )}
 
       {/* ── Cards ── */}
       <div className="space-y-3">
@@ -650,19 +818,24 @@ export default function GrantsPage() {
             <SkeletonCard />
             <SkeletonCard />
           </>
-        ) : filtered.length === 0 ? (
+        ) : filtered.length === 0 && orgGrants.length === 0 && personalGrants.length === 0 ? (
           <div className="bg-white border border-gray-100 rounded-2xl shadow-sm px-6 py-16 text-center">
+            <p className="text-sm font-medium text-gray-400">No grants yet.</p>
+            <p className="text-xs text-gray-400 mt-1">
+              Create a personal draft to prototype, or add a grant to your org portfolio.
+            </p>
+            <Link
+              href="/opportunities"
+              className="inline-block mt-3 text-xs text-gray-400 hover:text-gray-600 underline underline-offset-2 transition-colors"
+            >
+              Convert an opportunity →
+            </Link>
+          </div>
+        ) : filtered.length === 0 && orgGrants.length > 0 ? (
+          <div className="bg-white border border-gray-100 rounded-2xl shadow-sm px-6 py-10 text-center">
             <p className="text-sm font-medium text-gray-400">
               {search.trim() ? 'No grants match your search.' : 'No grants in this group.'}
             </p>
-            {!search.trim() && activeGroup === 'all' && (
-              <Link
-                href="/opportunities"
-                className="inline-block mt-3 text-xs text-gray-400 hover:text-gray-600 underline underline-offset-2 transition-colors"
-              >
-                Convert an opportunity →
-              </Link>
-            )}
           </div>
         ) : (
           filtered.map(g => (

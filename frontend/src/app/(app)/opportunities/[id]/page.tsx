@@ -2,12 +2,17 @@
 import { useEffect, useState } from 'react';
 import { useRouter, useParams } from 'next/navigation';
 import Link from 'next/link';
-import ReactMarkdown from 'react-markdown';
+import dynamic from 'next/dynamic';
 import remarkGfm from 'remark-gfm';
 import { opportunities, ai, api } from '@/lib/api';
 import SuggestedPartners from '@/components/crm/SuggestedPartners';
 import FunderLogo from '@/components/opportunities/FunderLogo';
 import BookmarkButton from '@/components/opportunities/BookmarkButton';
+
+const ReactMarkdown = dynamic(() => import('react-markdown'), {
+  loading: () => <p className="text-sm text-gray-400">Loading…</p>,
+  ssr: false,
+});
 
 interface OpportunityDetail {
   id: string;

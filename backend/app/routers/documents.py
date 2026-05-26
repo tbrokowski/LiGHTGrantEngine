@@ -7,9 +7,12 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 from app.database import get_db
 from app.models.document import Document, ProcessingStatus
+from app.models.grant_member import GrantMember, GrantMemberStatus
 from app.models.user import User
 from app.routers.auth import get_current_user
 from app.services import storage
+from app.auth.permissions import is_org_admin, get_redis, get_user_grant_ids
+import redis.asyncio as aioredis
 
 router = APIRouter()
 
@@ -95,13 +98,19 @@ async def serve_document_content(
     doc_id: str,
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(get_current_user),
+    redis: aioredis.Redis = Depends(get_redis),
 ):
-    """Return a presigned R2 URL that the client (or Celery worker) can use to
-    download the file directly. The redirect expires in 1 hour."""
+    """Return a presigned R2 URL. Checks grant/archive membership before serving."""
     result = await db.execute(select(Document).where(Document.id == doc_id))
     doc = result.scalar_one_or_none()
     if not doc:
         raise HTTPException(404, "Document not found")
+
+    # Access check: archive docs are org-wide; grant docs require membership
+    if doc.grant_id and not is_org_admin(current_user):
+        accessible = await get_user_grant_ids(current_user, db, redis)
+        if doc.grant_id not in accessible:
+            raise HTTPException(403, "You do not have access to this document.")
 
     # doc.notes holds the R2 object key (set during upload)
     r2_key = doc.notes
