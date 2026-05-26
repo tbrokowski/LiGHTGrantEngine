@@ -23,13 +23,80 @@ def _run_async(coro):
         loop.close()
 
 
+def _source_enrichment_config(db, opp) -> tuple[list[str] | None, bool]:
+    detail_selectors = None
+    use_playwright = False
+    if opp.source_id:
+        from app.models.source import Source
+        source = db.get(Source, opp.source_id)
+        if source and source.scraper_config:
+            cfg = source.scraper_config
+            cfg_selectors = cfg.get("detail_selectors")
+            if cfg_selectors:
+                detail_selectors = cfg_selectors if isinstance(cfg_selectors, list) else [cfg_selectors]
+            use_playwright = bool(cfg.get("use_playwright", False))
+    return detail_selectors, use_playwright
+
+
+def _apply_page_enrichment(db, opp, result: dict, *, skip_pdf: bool = False) -> bool:
+    from app.services.call_document_fetcher import (
+        fetch_and_store_call_documents,
+        merge_enrichment_text,
+    )
+
+    pdf_result = fetch_and_store_call_documents(
+        db,
+        opp,
+        result.get("pdf_urls") or [],
+        pdf_anchors=result.get("pdf_anchors") or {},
+        skip_pdf=skip_pdf,
+    )
+    merged = merge_enrichment_text(
+        result.get("description"),
+        result.get("parsed_text"),
+        pdf_result.get("merged_pdf_text") or "",
+    )
+
+    changed = False
+    existing_desc_len = len(opp.description or "")
+    new_desc = merged.get("description")
+    if new_desc and len(new_desc) > existing_desc_len:
+        opp.description = new_desc
+        changed = True
+
+    if merged.get("parsed_text"):
+        existing_parsed_len = len(opp.parsed_text or "")
+        if len(merged["parsed_text"]) > existing_parsed_len:
+            opp.parsed_text = merged["parsed_text"]
+            changed = True
+
+    if merged.get("short_summary"):
+        if not opp.short_summary or len(merged["short_summary"]) > len(opp.short_summary or ""):
+            opp.short_summary = merged["short_summary"]
+            changed = True
+
+    if pdf_result.get("stored_count", 0) > 0:
+        changed = True
+
+    return changed
+
+
+def _queue_post_enrichment(opportunity_id: str) -> None:
+    from app.workers.discovery_tasks import score_opportunity
+    from app.workers.surfacing_tasks import rescore_opportunity_for_institutions
+
+    score_opportunity.delay(opportunity_id)
+    rescore_opportunity_for_institutions.delay(opportunity_id)
+    generate_ai_summary.delay(opportunity_id)
+
+
 @celery_app.task(
     name="app.workers.enrichment_tasks.enrich_opportunity",
     bind=True,
     max_retries=2,
     default_retry_delay=60,
 )
-def enrich_opportunity(self, opportunity_id: str):
+def enrich_opportunity(self, opportunity_id: str, skip_pdf: bool = False):
     """
     Fetch the full grant detail page for an opportunity and enrich its description.
 
@@ -58,30 +125,24 @@ def enrich_opportunity(self, opportunity_id: str):
         if not opp.opportunity_url:
             return {"status": "no_url"}
 
-        # Already enriched — don't re-fetch unless forced
         if opp.parsed_text:
             return {"status": "already_enriched"}
 
-        # Resolve any source-specific detail selectors
-        detail_selectors = None
-        if opp.source_id:
-            from app.models.source import Source
-            source = db.get(Source, opp.source_id)
-            if source and source.scraper_config:
-                cfg_selectors = source.scraper_config.get("detail_selectors")
-                if cfg_selectors:
-                    detail_selectors = cfg_selectors if isinstance(cfg_selectors, list) else [cfg_selectors]
-
+        detail_selectors, use_playwright = _source_enrichment_config(db, opp)
         from app.scrapers.detail_fetcher import DetailPageParser
         parser = DetailPageParser()
 
         try:
-            result = parser.fetch_and_parse(opp.opportunity_url, detail_selectors)
+            result = parser.fetch_and_parse(
+                opp.opportunity_url,
+                detail_selectors,
+                use_playwright=use_playwright,
+            )
         except Exception as e:
             logger.error("Detail fetch exception", opp_id=opportunity_id, error=str(e))
             raise self.retry(exc=e)
 
-        if result.get("error"):
+        if result.get("error") and not result.get("pdf_urls"):
             logger.warning(
                 "Detail fetch returned error",
                 opp_id=opportunity_id,
@@ -90,24 +151,7 @@ def enrich_opportunity(self, opportunity_id: str):
             )
             return {"status": "fetch_error", "error": result["error"]}
 
-        changed = False
-
-        if result.get("parsed_text"):
-            opp.parsed_text = result["parsed_text"]
-            changed = True
-
-        # Only replace description if the fetched content is richer
-        if result.get("description"):
-            existing_len = len(opp.description or "")
-            new_len = len(result["description"])
-            if new_len > existing_len:
-                opp.description = result["description"]
-                changed = True
-
-        # Populate short_summary if not yet set
-        if result.get("short_summary") and not opp.short_summary:
-            opp.short_summary = result["short_summary"]
-            changed = True
+        changed = _apply_page_enrichment(db, opp, result, skip_pdf=skip_pdf)
 
         if changed:
             db.commit()
@@ -115,11 +159,9 @@ def enrich_opportunity(self, opportunity_id: str):
                 "Opportunity enriched",
                 opp_id=opportunity_id,
                 desc_len=len(opp.description or ""),
+                pdf_count=len(result.get("pdf_urls") or []),
             )
-            # Re-score with enriched content, then generate AI summary
-            from app.workers.discovery_tasks import score_opportunity
-            score_opportunity.delay(opportunity_id)
-            generate_ai_summary.delay(opportunity_id)
+            _queue_post_enrichment(opportunity_id)
         else:
             logger.info("Enrichment: no new content found", opp_id=opportunity_id)
 
@@ -156,7 +198,6 @@ def generate_ai_summary(self, opportunity_id: str):
         if not opp:
             return {"status": "not_found"}
 
-        # Need at least title + some description to generate a useful summary
         if not opp.title:
             return {"status": "missing_title"}
 
@@ -193,7 +234,7 @@ def generate_ai_summary(self, opportunity_id: str):
     max_retries=2,
     default_retry_delay=60,
 )
-def enrich_opportunity_force(self, opportunity_id: str):
+def enrich_opportunity_force(self, opportunity_id: str, skip_pdf: bool = False):
     """
     Force re-enrichment even if parsed_text already exists.
     Useful for manually re-fetching a page after updating source selectors.
@@ -216,39 +257,27 @@ def enrich_opportunity_force(self, opportunity_id: str):
         if not opp.opportunity_url:
             return {"status": "no_url"}
 
-        detail_selectors = None
-        if opp.source_id:
-            from app.models.source import Source
-            source = db.get(Source, opp.source_id)
-            if source and source.scraper_config:
-                cfg_selectors = source.scraper_config.get("detail_selectors")
-                if cfg_selectors:
-                    detail_selectors = cfg_selectors if isinstance(cfg_selectors, list) else [cfg_selectors]
-
+        detail_selectors, use_playwright = _source_enrichment_config(db, opp)
         from app.scrapers.detail_fetcher import DetailPageParser
         parser = DetailPageParser()
 
         try:
-            result = parser.fetch_and_parse(opp.opportunity_url, detail_selectors)
+            result = parser.fetch_and_parse(
+                opp.opportunity_url,
+                detail_selectors,
+                use_playwright=use_playwright,
+            )
         except Exception as e:
             logger.error("Force re-enrich fetch exception", opp_id=opportunity_id, error=str(e))
             raise self.retry(exc=e)
 
-        if result.get("error"):
+        if result.get("error") and not result.get("pdf_urls"):
             return {"status": "fetch_error", "error": result["error"]}
 
-        if result.get("parsed_text"):
-            opp.parsed_text = result["parsed_text"]
-        if result.get("description"):
-            opp.description = result["description"]
-        if result.get("short_summary"):
-            opp.short_summary = result["short_summary"]
-
+        _apply_page_enrichment(db, opp, result, skip_pdf=skip_pdf)
         db.commit()
         logger.info("Opportunity force-re-enriched", opp_id=opportunity_id)
 
-        from app.workers.discovery_tasks import score_opportunity
-        score_opportunity.delay(opportunity_id)
-        generate_ai_summary.delay(opportunity_id)
+        _queue_post_enrichment(opportunity_id)
 
         return {"status": "enriched", "description_length": len(opp.description or "")}

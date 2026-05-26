@@ -16,6 +16,7 @@ celery_app = Celery(
         "app.workers.embedding_tasks",
         "app.workers.org_tasks",
         "app.workers.surfacing_tasks",
+        "app.workers.archive_tasks",
     ],
 )
 

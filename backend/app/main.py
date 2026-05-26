@@ -22,11 +22,20 @@ logger = structlog.get_logger()
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
-    logger.info("LiGHT Grant System starting", model=settings.ai.model, env=settings.environment)
+    logger.info(
+        "LiGHT Grant System starting",
+        model=settings.ai.model,
+        env=settings.environment,
+        base_url=settings.base_url,
+    )
     try:
         from app.services.grant_bootstrap import run_full_bootstrap
         result = run_full_bootstrap()
-        logger.info("Grant pool bootstrap complete", **result)
+        logger.info(
+            "Grant pool bootstrap complete",
+            sources_seeded=result.get("sources_seeded", 0),
+            opportunities_seeded=result.get("opportunities_seeded", 0),
+        )
     except Exception as exc:
         logger.warning("Grant pool bootstrap skipped or failed", error=str(exc))
     yield
@@ -43,9 +52,14 @@ app = FastAPI(
 )
 
 # ── CORS ──────────────────────────────────────────────────────────────────────
+_cors_origins = list({
+    settings.base_url,
+    "http://localhost:3000",
+    "https://lightgrantengine.up.railway.app",
+})
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=[settings.base_url, "http://localhost:3000"],
+    allow_origins=_cors_origins,
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],

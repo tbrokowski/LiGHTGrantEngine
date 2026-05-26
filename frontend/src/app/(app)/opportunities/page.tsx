@@ -182,7 +182,6 @@ export default function OpportunitiesPage() {
 
   const actionHandlers = {
     onToggleBookmark: handleToggleBookmark,
-    onStartGrant: handleStartGrant,
   };
 
   function renderTableBody(listItems: Opportunity[]) {

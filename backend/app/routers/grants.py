@@ -27,7 +27,7 @@ from app.models.user import User, UserRole, InstitutionRole
 from app.models.grant_member import GrantMember, GrantMemberRole, GrantMemberStatus
 from app.routers.auth import get_current_user
 from app.ai.context.grant_context import strip_html
-from app.services.archive_ingestion import reindex_archive_style
+from app.workers.celery_app import celery_app
 from app.auth.permissions import (
     grant_access,
     require_role,
@@ -327,9 +327,12 @@ async def archive_grant(
                 processing_status=ProcessingStatus.PROCESSED,
             )
             db.add(document)
+            archive.indexing_status = "pending"
             await db.commit()
-            await reindex_archive_style(db, archive, document)
-            ingest_message = "Proposal content indexed into archive"
+            celery_app.send_task(
+                "app.workers.archive_tasks.index_archive", args=[archive.id]
+            )
+            ingest_message = "Archive saved; proposal indexing is running in the background"
         except Exception as exc:
             await db.rollback()
             logger.warning("Archive ingest failed for grant %s: %s", grant_id, exc)
@@ -530,26 +533,6 @@ async def replace_all_sections(
     grant.editor_sections = data.get("sections", {})
     await db.commit()
     return {"grant_id": grant_id, "section_count": len(grant.editor_sections)}
-
-
-@router.patch("/{grant_id}/tasks/{task_id}")
-async def update_task(
-    grant_id: str,
-    task_id: str,
-    data: dict,
-    db: AsyncSession = Depends(get_db),
-    current_user: User = Depends(get_current_user),
-    _: None = Depends(grant_access(require_editor=True)),
-):
-    result = await db.execute(select(Task).where(Task.id == task_id, Task.grant_id == grant_id))
-    task = result.scalar_one_or_none()
-    if not task:
-        raise HTTPException(404, "Task not found")
-    for k, v in data.items():
-        if hasattr(task, k):
-            setattr(task, k, v)
-    await db.commit()
-    return _task_dict(task)
 
 
 async def _get_grant_or_404(grant_id: str, db: AsyncSession) -> ActiveGrant:

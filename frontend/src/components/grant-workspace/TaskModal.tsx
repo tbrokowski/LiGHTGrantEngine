@@ -22,6 +22,7 @@ interface Props {
   open: boolean;
   task?: Task | null;
   parentTaskId?: string | null;
+  defaultStatus?: string;
   grantId: string;
   documentHeadings?: string[];
   onClose: () => void;
@@ -32,7 +33,7 @@ function memberLabel(m: GrantMemberOption): string {
   return m.name ? `${m.name} (${m.email})` : m.email;
 }
 
-export default function TaskModal({ open, task, parentTaskId, grantId, documentHeadings = [], onClose, onSave }: Props) {
+export default function TaskModal({ open, task, parentTaskId, defaultStatus = 'not_started', grantId, documentHeadings = [], onClose, onSave }: Props) {
   const [form, setForm] = useState<Partial<Task>>({});
   const [saving, setSaving] = useState(false);
   const [memberList, setMemberList] = useState<GrantMemberOption[]>([]);
@@ -52,7 +53,7 @@ export default function TaskModal({ open, task, parentTaskId, grantId, documentH
       setForm({
         title: '',
         description: '',
-        status: 'not_started',
+        status: defaultStatus,
         priority: 'medium',
         task_type: 'other',
         parent_task_id: parentTaskId ?? null,
@@ -63,7 +64,7 @@ export default function TaskModal({ open, task, parentTaskId, grantId, documentH
         dependencies: [],
       });
     }
-  }, [task, parentTaskId, open]);
+  }, [task, parentTaskId, defaultStatus, open]);
 
   if (!open) return null;
 

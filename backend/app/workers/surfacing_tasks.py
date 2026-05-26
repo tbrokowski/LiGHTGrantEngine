@@ -107,22 +107,10 @@ def rescore_institution(self, institution_id: str) -> dict:
     from app.models.institution_opportunity import InstitutionOpportunity
     from app.models.opportunity import Opportunity
     from app.schemas.grant_profile import GrantProfile
-    from app.ai.agents.fit_scorer import score_opportunity as ai_score
+    from app.services.keyword_scorer import keyword_score_opportunity
 
     settings = get_settings()
     engine = create_engine(settings.database_url)
-
-    async def _score_one(opp: Opportunity, profile: GrantProfile):
-        return await ai_score(
-            title=opp.title,
-            description=opp.description or opp.notes or "",
-            funder=opp.funder or "",
-            eligibility=opp.eligibility_criteria or "",
-            geography=str(opp.geography),
-            award_amount=f"{opp.award_min}-{opp.award_max} {opp.currency or ''}",
-            deadline=str(opp.deadline) if opp.deadline else "",
-            profile=profile,
-        )
 
     scored = 0
     with Session(engine) as db:
@@ -138,10 +126,25 @@ def rescore_institution(self, institution_id: str) -> dict:
         ).all()
         for io, opp in rows:
             try:
-                result = _run_async(_score_one(opp, profile))
-                io.fit_score = result.get("fit_score", 0)
-                io.priority = result.get("priority", "watchlist")
-                io.fit_rationale = result.get("rationale", "")
+                result = keyword_score_opportunity(
+                    title=opp.title,
+                    description=opp.description or opp.parsed_text or opp.notes or "",
+                    funder=opp.funder or "",
+                    eligibility=opp.eligibility_criteria or "",
+                    geography=opp.geography or [],
+                    award_min=opp.award_min,
+                    award_max=opp.award_max,
+                    deadline=opp.deadline,
+                    thematic_areas=opp.thematic_areas or [],
+                    profile_keywords=profile.keywords,
+                    profile_geographies=profile.geographies,
+                    excluded_keywords=profile.excluded_keywords,
+                )
+                io.fit_score = result["fit_score"]
+                io.priority = result["priority"]
+                io.fit_rationale = (
+                    f"Keyword score — matched: {', '.join(result['matched_themes'][:5]) or 'none'}"
+                )
                 if result.get("matched_themes"):
                     io.matched_themes = result["matched_themes"]
                 io.status = "needs_review" if io.fit_score >= threshold else "new"
@@ -149,6 +152,66 @@ def rescore_institution(self, institution_id: str) -> dict:
                 scored += 1
             except Exception as exc:
                 logger.warning("Rescore failed for opp %s: %s", opp.id, exc)
+        db.commit()
+    return {"scored": scored}
+
+
+@celery_app.task(name="app.workers.surfacing_tasks.rescore_opportunity_for_institutions")
+def rescore_opportunity_for_institutions(opportunity_id: str) -> dict:
+    """Re-score one opportunity for every institution that has it surfaced."""
+    from app.config import get_settings
+    from app.models.institution import Institution
+    from app.models.institution_opportunity import InstitutionOpportunity
+    from app.models.opportunity import Opportunity
+    from app.schemas.grant_profile import GrantProfile
+    from app.services.keyword_scorer import keyword_score_opportunity
+
+    settings = get_settings()
+    engine = create_engine(settings.database_url)
+
+    scored = 0
+    with Session(engine) as db:
+        opp = db.get(Opportunity, opportunity_id)
+        if not opp:
+            return {"scored": 0}
+
+        rows = db.execute(
+            select(InstitutionOpportunity, Institution)
+            .join(Institution, Institution.id == InstitutionOpportunity.institution_id)
+            .where(InstitutionOpportunity.opportunity_id == opportunity_id)
+        ).all()
+
+        for io, inst in rows:
+            profile = GrantProfile.from_dict(inst.grant_profile or {})
+            threshold = profile.auto_queue_threshold
+            try:
+                result = keyword_score_opportunity(
+                    title=opp.title,
+                    description=opp.description or opp.parsed_text or opp.notes or "",
+                    funder=opp.funder or "",
+                    eligibility=opp.eligibility_criteria or "",
+                    geography=opp.geography or [],
+                    award_min=opp.award_min,
+                    award_max=opp.award_max,
+                    deadline=opp.deadline,
+                    thematic_areas=opp.thematic_areas or [],
+                    profile_keywords=profile.keywords,
+                    profile_geographies=profile.geographies,
+                    excluded_keywords=profile.excluded_keywords,
+                )
+                io.fit_score = result["fit_score"]
+                io.priority = result["priority"]
+                io.fit_rationale = (
+                    f"Keyword score — matched: {', '.join(result['matched_themes'][:5]) or 'none'}"
+                )
+                if result.get("matched_themes"):
+                    io.matched_themes = result["matched_themes"]
+                if io.status not in ("archived", "potential_fit", "in_review"):
+                    io.status = "needs_review" if io.fit_score >= threshold else "new"
+                io.scored_at = datetime.now(timezone.utc)
+                scored += 1
+            except Exception as exc:
+                logger.warning("Institution rescore failed for opp %s inst %s: %s", opp.id, inst.id, exc)
         db.commit()
     return {"scored": scored}
 

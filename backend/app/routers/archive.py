@@ -14,7 +14,8 @@ from app.models.section import ProposalSection
 from app.models.document import Document, DocumentType, ProcessingStatus
 from app.models.user import User, UserRole
 from app.routers.auth import get_current_user
-from app.services.archive_ingestion import create_archive_and_ingest, reindex_archive_style
+from app.services.archive_ingestion import create_archive_with_files
+from app.workers.celery_app import celery_app
 from app.config import get_settings
 from app.auth.permissions import require_role
 
@@ -48,6 +49,8 @@ def _archive_dict(archive: GrantArchive, section_count: int = 0) -> dict:
             data[f] = str(data[f])
     data["section_count"] = section_count
     data["style_indexed"] = bool(archive.style_fingerprint)
+    data["indexing_status"] = archive.indexing_status
+    data["indexing_error"] = archive.indexing_error
     return data
 
 
@@ -94,9 +97,18 @@ async def create_archive_entry(
     return {"id": archive.id}
 
 
+def _check_upload_size(content: bytes, label: str) -> None:
+    settings = get_settings()
+    max_mb = settings.parsing.get("max_file_size_mb", 50)
+    if len(content) > max_mb * 1024 * 1024:
+        raise HTTPException(400, f"{label} exceeds maximum size of {max_mb}MB")
+
+
 @router.post("/create-with-document", status_code=201, dependencies=[Depends(require_role(UserRole.GRANT_LEAD))])
 async def create_archive_with_document(
     proposal_file: UploadFile = File(...),
+    call_file: Optional[UploadFile] = File(None),
+    budget_file: Optional[UploadFile] = File(None),
     title: str = Form(...),
     funder: Optional[str] = Form(None),
     program: Optional[str] = Form(None),
@@ -117,15 +129,27 @@ async def create_archive_with_document(
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ):
-    """Create archive entry and index proposal into RAG corpus in one step."""
-    content = await proposal_file.read()
-    if not content:
-        raise HTTPException(400, "Proposal file is empty")
+    """Create archive entry with documents; AI indexing runs in the background."""
+    proposal_content = await proposal_file.read()
+    if not proposal_content:
+        raise HTTPException(400, "Submitted proposal file is empty")
+    _check_upload_size(proposal_content, "Submitted proposal")
 
-    settings = get_settings()
-    max_mb = settings.parsing.get("max_file_size_mb", 50)
-    if len(content) > max_mb * 1024 * 1024:
-        raise HTTPException(400, f"File exceeds maximum size of {max_mb}MB")
+    call_content = None
+    call_filename = None
+    if call_file and call_file.filename:
+        call_content = await call_file.read()
+        if call_content:
+            _check_upload_size(call_content, "Call document")
+            call_filename = call_file.filename
+
+    budget_content = None
+    budget_filename = None
+    if budget_file and budget_file.filename:
+        budget_content = await budget_file.read()
+        if budget_content:
+            _check_upload_size(budget_content, "Budget file")
+            budget_filename = budget_file.filename
 
     archive_fields = {
         "title": title.strip(),
@@ -148,20 +172,22 @@ async def create_archive_with_document(
     }
 
     try:
-        result = await create_archive_and_ingest(
+        return await create_archive_with_files(
             db=db,
             archive_fields=archive_fields,
-            file_content=content,
-            filename=proposal_file.filename or "proposal.pdf",
+            proposal_content=proposal_content,
+            proposal_filename=proposal_file.filename or "proposal.pdf",
             user_id=current_user.id,
+            call_content=call_content,
+            call_filename=call_filename,
+            budget_content=budget_content,
+            budget_filename=budget_filename,
         )
     except ValueError as e:
         raise HTTPException(400, str(e)) from e
     except Exception as e:
         await db.rollback()
-        raise HTTPException(500, f"Failed to create and index archive entry: {e}") from e
-
-    return result
+        raise HTTPException(500, f"Failed to create archive entry: {e}") from e
 
 
 @router.get("/{archive_id}")
@@ -236,14 +262,20 @@ async def ingest_archive(
         )
         doc = docs_result.scalar_one_or_none()
 
-    if doc and doc.parsed_text:
-        return await reindex_archive_style(db, archive, doc)
+    if doc and (doc.parsed_text or doc.notes):
+        archive.indexing_status = "pending"
+        archive.indexing_error = None
+        await db.commit()
+        celery_app.send_task("app.workers.archive_tasks.index_archive", args=[archive_id])
+        return {
+            "archive_id": archive_id,
+            "indexing_status": "pending",
+            "message": "Archive indexing queued in the background",
+        }
 
     text = body.submitted_text or archive.lessons_learned or archive.notes or ""
     if not text:
         raise HTTPException(400, "No document or text available to ingest")
-
-    from app.ai.agents.memory_agent import process_completed_grant
 
     pseudo = Document(
         id=str(uuid.uuid4()),
@@ -254,8 +286,14 @@ async def ingest_archive(
         processing_status=ProcessingStatus.PROCESSED,
     )
     db.add(pseudo)
+    archive.indexing_status = "pending"
     await db.commit()
-    return await reindex_archive_style(db, archive, pseudo)
+    celery_app.send_task("app.workers.archive_tasks.index_archive", args=[archive_id])
+    return {
+        "archive_id": archive_id,
+        "indexing_status": "pending",
+        "message": "Archive indexing queued in the background",
+    }
 
 
 @router.post("/{archive_id}/reindex-style", dependencies=[Depends(require_role(UserRole.GRANT_LEAD))])
@@ -280,11 +318,15 @@ async def reindex_archive_style_endpoint(
             select(Document).where(Document.archive_id == archive_id).limit(1)
         )
         doc = docs_result.scalar_one_or_none()
-    if not doc or not doc.parsed_text:
-        raise HTTPException(400, "No processed document found for this archive entry")
+    if not doc or not (doc.parsed_text or doc.notes):
+        raise HTTPException(400, "No document found for this archive entry")
 
-    try:
-        return await reindex_archive_style(db, archive, doc)
-    except Exception as e:
-        await db.rollback()
-        raise HTTPException(500, f"Re-index failed: {e}") from e
+    archive.indexing_status = "pending"
+    archive.indexing_error = None
+    await db.commit()
+    celery_app.send_task("app.workers.archive_tasks.index_archive", args=[archive_id])
+    return {
+        "archive_id": archive_id,
+        "indexing_status": "pending",
+        "message": "Re-index queued in the background",
+    }

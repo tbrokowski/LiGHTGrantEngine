@@ -262,6 +262,9 @@ export const grantWriting = {
   listCitations: (grantId: string) => api.get(`/grants/${grantId}/writing/citations`),
 };
 
+// ── Documents ────────────────────────────────────────────────────────────────
+export { openDocumentContent } from './documents';
+
 // ── Archive ──────────────────────────────────────────────────────────────────
 export const archive = {
   list: (params?: Record<string, unknown>) => api.get('/archive/', { params }),
@@ -333,6 +336,8 @@ export const ai = {
     api.post('/ai/analyze-call', data),
   scoreOpportunity: (opportunityId: string) =>
     api.post(`/ai/score-opportunity?opportunity_id=${opportunityId}`),
+  deepReview: (opportunityId: string) =>
+    api.post(`/ai/deep-review/${opportunityId}`),
   goNoGo: (data: { opportunity_id: string; team_context?: string }) =>
     api.post('/ai/go-no-go', data),
   proposalOutline: (data: { grant_id: string; team_preferences?: string }) =>

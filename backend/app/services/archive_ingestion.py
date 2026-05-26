@@ -16,7 +16,11 @@ from app.models.archive import GrantArchive
 from app.models.document import Document, DocumentType, ProcessingStatus
 from app.models.language import ReusableLanguageBlock
 from app.models.section import ProposalSection
-from app.services.document_parser import parse_uploaded_bytes, validate_proposal_filename
+from app.services.document_parser import (
+    parse_uploaded_bytes,
+    validate_archive_filename,
+    validate_proposal_filename,
+)
 
 STYLE_SECTION_TYPES = (
     "abstract", "background", "problem_statement", "specific_aims",
@@ -279,6 +283,247 @@ async def reindex_archive_style(
     }
 
 
+def _parse_archive_file_content(content: bytes, filename: str, document_type: str) -> str:
+    """Extract plain text from an archive upload (proposal, call, or budget)."""
+    lower = (filename or "").lower()
+    if document_type == DocumentType.BUDGET and any(
+        lower.endswith(ext) for ext in (".xlsx", ".xls", ".csv")
+    ):
+        from app.services.budget_parser import parse_budget_file
+
+        items = parse_budget_file(content, filename)
+        if not items:
+            return ""
+        lines = []
+        for item in items:
+            desc = item.get("description") or "Line item"
+            total = item.get("total")
+            cat = item.get("category")
+            parts = [desc]
+            if cat:
+                parts.append(f"({cat})")
+            if total is not None:
+                parts.append(f": {total}")
+            lines.append(" ".join(parts))
+        return "\n".join(lines).strip()
+
+    return parse_uploaded_bytes(content, filename)
+
+
+async def _store_archive_document(
+    db: AsyncSession,
+    archive: GrantArchive,
+    file_content: bytes,
+    filename: str,
+    document_type: str,
+    user_id: str,
+) -> Document:
+    validate_archive_filename(filename)
+    if not file_content:
+        raise ValueError(f"File is empty: {filename}")
+
+    doc_id = str(uuid.uuid4())
+    safe_name = Path(filename).name
+
+    from app.services.storage import build_key, upload_file as r2_upload
+    from app.config import get_settings
+
+    r2_key = build_key(safe_name, archive_id=archive.id, doc_id=doc_id)
+    r2_upload(r2_key, file_content)
+
+    api_url = get_settings().api_url.rstrip("/")
+    doc = Document(
+        id=doc_id,
+        archive_id=archive.id,
+        document_type=document_type,
+        file_name=safe_name,
+        file_url=f"{api_url}/api/v1/documents/{doc_id}/content",
+        file_format=safe_name.rsplit(".", 1)[-1].lower() if "." in safe_name else None,
+        processing_status=ProcessingStatus.NOT_PROCESSED,
+        uploaded_by_id=user_id,
+        ai_retrieval_allowed=archive.ai_retrieval_allowed,
+        text_reuse_allowed=archive.text_reuse_allowed,
+        notes=r2_key,
+    )
+    db.add(doc)
+    await db.flush()
+    return doc
+
+
+async def create_archive_with_files(
+    db: AsyncSession,
+    archive_fields: dict,
+    proposal_content: bytes,
+    proposal_filename: str,
+    user_id: str,
+    call_content: bytes | None = None,
+    call_filename: str | None = None,
+    budget_content: bytes | None = None,
+    budget_filename: str | None = None,
+) -> dict:
+    """
+    Create archive entry and document records; indexing runs in a background worker.
+    """
+    validate_proposal_filename(proposal_filename)
+
+    archive_id = str(uuid.uuid4())
+    archive = GrantArchive(
+        id=archive_id,
+        indexing_status="pending",
+        **archive_fields,
+    )
+    db.add(archive)
+    await db.flush()
+
+    proposal_doc = await _store_archive_document(
+        db, archive, proposal_content, proposal_filename, DocumentType.FULL_PROPOSAL, user_id
+    )
+    document_ids: dict[str, str] = {"proposal": proposal_doc.id}
+
+    if call_content and call_filename:
+        call_doc = await _store_archive_document(
+            db, archive, call_content, call_filename, DocumentType.CALL_DOCUMENT, user_id
+        )
+        document_ids["call"] = call_doc.id
+
+    if budget_content and budget_filename:
+        budget_doc = await _store_archive_document(
+            db, archive, budget_content, budget_filename, DocumentType.BUDGET, user_id
+        )
+        document_ids["budget"] = budget_doc.id
+
+    await db.commit()
+
+    from app.workers.celery_app import celery_app
+
+    celery_app.send_task("app.workers.archive_tasks.index_archive", args=[archive_id])
+
+    return {
+        "id": archive_id,
+        "document_id": proposal_doc.id,
+        "document_ids": document_ids,
+        "indexing_status": "pending",
+        "indexing": "pending",
+        "sections_created": 0,
+        "message": "Archive entry saved. AI indexing is running in the background.",
+    }
+
+
+async def run_archive_indexing(db: AsyncSession, archive_id: str) -> dict:
+    """Parse documents and index the submitted proposal into the RAG corpus."""
+    result = await db.execute(select(GrantArchive).where(GrantArchive.id == archive_id))
+    archive = result.scalar_one_or_none()
+    if not archive:
+        raise ValueError(f"Archive not found: {archive_id}")
+
+    archive.indexing_status = "processing"
+    archive.indexing_error = None
+    await db.commit()
+
+    docs_result = await db.execute(
+        select(Document).where(Document.archive_id == archive_id)
+    )
+    documents = list(docs_result.scalars().all())
+    proposal_doc = next(
+        (d for d in documents if d.document_type == DocumentType.FULL_PROPOSAL),
+        None,
+    )
+    if not proposal_doc:
+        archive.indexing_status = "failed"
+        archive.indexing_error = "No submitted proposal document found"
+        await db.commit()
+        raise ValueError(archive.indexing_error)
+
+    from app.services.storage import download_file, resolve_storage_key
+
+    warnings: list[str] = []
+
+    try:
+        for doc in documents:
+            r2_key = resolve_storage_key(doc.notes)
+            if not r2_key:
+                continue
+            content = download_file(r2_key)
+            parsed_text = _parse_archive_file_content(
+                content, doc.file_name or "file.pdf", doc.document_type
+            )
+            doc.parsed_text = parsed_text
+            doc.processing_status = (
+                ProcessingStatus.PROCESSED if parsed_text.strip() else ProcessingStatus.FAILED
+            )
+            if doc.id == proposal_doc.id and not parsed_text.strip():
+                raise ValueError(
+                    "Could not extract text from the submitted proposal. "
+                    "The PDF may be scanned/image-only — try a text-based PDF or DOCX."
+                )
+
+        parsed_text = proposal_doc.parsed_text or ""
+        split_sections, split_warnings = await split_proposal_into_sections(
+            parsed_text, archive.funder or ""
+        )
+        warnings.extend(split_warnings)
+
+        memory = await process_completed_grant(
+            grant_title=archive.title,
+            funder=archive.funder or "",
+            outcome=archive.outcome or "unknown",
+            submitted_text=parsed_text,
+            reviewer_feedback=archive.reviewer_feedback or "",
+            internal_notes=archive.internal_debrief or "",
+            split_sections=split_sections,
+        )
+
+        if memory.get("archive_summary") and not archive.notes:
+            archive.notes = memory["archive_summary"]
+        if memory.get("lessons_learned") and not archive.lessons_learned:
+            lessons = memory["lessons_learned"]
+            archive.lessons_learned = (
+                "\n".join(lessons) if isinstance(lessons, list) else lessons
+            )
+
+        section_ids, language_block_ids, ingest_warnings = await ingest_archive_document(
+            db,
+            archive,
+            proposal_doc,
+            memory,
+            commit=False,
+            replace_existing=True,
+            pre_split_sections=split_sections,
+        )
+        warnings.extend(ingest_warnings)
+
+        for doc in documents:
+            if doc.id == proposal_doc.id:
+                continue
+            if doc.parsed_text and doc.ai_retrieval_allowed:
+                from app.workers.celery_app import celery_app
+
+                celery_app.send_task(
+                    "app.workers.embedding_tasks.parse_and_embed_document",
+                    args=[doc.id],
+                )
+
+        archive.indexing_status = "complete"
+        archive.indexing_error = None
+        await db.commit()
+        _queue_embedding_jobs(section_ids, language_block_ids)
+
+        return {
+            "id": archive_id,
+            "document_id": proposal_doc.id,
+            "sections_created": len(section_ids),
+            "language_blocks_created": len(language_block_ids),
+            "indexing_status": "complete",
+            "warnings": warnings,
+            "message": "Archive indexed for AI retrieval",
+        }
+    except Exception as exc:
+        archive.indexing_status = "failed"
+        archive.indexing_error = str(exc)[:2000]
+        await db.commit()
+        raise
+
+
 async def create_archive_and_ingest(
     db: AsyncSession,
     archive_fields: dict,
@@ -287,89 +532,12 @@ async def create_archive_and_ingest(
     user_id: str,
     upload_dir: "Path | None" = None,
 ) -> dict:
-    """
-    Create archive entry, parse proposal, index into RAG corpus.
-    Rolls back on parse failure (no orphan archive row).
-    upload_dir is kept as an optional parameter for backwards compatibility
-    but is no longer used — files go to R2.
-    """
-    validate_proposal_filename(filename)
-    parsed_text = parse_uploaded_bytes(file_content, filename)
-    if not parsed_text.strip():
-        raise ValueError(
-            "Could not extract text from the proposal file. "
-            "The PDF may be scanned/image-only — try a text-based PDF or DOCX."
-        )
-
-    archive_id = str(uuid.uuid4())
-    archive = GrantArchive(id=archive_id, **archive_fields)
-    db.add(archive)
-    await db.flush()
-
-    doc_id = str(uuid.uuid4())
-    safe_name = Path(filename).name
-
-    # Upload archive document to R2
-    from app.services.storage import build_key, upload_file as r2_upload
-    r2_key = build_key(safe_name, archive_id=archive_id, doc_id=doc_id)
-    r2_upload(r2_key, file_content)
-
-    from app.config import get_settings
-    api_url = get_settings().api_url.rstrip("/")
-    doc = Document(
-        id=doc_id,
-        archive_id=archive_id,
-        document_type=DocumentType.FULL_PROPOSAL,
-        file_name=safe_name,
-        file_url=f"{api_url}/api/v1/documents/{doc_id}/content",
-        file_format=safe_name.rsplit(".", 1)[-1].lower(),
-        parsed_text=parsed_text,
-        processing_status=ProcessingStatus.PROCESSED,
-        uploaded_by_id=user_id,
-        ai_retrieval_allowed=archive.ai_retrieval_allowed,
-        text_reuse_allowed=archive.text_reuse_allowed,
-        notes=r2_key,
+    """Backwards-compatible wrapper: create archive and queue background indexing."""
+    result = await create_archive_with_files(
+        db=db,
+        archive_fields=archive_fields,
+        proposal_content=file_content,
+        proposal_filename=filename,
+        user_id=user_id,
     )
-    db.add(doc)
-    await db.flush()
-
-    split_sections, split_warnings = await split_proposal_into_sections(parsed_text, archive.funder or "")
-
-    memory = await process_completed_grant(
-        grant_title=archive.title,
-        funder=archive.funder or "",
-        outcome=archive.outcome or "unknown",
-        submitted_text=parsed_text,
-        reviewer_feedback=archive.reviewer_feedback or "",
-        internal_notes=archive.internal_debrief or "",
-        split_sections=split_sections,
-    )
-
-    if memory.get("archive_summary") and not archive.notes:
-        archive.notes = memory["archive_summary"]
-    if memory.get("lessons_learned") and not archive.lessons_learned:
-        lessons = memory["lessons_learned"]
-        archive.lessons_learned = "\n".join(lessons) if isinstance(lessons, list) else lessons
-
-    section_ids, language_block_ids, ingest_warnings = await ingest_archive_document(
-        db, archive, doc, memory, commit=False, replace_existing=False,
-        pre_split_sections=split_sections,
-    )
-
-    warnings = split_warnings + ingest_warnings
-
-    await db.commit()
-    _queue_embedding_jobs(section_ids, language_block_ids)
-
-    return {
-        "id": archive_id,
-        "document_id": doc_id,
-        "sections_created": len(section_ids),
-        "language_blocks_created": len(language_block_ids),
-        "section_ids": section_ids,
-        "document_structure": archive.document_structure,
-        "style_indexed": bool(archive.style_fingerprint),
-        "indexing": "complete",
-        "warnings": warnings,
-        "message": "Archive entry created and indexed for AI retrieval",
-    }
+    return result

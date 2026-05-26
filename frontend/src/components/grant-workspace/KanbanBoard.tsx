@@ -32,6 +32,7 @@ function isOverdue(task: Task): boolean {
 export default function KanbanBoard({ grantId, tasks, onRefresh }: Props) {
   const [modalOpen, setModalOpen] = useState(false);
   const [editingTask, setEditingTask] = useState<Task | null>(null);
+  const [defaultStatus, setDefaultStatus] = useState('not_started');
 
   const rootTasks = tasks.filter((t) => !t.parent_task_id);
   const byStatus = (status: string) => rootTasks.filter((t) => t.status === status);
@@ -56,15 +57,7 @@ export default function KanbanBoard({ grantId, tasks, onRefresh }: Props) {
 
   return (
     <div className="p-4">
-      <div className="flex items-center justify-between mb-4">
-        <h2 className="text-base font-semibold text-gray-800">Kanban Board</h2>
-        <button
-          onClick={() => { setEditingTask(null); setModalOpen(true); }}
-          className="text-xs px-3 py-1.5 bg-indigo-600 text-white rounded-lg hover:bg-indigo-700"
-        >
-          + New Task
-        </button>
-      </div>
+      <h2 className="text-base font-semibold text-gray-800 mb-4">Kanban Board</h2>
       <DragDropContext onDragEnd={onDragEnd}>
         <div className="flex gap-3 overflow-x-auto pb-4">
           {KANBAN_COLUMNS.map((status) => {
@@ -73,8 +66,23 @@ export default function KanbanBoard({ grantId, tasks, onRefresh }: Props) {
             return (
               <div key={status} className="flex-shrink-0 w-60">
                 <div className={`flex items-center justify-between px-3 py-2 rounded-t-lg ${statusInfo?.color ?? 'bg-gray-100'}`}>
-                  <span className="text-xs font-semibold">{getStatusLabel(TASK_STATUSES, status)}</span>
-                  <span className="text-xs font-bold">{colTasks.length}</span>
+                  <div className="flex items-center gap-2 min-w-0">
+                    <span className="text-xs font-semibold truncate">{getStatusLabel(TASK_STATUSES, status)}</span>
+                    <span className="text-xs font-bold text-gray-500">{colTasks.length}</span>
+                  </div>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setEditingTask(null);
+                      setDefaultStatus(status);
+                      setModalOpen(true);
+                    }}
+                    className="flex-shrink-0 w-5 h-5 flex items-center justify-center rounded text-gray-500 hover:text-indigo-700 hover:bg-white/70 text-sm font-bold leading-none transition-colors"
+                    title={`Add task to ${getStatusLabel(TASK_STATUSES, status)}`}
+                    aria-label={`Add task to ${getStatusLabel(TASK_STATUSES, status)}`}
+                  >
+                    +
+                  </button>
                 </div>
                 <Droppable droppableId={status}>
                   {(provided, snapshot) => (
@@ -92,7 +100,7 @@ export default function KanbanBoard({ grantId, tasks, onRefresh }: Props) {
                               ref={provided.innerRef}
                               {...provided.draggableProps}
                               {...provided.dragHandleProps}
-                              onClick={() => { setEditingTask(task); setModalOpen(true); }}
+                              onClick={() => { setEditingTask(task); setDefaultStatus(task.status); setModalOpen(true); }}
                               className={`bg-white rounded-lg border p-2.5 cursor-pointer hover:border-indigo-300 transition-colors text-left ${
                                 snapshot.isDragging ? 'shadow-lg border-indigo-400' : 'border-gray-200'
                               } ${task.status === 'blocked' ? 'border-l-2 border-l-red-500' : isOverdue(task) ? 'border-l-2 border-l-amber-400' : ''}`}
@@ -139,6 +147,7 @@ export default function KanbanBoard({ grantId, tasks, onRefresh }: Props) {
         open={modalOpen}
         task={editingTask}
         parentTaskId={null}
+        defaultStatus={defaultStatus}
         grantId={grantId}
         onClose={() => setModalOpen(false)}
         onSave={handleSave}

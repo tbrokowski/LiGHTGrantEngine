@@ -141,6 +141,21 @@ while [[ $ELAPSED -lt $MAX_WAIT ]]; do
     ELAPSED=$(( ELAPSED + 5 ))
 done
 
+# ── Wait for Celery worker ────────────────────────────────────────────
+echo "==> Waiting for Celery worker..."
+ELAPSED=0
+while [[ $ELAPSED -lt $MAX_WAIT ]]; do
+    if docker compose exec -T worker celery -A app.workers.celery_app inspect ping 2>/dev/null | grep -q "pong"; then
+        echo "    Worker is up"
+        break
+    fi
+    sleep 5
+    ELAPSED=$(( ELAPSED + 5 ))
+done
+if [[ $ELAPSED -ge $MAX_WAIT ]]; then
+    echo "WARNING: Celery worker did not respond to ping — enrichment tasks may not run."
+fi
+
 # ── Run migrations ────────────────────────────────────────────────────
 echo "==> Running database migrations"
 docker compose exec backend alembic upgrade head
@@ -160,6 +175,10 @@ docker compose exec backend python /app/scripts/create_admin.py \
 # ── Seed global grant pool from JSON ─────────────────────────────────
 echo "==> Bootstrapping global grant pool from JSON"
 docker compose exec backend python /app/scripts/seed_from_json.py
+
+# ── Backfill descriptions for grants missing full detail pages ────────
+echo "==> Queuing description enrichment for grants without full text"
+docker compose exec backend python /app/scripts/backfill_descriptions.py
 
 # ── Optionally re-export from Excel if JSON missing ─────────────────
 if [[ ! -f "$ROOT_DIR/backend/data/grant_funding_portals.json" ]] && [[ -f "$ROOT_DIR/grant_funding_portals.xlsx" ]]; then

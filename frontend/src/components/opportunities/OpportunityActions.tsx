@@ -42,36 +42,50 @@ export default function OpportunityActions({
     ? (() => { try { return new URL(opp.opportunity_url!).hostname.replace(/^www\./, ''); } catch { return null; } })()
     : null;
 
+  const isTable = mode === 'queue' || mode === 'shortlist';
+  const bookmark = onToggleBookmark ? (
+    <BookmarkButton
+      isBookmarked={isBookmarked}
+      onToggle={() => run('bookmark', () => onToggleBookmark(opp.id, isBookmarked))}
+      busy={busy === 'bookmark'}
+      size={mode === 'focus' ? 'md' : 'sm'}
+    />
+  ) : null;
+
+  const viewLink = opp.opportunity_url && mode !== 'compact' ? (
+    <a
+      href={opp.opportunity_url}
+      target="_blank"
+      rel="noopener noreferrer"
+      onClick={e => e.stopPropagation()}
+      title={callDomain ? `Open ${callDomain}` : 'View call'}
+      className={`${btnBase} text-gray-500 border-gray-200 hover:border-gray-400 hover:text-gray-700`}
+    >
+      View ↗
+    </a>
+  ) : null;
+
   return (
-    <div className={`flex items-center gap-1.5 flex-wrap ${className}`}>
-      {onToggleBookmark && (
-        <BookmarkButton
-          isBookmarked={isBookmarked}
-          onToggle={() => run('bookmark', () => onToggleBookmark(opp.id, isBookmarked))}
-          busy={busy === 'bookmark'}
-          size={mode === 'focus' ? 'md' : 'sm'}
-        />
-      )}
-      {opp.opportunity_url && mode !== 'compact' && (
-        <a
-          href={opp.opportunity_url}
-          target="_blank"
-          rel="noopener noreferrer"
-          onClick={e => e.stopPropagation()}
-          title={callDomain ? `Open ${callDomain}` : 'View call'}
-          className={`${btnBase} text-gray-500 border-gray-200 hover:border-gray-400 hover:text-gray-700`}
-        >
-          View ↗
-        </a>
-      )}
-      {onStartGrant && mode !== 'compact' && (
-        <button
-          onClick={e => { e.stopPropagation(); run('grant', () => onStartGrant(opp.id)); }}
-          disabled={!!busy}
-          className={`${btnBase} text-white bg-blue-600 border-blue-600 hover:bg-blue-700 font-medium`}
-        >
-          {busy === 'grant' ? '…' : 'Start Grant'}
-        </button>
+    <div className={`flex items-center gap-1.5 ${isTable ? 'w-full' : 'flex-wrap'} ${className}`}>
+      {isTable ? (
+        <>
+          {viewLink}
+          {bookmark && <div className="ml-auto shrink-0">{bookmark}</div>}
+        </>
+      ) : (
+        <>
+          {bookmark}
+          {viewLink}
+          {onStartGrant && mode === 'focus' && (
+            <button
+              onClick={e => { e.stopPropagation(); run('grant', () => onStartGrant(opp.id)); }}
+              disabled={!!busy}
+              className={`${btnBase} text-white bg-blue-600 border-blue-600 hover:bg-blue-700 font-medium`}
+            >
+              {busy === 'grant' ? '…' : 'Start Grant'}
+            </button>
+          )}
+        </>
       )}
     </div>
   );

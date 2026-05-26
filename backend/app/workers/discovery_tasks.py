@@ -227,6 +227,10 @@ def _process_listing(db, listing: dict, source_id: str, source_url: str | None =
         select(Opportunity).where(Opportunity.opportunity_url == call_url)
     ).scalar_one_or_none()
     if existing:
+        # Re-queue enrichment if we previously only stored a listing snippet
+        if not existing.parsed_text and existing.opportunity_url:
+            from app.workers.enrichment_tasks import enrich_opportunity
+            enrich_opportunity.delay(str(existing.id))
         return "duplicate"
 
     # Resolve funder logo URL
@@ -269,40 +273,36 @@ def _process_listing(db, listing: dict, source_id: str, source_url: str | None =
 
 @celery_app.task(name="app.workers.discovery_tasks.score_opportunity")
 def score_opportunity(opportunity_id: str):
-    """Score an opportunity using the AI fit scorer."""
+    """Score a newly enriched opportunity using keyword matching (zero LLM calls)."""
     from sqlalchemy import create_engine
     from sqlalchemy.orm import Session
     from app.config import get_settings
     from app.models.opportunity import Opportunity
+    from app.services.keyword_scorer import keyword_score_opportunity
 
     settings = get_settings()
     engine = create_engine(settings.database_url)
 
-    async def _score():
-        from app.ai.agents.fit_scorer import score_opportunity as ai_score
-        with Session(engine) as db:
-            opp = db.get(Opportunity, opportunity_id)
-            if not opp:
-                return
-            result = await ai_score(
-                title=opp.title,
-                description=opp.description or "",
-                funder=opp.funder or "",
-                eligibility=opp.eligibility_criteria or "",
-                geography=str(opp.geography),
-                award_amount=f"{opp.award_min}-{opp.award_max} {opp.currency or ''}",
-                deadline=str(opp.deadline) if opp.deadline else "",
-            )
-            opp.fit_score = result.get("fit_score", 0)
-            opp.priority = result.get("priority", "watchlist")
-            opp.fit_rationale = result.get("rationale", "")
-            if result.get("matched_themes"):
-                opp.thematic_areas = list(set(opp.thematic_areas or []) | set(result["matched_themes"]))
-            if opp.fit_score and opp.fit_score >= settings.discovery.get("auto_queue_threshold", 40):
-                pass  # global status unchanged; institution queue handles surfacing
-            db.commit()
-
-    _run_async(_score())
+    with Session(engine) as db:
+        opp = db.get(Opportunity, opportunity_id)
+        if not opp:
+            return
+        result = keyword_score_opportunity(
+            title=opp.title,
+            description=opp.description or opp.parsed_text or "",
+            funder=opp.funder or "",
+            eligibility=opp.eligibility_criteria or "",
+            geography=opp.geography or [],
+            award_min=opp.award_min,
+            award_max=opp.award_max,
+            deadline=opp.deadline,
+            thematic_areas=opp.thematic_areas or [],
+        )
+        opp.fit_score = result["fit_score"]
+        opp.priority = result["priority"]
+        if result.get("matched_themes"):
+            opp.thematic_areas = list(set(opp.thematic_areas or []) | set(result["matched_themes"]))
+        db.commit()
 
 
 @celery_app.task(name="app.workers.discovery_tasks.check_source_health")

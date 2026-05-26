@@ -57,15 +57,32 @@ def parse_and_embed_document(document_id: str):
 from app.services.document_parser import parse_bytes_for_document
 
 
+def _resolve_r2_key(notes: str | None) -> str | None:
+    """Return R2 object key from doc.notes (plain key or JSON metadata)."""
+    if not notes:
+        return None
+    if notes.startswith("{"):
+        try:
+            import json
+            meta = json.loads(notes)
+            return meta.get("r2_key")
+        except (json.JSONDecodeError, TypeError):
+            return None
+    return notes
+
+
 def _parse_document(doc) -> str:
     """Extract text from a document. Downloads from R2 using the key in doc.notes."""
     content = b""
 
-    # doc.notes now holds the R2 object key (e.g. "grants/abc/doc-id/file.pdf")
+    r2_key = None
     if doc.notes:
+        from app.services.storage import resolve_storage_key
+        r2_key = resolve_storage_key(doc.notes)
+    if r2_key:
         try:
             from app.services.storage import download_file
-            content = download_file(doc.notes)
+            content = download_file(r2_key)
         except FileNotFoundError:
             pass
         except Exception:

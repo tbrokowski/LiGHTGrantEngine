@@ -10,6 +10,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.database import get_db
 from app.models.opportunity import Opportunity, OpportunityReview, OpportunityStatus
 from app.models.institution_opportunity import InstitutionOpportunity
+from app.models.document import Document
 from app.models.user_opportunity_state import UserOpportunityState
 from app.models.user import User
 from app.models.institution import Institution
@@ -208,8 +209,11 @@ async def get_opportunity(
     reviews_q = select(OpportunityReview).where(OpportunityReview.opportunity_id == opp_id)
     reviews = (await db.execute(reviews_q)).scalars().all()
     io = await _get_institution_opp(db, current_user, opp_id)
+    docs_q = select(Document).where(Document.opportunity_id == opp_id)
+    docs = (await db.execute(docs_q)).scalars().all()
     return {
         **_opp_full(opp, io),
+        "documents": [_document_summary(d) for d in docs],
         "is_read": read_map.get(opp_id, True),
         "reviews": [_review_dict(r) for r in reviews],
     }
@@ -275,17 +279,61 @@ async def re_enrich_opportunity(
     return {"status": "queued", "message": "Re-enrichment and AI summary queued"}
 
 
+def _build_call_requirements(opp) -> str:
+    """Compile opportunity fields into structured call requirements text for the grant workspace."""
+    parts: list[str] = []
+
+    if opp.description or opp.short_summary:
+        parts.append("## Overview\n" + (opp.description or opp.short_summary or ""))
+
+    if opp.eligibility_criteria:
+        parts.append("## Eligibility\n" + opp.eligibility_criteria)
+
+    if opp.evaluation_criteria:
+        parts.append("## Evaluation Criteria\n" + opp.evaluation_criteria)
+
+    if opp.partner_requirements:
+        parts.append("## Partner Requirements\n" + opp.partner_requirements)
+
+    if opp.required_documents:
+        docs = opp.required_documents
+        doc_list = "\n".join(f"- {d}" for d in docs) if isinstance(docs, list) else str(docs)
+        parts.append("## Required Documents\n" + doc_list)
+
+    sub_lines: list[str] = []
+    if opp.submission_portal:
+        sub_lines.append(f"**Portal:** {opp.submission_portal}")
+    if opp.project_duration:
+        sub_lines.append(f"**Duration:** {opp.project_duration}")
+    if opp.cost_sharing_requirements:
+        sub_lines.append(f"**Cost sharing:** {opp.cost_sharing_requirements}")
+    if opp.indirect_cost_rules:
+        sub_lines.append(f"**Indirect costs:** {opp.indirect_cost_rules}")
+    if opp.expected_awards:
+        sub_lines.append(f"**Expected awards:** {opp.expected_awards}")
+    if sub_lines:
+        parts.append("## Submission Details\n" + "\n".join(sub_lines))
+
+    if opp.contact_information:
+        parts.append("## Contact\n" + opp.contact_information)
+
+    return "\n\n".join(parts)
+
+
 @router.post("/{opp_id}/convert-to-grant")
 async def convert_to_grant(
     opp_id: str,
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ):
-    """Convert an opportunity into an active grant workspace."""
+    """Convert an opportunity into an active grant workspace, loading full call context."""
     import uuid
     from app.models.active_grant import ActiveGrant
+    from app.models.document import Document
 
     opp = await _get_opp_or_404(opp_id, db)
+    call_reqs = _build_call_requirements(opp)
+
     grant = ActiveGrant(
         id=str(uuid.uuid4()),
         opportunity_id=opp_id,
@@ -299,13 +347,49 @@ async def convert_to_grant(
         themes=opp.thematic_areas,
         geographies=opp.geography,
         internal_lead_id=current_user.id,
+        call_requirements=call_reqs or None,
     )
     db.add(grant)
+    await db.flush()  # get grant.id before commit
+
+    # Link existing opportunity documents to the new grant
+    doc_result = await db.execute(
+        select(Document).where(Document.opportunity_id == opp_id)
+    )
+    existing_docs = doc_result.scalars().all()
+    for doc in existing_docs:
+        linked = Document(
+            id=str(uuid.uuid4()),
+            grant_id=grant.id,
+            opportunity_id=opp_id,
+            file_name=doc.file_name,
+            file_url=doc.file_url,
+            file_format=doc.file_format,
+            document_type=doc.document_type or "call_document",
+            processing_status=doc.processing_status,
+            parsed_text=doc.parsed_text,
+            uploaded_by_id=current_user.id,
+        )
+        db.add(linked)
+
     io = await _get_institution_opp(db, current_user, opp_id)
     if io:
         io.status = "actively_pursuing"
+
     await db.commit()
     await db.refresh(grant)
+
+    # Queue PDF fetcher if no existing documents and a source URL is available
+    if not existing_docs and opp.opportunity_url:
+        try:
+            from app.workers.celery_app import celery_app
+            celery_app.send_task(
+                "app.workers.enrichment_tasks.enrich_opportunity_force",
+                args=[opp_id],
+            )
+        except Exception:
+            pass
+
     return {"grant_id": grant.id, "message": "Active grant workspace created"}
 
 
@@ -376,6 +460,16 @@ def _opp_summary(o: Opportunity, is_read: bool = False, io: InstitutionOpportuni
     }
 
 
+def _document_summary(d: Document) -> dict:
+    return {
+        "id": d.id,
+        "file_name": d.file_name,
+        "file_url": d.file_url,
+        "document_type": d.document_type,
+        "processing_status": d.processing_status,
+    }
+
+
 def _opp_full(o: Opportunity, io: InstitutionOpportunity | None = None) -> dict:
     d = {c.name: getattr(o, c.name) for c in o.__table__.columns if c.name != "embedding"}
     if io:
@@ -388,6 +482,8 @@ def _opp_full(o: Opportunity, io: InstitutionOpportunity | None = None) -> dict:
         d["deadline"] = str(d["deadline"])
     if d.get("date_discovered"):
         d["date_discovered"] = str(d["date_discovered"])
+    d["description"] = o.description or o.parsed_text
+    d["has_description"] = bool(o.description or o.parsed_text)
     return d
 
 

@@ -112,8 +112,7 @@ async def serve_document_content(
         if doc.grant_id not in accessible:
             raise HTTPException(403, "You do not have access to this document.")
 
-    # doc.notes holds the R2 object key (set during upload)
-    r2_key = doc.notes
+    r2_key = storage.resolve_storage_key(doc.notes)
     if r2_key and storage.object_exists(r2_key):
         presigned = storage.get_presigned_url(r2_key, expires_in=3600)
         return RedirectResponse(url=presigned, status_code=302)

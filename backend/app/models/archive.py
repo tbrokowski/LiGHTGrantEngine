@@ -65,5 +65,9 @@ class GrantArchive(Base):
     style_fingerprint: Mapped[dict | None] = mapped_column(JSON, default=dict)
     style_indexed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
 
+    # pending | processing | complete | failed
+    indexing_status: Mapped[str] = mapped_column(String(50), default="complete")
+    indexing_error: Mapped[str | None] = mapped_column(Text)
+
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
     updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now(), onupdate=func.now())

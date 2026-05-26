@@ -4,12 +4,21 @@ from __future__ import annotations
 import io
 
 ALLOWED_EXTENSIONS = {".pdf", ".docx", ".txt"}
+ARCHIVE_EXTENSIONS = ALLOWED_EXTENSIONS | {".xlsx", ".xls", ".csv"}
 
 
 def validate_proposal_filename(filename: str) -> None:
     lower = (filename or "").lower()
     if not any(lower.endswith(ext) for ext in ALLOWED_EXTENSIONS):
         raise ValueError(f"Unsupported file type. Allowed: {', '.join(sorted(ALLOWED_EXTENSIONS))}")
+
+
+def validate_archive_filename(filename: str) -> None:
+    lower = (filename or "").lower()
+    if not any(lower.endswith(ext) for ext in ARCHIVE_EXTENSIONS):
+        raise ValueError(
+            f"Unsupported file type. Allowed: {', '.join(sorted(ARCHIVE_EXTENSIONS))}"
+        )
 
 
 def parse_uploaded_bytes(content: bytes, filename: str) -> str:

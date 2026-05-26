@@ -2,17 +2,12 @@
 import { useEffect, useState } from 'react';
 import { useRouter, useParams } from 'next/navigation';
 import Link from 'next/link';
-import dynamic from 'next/dynamic';
-import remarkGfm from 'remark-gfm';
 import { opportunities, ai, api } from '@/lib/api';
+import { openDocumentContent } from '@/lib/documents';
 import SuggestedPartners from '@/components/crm/SuggestedPartners';
 import FunderLogo from '@/components/opportunities/FunderLogo';
 import BookmarkButton from '@/components/opportunities/BookmarkButton';
-
-const ReactMarkdown = dynamic(() => import('react-markdown'), {
-  loading: () => <p className="text-sm text-gray-400">Loading…</p>,
-  ssr: false,
-});
+import ProseContent from '@/components/ui/ProseContent';
 
 interface OpportunityDetail {
   id: string;
@@ -49,6 +44,31 @@ interface OpportunityDetail {
   notes?: string;
   date_discovered?: string;
   funder_logo_url?: string;
+  guidance_doc_link?: string;
+  documents?: OpportunityDocument[];
+}
+
+interface OpportunityDocument {
+  id: string;
+  file_name?: string;
+  file_url?: string;
+  document_type?: string;
+  processing_status?: string;
+}
+
+interface DeepReviewResult {
+  fit_score: number;
+  priority: string;
+  verdict: string;
+  score_breakdown: Record<string, number>;
+  strengths: string[];
+  risks: string[];
+  proposal_strategy: string;
+  critical_requirements: string[];
+  archive_references: string[];
+  go_no_go: 'GO' | 'NO-GO' | 'CONDITIONAL GO';
+  go_no_go_rationale: string;
+  recommended_sections: string[];
 }
 
 const PRIORITY_LABELS: Record<string, string> = {
@@ -70,51 +90,6 @@ function formatDate(d?: string | null) {
   try {
     return new Date(d).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' });
   } catch { return d; }
-}
-
-/** Render markdown with consistent prose styling */
-function MarkdownContent({ content }: { content: string }) {
-  return (
-    <ReactMarkdown
-      remarkPlugins={[remarkGfm]}
-      components={{
-        h2: ({ children }) => (
-          <h2 className="text-sm font-semibold text-gray-800 mt-5 mb-2 first:mt-0 border-b border-gray-100 pb-1">
-            {children}
-          </h2>
-        ),
-        h3: ({ children }) => (
-          <h3 className="text-sm font-semibold text-gray-700 mt-3 mb-1">{children}</h3>
-        ),
-        p: ({ children }) => (
-          <p className="text-sm text-gray-700 leading-relaxed mb-2">{children}</p>
-        ),
-        ul: ({ children }) => (
-          <ul className="list-disc list-inside space-y-1 mb-3 text-sm text-gray-700">{children}</ul>
-        ),
-        ol: ({ children }) => (
-          <ol className="list-decimal list-inside space-y-1 mb-3 text-sm text-gray-700">{children}</ol>
-        ),
-        li: ({ children }) => <li className="leading-relaxed">{children}</li>,
-        strong: ({ children }) => <strong className="font-semibold text-gray-900">{children}</strong>,
-        em: ({ children }) => <em className="italic text-gray-600">{children}</em>,
-        a: ({ href, children }) => (
-          <a href={href} target="_blank" rel="noopener noreferrer" className="text-blue-600 hover:underline">
-            {children}
-          </a>
-        ),
-        blockquote: ({ children }) => (
-          <blockquote className="border-l-4 border-gray-200 pl-4 italic text-gray-600 my-2">{children}</blockquote>
-        ),
-        code: ({ children }) => (
-          <code className="bg-gray-100 text-gray-800 px-1.5 py-0.5 rounded text-xs font-mono">{children}</code>
-        ),
-        hr: () => <hr className="border-gray-200 my-3" />,
-      }}
-    >
-      {content}
-    </ReactMarkdown>
-  );
 }
 
 /** Collapsible section panel */
@@ -164,7 +139,8 @@ export default function OpportunityDetailPage() {
   const [opp, setOpp] = useState<OpportunityDetail | null>(null);
   const [loading, setLoading] = useState(true);
   const [activeTab, setActiveTab] = useState<'overview' | 'ai' | 'partners'>('overview');
-  const [scoring, setScoring] = useState(false);
+  const [reviewing, setReviewing] = useState(false);
+  const [deepReview, setDeepReview] = useState<DeepReviewResult | null>(null);
   const [converting, setConverting] = useState(false);
   const [refetching, setRefetching] = useState(false);
   const [generatingSummary, setGeneratingSummary] = useState(false);
@@ -178,13 +154,20 @@ export default function OpportunityDetailPage() {
       .finally(() => setLoading(false));
   }, [id]);
 
-  async function handleScore() {
-    setScoring(true);
+  async function handleDeepReview() {
+    setReviewing(true);
+    setActiveTab('ai');
     try {
-      const res = await ai.scoreOpportunity(id);
-      setOpp(prev => prev ? { ...prev, fit_score: res.data.fit_score, priority: res.data.priority, fit_rationale: res.data.rationale } : prev);
+      const res = await ai.deepReview(id);
+      setDeepReview(res.data as DeepReviewResult);
+      setOpp(prev => prev
+        ? { ...prev, fit_score: res.data.fit_score, priority: res.data.priority, fit_rationale: res.data.verdict }
+        : prev
+      );
+    } catch {
+      alert('Deep review failed. Please try again.');
     } finally {
-      setScoring(false);
+      setReviewing(false);
     }
   }
 
@@ -198,6 +181,11 @@ export default function OpportunityDetailPage() {
     } finally {
       setRefetching(false);
     }
+  }
+
+  async function handleDownloadDocument(docId: string, fileName?: string) {
+    const ok = await openDocumentContent(docId, fileName);
+    if (!ok) alert(`Failed to open ${fileName || 'document'}.`);
   }
 
   async function handleGenerateSummary() {
@@ -350,11 +338,11 @@ export default function OpportunityDetailPage() {
             </a>
           )}
           <button
-            onClick={handleScore}
-            disabled={scoring}
-            className="text-sm text-gray-700 border border-gray-300 px-3 py-1.5 rounded-md hover:bg-gray-50 transition-colors disabled:opacity-50"
+            onClick={handleDeepReview}
+            disabled={reviewing}
+            className="text-sm text-purple-700 border border-purple-200 bg-purple-50 px-3 py-1.5 rounded-md hover:bg-purple-100 transition-colors disabled:opacity-50"
           >
-            {scoring ? 'Scoring…' : 'AI score'}
+            {reviewing ? 'Analysing…' : '✦ Deep Review'}
           </button>
           {opp.opportunity_url && (
             <button
@@ -387,7 +375,9 @@ export default function OpportunityDetailPage() {
                 : 'border-transparent text-gray-500 hover:text-gray-700'
             }`}
           >
-            {tab === 'ai' ? 'AI Summary' : tab === 'partners' ? 'Partners' : 'Overview'}
+            {tab === 'ai'
+              ? (deepReview ? '✦ AI Review' : 'AI Review')
+              : tab === 'partners' ? 'Partners' : 'Overview'}
           </button>
         ))}
       </div>
@@ -418,7 +408,7 @@ export default function OpportunityDetailPage() {
               )}
             </div>
             {opp.description ? (
-              <MarkdownContent content={opp.description} />
+              <ProseContent content={opp.description} />
             ) : (
               <div className="text-sm text-gray-400 italic py-2">
                 {opp.opportunity_url
@@ -427,6 +417,38 @@ export default function OpportunityDetailPage() {
               </div>
             )}
           </div>
+
+          {/* Call Documents */}
+          {((opp.documents ?? []).length > 0 || opp.guidance_doc_link) && (
+            <div className="bg-white border border-gray-200 rounded-lg p-5">
+              <h3 className="text-xs font-semibold text-gray-500 uppercase tracking-wide mb-3">Call Documents</h3>
+              {(opp.documents ?? []).length > 0 ? (
+                <ul className="space-y-2">
+                  {opp.documents!.map(doc => (
+                    <li key={doc.id} className="flex items-center justify-between gap-3 text-sm">
+                      <span className="text-gray-700 truncate">{doc.file_name || 'Call document'}</span>
+                      <button
+                        type="button"
+                        onClick={() => handleDownloadDocument(doc.id, doc.file_name)}
+                        className="shrink-0 text-blue-600 hover:text-blue-800 font-medium"
+                      >
+                        Download PDF
+                      </button>
+                    </li>
+                  ))}
+                </ul>
+              ) : opp.guidance_doc_link ? (
+                <a
+                  href={opp.guidance_doc_link}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="text-sm text-blue-600 hover:text-blue-800"
+                >
+                  View call document on funder site →
+                </a>
+              ) : null}
+            </div>
+          )}
 
           {/* Thematic Areas */}
           {(opp.thematic_areas ?? []).length > 0 && (
@@ -456,7 +478,7 @@ export default function OpportunityDetailPage() {
           {opp.eligibility_criteria && (
             <CollapsibleSection title="Eligibility" defaultOpen={true}>
               <div className="pt-3">
-                <MarkdownContent content={opp.eligibility_criteria} />
+                <ProseContent content={opp.eligibility_criteria} />
               </div>
             </CollapsibleSection>
           )}
@@ -465,7 +487,7 @@ export default function OpportunityDetailPage() {
           {opp.partner_requirements && (
             <CollapsibleSection title="Partner Requirements">
               <div className="pt-3">
-                <MarkdownContent content={opp.partner_requirements} />
+                <ProseContent content={opp.partner_requirements} />
               </div>
             </CollapsibleSection>
           )}
@@ -474,7 +496,7 @@ export default function OpportunityDetailPage() {
           {opp.evaluation_criteria && (
             <CollapsibleSection title="Evaluation Criteria">
               <div className="pt-3">
-                <MarkdownContent content={opp.evaluation_criteria} />
+                <ProseContent content={opp.evaluation_criteria} />
               </div>
             </CollapsibleSection>
           )}
@@ -534,36 +556,208 @@ export default function OpportunityDetailPage() {
         </div>
       )}
 
-      {/* ── AI Summary Tab ── */}
+      {/* ── AI Review Tab ── */}
       {activeTab === 'ai' && (
-        <div className="bg-white border border-gray-200 rounded-lg p-6">
-          {opp.ai_summary ? (
-            <MarkdownContent content={opp.ai_summary} />
-          ) : (
-            <div className="text-center py-12">
-              <p className="text-gray-400 text-sm mb-4">No AI summary yet.</p>
-              <button
-                onClick={handleGenerateSummary}
-                disabled={generatingSummary}
-                className="text-sm text-white bg-blue-600 hover:bg-blue-700 px-4 py-2 rounded-md transition-colors disabled:opacity-50 font-medium"
-              >
-                {generatingSummary ? 'Queuing…' : 'Generate AI Summary'}
-              </button>
-              <p className="text-xs text-gray-400 mt-2">
-                The summary will include funding scope, eligibility, fit for LiGHT, project ideas, and action items.
-              </p>
+        <div className="space-y-4">
+          {reviewing && (
+            <div className="bg-purple-50 border border-purple-100 rounded-lg p-6 text-center">
+              <div className="inline-flex items-center gap-2 text-sm text-purple-700">
+                <svg className="w-4 h-4 animate-spin" fill="none" viewBox="0 0 24 24">
+                  <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
+                  <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z" />
+                </svg>
+                Running deep analysis — this takes 10–20 seconds…
+              </div>
             </div>
           )}
-          {opp.ai_summary && (
-            <div className="mt-4 pt-4 border-t border-gray-100 flex justify-end">
+
+          {!deepReview && !reviewing && (
+            <div className="bg-white border border-gray-200 rounded-lg p-8 text-center">
+              <div className="text-3xl mb-3">✦</div>
+              <h3 className="text-base font-semibold text-gray-800 mb-2">Deep AI Review</h3>
+              <p className="text-sm text-gray-500 max-w-md mx-auto mb-5">
+                Get a comprehensive strategic assessment — fit score, strengths, risks, proposal strategy,
+                critical requirements, and a Go / No-Go recommendation grounded in your org profile and past grants.
+              </p>
               <button
-                onClick={handleGenerateSummary}
-                disabled={generatingSummary}
-                className="text-xs text-gray-400 hover:text-gray-600 disabled:opacity-50"
+                onClick={handleDeepReview}
+                disabled={reviewing}
+                className="text-sm text-white bg-purple-600 hover:bg-purple-700 px-5 py-2 rounded-md transition-colors disabled:opacity-50 font-medium"
               >
-                {generatingSummary ? 'Queuing…' : 'Regenerate summary'}
+                Run Deep Review
               </button>
+              {opp.ai_summary && (
+                <div className="mt-8 text-left border-t border-gray-100 pt-6">
+                  <h4 className="text-xs font-semibold text-gray-400 uppercase tracking-wide mb-3">AI Summary</h4>
+                  <ProseContent content={opp.ai_summary} />
+                </div>
+              )}
             </div>
+          )}
+
+          {deepReview && !reviewing && (
+            <>
+              {/* Verdict banner */}
+              <div className={`rounded-lg p-5 border ${
+                deepReview.go_no_go === 'GO'
+                  ? 'bg-green-50 border-green-200'
+                  : deepReview.go_no_go === 'CONDITIONAL GO'
+                  ? 'bg-amber-50 border-amber-200'
+                  : 'bg-red-50 border-red-200'
+              }`}>
+                <div className="flex items-start justify-between gap-4">
+                  <div>
+                    <div className="flex items-center gap-2 mb-1">
+                      <span className={`text-xs font-bold px-2.5 py-1 rounded-full uppercase tracking-wide ${
+                        deepReview.go_no_go === 'GO'
+                          ? 'bg-green-600 text-white'
+                          : deepReview.go_no_go === 'CONDITIONAL GO'
+                          ? 'bg-amber-600 text-white'
+                          : 'bg-red-600 text-white'
+                      }`}>
+                        {deepReview.go_no_go}
+                      </span>
+                      <span className={`text-xs font-medium px-2.5 py-1 rounded border ${PRIORITY_STYLES[deepReview.priority] ?? 'text-gray-500 bg-gray-100 border-gray-200'}`}>
+                        {PRIORITY_LABELS[deepReview.priority] ?? deepReview.priority}
+                      </span>
+                    </div>
+                    <p className="text-sm font-medium text-gray-800 mt-1">{deepReview.verdict}</p>
+                    <p className="text-xs text-gray-600 mt-1 leading-relaxed">{deepReview.go_no_go_rationale}</p>
+                  </div>
+                  <div className="shrink-0 text-center">
+                    <div className="text-3xl font-bold text-gray-900">{deepReview.fit_score}</div>
+                    <div className="text-xs text-gray-400">/ 100</div>
+                  </div>
+                </div>
+              </div>
+
+              {/* Score breakdown */}
+              {deepReview.score_breakdown && Object.keys(deepReview.score_breakdown).length > 0 && (
+                <div className="bg-white border border-gray-200 rounded-lg p-5">
+                  <h3 className="text-xs font-semibold text-gray-500 uppercase tracking-wide mb-4">Score Breakdown</h3>
+                  <div className="space-y-2.5">
+                    {Object.entries(deepReview.score_breakdown).map(([key, val]) => {
+                      const max = key === 'thematic_alignment' ? 35 : key === 'eligibility_match' ? 20 : key === 'partner_feasibility' ? 5 : 10;
+                      const pct = Math.round(((val as number) / max) * 100);
+                      return (
+                        <div key={key} className="flex items-center gap-3">
+                          <div className="w-36 text-xs text-gray-500 capitalize shrink-0">
+                            {key.replace(/_/g, ' ')}
+                          </div>
+                          <div className="flex-1 h-2 bg-gray-100 rounded-full overflow-hidden">
+                            <div
+                              className="h-full bg-blue-500 rounded-full transition-all"
+                              style={{ width: `${pct}%` }}
+                            />
+                          </div>
+                          <div className="w-12 text-right text-xs text-gray-600 font-medium shrink-0">
+                            {val as number}/{max}
+                          </div>
+                        </div>
+                      );
+                    })}
+                  </div>
+                </div>
+              )}
+
+              {/* Strengths + Risks */}
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                {(deepReview.strengths ?? []).length > 0 && (
+                  <div className="bg-white border border-gray-200 rounded-lg p-5">
+                    <h3 className="text-xs font-semibold text-gray-500 uppercase tracking-wide mb-3 flex items-center gap-1.5">
+                      <span className="text-green-500">✓</span> Strengths
+                    </h3>
+                    <ul className="space-y-1.5">
+                      {deepReview.strengths!.map((s, i) => (
+                        <li key={i} className="text-sm text-gray-700 flex gap-2">
+                          <span className="text-green-400 shrink-0 mt-0.5">•</span>
+                          <span>{s}</span>
+                        </li>
+                      ))}
+                    </ul>
+                  </div>
+                )}
+                {(deepReview.risks ?? []).length > 0 && (
+                  <div className="bg-white border border-gray-200 rounded-lg p-5">
+                    <h3 className="text-xs font-semibold text-gray-500 uppercase tracking-wide mb-3 flex items-center gap-1.5">
+                      <span className="text-amber-500">⚠</span> Risks
+                    </h3>
+                    <ul className="space-y-1.5">
+                      {deepReview.risks!.map((r, i) => (
+                        <li key={i} className="text-sm text-gray-700 flex gap-2">
+                          <span className="text-amber-400 shrink-0 mt-0.5">•</span>
+                          <span>{r}</span>
+                        </li>
+                      ))}
+                    </ul>
+                  </div>
+                )}
+              </div>
+
+              {/* Proposal strategy */}
+              {deepReview.proposal_strategy && (
+                <div className="bg-blue-50 border border-blue-100 rounded-lg p-5">
+                  <h3 className="text-xs font-semibold text-blue-600 uppercase tracking-wide mb-2">Proposal Strategy</h3>
+                  <p className="text-sm text-blue-900 leading-relaxed">{deepReview.proposal_strategy}</p>
+                </div>
+              )}
+
+              {/* Critical requirements */}
+              {(deepReview.critical_requirements ?? []).length > 0 && (
+                <div className="bg-white border border-gray-200 rounded-lg p-5">
+                  <h3 className="text-xs font-semibold text-gray-500 uppercase tracking-wide mb-3">Critical Requirements</h3>
+                  <ul className="space-y-1.5">
+                    {deepReview.critical_requirements!.map((req, i) => (
+                      <li key={i} className="flex items-start gap-2 text-sm text-gray-700">
+                        <input type="checkbox" className="mt-0.5 rounded" readOnly />
+                        <span>{req}</span>
+                      </li>
+                    ))}
+                  </ul>
+                </div>
+              )}
+
+              {/* Recommended sections + archive references */}
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                {(deepReview.recommended_sections ?? []).length > 0 && (
+                  <div className="bg-white border border-gray-200 rounded-lg p-5">
+                    <h3 className="text-xs font-semibold text-gray-500 uppercase tracking-wide mb-3">Recommended Sections</h3>
+                    <ul className="space-y-1">
+                      {deepReview.recommended_sections!.map((s, i) => (
+                        <li key={i} className="text-sm text-gray-700 flex gap-2">
+                          <span className="text-blue-400 shrink-0">→</span>
+                          <span>{s}</span>
+                        </li>
+                      ))}
+                    </ul>
+                  </div>
+                )}
+                {(deepReview.archive_references ?? []).length > 0 && (
+                  <div className="bg-white border border-gray-200 rounded-lg p-5">
+                    <h3 className="text-xs font-semibold text-gray-500 uppercase tracking-wide mb-3">Archive References</h3>
+                    <ul className="space-y-1">
+                      {deepReview.archive_references!.map((ref, i) => (
+                        <li key={i} className="text-sm text-gray-600 flex gap-2">
+                          <span className="text-gray-300 shrink-0">📁</span>
+                          <span>{ref}</span>
+                        </li>
+                      ))}
+                    </ul>
+                  </div>
+                )}
+              </div>
+
+              {/* Re-run */}
+              <div className="flex justify-end">
+                <button
+                  onClick={handleDeepReview}
+                  disabled={reviewing}
+                  className="text-xs text-gray-400 hover:text-purple-600 transition-colors disabled:opacity-50"
+                >
+                  Re-run deep review →
+                </button>
+              </div>
+            </>
           )}
         </div>
       )}

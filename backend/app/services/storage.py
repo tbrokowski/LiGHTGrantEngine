@@ -46,6 +46,20 @@ def _client():
     return _get_client()
 
 
+def resolve_storage_key(notes: str | None) -> str | None:
+    """Return R2 object key from doc.notes (plain key or JSON metadata)."""
+    if not notes:
+        return None
+    if notes.startswith("{"):
+        try:
+            import json
+            meta = json.loads(notes)
+            return meta.get("r2_key")
+        except (json.JSONDecodeError, TypeError):
+            return None
+    return notes
+
+
 def upload_file(
     key: str,
     data: bytes,

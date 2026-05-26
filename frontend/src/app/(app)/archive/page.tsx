@@ -18,6 +18,8 @@ interface ArchiveEntry {
   submission_date: string | null;
   section_count?: number;
   style_indexed?: boolean;
+  indexing_status?: string;
+  indexing_error?: string | null;
 }
 
 const OUTCOMES = [
@@ -83,11 +85,17 @@ function NewArchiveModal({ onClose, onCreated }: { onClose: () => void; onCreate
     text_reuse_allowed: false,
   });
   const [proposalFile, setProposalFile] = useState<File | null>(null);
+  const [callFile, setCallFile] = useState<File | null>(null);
+  const [budgetFile, setBudgetFile] = useState<File | null>(null);
   const [saving, setSaving] = useState(false);
-  const [phase, setPhase] = useState<'idle' | 'indexing'>('idle');
   const [error, setError] = useState('');
-  const fileRef = useRef<HTMLInputElement>(null);
+  const proposalFileRef = useRef<HTMLInputElement>(null);
+  const callFileRef = useRef<HTMLInputElement>(null);
+  const budgetFileRef = useRef<HTMLInputElement>(null);
   const firstRef = useRef<HTMLInputElement>(null);
+
+  const FILE_ACCEPT = '.pdf,.docx,.txt,application/pdf,application/vnd.openxmlformats-officedocument.wordprocessingml.document';
+  const BUDGET_ACCEPT = `${FILE_ACCEPT},.xlsx,.xls,.csv,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet`;
 
   useEffect(() => { firstRef.current?.focus(); }, []);
 
@@ -98,13 +106,14 @@ function NewArchiveModal({ onClose, onCreated }: { onClose: () => void; onCreate
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault();
     if (!form.title.trim()) { setError('Title is required.'); return; }
-    if (!proposalFile) { setError('Submitted proposal (PDF or DOCX) is required for AI indexing.'); return; }
+    if (!proposalFile) { setError('Submitted proposal (PDF or DOCX) is required.'); return; }
     setSaving(true);
-    setPhase('indexing');
     setError('');
     try {
       const fd = new FormData();
       fd.append('proposal_file', proposalFile);
+      if (callFile) fd.append('call_file', callFile);
+      if (budgetFile) fd.append('budget_file', budgetFile);
       fd.append('title', form.title.trim());
       fd.append('outcome', form.outcome || 'pending');
       fd.append('submitted', 'true');
@@ -120,16 +129,62 @@ function NewArchiveModal({ onClose, onCreated }: { onClose: () => void; onCreate
       if (form.notes) fd.append('notes', form.notes);
       if (form.lessons_learned) fd.append('lessons_learned', form.lessons_learned);
 
-      const res = await archive.createWithDocument(fd);
-      const sections = res.data.sections_created ?? 0;
-      const warnings = (res.data.warnings as string[] | undefined)?.join(' ') ?? '';
-      onCreated(`Indexed ${sections} section${sections === 1 ? '' : 's'} for AI retrieval.${warnings ? ` ${warnings}` : ''}`);
+      await archive.createWithDocument(fd);
+      const docCount = 1 + (callFile ? 1 : 0) + (budgetFile ? 1 : 0);
+      onCreated(
+        `Archive entry saved with ${docCount} document${docCount === 1 ? '' : 's'}. ` +
+        'AI indexing is running in the background — you can continue working.'
+      );
     } catch (err: unknown) {
       const detail = (err as { response?: { data?: { detail?: string } } }).response?.data?.detail;
-      setError(typeof detail === 'string' ? detail : 'Failed to save and index. Please try again.');
+      setError(typeof detail === 'string' ? detail : 'Failed to save archive entry. Please try again.');
       setSaving(false);
-      setPhase('idle');
     }
+  }
+
+  function FileUploadButton({
+    label,
+    file,
+    onPick,
+    inputRef,
+    accept,
+    hint,
+    required,
+  }: {
+    label: string;
+    file: File | null;
+    onPick: (f: File | null) => void;
+    inputRef: React.RefObject<HTMLInputElement | null>;
+    accept: string;
+    hint: string;
+    required?: boolean;
+  }) {
+    return (
+      <div>
+        <label className="block text-xs font-medium text-gray-500 mb-1.5">
+          {label} {required && <span className="text-red-400">*</span>}
+        </label>
+        <input
+          ref={inputRef}
+          type="file"
+          accept={accept}
+          className="hidden"
+          onChange={e => onPick(e.target.files?.[0] ?? null)}
+        />
+        <button
+          type="button"
+          onClick={() => inputRef.current?.click()}
+          className="w-full border border-dashed border-gray-300 rounded-xl px-3 py-3 text-sm text-left hover:border-gray-400 hover:bg-gray-50 transition-colors"
+        >
+          {file ? (
+            <span className="text-gray-800">{file.name}</span>
+          ) : (
+            <span className="text-gray-400">Click to upload</span>
+          )}
+        </button>
+        <p className="text-[10px] text-gray-400 mt-1">{hint}</p>
+      </div>
+    );
   }
 
   return (
@@ -249,32 +304,31 @@ function NewArchiveModal({ onClose, onCreated }: { onClose: () => void; onCreate
             </div>
           </div>
 
-          <div>
-            <label className="block text-xs font-medium text-gray-500 mb-1.5">
-              Submitted proposal (PDF or DOCX) <span className="text-red-400">*</span>
-            </label>
-            <input
-              ref={fileRef}
-              type="file"
-              accept=".pdf,.docx,application/pdf,application/vnd.openxmlformats-officedocument.wordprocessingml.document"
-              className="hidden"
-              onChange={e => setProposalFile(e.target.files?.[0] ?? null)}
-            />
-            <button
-              type="button"
-              onClick={() => fileRef.current?.click()}
-              className="w-full border border-dashed border-gray-300 rounded-xl px-3 py-3 text-sm text-left hover:border-gray-400 hover:bg-gray-50 transition-colors"
-            >
-              {proposalFile ? (
-                <span className="text-gray-800">{proposalFile.name}</span>
-              ) : (
-                <span className="text-gray-400">Click to upload proposal for AI indexing</span>
-              )}
-            </button>
-            <p className="text-[10px] text-gray-400 mt-1">
-              Required — the proposal is parsed and indexed into the RAG corpus for grant writing.
-            </p>
-          </div>
+          <FileUploadButton
+            label="Call / RFP document"
+            file={callFile}
+            onPick={setCallFile}
+            inputRef={callFileRef}
+            accept={FILE_ACCEPT}
+            hint="Optional — call text is stored and embedded for AI retrieval."
+          />
+          <FileUploadButton
+            label="Submitted proposal"
+            file={proposalFile}
+            onPick={setProposalFile}
+            inputRef={proposalFileRef}
+            accept={FILE_ACCEPT}
+            hint="Required — split into sections and indexed for grant writing (runs in background)."
+            required
+          />
+          <FileUploadButton
+            label="Budget"
+            file={budgetFile}
+            onPick={setBudgetFile}
+            inputRef={budgetFileRef}
+            accept={BUDGET_ACCEPT}
+            hint="Optional — PDF, DOCX, or spreadsheet (XLSX/CSV)."
+          />
 
           <div className="flex flex-col gap-2">
             <label className="flex items-center gap-2 text-xs text-gray-600 cursor-pointer">
@@ -333,7 +387,7 @@ function NewArchiveModal({ onClose, onCreated }: { onClose: () => void; onCreate
             disabled={saving}
             className="flex-1 px-4 py-2 text-sm font-medium text-white bg-gray-900 rounded-xl hover:bg-gray-700 disabled:opacity-50 transition-colors"
           >
-            {saving ? (phase === 'indexing' ? 'Indexing for AI…' : 'Saving…') : 'Add to Archive'}
+            {saving ? 'Saving…' : 'Add to Archive'}
           </button>
         </div>
       </div>
@@ -362,6 +416,15 @@ export default function ArchivePage() {
   }, [search]);
 
   useEffect(() => { load(); }, [load]);
+
+  useEffect(() => {
+    const indexing = entries.some(
+      e => e.indexing_status === 'pending' || e.indexing_status === 'processing'
+    );
+    if (!indexing) return;
+    const timer = setInterval(load, 8000);
+    return () => clearInterval(timer);
+  }, [entries, load]);
 
   function handleCreated(message?: string) {
     setShowModal(false);
@@ -511,14 +574,22 @@ export default function ArchivePage() {
                   </td>
                   <td className="px-4 py-3.5 hidden md:table-cell">
                     <div className="flex flex-col gap-1">
-                      {(entry.section_count ?? 0) > 0 ? (
+                      {entry.indexing_status === 'pending' || entry.indexing_status === 'processing' ? (
+                        <span className="text-xs px-2 py-0.5 rounded-full bg-amber-50 text-amber-700 font-medium w-fit">
+                          Indexing…
+                        </span>
+                      ) : entry.indexing_status === 'failed' ? (
+                        <span className="text-xs px-2 py-0.5 rounded-full bg-red-50 text-red-600 font-medium w-fit" title={entry.indexing_error ?? undefined}>
+                          Index failed
+                        </span>
+                      ) : (entry.section_count ?? 0) > 0 ? (
                         <span className="text-xs px-2 py-0.5 rounded-full bg-indigo-50 text-indigo-700 font-medium w-fit">
                           {entry.section_count} sections
                         </span>
                       ) : (
                         <span className="text-xs text-gray-300">—</span>
                       )}
-                      {entry.style_indexed && (
+                      {entry.style_indexed && entry.indexing_status === 'complete' && (
                         <span className="text-xs px-2 py-0.5 rounded-full bg-violet-50 text-violet-700 font-medium w-fit">
                           Style
                         </span>

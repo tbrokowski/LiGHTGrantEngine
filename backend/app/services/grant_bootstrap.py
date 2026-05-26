@@ -225,6 +225,22 @@ def bootstrap_all_institution_feeds(session: Session) -> int:
     return total
 
 
+def queue_missing_enrichments(session: Session) -> int:
+    """Queue detail-page fetches for opportunities that only have listing snippets."""
+    from app.workers.enrichment_tasks import enrich_opportunity
+
+    opps = session.execute(
+        select(Opportunity).where(
+            Opportunity.opportunity_url.isnot(None),
+            (Opportunity.parsed_text.is_(None)) | (Opportunity.parsed_text == ""),
+        )
+    ).scalars().all()
+    for opp in opps:
+        enrich_opportunity.delay(str(opp.id))
+    logger.info("Queued enrichment for %d opportunities missing descriptions", len(opps))
+    return len(opps)
+
+
 def run_full_bootstrap() -> dict:
     settings = get_settings()
     engine = create_engine(settings.database_url)
@@ -233,9 +249,11 @@ def run_full_bootstrap() -> dict:
         opps_added = seed_opportunities_from_json(session)
         sources_linked = fan_out_sources_to_institutions(session)
         feeds = bootstrap_all_institution_feeds(session)
+        enrichments_queued = queue_missing_enrichments(session)
     return {
         "sources_added": sources_added,
         "opportunities_added": opps_added,
         "institution_sources_linked": sources_linked,
         "institution_opportunities_created": feeds,
+        "enrichments_queued": enrichments_queued,
     }

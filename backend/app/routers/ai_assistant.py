@@ -132,38 +132,91 @@ async def analyze_call(
     return {**result, "ai_run_id": run_id, "model": _model_name()}
 
 
+@router.post("/deep-review/{opportunity_id}")
+async def deep_review_opportunity_endpoint(
+    opportunity_id: str,
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    """
+    On-demand deep AI review of an opportunity.
+    Returns comprehensive fit analysis, proposal strategy, and Go/No-Go recommendation.
+    Only triggered by explicit user action — not called automatically.
+    """
+    from app.ai.agents.deep_reviewer import deep_review_opportunity
+    from app.schemas.grant_profile import GrantProfile
+    from app.models.institution import Institution
+    from sqlalchemy import select as sa_select
+    from app.models.archive import GrantArchive
+
+    opp = await _get_opportunity(opportunity_id, db)
+    run_id = await _start_ai_run(db, current_user.id, "opportunity", opportunity_id, AgentType.FIT_SCORER)
+
+    # Load org profile for the current user's institution
+    profile = GrantProfile()
+    archive_context = ""
+    if current_user.institution_id:
+        inst_result = await db.execute(
+            sa_select(Institution).where(Institution.id == current_user.institution_id)
+        )
+        inst = inst_result.scalar_one_or_none()
+        if inst and inst.grant_profile:
+            profile = GrantProfile.from_dict(inst.grant_profile)
+
+        # Pull up to 3 awarded archive entries for calibration
+        archive_result = await db.execute(
+            sa_select(GrantArchive)
+            .where(
+                GrantArchive.institution_id == current_user.institution_id,
+                GrantArchive.outcome == "awarded",
+            )
+            .order_by(GrantArchive.grant_year.desc())
+            .limit(3)
+        )
+        awarded = archive_result.scalars().all()
+        if awarded:
+            lines = []
+            for a in awarded:
+                amt = f"${a.awarded_amount:,.0f}" if a.awarded_amount else "n/a"
+                lines.append(
+                    f"- {a.title} ({a.funder or 'Unknown funder'}, {a.grant_year or '?'}, {amt})"
+                )
+            archive_context = "\n".join(lines)
+
+    result = await deep_review_opportunity(
+        title=opp.title,
+        description=opp.description or opp.short_summary or opp.parsed_text or "",
+        funder=opp.funder or "",
+        eligibility=opp.eligibility_criteria or "",
+        evaluation_criteria=opp.evaluation_criteria or "",
+        geography=", ".join(opp.geography or []),
+        award_amount=f"{opp.award_min}–{opp.award_max} {opp.currency or ''}".strip("– ") if (opp.award_min or opp.award_max) else "",
+        deadline=str(opp.deadline) if opp.deadline else "",
+        profile=profile,
+        archive_context=archive_context,
+    )
+
+    # Persist the updated score and rationale
+    opp.fit_score = result.get("fit_score", opp.fit_score)
+    opp.priority = result.get("priority", opp.priority)
+    opp.fit_rationale = result.get("verdict", "")
+    await db.commit()
+
+    await _complete_ai_run(db, run_id, result)
+    return {**result, "ai_run_id": run_id, "model": _model_name()}
+
+
 @router.post("/score-opportunity")
 async def score_opportunity_endpoint(
     opportunity_id: str,
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ):
-    """Score an opportunity using the AI fit scorer."""
-    from app.ai.agents.fit_scorer import score_opportunity as _score
-
-    opp = await _get_opportunity(opportunity_id, db)
-    run_id = await _start_ai_run(db, current_user.id, "opportunity", opportunity_id, AgentType.FIT_SCORER)
-
-    result = await _score(
-        title=opp.title,
-        description=opp.description or opp.short_summary or "",
-        funder=opp.funder or "",
-        eligibility=opp.eligibility_criteria or "",
-        geography=str(opp.geography),
-        award_amount=f"{opp.award_min}-{opp.award_max} {opp.currency}" if opp.award_max else "",
-        deadline=str(opp.deadline) if opp.deadline else "",
-    )
-
-    # Persist scores
-    opp.fit_score = result.get("fit_score", 0)
-    opp.priority = result.get("priority", "watchlist")
-    opp.fit_rationale = result.get("rationale", "")
-    if result.get("matched_themes"):
-        opp.thematic_areas = list(set(opp.thematic_areas or []) | set(result["matched_themes"]))
-    await db.commit()
-
-    await _complete_ai_run(db, run_id, result)
-    return {**result, "ai_run_id": run_id, "model": _model_name()}
+    """
+    Legacy endpoint — redirects to deep-review for backward compatibility.
+    Prefer POST /ai/deep-review/{id}.
+    """
+    return await deep_review_opportunity_endpoint(opportunity_id, db, current_user)
 
 
 @router.post("/go-no-go")
