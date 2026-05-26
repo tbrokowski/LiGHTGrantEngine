@@ -34,8 +34,8 @@ services:
   # ── Backend API ───────────────────────────────────────────
   backend:
     build:
-      context: ./backend
-      dockerfile: Dockerfile
+      context: .
+      dockerfile: backend/Dockerfile
     container_name: light_backend
     env_file: .env
     environment:
@@ -60,8 +60,8 @@ services:
   # ── Celery Worker ─────────────────────────────────────────
   worker:
     build:
-      context: ./backend
-      dockerfile: Dockerfile
+      context: .
+      dockerfile: backend/Dockerfile
     container_name: light_worker
     env_file: .env
     environment:
@@ -82,8 +82,8 @@ services:
   # ── Celery Beat (scheduler) ───────────────────────────────
   beat:
     build:
-      context: ./backend
-      dockerfile: Dockerfile
+      context: .
+      dockerfile: backend/Dockerfile
     container_name: light_beat
     env_file: .env
     environment:
