@@ -60,6 +60,8 @@ class ProposalSection(Base):
     section_type: Mapped[str] = mapped_column(String(100), index=True)
     section_title: Mapped[str | None] = mapped_column(String(500))
     section_text: Mapped[str] = mapped_column(Text, nullable=False)
+    section_order: Mapped[int | None] = mapped_column(Integer)
+    heading_level: Mapped[int | None] = mapped_column(Integer)
     word_count: Mapped[int | None] = mapped_column(Integer)
     page_count: Mapped[float | None] = mapped_column()
 
@@ -81,7 +83,7 @@ class ProposalSection(Base):
     notes: Mapped[str | None] = mapped_column(Text)
 
     # Vector embedding for semantic search
-    embedding: Mapped[list | None] = mapped_column(Vector(4096), nullable=True)
+    embedding: Mapped[list | None] = mapped_column(Vector(1536), nullable=True)
 
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
 

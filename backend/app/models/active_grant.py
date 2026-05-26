@@ -81,8 +81,22 @@ class ActiveGrant(Base):
 
     # Live editor: stores {section_id: {title, section_type, content_html, content_text, word_count, order}}
     editor_sections: Mapped[dict] = mapped_column(JSON, default=dict)
+    # Unified single-document HTML (replaces multi-section editor)
+    editor_document: Mapped[str | None] = mapped_column(Text)
     # Free-form call requirements text used as RAG/AI context
     call_requirements: Mapped[str | None] = mapped_column(Text)
+
+    # Grant writing studio session state
+    grant_idea: Mapped[str | None] = mapped_column(Text)
+    call_analysis: Mapped[dict] = mapped_column(JSON, default=dict)
+    proposal_skeleton: Mapped[dict] = mapped_column(JSON, default=dict)
+    style_profile: Mapped[dict] = mapped_column(JSON, default=dict)
+    writing_phase: Mapped[str] = mapped_column(String(30), default="idea")
+    last_review: Mapped[dict] = mapped_column(JSON, default=dict)
+    # Google Docs sync
+    google_doc_id: Mapped[str | None] = mapped_column(String(100))
+    google_doc_url: Mapped[str | None] = mapped_column(String(1000))
+    google_doc_last_synced: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
 
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
     updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now(), onupdate=func.now())

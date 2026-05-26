@@ -1,8 +1,8 @@
 """
 Agent 5: Section Drafting Assistant
 Drafts individual proposal sections using retrieved prior material.
-Drafts section-by-section, never a full proposal in one pass.
 """
+import json
 from app.ai.client import chat_complete
 
 SYSTEM_PROMPT = """You are an expert scientific proposal writer for global health AI research at EPFL (LiGHT group).
@@ -15,7 +15,9 @@ IMPORTANT RULES:
 4. Do not directly reproduce restricted text — paraphrase or note permission status
 5. Never claim facts you don't know; use [VERIFY: item] for uncertain claims
 6. Write for the intended funder's evaluation criteria
+7. Match the institutional style profile when provided
 """
+
 
 async def draft_section(
     section_name: str,
@@ -23,29 +25,19 @@ async def draft_section(
     call_requirements: str,
     evaluation_criteria: list[str] = None,
     retrieved_sections: list[dict] = None,
+    style_exemplars: list[dict] = None,
     reusable_language: list[dict] = None,
     word_limit: int = None,
     user_instructions: str = "",
     funder: str = "",
+    style_profile: dict | None = None,
+    prior_sections_summary: str = "",
+    citations: list[dict] | None = None,
+    grant_idea: str = "",
 ) -> dict:
-    """
-    Draft a proposal section.
-
-    Returns:
-        {
-          "draft": str,
-          "word_count": int,
-          "sources_used": [{"title": str, "type": str, "permission": str}],
-          "assumptions": [str],
-          "customization_points": [str],
-          "warnings": [str],
-          "suggested_next_edits": [str],
-          "human_review_required": bool,
-        }
-    """
     prior_str = ""
     if retrieved_sections:
-        prior_str = "\n\nRELEVANT PRIOR SECTIONS (use as context and inspiration):\n"
+        prior_str = "\n\nCONTENT EXEMPLARS (substance and topic reference):\n"
         for s in retrieved_sections[:4]:
             perm = s.get("reuse_permission", "context_only")
             warnings = s.get("warnings", [])
@@ -54,12 +46,27 @@ async def draft_section(
                 prior_str += f" | WARNINGS: {'; '.join(warnings)}"
             prior_str += f"\n{s.get('full_text','')[:1500]}\n"
 
+    if style_exemplars:
+        prior_str += "\n\nSTYLE EXEMPLARS (match voice, tone, and paragraph patterns):\n"
+        for s in style_exemplars[:3]:
+            prior_str += f"\n--- {s.get('section_type','?')} from {s.get('grant_title','?')} ({s.get('outcome','?')}) ---\n{s.get('full_text','')[:1200]}\n"
+
     lang_str = ""
     if reusable_language:
         lang_str = "\n\nAPPROVED REUSABLE LANGUAGE:\n"
         for block in reusable_language[:3]:
             note = " [PARAPHRASE ONLY]" if block.get("paraphrase_only") else " [DIRECT USE OK]"
             lang_str += f"\n{block.get('title','?')}{note}:\n{block.get('full_text','')[:800]}\n"
+
+    cite_str = ""
+    if citations:
+        cite_str = "\n\nCITATIONS TO USE:\n" + "\n".join(
+            f"- {c.get('formatted_citation', c.get('title', ''))}" for c in citations[:6]
+        )
+
+    style_str = ""
+    if style_profile:
+        style_str = f"\n\nSTYLE PROFILE:\n{json.dumps(style_profile, indent=2)[:2000]}\n"
 
     limit_str = f"TARGET LENGTH: ~{word_limit} words.\n" if word_limit else ""
 
@@ -68,24 +75,26 @@ async def draft_section(
 FUNDER: {funder}
 SECTION TYPE: {section_type}
 {limit_str}
+GRANT IDEA:
+{grant_idea[:1500] if grant_idea else 'See call requirements'}
+
 CALL REQUIREMENTS FOR THIS SECTION:
 {call_requirements}
 
 EVALUATION CRITERIA TO ADDRESS:
 {chr(10).join(f'- {c}' for c in (evaluation_criteria or []))}
 
+PRIOR SECTIONS SUMMARY (maintain narrative continuity):
+{prior_sections_summary[:2000] if prior_sections_summary else 'This may be the first section.'}
+
 {f'ADDITIONAL INSTRUCTIONS: {user_instructions}' if user_instructions else ''}
+{style_str}
 {prior_str}
 {lang_str}
+{cite_str}
 
-Write the section now. Then provide:
-1. A list of sources_used with title, type (section/language_block), and permission status
-2. A list of assumptions you made
-3. A list of customization_points that must be tailored
-4. Any warnings about restricted content
-5. Suggested next edits
-
-Return as a JSON object with: draft, word_count, sources_used, assumptions, customization_points, warnings, suggested_next_edits, human_review_required."""
+Write the section now. Return JSON with: draft, word_count, sources_used, assumptions,
+customization_points, warnings, suggested_next_edits, human_review_required."""
 
     response = await chat_complete(
         messages=[
@@ -95,7 +104,6 @@ Return as a JSON object with: draft, word_count, sources_used, assumptions, cust
         agent_name="section_drafter",
         json_mode=True,
     )
-    import json
     try:
         return json.loads(response)
     except json.JSONDecodeError:

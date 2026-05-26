@@ -13,6 +13,8 @@ from app.routers import (
     tasks, documents, archive, ai_assistant,
     notifications, analytics, admin, partners,
 )
+from app.routers import grant_workspace
+from app.routers import grant_writing
 
 settings = get_settings()
 logger = structlog.get_logger()
@@ -58,6 +60,8 @@ app.include_router(notifications.router, prefix=f"{API}/notifications", tags=["n
 app.include_router(analytics.router,     prefix=f"{API}/analytics",     tags=["analytics"])
 app.include_router(admin.router,         prefix=f"{API}/admin",         tags=["admin"])
 app.include_router(partners.router,      prefix=f"{API}/partners",      tags=["partners"])
+app.include_router(grant_workspace.router, prefix=f"{API}/grants",      tags=["grant-workspace"])
+app.include_router(grant_writing.router,   prefix=f"{API}/grants",      tags=["grant-writing"])
 
 
 @app.get("/health")

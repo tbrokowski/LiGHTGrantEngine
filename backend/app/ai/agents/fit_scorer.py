@@ -1,5 +1,5 @@
 """
-Fit Scorer — Qwen-powered fit scoring for opportunities.
+Fit Scorer — AI-powered fit scoring for opportunities.
 Scores opportunities against the team's thematic and strategic priorities
 as defined in config.yaml (fit_scoring section).
 """

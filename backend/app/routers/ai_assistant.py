@@ -1,5 +1,5 @@
 """
-AI Assistant endpoints — all Qwen-powered workflows.
+AI Assistant endpoints — all AI-powered workflows.
 Each endpoint calls the appropriate agent and logs the AI run.
 """
 import json
@@ -123,7 +123,7 @@ async def score_opportunity_endpoint(
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ):
-    """Score an opportunity using Qwen fit scorer."""
+    """Score an opportunity using the AI fit scorer."""
     from app.ai.agents.fit_scorer import score_opportunity as _score
 
     opp = await _get_opportunity(opportunity_id, db)
@@ -269,8 +269,8 @@ async def compliance_check(
 
     result = await check_compliance(
         proposal_draft=req.proposal_draft,
-        call_requirements={},
-        submission_instructions="",
+        call_requirements=grant.call_analysis or {},
+        submission_instructions=grant.call_requirements or "",
     )
 
     await _complete_ai_run(db, run_id, result, warnings=result.get("critical_blockers", []))

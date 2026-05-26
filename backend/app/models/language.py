@@ -11,6 +11,8 @@ class ReusableLanguageBlock(Base):
 
     id: Mapped[str] = mapped_column(String, primary_key=True, default=lambda: str(uuid.uuid4()))
     title: Mapped[str] = mapped_column(String(500), nullable=False)
+    archive_id: Mapped[str | None] = mapped_column(String, ForeignKey("grant_archives.id"))
+    source_section_id: Mapped[str | None] = mapped_column(String, ForeignKey("proposal_sections.id"))
     source_grant: Mapped[str | None] = mapped_column(String(500))
     source_section: Mapped[str | None] = mapped_column(String(100))
     text: Mapped[str] = mapped_column(Text, nullable=False)
@@ -33,7 +35,7 @@ class ReusableLanguageBlock(Base):
     version: Mapped[str | None] = mapped_column(String(50))
 
     # Vector embedding
-    embedding: Mapped[list | None] = mapped_column(Vector(4096), nullable=True)
+    embedding: Mapped[list | None] = mapped_column(Vector(1536), nullable=True)
 
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
     updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now(), onupdate=func.now())

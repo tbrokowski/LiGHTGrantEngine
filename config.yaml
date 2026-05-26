@@ -1,11 +1,11 @@
 ai:
-  base_url: http://localhost:8001/v1
-  model: Qwen/Qwen2.5-72B-Instruct
-  api_key: EMPTY
+  base_url: https://api.openai.com/v1
+  model: gpt-4o-mini
+  api_key: EMPTY  # set OPENAI_API_KEY env var — this field is overridden by config.py
   embeddings:
-    base_url: http://localhost:8001/v1
-    model: Qwen/Qwen2.5-72B-Instruct
-    dimension: 4096
+    base_url: https://api.openai.com/v1
+    model: text-embedding-3-small
+    dimension: 1536
   generation:
     temperature: 0.3
     max_tokens: 4096
@@ -27,6 +27,30 @@ ai:
     fit_scorer:
       temperature: 0.1
       max_tokens: 512
+    opportunity_summarizer:
+      temperature: 0.3
+      max_tokens: 2000
+    style_profiler:
+      temperature: 0.2
+      max_tokens: 2048
+    style_reviewer:
+      temperature: 0.1
+      max_tokens: 2048
+    grant_reviewer:
+      temperature: 0.2
+      max_tokens: 3000
+    intro_architect:
+      temperature: 0.5
+      max_tokens: 4096
+    citation_agent:
+      temperature: 0.1
+      max_tokens: 2048
+    grant_writer:
+      temperature: 0.4
+      max_tokens: 4096
+    ai_scraper:
+      temperature: 0.0
+      max_tokens: 4096
 database:
   url: postgresql://light:light@localhost:5432/light_grants
   vector_extension: true
@@ -86,6 +110,11 @@ fit_scoring:
   - global
   institution_type: academic
   institution_name: EPFL
+google_drive:
+  enabled: false
+  service_account_file: /path/to/service-account.json
+  parent_folder_id: ''
+  share_with: []
 notifications:
   email:
     enabled: true
@@ -125,6 +154,11 @@ rag:
   vector_weight: 0.7
   min_similarity: 0.6
   enforce_ai_permissions: true
+citations:
+  openalex_base_url: https://api.openalex.org
+  pubmed_email: team@light.epfl.ch
+  max_results_per_query: 5
+  cache_ttl_hours: 24
 parsing:
   supported_formats:
   - pdf

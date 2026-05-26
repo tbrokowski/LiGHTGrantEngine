@@ -2,7 +2,7 @@ import uuid
 from datetime import datetime
 from enum import Enum
 
-from sqlalchemy import String, Boolean, DateTime, JSON, func
+from sqlalchemy import String, Boolean, DateTime, JSON, ForeignKey, func
 from sqlalchemy.orm import Mapped, mapped_column
 
 from app.database import Base
@@ -15,6 +15,11 @@ class UserRole(str, Enum):
     REVIEWER = "reviewer"
     CONTRIBUTOR = "contributor"
     VIEWER = "viewer"
+
+
+class InstitutionRole(str, Enum):
+    ADMIN = "admin"
+    MEMBER = "member"
 
 
 class User(Base):
@@ -30,3 +35,6 @@ class User(Base):
     notification_preferences: Mapped[dict] = mapped_column(JSON, default=dict)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
     last_login: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    # Institution membership
+    institution_id: Mapped[str | None] = mapped_column(String, ForeignKey("institutions.id"), index=True)
+    institution_role: Mapped[str] = mapped_column(String(50), default=InstitutionRole.MEMBER)

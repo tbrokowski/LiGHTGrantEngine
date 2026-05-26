@@ -150,7 +150,7 @@ def upgrade() -> None:
         sa.Column("assigned_reviewer_id", sa.String(), sa.ForeignKey("users.id")),
         sa.Column("raw_text", sa.Text()),
         sa.Column("parsed_text", sa.Text()),
-        sa.Column("embedding", Vector(4096)),
+        sa.Column("embedding", Vector(1536)),
         sa.Column("date_discovered", sa.DateTime(timezone=True), server_default=sa.func.now()),
         sa.Column("date_updated", sa.DateTime(timezone=True), server_default=sa.func.now()),
         sa.Column("notes", sa.Text()),
@@ -332,7 +332,7 @@ def upgrade() -> None:
         sa.Column("text_reuse_allowed", sa.Boolean(), default=False),
         sa.Column("last_parsed_at", sa.DateTime(timezone=True)),
         sa.Column("notes", sa.Text()),
-        sa.Column("embedding", Vector(4096)),
+        sa.Column("embedding", Vector(1536)),
     )
 
     # ── proposal_sections ─────────────────────────────────
@@ -364,7 +364,7 @@ def upgrade() -> None:
         sa.Column("last_reviewed", sa.DateTime(timezone=True)),
         sa.Column("owner_id", sa.String(), sa.ForeignKey("users.id")),
         sa.Column("notes", sa.Text()),
-        sa.Column("embedding", Vector(4096)),
+        sa.Column("embedding", Vector(1536)),
         sa.Column("created_at", sa.DateTime(timezone=True), server_default=sa.func.now()),
     )
     op.create_index("ix_sections_section_type", "proposal_sections", ["section_type"])
@@ -394,7 +394,7 @@ def upgrade() -> None:
         sa.Column("usage_notes", sa.Text()),
         sa.Column("do_not_use_notes", sa.Text()),
         sa.Column("version", sa.String(50)),
-        sa.Column("embedding", Vector(4096)),
+        sa.Column("embedding", Vector(1536)),
         sa.Column("created_at", sa.DateTime(timezone=True), server_default=sa.func.now()),
         sa.Column("updated_at", sa.DateTime(timezone=True), server_default=sa.func.now()),
     )

@@ -1,7 +1,7 @@
 """
 Agent 1: Call Analyzer
 Analyzes a grant call document and extracts structured information.
-Uses Qwen to parse the call and produce a plain-language summary,
+Uses the AI model to parse the call and produce a plain-language summary,
 eligibility checklist, required sections, deadlines, and risks.
 """
 import json
@@ -73,6 +73,7 @@ Return a JSON object with these fields:
 - submission_portal: where to submit
 - page_limit: page limit if stated (null if not)
 - word_limit: word limit if stated (null if not)
+- section_requirements: object mapping section name to {{requirements: str, word_limit: int|null, page_limit: str|null, priority: str}}
 """
     response = await chat_complete(
         messages=[

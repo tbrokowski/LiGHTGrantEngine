@@ -2,7 +2,6 @@
 Load and expose configuration from config.yaml + environment variables.
 Environment variables always override config.yaml values.
 """
-import os
 from pathlib import Path
 from functools import lru_cache
 from typing import Any, Optional
@@ -26,13 +25,13 @@ _raw: dict = _load_yaml()
 
 
 # ── Pydantic config models ────────────────────────────────────────────────────
-class QwenEmbeddingsConfig(BaseModel):
-    base_url: str = "http://localhost:8000/v1"
-    model: str = "Qwen/Qwen2.5-72B-Instruct"
-    dimension: int = 4096
+class EmbeddingsConfig(BaseModel):
+    base_url: str = "https://api.openai.com/v1"
+    model: str = "text-embedding-3-small"
+    dimension: int = 1536
 
 
-class QwenGenerationConfig(BaseModel):
+class GenerationConfig(BaseModel):
     temperature: float = 0.3
     max_tokens: int = 4096
     top_p: float = 0.9
@@ -40,11 +39,11 @@ class QwenGenerationConfig(BaseModel):
 
 
 class AIConfig(BaseModel):
-    base_url: str = "http://localhost:8000/v1"
-    model: str = "Qwen/Qwen2.5-72B-Instruct"
+    base_url: str = "https://api.openai.com/v1"
+    model: str = "gpt-4o-mini"
     api_key: str = "EMPTY"
-    embeddings: QwenEmbeddingsConfig = QwenEmbeddingsConfig()
-    generation: QwenGenerationConfig = QwenGenerationConfig()
+    embeddings: EmbeddingsConfig = EmbeddingsConfig()
+    generation: GenerationConfig = GenerationConfig()
     agent_overrides: dict[str, Any] = {}
 
 
@@ -84,6 +83,20 @@ class NotificationConfig(BaseModel):
     }
 
 
+class GoogleDriveConfig(BaseModel):
+    enabled: bool = False
+    service_account_file: str = ""
+    parent_folder_id: str = ""
+    share_with: list[str] = []
+
+
+class CitationsConfig(BaseModel):
+    openalex_base_url: str = "https://api.openalex.org"
+    pubmed_email: str = "team@light.epfl.ch"
+    max_results_per_query: int = 5
+    cache_ttl_hours: int = 24
+
+
 class Settings(BaseSettings):
     """
     Main settings object. Values come from:
@@ -111,10 +124,19 @@ class Settings(BaseSettings):
     default_page_size: int = _raw.get("app", {}).get("default_page_size", 25)
     max_page_size: int = _raw.get("app", {}).get("max_page_size", 200)
 
-    # Qwen API key override
-    qwen_api_key: Optional[str] = None
+    # OpenAI API key override
+    openai_api_key: Optional[str] = None
 
-    # SMTP
+    # Cloudflare R2 object storage
+    r2_account_id: Optional[str] = None
+    r2_access_key_id: Optional[str] = None
+    r2_secret_access_key: Optional[str] = None
+    r2_bucket_name: str = "grantengine"
+
+    # SMTP / email
+    smtp_host: str = "smtp.resend.com"
+    smtp_port: int = 587
+    smtp_from: str = "onboarding@resend.dev"
     smtp_password: Optional[str] = None
 
     # Google OAuth
@@ -131,8 +153,8 @@ class Settings(BaseSettings):
     @property
     def ai(self) -> AIConfig:
         cfg = _raw.get("ai", {})
-        if self.qwen_api_key:
-            cfg["api_key"] = self.qwen_api_key
+        if self.openai_api_key:
+            cfg["api_key"] = self.openai_api_key
         return AIConfig(**cfg)
 
     @property
@@ -146,6 +168,14 @@ class Settings(BaseSettings):
     @property
     def notifications(self) -> NotificationConfig:
         return NotificationConfig(**_raw.get("notifications", {}))
+
+    @property
+    def google_drive(self) -> GoogleDriveConfig:
+        return GoogleDriveConfig(**_raw.get("google_drive", {}))
+
+    @property
+    def citations(self) -> CitationsConfig:
+        return CitationsConfig(**_raw.get("citations", {}))
 
     @property
     def discovery(self) -> dict:

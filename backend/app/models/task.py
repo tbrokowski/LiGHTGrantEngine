@@ -2,17 +2,19 @@ import uuid
 from datetime import datetime, date
 from enum import Enum
 
-from sqlalchemy import String, DateTime, Date, Text, JSON, ForeignKey, func
+from sqlalchemy import String, DateTime, Date, Text, JSON, Float, ForeignKey, func
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from app.database import Base
 
 
 class TaskStatus(str, Enum):
+    BACKLOG = "backlog"
     NOT_STARTED = "not_started"
     IN_PROGRESS = "in_progress"
-    BLOCKED = "blocked"
+    NEEDS_INPUT = "needs_input"
     NEEDS_REVIEW = "needs_review"
+    BLOCKED = "blocked"
     COMPLETE = "complete"
     DROPPED = "dropped"
 
@@ -68,5 +70,14 @@ class Task(Base):
     created_by_id: Mapped[str | None] = mapped_column(String, ForeignKey("users.id"))
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
     completed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    # Workspace extensions
+    parent_task_id: Mapped[str | None] = mapped_column(String, ForeignKey("tasks.id"), index=True)
+    start_date: Mapped[date | None] = mapped_column(Date)
+    estimated_effort: Mapped[float | None] = mapped_column(Float)
+    linked_section_id: Mapped[str | None] = mapped_column(String)
+    linked_milestone_id: Mapped[str | None] = mapped_column(String)
+    assignee_ids: Mapped[list] = mapped_column(JSON, default=list)  # list of user IDs
 
     grant: Mapped["ActiveGrant"] = relationship("ActiveGrant", back_populates="tasks")  # type: ignore
+    subtasks: Mapped[list["Task"]] = relationship("Task", foreign_keys="Task.parent_task_id", back_populates="parent_task")
+    parent_task: Mapped["Task | None"] = relationship("Task", foreign_keys="Task.parent_task_id", back_populates="subtasks", remote_side="Task.id")

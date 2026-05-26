@@ -1,0 +1,62 @@
+'use client';
+import { createContext, useContext, useEffect, useState, ReactNode } from 'react';
+import { auth } from '@/lib/api';
+
+export interface AuthUser {
+  id: string;
+  name: string;
+  email: string;
+  role: string;
+  institution_id: string | null;
+  institution_role: string | null;
+}
+
+interface AuthContextValue {
+  user: AuthUser | null;
+  loading: boolean;
+  refresh: () => Promise<void>;
+}
+
+const AuthContext = createContext<AuthContextValue>({
+  user: null,
+  loading: true,
+  refresh: async () => {},
+});
+
+export function AuthProvider({ children }: { children: ReactNode }) {
+  const [user, setUser] = useState<AuthUser | null>(null);
+  const [loading, setLoading] = useState(true);
+
+  async function fetchUser() {
+    try {
+      const res = await auth.me();
+      setUser(res.data);
+    } catch {
+      setUser(null);
+    } finally {
+      setLoading(false);
+    }
+  }
+
+  useEffect(() => {
+    if (typeof window !== 'undefined' && localStorage.getItem('access_token')) {
+      fetchUser();
+    } else {
+      setLoading(false);
+    }
+  }, []);
+
+  return (
+    <AuthContext.Provider value={{ user, loading, refresh: fetchUser }}>
+      {children}
+    </AuthContext.Provider>
+  );
+}
+
+export function useAuth() {
+  return useContext(AuthContext);
+}
+
+export function isInstitutionAdmin(user: AuthUser | null): boolean {
+  return user?.role === 'admin' || user?.institution_role === 'admin';
+}

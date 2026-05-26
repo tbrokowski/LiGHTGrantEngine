@@ -1,6 +1,6 @@
 'use client';
 import { useEffect, useCallback, useRef } from 'react';
-import { useEditor, EditorContent, BubbleMenu } from '@tiptap/react';
+import { useEditor, EditorContent } from '@tiptap/react';
 import StarterKit from '@tiptap/starter-kit';
 import Highlight from '@tiptap/extension-highlight';
 import Placeholder from '@tiptap/extension-placeholder';
@@ -8,7 +8,7 @@ import CharacterCount from '@tiptap/extension-character-count';
 import Typography from '@tiptap/extension-typography';
 import Underline from '@tiptap/extension-underline';
 import TextAlign from '@tiptap/extension-text-align';
-import type { EditorSection } from '@/app/grants/[id]/page';
+import type { EditorSection } from '@/lib/types';
 import {
   Bold, Italic, UnderlineIcon, Highlighter, List, ListOrdered,
   AlignLeft, AlignCenter, Heading2, Heading3, Quote,
@@ -86,7 +86,7 @@ export default function SectionEditor({
     const current = editor.getHTML();
     if (section.content_html !== current && section.content_html !== lastContent.current) {
       lastContent.current = section.content_html;
-      editor.commands.setContent(section.content_html || '', false);
+      editor.commands.setContent(section.content_html || '', { emitUpdate: false });
     }
   }, [section.content_html, editor]);
 
@@ -117,37 +117,6 @@ export default function SectionEditor({
     <div className={`relative rounded-lg border transition-all ${
       isActive ? 'border-blue-300 shadow-sm' : 'border-gray-100'
     }`}>
-      {/* Bubble menu for selected text */}
-      <BubbleMenu
-        editor={editor}
-        tippyOptions={{ duration: 100 }}
-        className="flex items-center gap-0.5 bg-gray-900 rounded-lg p-1 shadow-xl border border-gray-700"
-      >
-        <button
-          onMouseDown={e => { e.preventDefault(); editor.chain().focus().toggleBold().run(); }}
-          className={`p-1.5 rounded text-xs text-white transition-colors ${editor.isActive('bold') ? 'bg-white/20' : 'hover:bg-white/10'}`}
-          title="Bold"
-        >
-          <Bold className="w-3.5 h-3.5" />
-        </button>
-        <button
-          onMouseDown={e => { e.preventDefault(); editor.chain().focus().toggleItalic().run(); }}
-          className={`p-1.5 rounded text-xs text-white transition-colors ${editor.isActive('italic') ? 'bg-white/20' : 'hover:bg-white/10'}`}
-          title="Italic"
-        >
-          <Italic className="w-3.5 h-3.5" />
-        </button>
-        <button
-          onMouseDown={e => { e.preventDefault(); editor.chain().focus().toggleHighlight().run(); }}
-          className={`p-1.5 rounded text-xs text-white transition-colors ${editor.isActive('highlight') ? 'bg-yellow-400/30' : 'hover:bg-white/10'}`}
-          title="Highlight (mark for AI)"
-        >
-          <Highlighter className="w-3.5 h-3.5 text-yellow-300" />
-        </button>
-        <div className="w-px h-4 bg-white/20 mx-0.5" />
-        <span className="text-xs text-gray-400 px-1">AI can see selection →</span>
-      </BubbleMenu>
-
       {/* Formatting toolbar (shows when section is active) */}
       {isActive && (
         <div className="flex items-center gap-0.5 px-2 py-1.5 border-b border-gray-100 flex-wrap">

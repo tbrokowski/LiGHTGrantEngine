@@ -1,9 +1,9 @@
 """
-Qwen API client — wraps the OpenAI-compatible endpoint.
+OpenAI API client — wraps the OpenAI chat completions and embeddings endpoints.
 All AI calls in LiGHT go through this module.
 
 The base_url, model, and generation settings are read from config.yaml.
-To point at a different Qwen deployment, change config.yaml:ai.base_url.
+To switch models or providers, update config.yaml:ai.
 """
 from typing import Any, AsyncIterator, Optional
 import structlog
@@ -17,7 +17,6 @@ settings = get_settings()
 
 
 def _get_client() -> AsyncOpenAI:
-    """Return an OpenAI-compatible client pointed at the Qwen endpoint."""
     ai_cfg = settings.ai
     return AsyncOpenAI(
         base_url=ai_cfg.base_url,
@@ -35,7 +34,7 @@ async def chat_complete(
     json_mode: bool = False,
 ) -> str:
     """
-    Call Qwen via the OpenAI-compatible chat completions endpoint.
+    Call the chat completions endpoint.
 
     Args:
         messages: List of {"role": "system"|"user"|"assistant", "content": "..."}
@@ -50,12 +49,9 @@ async def chat_complete(
     ai_cfg = settings.ai
     gen = ai_cfg.generation
 
-    # Apply per-agent overrides
     agent_overrides = ai_cfg.agent_overrides.get(agent_name or "", {})
     temp = temperature if temperature is not None else agent_overrides.get("temperature", gen.temperature)
     tokens = max_tokens if max_tokens is not None else agent_overrides.get("max_tokens", gen.max_tokens)
-
-    client = _get_client()
 
     kwargs: dict[str, Any] = {
         "model": ai_cfg.model,
@@ -67,12 +63,13 @@ async def chat_complete(
     if json_mode:
         kwargs["response_format"] = {"type": "json_object"}
 
-    logger.debug("Qwen call", agent=agent_name, model=ai_cfg.model, messages=len(messages))
+    logger.debug("AI chat call", agent=agent_name, model=ai_cfg.model, messages=len(messages))
 
-    response = await client.chat.completions.create(**kwargs)
+    async with _get_client() as client:
+        response = await client.chat.completions.create(**kwargs)
+
     content = response.choices[0].message.content or ""
-
-    logger.debug("Qwen response", agent=agent_name, tokens=response.usage.total_tokens if response.usage else None)
+    logger.debug("AI chat response", agent=agent_name, tokens=response.usage.total_tokens if response.usage else None)
     return content
 
 
@@ -83,7 +80,7 @@ async def chat_complete_stream(
     agent_name: Optional[str] = None,
 ) -> AsyncIterator[str]:
     """
-    Call Qwen via streaming chat completions. Yields text chunks as they arrive.
+    Call the chat completions endpoint with streaming. Yields text chunks as they arrive.
 
     Usage:
         async for chunk in chat_complete_stream(messages):
@@ -98,7 +95,7 @@ async def chat_complete_stream(
 
     client = _get_client()
 
-    logger.debug("Qwen stream call", agent=agent_name, model=ai_cfg.model, messages=len(messages))
+    logger.debug("AI stream call", agent=agent_name, model=ai_cfg.model, messages=len(messages))
 
     stream = await client.chat.completions.create(
         model=ai_cfg.model,
@@ -117,20 +114,20 @@ async def chat_complete_stream(
 
 async def get_embedding(text: str) -> list[float]:
     """
-    Get a text embedding from the Qwen embeddings endpoint.
-    Falls back to a zero vector if the endpoint doesn't support embeddings.
+    Get a text embedding from the configured embeddings endpoint.
+    Falls back to a zero vector if the endpoint fails.
     """
     embed_cfg = settings.ai.embeddings
-    client = AsyncOpenAI(
-        base_url=embed_cfg.base_url,
-        api_key=settings.ai.api_key,
-        timeout=30,
-    )
     try:
-        response = await client.embeddings.create(
-            model=embed_cfg.model,
-            input=text[:8000],  # Truncate to avoid token limits
-        )
+        async with AsyncOpenAI(
+            base_url=embed_cfg.base_url,
+            api_key=settings.ai.api_key,
+            timeout=30,
+        ) as client:
+            response = await client.embeddings.create(
+                model=embed_cfg.model,
+                input=text[:8000],
+            )
         return response.data[0].embedding
     except Exception as e:
         logger.warning("Embedding call failed, returning zeros", error=str(e))

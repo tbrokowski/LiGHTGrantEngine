@@ -122,12 +122,15 @@ class Opportunity(Base):
     duplicate_status: Mapped[str] = mapped_column(String(50), default=DuplicateStatus.UNIQUE)
     assigned_reviewer_id: Mapped[str | None] = mapped_column(String, ForeignKey("users.id"))
 
+    # Funder logo
+    funder_logo_url: Mapped[str | None] = mapped_column(String(500))
+
     # Raw text
     raw_text: Mapped[str | None] = mapped_column(Text)
     parsed_text: Mapped[str | None] = mapped_column(Text)
 
     # Vector embedding for semantic search
-    embedding: Mapped[list | None] = mapped_column(Vector(4096), nullable=True)
+    embedding: Mapped[list | None] = mapped_column(Vector(1536), nullable=True)
 
     # Metadata
     date_discovered: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now(), index=True)

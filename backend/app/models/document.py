@@ -75,7 +75,7 @@ class Document(Base):
     notes: Mapped[str | None] = mapped_column(Text)
 
     # Vector embedding
-    embedding: Mapped[list | None] = mapped_column(Vector(4096), nullable=True)
+    embedding: Mapped[list | None] = mapped_column(Vector(1536), nullable=True)
 
     opportunity: Mapped["Opportunity"] = relationship("Opportunity", back_populates="documents")  # type: ignore
     grant: Mapped["ActiveGrant"] = relationship("ActiveGrant", back_populates="documents")  # type: ignore

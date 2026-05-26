@@ -11,6 +11,7 @@ celery_app = Celery(
     backend=settings.redis_url,
     include=[
         "app.workers.discovery_tasks",
+        "app.workers.enrichment_tasks",
         "app.workers.notification_tasks",
         "app.workers.embedding_tasks",
     ],

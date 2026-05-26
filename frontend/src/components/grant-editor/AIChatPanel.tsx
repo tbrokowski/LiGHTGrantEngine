@@ -1,7 +1,6 @@
 'use client';
 import { useState, useRef, useEffect, useCallback } from 'react';
-import { streamEditorChat, ai } from '@/lib/api';
-import type { EditorSection } from '@/app/grants/[id]/page';
+import { streamEditorChat, streamWritingChat, ai } from '@/lib/api';
 import {
   Send, Copy, CheckCheck, Plus, Sparkles, FileText,
   MousePointerClick, ChevronDown, AlertCircle, X, Wand2,
@@ -16,11 +15,13 @@ interface ChatMessage {
 
 interface AIChatPanelProps {
   grantId: string;
-  activeSection: EditorSection | undefined;
   selectedText: string;
   getDocumentContext: () => string;
   onInsertText: (text: string) => void;
   callRequirements: string;
+  activeSection?: string;
+  writingPhase?: string;
+  useWritingStudio?: boolean;
 }
 
 const QUICK_PROMPTS = [
@@ -71,11 +72,13 @@ function renderInline(text: string): React.ReactNode {
 
 export default function AIChatPanel({
   grantId,
-  activeSection,
   selectedText,
   getDocumentContext,
   onInsertText,
   callRequirements,
+  activeSection,
+  writingPhase,
+  useWritingStudio = false,
 }: AIChatPanelProps) {
   const [messages, setMessages] = useState<ChatMessage[]>([
     {
@@ -90,6 +93,7 @@ export default function AIChatPanel({
   const [showQuickPrompts, setShowQuickPrompts] = useState(false);
   const [improveLoading, setImproveLoading] = useState(false);
   const [contextMode, setContextMode] = useState<'auto' | 'selection' | 'full'>('auto');
+  const [contextChips, setContextChips] = useState<string[]>([]);
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const inputRef = useRef<HTMLTextAreaElement>(null);
   const abortRef = useRef<AbortController | null>(null);
@@ -118,37 +122,70 @@ export default function AIChatPanel({
 
     const history = [...messages, userMsg].map(m => ({ role: m.role, content: m.content }));
 
-    abortRef.current = streamEditorChat(
-      {
-        grant_id: grantId,
-        messages: history,
-        document_context: docContext,
-        selected_text: selText,
-        active_section: activeSection?.title,
-      },
-      (chunk) => {
-        setMessages(prev =>
-          prev.map(m => m.id === assistantId ? { ...m, content: m.content + chunk } : m)
+    abortRef.current = useWritingStudio
+      ? streamWritingChat(
+          grantId,
+          {
+            messages: history,
+            document_context: docContext,
+            selected_text: selText,
+            active_section: activeSection,
+            writing_phase: writingPhase,
+          },
+          (chunk, chips) => {
+            if (chips) setContextChips(chips);
+            setMessages(prev =>
+              prev.map(m => m.id === assistantId ? { ...m, content: m.content + chunk } : m)
+            );
+          },
+          () => {
+            setMessages(prev =>
+              prev.map(m => m.id === assistantId ? { ...m, isStreaming: false } : m)
+            );
+            setIsStreaming(false);
+            abortRef.current = null;
+          },
+          (err) => {
+            setMessages(prev =>
+              prev.map(m => m.id === assistantId
+                ? { ...m, content: `Error: ${err}`, isStreaming: false }
+                : m)
+            );
+            setIsStreaming(false);
+            abortRef.current = null;
+          },
+        )
+      : streamEditorChat(
+          {
+            grant_id: grantId,
+            messages: history,
+            document_context: docContext,
+            selected_text: selText,
+            active_section: activeSection,
+          },
+          (chunk) => {
+            setMessages(prev =>
+              prev.map(m => m.id === assistantId ? { ...m, content: m.content + chunk } : m)
+            );
+          },
+          () => {
+            setMessages(prev =>
+              prev.map(m => m.id === assistantId ? { ...m, isStreaming: false } : m)
+            );
+            setIsStreaming(false);
+            abortRef.current = null;
+          },
+          (err) => {
+            setMessages(prev =>
+              prev.map(m => m.id === assistantId
+                ? { ...m, content: `Error: ${err}`, isStreaming: false }
+                : m)
+            );
+            setIsStreaming(false);
+            abortRef.current = null;
+          },
         );
-      },
-      () => {
-        setMessages(prev =>
-          prev.map(m => m.id === assistantId ? { ...m, isStreaming: false } : m)
-        );
-        setIsStreaming(false);
-        abortRef.current = null;
-      },
-      (err) => {
-        setMessages(prev =>
-          prev.map(m => m.id === assistantId
-            ? { ...m, content: `Error: ${err}`, isStreaming: false }
-            : m)
-        );
-        setIsStreaming(false);
-        abortRef.current = null;
-      },
-    );
-  }, [input, isStreaming, messages, grantId, activeSection, selectedText, getDocumentContext, contextMode]);
+  }, [input, isStreaming, messages, grantId, selectedText, getDocumentContext, contextMode, activeSection, writingPhase, useWritingStudio]);
 
   const stopStreaming = () => {
     abortRef.current?.abort();
@@ -179,8 +216,6 @@ export default function AIChatPanel({
         grant_id: grantId,
         selected_text: selectedText,
         instruction,
-        section_name: activeSection?.title,
-        section_type: activeSection?.section_type,
         document_context: getDocumentContext(),
       });
       const improvedId = genId();
@@ -252,17 +287,21 @@ export default function AIChatPanel({
             </button>
           )}
 
-          {activeSection && (
-            <span className="flex items-center gap-1 text-[10px] px-2 py-0.5 rounded-full bg-purple-50 text-purple-600 border border-purple-100">
-              § {activeSection.title.slice(0, 18)}{activeSection.title.length > 18 ? '...' : ''}
-            </span>
-          )}
-
           {callRequirements && (
             <span className="flex items-center gap-1 text-[10px] px-2 py-0.5 rounded-full bg-green-50 text-green-600 border border-green-100">
               Call req. ✓
             </span>
           )}
+          {activeSection && (
+            <span className="flex items-center gap-1 text-[10px] px-2 py-0.5 rounded-full bg-indigo-50 text-indigo-600 border border-indigo-100">
+              {activeSection}
+            </span>
+          )}
+          {contextChips.map(chip => (
+            <span key={chip} className="text-[10px] px-2 py-0.5 rounded-full bg-purple-50 text-purple-600 border border-purple-100">
+              {chip}
+            </span>
+          ))}
         </div>
       </div>
 

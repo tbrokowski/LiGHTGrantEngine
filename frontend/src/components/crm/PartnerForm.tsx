@@ -5,7 +5,7 @@ import PartnerTagChip from './PartnerTagChip';
 const PRESET_TAGS = ['PI', 'co-I', 'industry', 'government', 'ngo', 'academia', 'funder', 'advisor', 'reviewer'];
 const PRESET_PROJECT_TYPES = ['AI/ML', 'health', 'climate', 'education', 'agriculture', 'water', 'energy', 'finance', 'governance', 'gender'];
 
-interface PartnerFormData {
+export interface PartnerFormData {
   name: string;
   email: string;
   phone: string;

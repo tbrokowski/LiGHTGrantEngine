@@ -3,6 +3,52 @@ from datetime import datetime, timedelta, date
 from app.workers.celery_app import celery_app
 
 
+# ── Slack helper ───────────────────────────────────────────────────────────────
+
+def _send_slack(message: str, webhook_url: str) -> None:
+    """POST a plain-text message to a Slack incoming webhook."""
+    import httpx
+
+    payload = {"text": message}
+    resp = httpx.post(webhook_url, json=payload, timeout=10)
+    resp.raise_for_status()
+
+
+# ── Email helper ───────────────────────────────────────────────────────────────
+
+def _send_email(to_email: str, to_name: str, message: str, notif_cfg) -> None:
+    """Send a single email via SMTP."""
+    import smtplib
+    from email.mime.text import MIMEText
+    from app.config import get_settings
+
+    settings = get_settings()
+    email_cfg = notif_cfg.email if hasattr(notif_cfg, "email") else notif_cfg.get("email", {})
+    if hasattr(email_cfg, "get"):
+        smtp_host = email_cfg.get("smtp_host", "smtp.gmail.com")
+        smtp_port = email_cfg.get("smtp_port", 587)
+        from_addr = email_cfg.get("from_address", "")
+    else:
+        smtp_host = "smtp.gmail.com"
+        smtp_port = 587
+        from_addr = ""
+
+    if not from_addr or not settings.smtp_password:
+        return
+
+    msg = MIMEText(message)
+    msg["Subject"] = f"[{settings.app_name}] Reminder"
+    msg["From"] = from_addr
+    msg["To"] = to_email
+
+    with smtplib.SMTP(smtp_host, smtp_port) as server:
+        server.starttls()
+        server.login(from_addr, settings.smtp_password)
+        server.send_message(msg)
+
+
+# ── Main reminder task ─────────────────────────────────────────────────────────
+
 @celery_app.task(name="app.workers.notification_tasks.send_deadline_reminders")
 def send_deadline_reminders():
     """Send daily deadline reminders based on configured schedule."""
@@ -18,11 +64,21 @@ def send_deadline_reminders():
     today = date.today()
     notif_cfg = settings.notifications
 
+    slack_cfg = notif_cfg.slack if hasattr(notif_cfg, "slack") else notif_cfg.get("slack", {})
+    slack_enabled = (
+        slack_cfg.get("enabled", False) if hasattr(slack_cfg, "get") else False
+    )
+    slack_webhook = (
+        slack_cfg.get("webhook_url", "") if hasattr(slack_cfg, "get") else ""
+    ) or settings.slack_webhook_url or ""
+
+    reminders = notif_cfg.reminders if hasattr(notif_cfg, "reminders") else notif_cfg.get("reminders", {})
+
     with Session(engine) as db:
         notifications_created = 0
 
-        # External deadline reminders
-        for days_ahead in notif_cfg.reminders.get("external_deadline", [60, 30, 14, 7, 3, 1]):
+        # ── External deadline reminders ───────────────────────────────────────
+        for days_ahead in reminders.get("external_deadline", [60, 30, 14, 7, 3, 1]):
             target_date = today + timedelta(days=days_ahead)
             grants = db.execute(
                 select(ActiveGrant).where(
@@ -31,6 +87,12 @@ def send_deadline_reminders():
                 )
             ).scalars().all()
             for grant in grants:
+                msg = (
+                    f"External deadline in {days_ahead} day(s): "
+                    f"{grant.title} ({grant.funder})"
+                )
+
+                # In-app / email notification
                 if grant.internal_lead_id:
                     notif = Notification(
                         id=str(__import__("uuid").uuid4()),
@@ -38,15 +100,44 @@ def send_deadline_reminders():
                         notification_type=NotificationType.GRANT_EXTERNAL_DEADLINE,
                         entity_type="grant",
                         entity_id=grant.id,
-                        message=f"External deadline in {days_ahead} day(s): {grant.title} ({grant.funder})",
+                        message=msg,
                         channel="email",
                         status=NotificationStatus.PENDING,
                     )
                     db.add(notif)
                     notifications_created += 1
 
-        # Task deadline reminders
-        for days_ahead in notif_cfg.reminders.get("task_deadline", [7, 3, 1, 0]):
+                # Slack direct notification
+                if slack_enabled and slack_webhook:
+                    try:
+                        _send_slack(f":alarm_clock: {msg}", slack_webhook)
+                    except Exception as exc:
+                        import logging
+                        logging.getLogger(__name__).warning("Slack send failed: %s", exc)
+
+        # ── Internal deadline reminders ───────────────────────────────────────
+        for days_ahead in reminders.get("internal_deadline", [14, 7, 3, 1]):
+            target_date = today + timedelta(days=days_ahead)
+            grants_int = db.execute(
+                select(ActiveGrant).where(
+                    ActiveGrant.internal_deadline == target_date,
+                    ActiveGrant.status.notin_(["submitted", "closed", "withdrawn"]),
+                )
+            ).scalars().all()
+            for grant in grants_int:
+                msg = (
+                    f"Internal deadline in {days_ahead} day(s): "
+                    f"{grant.title} ({grant.funder})"
+                )
+                if slack_enabled and slack_webhook:
+                    try:
+                        _send_slack(f":calendar: {msg}", slack_webhook)
+                    except Exception as exc:
+                        import logging
+                        logging.getLogger(__name__).warning("Slack send failed: %s", exc)
+
+        # ── Task deadline reminders ───────────────────────────────────────────
+        for days_ahead in reminders.get("task_deadline", [7, 3, 1, 0]):
             target_date = today + timedelta(days=days_ahead)
             tasks = db.execute(
                 select(Task).where(
@@ -56,29 +147,69 @@ def send_deadline_reminders():
                 )
             ).scalars().all()
             for task in tasks:
+                msg = f"Task due in {days_ahead} day(s): {task.title}"
                 notif = Notification(
                     id=str(__import__("uuid").uuid4()),
                     user_id=task.owner_id,
-                    notification_type=NotificationType.TASK_DUE_SOON if days_ahead > 0 else NotificationType.TASK_ASSIGNED,
+                    notification_type=(
+                        NotificationType.TASK_DUE_SOON
+                        if days_ahead > 0
+                        else NotificationType.TASK_ASSIGNED
+                    ),
                     entity_type="task",
                     entity_id=task.id,
-                    message=f"Task due in {days_ahead} day(s): {task.title}",
+                    message=msg,
                     channel="in_app",
                     status=NotificationStatus.PENDING,
                 )
                 db.add(notif)
                 notifications_created += 1
 
+                if slack_enabled and slack_webhook:
+                    try:
+                        _send_slack(f":pencil2: {msg}", slack_webhook)
+                    except Exception as exc:
+                        import logging
+                        logging.getLogger(__name__).warning("Slack send failed: %s", exc)
+
+        # ── Partner material due reminders ────────────────────────────────────
+        try:
+            from app.models.workspace_partner import PartnerMaterial
+
+            for days_ahead in [7, 3, 1]:
+                target_date = today + timedelta(days=days_ahead)
+                materials = db.execute(
+                    select(PartnerMaterial).where(
+                        PartnerMaterial.due_date == target_date,
+                        PartnerMaterial.status.notin_(["received", "complete"]),
+                    )
+                ).scalars().all()
+                for mat in materials:
+                    msg = (
+                        f"Partner material due in {days_ahead} day(s): "
+                        f"{mat.title} (grant {mat.grant_id[:8]})"
+                    )
+                    if slack_enabled and slack_webhook:
+                        try:
+                            _send_slack(f":handshake: {msg}", slack_webhook)
+                        except Exception as exc:
+                            import logging
+                            logging.getLogger(__name__).warning("Slack send failed: %s", exc)
+        except Exception:
+            pass  # PartnerMaterial may not be available in all environments
+
         db.commit()
 
-    # Send pending email notifications
+    # Process pending email notifications
     send_pending_emails.delay()
     return {"notifications_created": notifications_created}
 
 
+# ── Email dispatch task ────────────────────────────────────────────────────────
+
 @celery_app.task(name="app.workers.notification_tasks.send_pending_emails")
 def send_pending_emails():
-    """Process and send pending email notifications."""
+    """Process and dispatch pending email notifications."""
     from sqlalchemy import select, create_engine
     from sqlalchemy.orm import Session
     from app.config import get_settings
@@ -87,16 +218,19 @@ def send_pending_emails():
 
     settings = get_settings()
     notif_cfg = settings.notifications
-    if not notif_cfg.email.get("enabled", False):
+    email_cfg = notif_cfg.email if hasattr(notif_cfg, "email") else notif_cfg.get("email", {})
+    if not (email_cfg.get("enabled", False) if hasattr(email_cfg, "get") else False):
         return {"skipped": "email disabled"}
 
     engine = create_engine(settings.database_url)
     with Session(engine) as db:
         pending = db.execute(
-            select(Notification).where(
+            select(Notification)
+            .where(
                 Notification.status == NotificationStatus.PENDING,
                 Notification.channel == NotificationChannel.EMAIL,
-            ).limit(100)
+            )
+            .limit(100)
         ).scalars().all()
 
         sent = 0
@@ -108,34 +242,51 @@ def send_pending_emails():
                     notif.status = NotificationStatus.SENT
                     notif.sent_at = datetime.utcnow()
                     sent += 1
-            except Exception as e:
+            except Exception:
                 notif.status = NotificationStatus.FAILED
 
         db.commit()
     return {"sent": sent}
 
 
-def _send_email(to_email: str, to_name: str, message: str, notif_cfg: dict):
-    """Send a single email via SMTP."""
-    import smtplib
-    from email.mime.text import MIMEText
+# ── Slack dispatch task (for channel="slack" notifications) ───────────────────
+
+@celery_app.task(name="app.workers.notification_tasks.send_pending_slack")
+def send_pending_slack():
+    """Dispatch pending Slack-channel notifications from the notification queue."""
+    from sqlalchemy import select, create_engine
+    from sqlalchemy.orm import Session
     from app.config import get_settings
+    from app.models.notification import Notification, NotificationStatus
 
     settings = get_settings()
-    email_cfg = notif_cfg.get("email", {})
-    smtp_host = email_cfg.get("smtp_host", "smtp.gmail.com")
-    smtp_port = email_cfg.get("smtp_port", 587)
-    from_addr = email_cfg.get("from_address", "")
+    notif_cfg = settings.notifications
+    slack_cfg = notif_cfg.slack if hasattr(notif_cfg, "slack") else notif_cfg.get("slack", {})
+    webhook_url = (
+        slack_cfg.get("webhook_url", "") if hasattr(slack_cfg, "get") else ""
+    ) or settings.slack_webhook_url or ""
 
-    if not from_addr or not settings.smtp_password:
-        return
+    if not (slack_cfg.get("enabled", False) if hasattr(slack_cfg, "get") else False) or not webhook_url:
+        return {"skipped": "Slack disabled or webhook not configured"}
 
-    msg = MIMEText(message)
-    msg["Subject"] = f"[{settings.app_name}] Reminder"
-    msg["From"] = from_addr
-    msg["To"] = to_email
+    engine = create_engine(settings.database_url)
+    with Session(engine) as db:
+        pending = db.execute(
+            select(Notification).where(
+                Notification.status == NotificationStatus.PENDING,
+                Notification.channel == "slack",
+            ).limit(100)
+        ).scalars().all()
 
-    with smtplib.SMTP(smtp_host, smtp_port) as server:
-        server.starttls()
-        server.login(from_addr, settings.smtp_password)
-        server.send_message(msg)
+        sent = 0
+        for notif in pending:
+            try:
+                _send_slack(notif.message, webhook_url)
+                notif.status = NotificationStatus.SENT
+                notif.sent_at = datetime.utcnow()
+                sent += 1
+            except Exception:
+                notif.status = NotificationStatus.FAILED
+
+        db.commit()
+    return {"sent": sent}

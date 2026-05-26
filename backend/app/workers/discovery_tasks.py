@@ -3,6 +3,7 @@ Discovery engine Celery tasks.
 These tasks are triggered by the beat scheduler or manually via the API.
 """
 import asyncio
+import re
 import uuid
 from datetime import datetime
 from celery import shared_task
@@ -11,12 +12,83 @@ from app.workers.celery_app import celery_app
 
 def _run_async(coro):
     """Helper to run async code from sync Celery tasks."""
-    loop = asyncio.new_event_loop()
-    asyncio.set_event_loop(loop)
-    try:
-        return loop.run_until_complete(coro)
-    finally:
-        loop.close()
+    return asyncio.run(coro)
+
+
+# Funder name substring → logo URL.
+# Local static paths are served by Next.js from frontend/public/logos/.
+# Google favicon URLs are used as a fallback for funders without a local file.
+_FUNDER_LOGO_PATHS: dict[str, str] = {
+    # US federal agencies (local files)
+    "grants.gov":           "/logos/grants-gov.svg",
+    "nih":                  "/logos/nih.svg",
+    "nsf":                  "/logos/nsf.svg",
+    "sbir":                 "/logos/nsf.svg",         # SBIR is NSF/DoD — use NSF as proxy
+    "usaid":                "/logos/usaid.svg",
+    # International foundations (local files)
+    "bill & melinda gates": "/logos/gates-foundation.svg",
+    "gates foundation":     "/logos/gates-foundation.svg",
+    "wellcome":             "/logos/wellcome.svg",
+    "ford foundation":      "/logos/ford-foundation.svg",
+    # International foundations (Google favicon)
+    "macarthur":            "https://www.google.com/s2/favicons?domain=macfound.org&sz=64",
+    "chan zuckerberg":      "https://www.google.com/s2/favicons?domain=chanzuckerberg.com&sz=64",
+    "open philanthropy":    "https://www.google.com/s2/favicons?domain=openphilanthropy.org&sz=64",
+    "rockefeller":          "https://www.google.com/s2/favicons?domain=rockefellerfoundation.org&sz=64",
+    "hewlett":              "https://www.google.com/s2/favicons?domain=hewlett.org&sz=64",
+    # International organisations (local files)
+    "ukri":                 "/logos/ukri.svg",
+    "innovate uk":          "/logos/ukri.svg",
+    "world bank":           "/logos/world-bank.svg",
+    "global fund":          "/logos/global-fund.svg",
+    # International organisations (Google favicon)
+    "who":                  "https://www.google.com/s2/favicons?domain=who.int&sz=64",
+    "world health org":     "https://www.google.com/s2/favicons?domain=who.int&sz=64",
+    "unicef":               "https://www.google.com/s2/favicons?domain=unicef.org&sz=64",
+    "undp":                 "https://www.google.com/s2/favicons?domain=undp.org&sz=64",
+    "unops":                "https://www.google.com/s2/favicons?domain=unops.org&sz=64",
+    # EU / Horizon Europe (local files)
+    "horizon europe":       "/logos/horizon-europe.svg",
+    "european commission":  "/logos/horizon-europe.svg",
+    "erc":                  "/logos/horizon-europe.svg",
+    "eic":                  "/logos/horizon-europe.svg",
+    # EU / other (Google favicon)
+    "snsf":                 "https://www.google.com/s2/favicons?domain=snf.ch&sz=64",
+    "snf":                  "https://www.google.com/s2/favicons?domain=snf.ch&sz=64",
+    "sshrc":                "https://www.google.com/s2/favicons?domain=sshrc-crsh.gc.ca&sz=64",
+    "nwo":                  "https://www.google.com/s2/favicons?domain=nwo.nl&sz=64",
+    # Global health (local + Google favicon)
+    "edctp":                "/logos/edctp.jpg",
+    "elrha":                "/logos/wellcome.svg",    # Elrha is Wellcome/FCDO-funded
+    # Media / philanthropy
+    "ted":                  "https://www.google.com/s2/favicons?domain=ted.com&sz=64",
+    "audacious":            "https://www.google.com/s2/favicons?domain=ted.com&sz=64",
+    # Other funders
+    "aga khan":             "https://www.google.com/s2/favicons?domain=akdn.org&sz=64",
+    "comic relief":         "https://www.google.com/s2/favicons?domain=comicrelief.com&sz=64",
+    "dfid":                 "https://www.google.com/s2/favicons?domain=gov.uk&sz=64",
+    "fcdo":                 "https://www.google.com/s2/favicons?domain=gov.uk&sz=64",
+}
+
+
+def _get_funder_logo_url(funder_name: str) -> str | None:
+    """Return a local static logo path for a funder, or None if not mapped.
+
+    Short keys (≤4 chars) use word-boundary matching to avoid false positives
+    like 'nsf' matching 'SNSF' or 'ted' matching 'United'.
+    """
+    if not funder_name:
+        return None
+    name_lower = funder_name.lower()
+    for key, path in _FUNDER_LOGO_PATHS.items():
+        # Short acronyms (≤4 chars) need word-boundary matching to prevent
+        # false positives e.g. "nsf" inside "SNSF" or "ted" inside "United"
+        if len(key) <= 4:
+            if re.search(r'\b' + re.escape(key) + r'\b', name_lower):
+                return path
+        elif key in name_lower:
+            return path
+    return None
 
 
 @celery_app.task(name="app.workers.discovery_tasks.scan_all_sources", bind=True, max_retries=2)
@@ -104,7 +176,7 @@ def scan_source(self, source_id: str):
             dup_count = 0
 
             for listing in raw_listings:
-                result = _process_listing(db, listing, source_id)
+                result = _process_listing(db, listing, source_id, source.url)
                 if result == "new":
                     new_count += 1
                 elif result == "updated":
@@ -141,30 +213,38 @@ def scan_source(self, source_id: str):
             raise self.retry(exc=e, countdown=300)
 
 
-def _process_listing(db, listing: dict, source_id: str) -> str:
+def _process_listing(db, listing: dict, source_id: str, source_url: str | None = None) -> str:
     """Process a single raw listing: normalize, deduplicate, persist."""
     from sqlalchemy import select
     from app.models.opportunity import Opportunity, DuplicateStatus
 
+    call_url = (listing.get("url") or "").strip()
+    if not call_url:
+        return "skipped"
+
     # Check for URL duplicate
-    if listing.get("url"):
-        existing = db.execute(
-            select(Opportunity).where(Opportunity.opportunity_url == listing["url"])
-        ).scalar_one_or_none()
-        if existing:
-            return "duplicate"
+    existing = db.execute(
+        select(Opportunity).where(Opportunity.opportunity_url == call_url)
+    ).scalar_one_or_none()
+    if existing:
+        return "duplicate"
+
+    # Resolve funder logo URL
+    funder_logo_url = _get_funder_logo_url(listing.get("funder") or "")
 
     opp = Opportunity(
         id=str(uuid.uuid4()),
         title=listing.get("title", "Untitled"),
         funder=listing.get("funder"),
-        program_name=listing.get("program"),
+        program_name=listing.get("program_name") or listing.get("program"),
         description=listing.get("description"),
-        opportunity_url=listing.get("url"),
+        opportunity_url=call_url,
+        source_url=source_url,
         source_id=source_id,
         status="new",
         duplicate_status=DuplicateStatus.UNIQUE,
         raw_text=listing.get("raw_text"),
+        funder_logo_url=funder_logo_url,
     )
 
     # Parse deadline if present
@@ -179,14 +259,16 @@ def _process_listing(db, listing: dict, source_id: str) -> str:
     db.add(opp)
     db.commit()
 
-    # Queue AI scoring
+    # Queue AI scoring and full-page description enrichment
     score_opportunity.delay(str(opp.id))
+    from app.workers.enrichment_tasks import enrich_opportunity
+    enrich_opportunity.delay(str(opp.id))
     return "new"
 
 
 @celery_app.task(name="app.workers.discovery_tasks.score_opportunity")
 def score_opportunity(opportunity_id: str):
-    """Score an opportunity using Qwen fit scorer."""
+    """Score an opportunity using the AI fit scorer."""
     from sqlalchemy import create_engine
     from sqlalchemy.orm import Session
     from app.config import get_settings
@@ -196,12 +278,12 @@ def score_opportunity(opportunity_id: str):
     engine = create_engine(settings.database_url)
 
     async def _score():
-        from app.ai.agents.fit_scorer import score_opportunity as qwen_score
+        from app.ai.agents.fit_scorer import score_opportunity as ai_score
         with Session(engine) as db:
             opp = db.get(Opportunity, opportunity_id)
             if not opp:
                 return
-            result = await qwen_score(
+            result = await ai_score(
                 title=opp.title,
                 description=opp.description or "",
                 funder=opp.funder or "",

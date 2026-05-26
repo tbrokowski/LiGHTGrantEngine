@@ -45,3 +45,17 @@ Thumbs.db
 
 # Alembic (keep versions, ignore generated)
 alembic/versions/*.pyc
+next-swc-linux-arm64-gnu-14.2.15.tgz
+next-swc-linux-arm64-musl-14.2.15.tgz
+
+# Celery
+backend/celerybeat-schedule
+celerybeat-schedule
+
+# Build artifacts
+frontend/tsconfig.tsbuildinfo
+
+# Data files (may contain PII or sensitive opportunity data)
+*.xlsx
+grant_funding_portals.xlsx
+backend/scripts/Opportunities.xlsx

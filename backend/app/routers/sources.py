@@ -48,6 +48,15 @@ async def create_source(data: SourceCreate, db: AsyncSession = Depends(get_db), 
     await db.commit()
     return {"id": source.id}
 
+@router.post("/run-all")
+async def run_all_sources(bg: BackgroundTasks, db: AsyncSession = Depends(get_db), current_user: User = Depends(get_current_user)):
+    """Queue an immediate scan of all active sources."""
+    result = await db.execute(select(Source).where(Source.status == "active"))
+    active_sources = result.scalars().all()
+    count = len(active_sources)
+    bg.add_task(_trigger_all_sources_scan)
+    return {"message": f"Scan queued for {count} active source{'s' if count != 1 else ''}", "queued": count}
+
 @router.patch("/{source_id}")
 async def update_source(source_id: str, data: SourceUpdate, db: AsyncSession = Depends(get_db), current_user: User = Depends(get_current_user)):
     result = await db.execute(select(Source).where(Source.id == source_id))
@@ -68,6 +77,27 @@ async def run_source_now(source_id: str, bg: BackgroundTasks, db: AsyncSession =
     bg.add_task(_trigger_source_scan, source_id)
     return {"message": f"Scan triggered for {source.name}"}
 
+@router.post("/{source_id}/toggle")
+async def toggle_source(source_id: str, db: AsyncSession = Depends(get_db), current_user: User = Depends(get_current_user)):
+    """Toggle a source between active and paused."""
+    result = await db.execute(select(Source).where(Source.id == source_id))
+    source = result.scalar_one_or_none()
+    if not source:
+        raise HTTPException(404, "Source not found")
+    source.status = "paused" if source.status == "active" else "active"
+    await db.commit()
+    return {"id": source.id, "status": source.status}
+
+@router.delete("/{source_id}", status_code=204)
+async def delete_source(source_id: str, db: AsyncSession = Depends(get_db), current_user: User = Depends(get_current_user)):
+    """Permanently delete a source and its run history."""
+    result = await db.execute(select(Source).where(Source.id == source_id))
+    source = result.scalar_one_or_none()
+    if not source:
+        raise HTTPException(404, "Source not found")
+    await db.delete(source)
+    await db.commit()
+
 @router.get("/{source_id}/runs")
 async def get_source_runs(source_id: str, db: AsyncSession = Depends(get_db), current_user: User = Depends(get_current_user)):
     result = await db.execute(select(SourceRun).where(SourceRun.source_id == source_id))
@@ -77,3 +107,7 @@ async def get_source_runs(source_id: str, db: AsyncSession = Depends(get_db), cu
 async def _trigger_source_scan(source_id: str):
     from app.workers.celery_app import celery_app
     celery_app.send_task("app.workers.discovery_tasks.scan_source", args=[source_id])
+
+async def _trigger_all_sources_scan():
+    from app.workers.celery_app import celery_app
+    celery_app.send_task("app.workers.discovery_tasks.scan_all_sources")

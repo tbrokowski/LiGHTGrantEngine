@@ -54,30 +54,56 @@ def parse_and_embed_document(document_id: str):
             raise
 
 
+from app.services.document_parser import parse_bytes_for_document
+
+
 def _parse_document(doc) -> str:
-    """Extract text from a document based on its format."""
-    if not doc.file_url:
+    """Extract text from a document. Downloads from R2 using the key in doc.notes."""
+    content = b""
+
+    # doc.notes now holds the R2 object key (e.g. "grants/abc/doc-id/file.pdf")
+    if doc.notes:
+        try:
+            from app.services.storage import download_file
+            content = download_file(doc.notes)
+        except FileNotFoundError:
+            pass
+        except Exception:
+            pass
+
+    if not content and doc.parsed_text:
+        return doc.parsed_text
+
+    if not content:
         return ""
 
     try:
-        import requests
-        response = requests.get(doc.file_url, timeout=30)
-        content = response.content
-
-        if doc.file_format in ("pdf",) or (doc.file_name or "").endswith(".pdf"):
-            import pdfplumber
-            import io
-            with pdfplumber.open(io.BytesIO(content)) as pdf:
-                return "\n".join(p.extract_text() or "" for p in pdf.pages)
-        elif doc.file_format in ("docx",) or (doc.file_name or "").endswith(".docx"):
-            import docx
-            import io
-            document = docx.Document(io.BytesIO(content))
-            return "\n".join(p.text for p in document.paragraphs)
-        else:
-            return content.decode("utf-8", errors="ignore")
+        return parse_bytes_for_document(content, doc.file_format, doc.file_name)
     except Exception:
-        return ""
+        return doc.parsed_text or ""
+
+
+@celery_app.task(name="app.workers.embedding_tasks.embed_language_block")
+def embed_language_block(block_id: str):
+    """Generate embedding for a reusable language block."""
+    from sqlalchemy import create_engine
+    from sqlalchemy.orm import Session
+    from app.config import get_settings
+    from app.models.language import ReusableLanguageBlock
+
+    settings = get_settings()
+    engine = create_engine(settings.database_url)
+
+    with Session(engine) as db:
+        block = db.get(ReusableLanguageBlock, block_id)
+        if not block or not block.text:
+            return
+        if block.approved_for_reuse and not block.do_not_reuse:
+            async def _embed():
+                from app.ai.client import get_embedding
+                return await get_embedding(block.text[:8000])
+            block.embedding = _run_async(_embed())
+            db.commit()
 
 
 @celery_app.task(name="app.workers.embedding_tasks.embed_section")
@@ -116,7 +142,7 @@ def reindex_all():
 
     with Session(engine) as db:
         sections = db.execute(
-            select(ProposalSection).where(ProposalSection.embedding == None, ProposalSection.ai_retrieval_allowed == True)
+            select(ProposalSection).where(ProposalSection.embedding.is_(None), ProposalSection.ai_retrieval_allowed.is_(True))
         ).scalars().all()
         for s in sections:
             embed_section.delay(str(s.id))
