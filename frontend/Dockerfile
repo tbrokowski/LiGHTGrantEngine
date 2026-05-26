@@ -27,4 +27,4 @@ COPY --from=builder /app/.next/static ./.next/static
 COPY --from=builder /app/public ./public
 EXPOSE 8080
 ENV PORT=8080
-CMD ["sh", "-c", "test -f server.js && exec node server.js || (echo 'ERROR: server.js missing — build did not produce standalone output' && exit 1)"]
+CMD ["sh", "-c", "test -f server.js || (echo 'ERROR: server.js missing — build did not produce standalone output' && exit 1); node --trace-uncaught server.js 2>&1; code=$?; echo \"ERROR: server.js exited with code $code\"; exit $code"]
