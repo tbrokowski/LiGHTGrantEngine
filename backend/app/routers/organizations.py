@@ -18,6 +18,7 @@ from app.models.institution import Institution
 from app.models.org_join_request import OrgJoinRequest, JoinRequestStatus
 from app.models.user import User, UserRole, InstitutionRole
 from app.routers.auth import get_current_user, create_access_token
+from app.services.organization_setup import queue_org_scaffold
 from app.auth.permissions import require_org_admin, is_org_admin, invalidate_permission_cache, get_redis
 import redis.asyncio as aioredis
 
@@ -54,6 +55,29 @@ class OrgInviteRequest(BaseModel):
     role: str = UserRole.CONTRIBUTOR
 
 
+class GrantProfileUpdate(BaseModel):
+    institution_name: Optional[str] = None
+    keywords: Optional[list[str]] = None
+    geographies: Optional[list[str]] = None
+    projects: Optional[str] = None
+    excluded_keywords: Optional[list[str]] = None
+    auto_queue_threshold: Optional[int] = None
+
+
+class OrgSourceCreate(BaseModel):
+    name: str
+    url: Optional[str] = None
+    source_type: str = "ai_scraper"
+    category: Optional[str] = None
+    refresh_frequency: str = "weekly"
+    is_high_priority: bool = False
+    scraper_config: dict = {}
+
+
+class OrgSourceToggle(BaseModel):
+    is_enabled: bool
+
+
 # ── Helpers ───────────────────────────────────────────────────────────────────
 
 def _generate_access_code() -> str:
@@ -80,7 +104,7 @@ async def list_organizations(
     db: AsyncSession = Depends(get_db),
 ):
     """Public list of organizations (for registration join-by-search flow)."""
-    query = select(Institution)
+    query = select(Institution).where(Institution.is_personal.is_(False))
     if q:
         query = query.where(Institution.name.ilike(f"%{q}%"))
     result = await db.execute(query.limit(30))
@@ -103,6 +127,7 @@ async def create_organization(
         id=str(uuid.uuid4()),
         name=body.name.strip(),
         domain=body.domain,
+        is_personal=False,
     )
     db.add(inst)
     await db.flush()
@@ -114,14 +139,7 @@ async def create_organization(
     await invalidate_permission_cache(current_user.id, redis)
 
     # Trigger scaffold background task
-    try:
-        from app.workers.celery_app import celery_app
-        celery_app.send_task(
-            "app.workers.org_tasks.scaffold_new_organization",
-            args=[inst.id, current_user.id],
-        )
-    except Exception:
-        pass
+    queue_org_scaffold(inst.id, current_user.id)
 
     return {"id": inst.id, "name": inst.name}
 
@@ -310,6 +328,7 @@ async def approve_join_request(
         if user:
             user.institution_id = institution_id
             user.institution_role = InstitutionRole.MEMBER
+            user.role = UserRole.CONTRIBUTOR
             await db.commit()
             await invalidate_permission_cache(req.user_id, redis)
             return {"status": "approved", "user_id": req.user_id}
@@ -391,8 +410,7 @@ async def join_by_access_code(
 
     current_user.institution_id = inst.id
     current_user.institution_role = InstitutionRole.MEMBER
-    if not current_user.role or current_user.role == UserRole.VIEWER:
-        current_user.role = UserRole.CONTRIBUTOR
+    current_user.role = UserRole.CONTRIBUTOR
 
     await db.commit()
     await invalidate_permission_cache(current_user.id, redis)
@@ -447,3 +465,179 @@ async def invite_member_by_email(
         pass
 
     return {"message": f"Invite sent to {body.email}", "invite_url": invite_url}
+
+
+# ── Grant profile (org admin) ─────────────────────────────────────────────────
+
+@router.get("/{institution_id}/grant-profile")
+async def get_grant_profile(
+    institution_id: str,
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    await _require_same_institution(current_user, institution_id)
+    inst = await _get_institution_or_404(institution_id, db)
+    return inst.grant_profile or {}
+
+
+@router.patch("/{institution_id}/grant-profile", dependencies=[Depends(require_org_admin())])
+async def update_grant_profile(
+    institution_id: str,
+    body: GrantProfileUpdate,
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    inst = await _get_institution_or_404(institution_id, db)
+    profile = dict(inst.grant_profile or {})
+    for k, v in body.model_dump(exclude_none=True).items():
+        profile[k] = v
+    inst.grant_profile = profile
+    await db.commit()
+    try:
+        from app.workers.celery_app import celery_app
+        celery_app.send_task("app.workers.surfacing_tasks.rescore_institution", args=[institution_id])
+    except Exception:
+        pass
+    return profile
+
+
+@router.get("/{institution_id}/preseed-status")
+async def preseed_status(
+    institution_id: str,
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    await _require_same_institution(current_user, institution_id)
+    from app.models.preseed_run import PreseedRun
+    from sqlalchemy import desc as sa_desc
+    result = await db.execute(
+        select(PreseedRun)
+        .where(PreseedRun.institution_id == institution_id)
+        .order_by(sa_desc(PreseedRun.started_at))
+        .limit(1)
+    )
+    run = result.scalar_one_or_none()
+    if not run:
+        return {"status": "none"}
+    return {
+        "status": run.status,
+        "opportunities_total": run.opportunities_total,
+        "opportunities_scored": run.opportunities_scored,
+        "log_summary": run.log_summary,
+    }
+
+
+# ── Org source subscriptions ──────────────────────────────────────────────────
+
+@router.get("/{institution_id}/sources")
+async def list_org_sources(
+    institution_id: str,
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    """List global sources with this org's enabled/disabled state."""
+    await _require_same_institution(current_user, institution_id)
+    from app.models.source import Source
+    from app.models.institution_source import InstitutionSource
+
+    sources = (await db.execute(select(Source).order_by(Source.name))).scalars().all()
+    sub_rows = (await db.execute(
+        select(InstitutionSource).where(InstitutionSource.institution_id == institution_id)
+    )).scalars().all()
+    sub_map = {s.source_id: s.is_enabled for s in sub_rows}
+
+    return [
+        {
+            "id": s.id,
+            "name": s.name,
+            "url": s.url,
+            "source_type": s.source_type,
+            "category": s.category,
+            "status": s.status,
+            "is_high_priority": s.is_high_priority,
+            "refresh_frequency": s.refresh_frequency,
+            "logo_url": s.logo_url,
+            "is_enabled": sub_map.get(s.id, True),
+            "is_subscribed": s.id in sub_map,
+        }
+        for s in sources
+    ]
+
+
+@router.patch("/{institution_id}/sources/{source_id}")
+async def toggle_org_source(
+    institution_id: str,
+    source_id: str,
+    body: OrgSourceToggle,
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    """Enable or disable a global source for this organization."""
+    if not is_org_admin(current_user) or current_user.institution_id != institution_id:
+        raise HTTPException(403, "Org admin access required.")
+    from app.models.source import Source
+    from app.models.institution_source import InstitutionSource
+
+    source = (await db.execute(select(Source).where(Source.id == source_id))).scalar_one_or_none()
+    if not source:
+        raise HTTPException(404, "Source not found")
+
+    sub = (await db.execute(
+        select(InstitutionSource).where(
+            InstitutionSource.institution_id == institution_id,
+            InstitutionSource.source_id == source_id,
+        )
+    )).scalar_one_or_none()
+
+    if sub:
+        sub.is_enabled = body.is_enabled
+    else:
+        sub = InstitutionSource(
+            institution_id=institution_id,
+            source_id=source_id,
+            is_enabled=body.is_enabled,
+        )
+        db.add(sub)
+    await db.commit()
+    try:
+        from app.workers.celery_app import celery_app
+        celery_app.send_task("app.workers.surfacing_tasks.preseed_institution_grants", args=[institution_id])
+    except Exception:
+        pass
+    return {"source_id": source_id, "is_enabled": body.is_enabled}
+
+
+@router.post("/{institution_id}/sources", status_code=201)
+async def add_org_source(
+    institution_id: str,
+    body: OrgSourceCreate,
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    """Add a new source to the global catalog and enable it for this org."""
+    if not is_org_admin(current_user) or current_user.institution_id != institution_id:
+        raise HTTPException(403, "Org admin access required.")
+    from app.models.source import Source
+    from app.models.institution_source import InstitutionSource
+
+    source = Source(
+        id=str(uuid.uuid4()),
+        owner_id=current_user.id,
+        status="active",
+        **body.model_dump(),
+    )
+    db.add(source)
+    await db.flush()
+    db.add(InstitutionSource(
+        institution_id=institution_id,
+        source_id=source.id,
+        is_enabled=True,
+    ))
+    await db.commit()
+
+    try:
+        from app.workers.celery_app import celery_app
+        celery_app.send_task("app.workers.surfacing_tasks.fan_out_sources_to_all")
+    except Exception:
+        pass
+    return {"id": source.id, "name": source.name, "is_enabled": True}

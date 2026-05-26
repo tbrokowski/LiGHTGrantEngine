@@ -147,26 +147,28 @@ docker compose exec backend alembic upgrade head
 
 # ── Copy helper scripts into container ───────────────────────────────
 echo "==> Copying helper scripts"
-docker compose exec backend mkdir -p /app/scripts
+docker compose exec backend mkdir -p /app/scripts /app/data
 docker cp "$ROOT_DIR/scripts/create_admin.py"              light_backend:/app/scripts/create_admin.py
-docker cp "$ROOT_DIR/scripts/seed_opportunities.py"        light_backend:/app/scripts/seed_opportunities.py
-docker cp "$ROOT_DIR/backend/scripts/seed_sources_from_excel.py" light_backend:/app/scripts/seed_sources_from_excel.py
+docker cp "$ROOT_DIR/backend/scripts/seed_from_json.py"    light_backend:/app/scripts/seed_from_json.py
+docker cp "$ROOT_DIR/backend/data/."                       light_backend:/app/data/
 
 # ── Create admin user ─────────────────────────────────────────────────
 echo "==> Creating/updating admin user ($ADMIN_EMAIL)"
 docker compose exec backend python /app/scripts/create_admin.py \
     "$ADMIN_EMAIL" "$ADMIN_NAME" "$ADMIN_PASSWORD"
 
-# ── Seed grant sources from Excel ────────────────────────────────────
-EXCEL_PATH="$ROOT_DIR/grant_funding_portals.xlsx"
-if [[ -f "$EXCEL_PATH" ]]; then
-    echo "==> Seeding grant sources from grant_funding_portals.xlsx"
-    docker cp "$EXCEL_PATH" light_backend:/tmp/grant_funding_portals.xlsx
+# ── Seed global grant pool from JSON ─────────────────────────────────
+echo "==> Bootstrapping global grant pool from JSON"
+docker compose exec backend python /app/scripts/seed_from_json.py
+
+# ── Optionally re-export from Excel if JSON missing ─────────────────
+if [[ ! -f "$ROOT_DIR/backend/data/grant_funding_portals.json" ]] && [[ -f "$ROOT_DIR/grant_funding_portals.xlsx" ]]; then
+    echo "==> JSON missing — seeding sources from Excel fallback"
+    docker cp "$ROOT_DIR/grant_funding_portals.xlsx" light_backend:/tmp/grant_funding_portals.xlsx
     docker compose exec backend python /app/scripts/seed_sources_from_excel.py \
         --excel /tmp/grant_funding_portals.xlsx
 fi
 
-# ── Optionally seed opportunities ────────────────────────────────────
 if [[ -n "$SEED_XLSX_PATH" ]]; then
     if [[ ! -f "$SEED_XLSX_PATH" ]]; then
         echo "ERROR: Seed file not found: $SEED_XLSX_PATH"

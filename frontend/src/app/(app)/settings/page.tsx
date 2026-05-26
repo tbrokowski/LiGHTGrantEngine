@@ -5,6 +5,7 @@ import { MembersPanel } from '@/components/settings/MembersPanel';
 import { JoinRequestsPanel } from '@/components/settings/JoinRequestsPanel';
 import { InvitePanel } from '@/components/settings/InvitePanel';
 import { ProfilePanel } from '@/components/settings/ProfilePanel';
+import { GrantFiltersPanel } from '@/components/settings/GrantFiltersPanel';
 
 interface Source {
   id: string;
@@ -157,13 +158,16 @@ type Tab = 'sources' | 'organization' | 'profile';
 
 export default function SettingsPage() {
   const [activeTab, setActiveTab] = useState<Tab>('sources');
-  const [currentUser, setCurrentUser] = useState<{ institution_id?: string; institution_role?: string } | null>(null);
+  const [currentUser, setCurrentUser] = useState<{ role?: string; institution_id?: string; institution_role?: string } | null>(null);
 
   useEffect(() => {
     auth.me().then(r => setCurrentUser(r.data)).catch(() => {});
   }, []);
 
-  const isAdmin = currentUser?.institution_role === 'admin';
+  const isPlatformAdmin = currentUser?.role === 'admin';
+  const isOrgAdmin = currentUser?.institution_role === 'admin';
+  const isAdmin = isPlatformAdmin || isOrgAdmin;
+  const hasInstitution = Boolean(currentUser?.institution_id);
 
   const [sourceList, setSourceList] = useState<Source[]>([]);
   const [loading, setLoading] = useState(true);
@@ -232,8 +236,13 @@ export default function SettingsPage() {
       const res = await sources.runAll();
       setScanAllResult(res.data?.message ?? 'Scan queued.');
       setTimeout(() => setScanAllResult(null), 6000);
-    } catch {
-      setScanAllResult('Failed to trigger scan. Is the worker running?');
+    } catch (err: unknown) {
+      const status = (err as { response?: { status?: number } })?.response?.status;
+      if (status === 403) {
+        setScanAllResult('Admin access required to trigger scans.');
+      } else {
+        setScanAllResult('Failed to trigger scan. Is the worker running?');
+      }
       setTimeout(() => setScanAllResult(null), 6000);
     } finally {
       setScanningAll(false);
@@ -273,10 +282,10 @@ export default function SettingsPage() {
 
   const selectedTypeInfo = SOURCE_TYPES.find(t => t.value === newType);
 
-  const tabs: { id: Tab; label: string; adminOnly?: boolean }[] = [
-    { id: 'sources', label: 'Data Sources', adminOnly: true },
-    { id: 'organization', label: 'Organization', adminOnly: true },
-    { id: 'profile', label: 'My Profile' },
+  const tabs: { id: Tab; label: string; show?: boolean }[] = [
+    { id: 'sources', label: 'Data Sources', show: hasInstitution },
+    { id: 'organization', label: 'Organization', show: isAdmin && hasInstitution },
+    { id: 'profile', label: 'My Profile', show: true },
   ];
 
   return (
@@ -290,7 +299,7 @@ export default function SettingsPage() {
       <div className="border-b border-gray-200 mb-8">
         <nav className="-mb-px flex gap-6">
           {tabs
-            .filter(t => !t.adminOnly || isAdmin)
+            .filter(t => t.show !== false)
             .map(t => (
               <button
                 key={t.id}
@@ -320,8 +329,14 @@ export default function SettingsPage() {
       )}
 
       {/* Data Sources tab */}
-      {activeTab === 'sources' && (
+      {activeTab === 'sources' && currentUser?.institution_id && (
       <div>
+      {currentUser.institution_id && (
+        <GrantFiltersPanel institutionId={currentUser.institution_id} isOrgAdmin={isOrgAdmin} />
+      )}
+
+      {isPlatformAdmin && (
+      <>
       <div className="mb-8 flex items-start justify-between gap-4">
         <div>
           <h2 className="text-lg font-semibold text-gray-900">Data Sources</h2>
@@ -577,6 +592,8 @@ export default function SettingsPage() {
           </div>
         </div>
       </div>
+      </>
+      )}
       </div>
       )}
     </div>

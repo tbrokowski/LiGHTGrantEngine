@@ -4,8 +4,9 @@ import { useParams, useRouter } from 'next/navigation';
 import Link from 'next/link';
 import axios from 'axios';
 import { setAuthSession } from '@/lib/auth-cookie';
+import { getApiBaseUrl } from '@/lib/api-base-url';
 
-const API = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8000';
+const API = getApiBaseUrl();
 
 interface InviteInfo {
   email: string;

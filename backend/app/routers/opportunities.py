@@ -9,15 +9,22 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.database import get_db
 from app.models.opportunity import Opportunity, OpportunityReview, OpportunityStatus
+from app.models.institution_opportunity import InstitutionOpportunity
 from app.models.user_opportunity_state import UserOpportunityState
 from app.models.user import User
+from app.models.institution import Institution
+from app.models.institution_source import InstitutionSource
 from app.routers.auth import get_current_user
 from app.config import get_settings
+from app.schemas.grant_profile import (
+    GrantProfile, UserGrantPreferences, merge_keywords, opportunity_matches_keywords,
+)
 
 router = APIRouter()
 settings = get_settings()
 
 QUEUE_STATUSES = ["new", "needs_review", "in_review"]
+SHORTLIST_STATUSES = ["potential_fit"]
 
 
 # ── Schemas ───────────────────────────────────────────────────────────────────
@@ -155,10 +162,12 @@ async def review_queue(
     current_user: User = Depends(get_current_user),
 ):
     """Returns opportunities needing human review, sorted by fit score desc."""
-    items, read_map = await _fetch_queue_with_read_state(db, current_user.id)
+    items, read_map, io_map = await _fetch_institution_feed(
+        db, current_user, statuses=QUEUE_STATUSES
+    )
     if unread_only:
         items = [o for o in items if not read_map.get(o.id)]
-    return [_opp_summary(o, is_read=read_map.get(o.id, False)) for o in items]
+    return [_opp_summary(o, is_read=read_map.get(o.id, False), io=io_map.get(o.id)) for o in items]
 
 
 @router.get("/queue/counts")
@@ -167,7 +176,7 @@ async def review_queue_counts(
     current_user: User = Depends(get_current_user),
 ):
     """Lightweight unread/total counts for sidebar badge."""
-    items, read_map = await _fetch_queue_with_read_state(db, current_user.id)
+    items, read_map, _ = await _fetch_institution_feed(db, current_user, statuses=QUEUE_STATUSES)
     total = len(items)
     unread = sum(1 for o in items if not read_map.get(o.id))
     return {"total": total, "unread": unread}
@@ -178,14 +187,11 @@ async def shortlist(
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ):
-    """Returns shortlisted opportunities (potential_fit), sorted by fit score desc."""
-    q = select(Opportunity).where(
-        Opportunity.status == OpportunityStatus.POTENTIAL_FIT
-    ).order_by(desc(Opportunity.fit_score), Opportunity.deadline)
-    result = await db.execute(q)
-    items = result.scalars().all()
-    read_map = await _load_read_map(db, current_user.id, [o.id for o in items])
-    return [_opp_summary(o, is_read=read_map.get(o.id, False)) for o in items]
+    """Returns shortlisted opportunities for the user's institution."""
+    items, read_map, io_map = await _fetch_institution_feed(
+        db, current_user, statuses=SHORTLIST_STATUSES
+    )
+    return [_opp_summary(o, is_read=read_map.get(o.id, False), io=io_map.get(o.id)) for o in items]
 
 
 @router.get("/{opp_id}")
@@ -195,14 +201,15 @@ async def get_opportunity(
     current_user: User = Depends(get_current_user),
 ):
     opp = await _get_opp_or_404(opp_id, db)
-    # Auto-mark as read when viewing detail
+    await _require_institution_access(db, current_user, opp_id)
     await _mark_read(db, current_user.id, opp_id)
     read_map = await _load_read_map(db, current_user.id, [opp_id])
     # Load reviews
     reviews_q = select(OpportunityReview).where(OpportunityReview.opportunity_id == opp_id)
     reviews = (await db.execute(reviews_q)).scalars().all()
+    io = await _get_institution_opp(db, current_user, opp_id)
     return {
-        **_opp_full(opp),
+        **_opp_full(opp, io),
         "is_read": read_map.get(opp_id, True),
         "reviews": [_review_dict(r) for r in reviews],
     }
@@ -238,9 +245,10 @@ async def submit_review(
         **data.model_dump(),
     )
     db.add(review)
-    # Sync status on opportunity
+    io = await _get_institution_opp(db, current_user, opp_id)
+    if io:
+        io.status = data.review_status
     opp = await _get_opp_or_404(opp_id, db)
-    opp.status = data.review_status
     await db.commit()
     return {"id": review.id}
 
@@ -293,7 +301,9 @@ async def convert_to_grant(
         internal_lead_id=current_user.id,
     )
     db.add(grant)
-    opp.status = "actively_pursuing"
+    io = await _get_institution_opp(db, current_user, opp_id)
+    if io:
+        io.status = "actively_pursuing"
     await db.commit()
     await db.refresh(grant)
     return {"grant_id": grant.id, "message": "Active grant workspace created"}
@@ -328,11 +338,12 @@ async def remove_from_shortlist(
     current_user: User = Depends(get_current_user),
 ):
     opp = await _get_opp_or_404(opp_id, db)
-    if opp.status != OpportunityStatus.POTENTIAL_FIT:
+    io = await _get_institution_opp(db, current_user, opp_id)
+    if not io or io.status != "potential_fit":
         raise HTTPException(400, "Opportunity is not on the shortlist")
-    opp.status = OpportunityStatus.IN_REVIEW
+    io.status = "in_review"
     await db.commit()
-    return {"id": opp_id, "status": opp.status}
+    return {"id": opp_id, "status": io.status}
 
 
 # ── Helpers ───────────────────────────────────────────────────────────────────
@@ -344,25 +355,35 @@ async def _get_opp_or_404(opp_id: str, db: AsyncSession) -> Opportunity:
     return opp
 
 
-def _opp_summary(o: Opportunity, is_read: bool = False) -> dict:
+def _opp_summary(o: Opportunity, is_read: bool = False, io: InstitutionOpportunity | None = None) -> dict:
+    fit_score = io.fit_score if io else o.fit_score
+    priority = io.priority if io else o.priority
+    status = io.status if io else o.status
     return {
         "id": o.id, "title": o.title, "funder": o.funder,
         "deadline": str(o.deadline) if o.deadline else None,
-        "fit_score": o.fit_score, "priority": o.priority,
-        "status": o.status, "thematic_areas": o.thematic_areas,
+        "fit_score": fit_score, "priority": priority,
+        "status": status, "thematic_areas": o.thematic_areas,
         "award_min": o.award_min, "award_max": o.award_max, "currency": o.currency,
         "date_discovered": str(o.date_discovered),
-        "short_summary": o.short_summary,
+        "short_summary": (io.ai_summary[:200] if io and io.ai_summary else None) or o.short_summary,
         "description": o.description or o.parsed_text,
         "has_description": bool(o.description or o.parsed_text),
         "funder_logo_url": o.funder_logo_url,
         "opportunity_url": o.opportunity_url,
         "is_read": is_read,
+        "fit_rationale": io.fit_rationale if io else o.fit_rationale,
     }
 
 
-def _opp_full(o: Opportunity) -> dict:
+def _opp_full(o: Opportunity, io: InstitutionOpportunity | None = None) -> dict:
     d = {c.name: getattr(o, c.name) for c in o.__table__.columns if c.name != "embedding"}
+    if io:
+        d["fit_score"] = io.fit_score
+        d["priority"] = io.priority
+        d["status"] = io.status
+        d["fit_rationale"] = io.fit_rationale
+        d["ai_summary"] = io.ai_summary or o.ai_summary
     if d.get("deadline"):
         d["deadline"] = str(d["deadline"])
     if d.get("date_discovered"):
@@ -375,15 +396,91 @@ def _review_dict(r: OpportunityReview) -> dict:
 
 
 async def _fetch_queue_with_read_state(
-    db: AsyncSession, user_id: str
-) -> tuple[list[Opportunity], dict[str, bool]]:
-    q = select(Opportunity).where(
-        Opportunity.status.in_(QUEUE_STATUSES)
-    ).order_by(desc(Opportunity.fit_score), Opportunity.deadline)
+    db: AsyncSession, user: User
+) -> tuple[list[Opportunity], dict[str, bool], dict[str, InstitutionOpportunity]]:
+    items, read_map, io_map = await _fetch_institution_feed(db, user, statuses=QUEUE_STATUSES)
+    return items, read_map, io_map
+
+
+async def _fetch_institution_feed(
+    db: AsyncSession,
+    user: User,
+    statuses: list[str],
+) -> tuple[list[Opportunity], dict[str, bool], dict[str, InstitutionOpportunity]]:
+    if not user.institution_id:
+        return [], {}, {}
+
+    inst = (await db.execute(
+        select(Institution).where(Institution.id == user.institution_id)
+    )).scalar_one_or_none()
+    org_profile = GrantProfile.from_dict(inst.grant_profile if inst else {})
+    personal = UserGrantPreferences.from_dict(user.grant_preferences or {})
+    keywords, excluded = merge_keywords(org_profile, personal)
+
+    enabled_source_ids = await _enabled_source_ids(db, user.institution_id)
+
+    q = (
+        select(Opportunity, InstitutionOpportunity)
+        .join(
+            InstitutionOpportunity,
+            and_(
+                InstitutionOpportunity.opportunity_id == Opportunity.id,
+                InstitutionOpportunity.institution_id == user.institution_id,
+                InstitutionOpportunity.status.in_(statuses),
+            ),
+        )
+        .order_by(desc(InstitutionOpportunity.fit_score), Opportunity.deadline)
+    )
     result = await db.execute(q)
-    items = list(result.scalars().all())
-    read_map = await _load_read_map(db, user_id, [o.id for o in items])
-    return items, read_map
+    rows = result.all()
+
+    items: list[Opportunity] = []
+    io_map: dict[str, InstitutionOpportunity] = {}
+    for opp, io in rows:
+        if enabled_source_ids is not None and opp.source_id and opp.source_id not in enabled_source_ids:
+            continue
+        if keywords or excluded:
+            if not opportunity_matches_keywords(opp, keywords, excluded):
+                continue
+        items.append(opp)
+        io_map[opp.id] = io
+
+    read_map = await _load_read_map(db, user.id, [o.id for o in items])
+    return items, read_map, io_map
+
+
+async def _get_institution_opp(
+    db: AsyncSession, user: User, opp_id: str
+) -> InstitutionOpportunity | None:
+    if not user.institution_id:
+        return None
+    result = await db.execute(
+        select(InstitutionOpportunity).where(
+            InstitutionOpportunity.institution_id == user.institution_id,
+            InstitutionOpportunity.opportunity_id == opp_id,
+        )
+    )
+    return result.scalar_one_or_none()
+
+
+async def _require_institution_access(db: AsyncSession, user: User, opp_id: str) -> None:
+    io = await _get_institution_opp(db, user, opp_id)
+    if user.institution_id and not io:
+        raise HTTPException(404, "Opportunity not found in your organization's feed")
+
+
+async def _enabled_source_ids(db: AsyncSession, institution_id: str) -> set[str] | None:
+    rows = (await db.execute(
+        select(InstitutionSource.source_id, InstitutionSource.is_enabled).where(
+            InstitutionSource.institution_id == institution_id
+        )
+    )).all()
+    if not rows:
+        return None
+    enabled = {sid for sid, is_on in rows if is_on}
+    if len(enabled) == len(rows):
+        return None
+    return enabled
 
 
 async def _load_read_map(

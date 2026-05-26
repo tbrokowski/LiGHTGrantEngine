@@ -24,6 +24,9 @@ from .activity_log import GrantActivityLog
 from .grant_writing import GrantWritingConversation, GrantCitation
 from .user_opportunity_state import UserOpportunityState
 from .grant_member import GrantMember
+from .institution_opportunity import InstitutionOpportunity
+from .institution_source import InstitutionSource
+from .preseed_run import PreseedRun
 
 __all__ = [
     "Institution", "User", "Source", "SourceRun", "Opportunity", "OpportunityReview",
@@ -34,4 +37,5 @@ __all__ = [
     "WorkspaceFile", "WorkspacePartner", "PartnerMaterial", "BudgetTracker",
     "GrantActivityLog", "GrantWritingConversation", "GrantCitation",
     "UserOpportunityState", "GrantMember",
+    "InstitutionOpportunity", "InstitutionSource", "PreseedRun",
 ]

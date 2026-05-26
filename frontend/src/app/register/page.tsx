@@ -216,6 +216,11 @@ export default function RegisterPage() {
                   </label>
                 ))}
               </div>
+              {mode === 'none' && (
+                <p className="text-xs text-gray-500 mt-2">
+                  A personal workspace will be created for you with admin access. If you join a team later via invite, you&apos;ll join as a regular member.
+                </p>
+              )}
             </div>
 
             {/* Join institution search */}

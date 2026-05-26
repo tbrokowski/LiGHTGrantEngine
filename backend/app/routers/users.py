@@ -28,6 +28,12 @@ class UserUpdate(BaseModel):
     team: Optional[str] = None
     is_active: Optional[bool] = None
     notification_preferences: Optional[dict] = None
+    grant_preferences: Optional[dict] = None
+
+
+class GrantPreferencesUpdate(BaseModel):
+    keywords: Optional[list[str]] = None
+    excluded_keywords: Optional[list[str]] = None
 
 
 @router.get("/")
@@ -104,6 +110,25 @@ async def update_user(
     await db.commit()
     await invalidate_permission_cache(user_id, redis)
     return {"id": user.id}
+
+
+@router.get("/me/grant-preferences")
+async def get_my_grant_preferences(current_user: User = Depends(get_current_user)):
+    return current_user.grant_preferences or {}
+
+
+@router.patch("/me/grant-preferences")
+async def update_my_grant_preferences(
+    body: GrantPreferencesUpdate,
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    prefs = dict(current_user.grant_preferences or {})
+    for k, v in body.model_dump(exclude_none=True).items():
+        prefs[k] = v
+    current_user.grant_preferences = prefs
+    await db.commit()
+    return prefs
 
 
 @router.delete("/{user_id}", status_code=204, dependencies=[Depends(require_org_admin())])

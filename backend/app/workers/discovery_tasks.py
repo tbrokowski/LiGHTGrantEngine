@@ -259,10 +259,11 @@ def _process_listing(db, listing: dict, source_id: str, source_url: str | None =
     db.add(opp)
     db.commit()
 
-    # Queue AI scoring and full-page description enrichment
-    score_opportunity.delay(str(opp.id))
+    # Queue full-page description enrichment; surfacing handled per-institution
     from app.workers.enrichment_tasks import enrich_opportunity
     enrich_opportunity.delay(str(opp.id))
+    from app.workers.surfacing_tasks import surface_opportunity_for_institutions
+    surface_opportunity_for_institutions.delay(str(opp.id))
     return "new"
 
 
@@ -298,7 +299,7 @@ def score_opportunity(opportunity_id: str):
             if result.get("matched_themes"):
                 opp.thematic_areas = list(set(opp.thematic_areas or []) | set(result["matched_themes"]))
             if opp.fit_score and opp.fit_score >= settings.discovery.get("auto_queue_threshold", 40):
-                opp.status = "needs_review"
+                pass  # global status unchanged; institution queue handles surfacing
             db.commit()
 
     _run_async(_score())

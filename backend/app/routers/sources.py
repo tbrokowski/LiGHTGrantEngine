@@ -47,6 +47,11 @@ async def create_source(data: SourceCreate, db: AsyncSession = Depends(get_db), 
     source = Source(id=str(uuid.uuid4()), owner_id=current_user.id, **data.model_dump())
     db.add(source)
     await db.commit()
+    try:
+        from app.workers.celery_app import celery_app
+        celery_app.send_task("app.workers.surfacing_tasks.fan_out_sources_to_all")
+    except Exception:
+        pass
     return {"id": source.id}
 
 @router.post("/run-all", dependencies=[Depends(require_org_admin())])

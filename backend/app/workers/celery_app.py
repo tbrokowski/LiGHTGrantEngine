@@ -15,6 +15,7 @@ celery_app = Celery(
         "app.workers.notification_tasks",
         "app.workers.embedding_tasks",
         "app.workers.org_tasks",
+        "app.workers.surfacing_tasks",
     ],
 )
 
@@ -51,5 +52,9 @@ celery_app.conf.beat_schedule = {
     "source-health-check": {
         "task": "app.workers.discovery_tasks.check_source_health",
         "schedule": crontab(hour=8, minute=0, day_of_week=1),
+    },
+    "resurface-missing-institution-opps": {
+        "task": "app.workers.surfacing_tasks.bootstrap_global_pool",
+        "schedule": crontab(hour=3, minute=0),
     },
 }

@@ -161,8 +161,13 @@ export default function OpportunitiesPage() {
       const count = res.data?.queued ?? '?';
       setRefreshBanner(`Scan queued for ${count} active source${count !== 1 ? 's' : ''}. New opportunities will appear shortly.`);
       setTimeout(() => setRefreshBanner(''), 8000);
-    } catch {
-      setRefreshBanner('Failed to trigger scan. Check that the backend is running.');
+    } catch (err: unknown) {
+      const status = (err as { response?: { status?: number } })?.response?.status;
+      if (status === 403) {
+        setRefreshBanner('Admin access required to trigger source scans.');
+      } else {
+        setRefreshBanner('Failed to trigger scan. Check that the backend is running.');
+      }
       setTimeout(() => setRefreshBanner(''), 5000);
     } finally {
       setRefreshing(false);

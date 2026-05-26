@@ -1,0 +1,1550 @@
+{
+  "version": 1,
+  "sources": [
+    {
+      "name": "Grants.gov (Simpler Grants)",
+      "category": "US Federal Government",
+      "url": "https://simpler.grants.gov",
+      "source_type": "grants_gov",
+      "api_endpoint": "https://simpler.grants.gov/api/opportunities/search",
+      "scraper_config": {
+        "method": "post",
+        "params": {
+          "query": "health AI digital",
+          "pagination": {
+            "page_offset": 1,
+            "page_size": 100
+          }
+        },
+        "items_key": "data",
+        "title_field": "opportunity_title",
+        "desc_field": "summary_description",
+        "url_field": "opportunity_id",
+        "deadline_field": "close_date"
+      },
+      "refresh_frequency": "daily",
+      "is_high_priority": true,
+      "logo_url": "/logos/grants-gov.svg",
+      "status": "active",
+      "relevant_themes": [],
+      "notes": "RESTful API; key obtained from account settings on simpler.grants.gov"
+    },
+    {
+      "name": "SAM.gov \u2013 Contract & Grant Opportunities",
+      "category": "US Federal Government",
+      "url": "https://sam.gov/opportunities",
+      "source_type": "ai_scraper",
+      "api_endpoint": null,
+      "scraper_config": {
+        "use_playwright": true,
+        "crawl_depth": 0
+      },
+      "refresh_frequency": "weekly",
+      "is_high_priority": false,
+      "logo_url": null,
+      "status": "active",
+      "relevant_themes": [],
+      "notes": "Public access: 10 req/day; registered entities: 1,000/day"
+    },
+    {
+      "name": "NIH RePORTER",
+      "category": "US Federal Government",
+      "url": "https://reporter.nih.gov",
+      "source_type": "nih_reporter",
+      "api_endpoint": "https://api.reporter.nih.gov/v2/projects/search",
+      "scraper_config": {
+        "method": "post",
+        "items_key": "results",
+        "title_field": "project_title",
+        "desc_field": "abstract_text",
+        "url_field": "opportunity_number",
+        "deadline_field": "fiscal_year"
+      },
+      "refresh_frequency": "daily",
+      "is_high_priority": true,
+      "logo_url": "/logos/nih.svg",
+      "status": "active",
+      "relevant_themes": [],
+      "notes": "Limit ~1 req/sec; v2 API active. Federal Reporter also at api.federalreporter.nih.gov"
+    },
+    {
+      "name": "NSF Award Search",
+      "category": "US Federal Government",
+      "url": "https://www.nsf.gov/awardsearch/",
+      "source_type": "nsf",
+      "api_endpoint": "https://api.nsf.gov/services/v1/awards.json",
+      "scraper_config": {
+        "params": {
+          "keyword": "artificial intelligence health digital",
+          "dateStart": "01/01/2024"
+        },
+        "items_key": "response.award",
+        "title_field": "title",
+        "desc_field": "abstractText",
+        "url_field": "id",
+        "deadline_field": "expDate"
+      },
+      "refresh_frequency": "daily",
+      "is_high_priority": true,
+      "logo_url": "/logos/nsf.svg",
+      "status": "active",
+      "relevant_themes": [],
+      "notes": "Public API; no key needed. Also see NSF Developer Resources at nsf.gov/digital/developer"
+    },
+    {
+      "name": "SBIR.gov \u2013 Small Business Innovation Research",
+      "category": "US Federal Government",
+      "url": "https://www.sbir.gov",
+      "source_type": "sbir",
+      "api_endpoint": null,
+      "scraper_config": {},
+      "refresh_frequency": "weekly",
+      "is_high_priority": false,
+      "logo_url": "/logos/nsf.svg",
+      "status": "active",
+      "relevant_themes": [],
+      "notes": "Topic API + Award API; bulk downloads in XLS/JSON/XML. Award data 290 MB full file"
+    },
+    {
+      "name": "USASpending.gov",
+      "category": "US Federal Government",
+      "url": "https://www.usaspending.gov",
+      "source_type": "ai_scraper",
+      "api_endpoint": null,
+      "scraper_config": {
+        "use_playwright": true,
+        "crawl_depth": 0
+      },
+      "refresh_frequency": "weekly",
+      "is_high_priority": false,
+      "logo_url": null,
+      "status": "active",
+      "relevant_themes": [],
+      "notes": "Comprehensive open API; free; no key needed"
+    },
+    {
+      "name": "Federal Audit Clearinghouse (Census/GSA)",
+      "category": "US Federal Government",
+      "url": "https://facdissem.census.gov",
+      "source_type": "ai_scraper",
+      "api_endpoint": null,
+      "scraper_config": {
+        "use_playwright": true,
+        "crawl_depth": 0
+      },
+      "refresh_frequency": "weekly",
+      "is_high_priority": false,
+      "logo_url": null,
+      "status": "active",
+      "relevant_themes": [],
+      "notes": "Open API; relates to grant compliance not opportunity discovery"
+    },
+    {
+      "name": "Bill & Melinda Gates Foundation",
+      "category": "Major Private Foundation",
+      "url": "https://www.gatesfoundation.org/about/committed-grants",
+      "source_type": "ai_scraper",
+      "api_endpoint": null,
+      "scraper_config": {
+        "use_playwright": true,
+        "crawl_depth": 1
+      },
+      "refresh_frequency": "daily",
+      "is_high_priority": true,
+      "logo_url": "/logos/gates-foundation.svg",
+      "status": "active",
+      "relevant_themes": [
+        "health",
+        "AI",
+        "digital"
+      ],
+      "notes": "No public API. Download the spreadsheet from the committed grants page. Also accessible via Candid/ProPublica"
+    },
+    {
+      "name": "Wellcome Trust",
+      "category": "Major Private Foundation",
+      "url": "https://wellcome.org/research-funding/funding-portfolio",
+      "source_type": "ai_scraper",
+      "api_endpoint": null,
+      "scraper_config": {
+        "use_playwright": true,
+        "crawl_depth": 0
+      },
+      "refresh_frequency": "daily",
+      "is_high_priority": true,
+      "logo_url": "/logos/wellcome.svg",
+      "status": "active",
+      "relevant_themes": [],
+      "notes": "No direct Wellcome API. Data accessible via 360Giving GrantNav API & Datastore. 360Giving also publishes bulk data"
+    },
+    {
+      "name": "Wellcome Open Research (publications/grants)",
+      "category": "Major Private Foundation",
+      "url": "https://wellcomeopenresearch.org",
+      "source_type": "ai_scraper",
+      "api_endpoint": null,
+      "scraper_config": {
+        "use_playwright": true,
+        "crawl_depth": 0
+      },
+      "refresh_frequency": "weekly",
+      "is_high_priority": false,
+      "logo_url": null,
+      "status": "active",
+      "relevant_themes": [],
+      "notes": "F1000-based developer API for article/grant data"
+    },
+    {
+      "name": "Ford Foundation",
+      "category": "Major Private Foundation",
+      "url": "https://www.fordfoundation.org/work/our-grants/awarded-grants/grants-database/",
+      "source_type": "ai_scraper",
+      "api_endpoint": null,
+      "scraper_config": {
+        "use_playwright": true,
+        "crawl_depth": 1
+      },
+      "refresh_frequency": "weekly",
+      "is_high_priority": false,
+      "logo_url": "/logos/ford-foundation.svg",
+      "status": "active",
+      "relevant_themes": [],
+      "notes": "No API; scraping required. Also available via Candid FDO and ProPublica 990 data"
+    },
+    {
+      "name": "MacArthur Foundation",
+      "category": "Major Private Foundation",
+      "url": "https://www.macfound.org/grants/",
+      "source_type": "ai_scraper",
+      "api_endpoint": null,
+      "scraper_config": {
+        "use_playwright": true,
+        "crawl_depth": 0
+      },
+      "refresh_frequency": "weekly",
+      "is_high_priority": false,
+      "logo_url": "/logos/macarthur.svg",
+      "status": "active",
+      "relevant_themes": [],
+      "notes": "No API; scraping required. Available via Candid FDO"
+    },
+    {
+      "name": "Open Society Foundations",
+      "category": "Major Private Foundation",
+      "url": "https://www.opensocietyfoundations.org/grants/past",
+      "source_type": "ai_scraper",
+      "api_endpoint": null,
+      "scraper_config": {
+        "use_playwright": true,
+        "crawl_depth": 0
+      },
+      "refresh_frequency": "weekly",
+      "is_high_priority": false,
+      "logo_url": null,
+      "status": "active",
+      "relevant_themes": [],
+      "notes": "No API; scraping required. Also accessible via Candid"
+    },
+    {
+      "name": "Robert Wood Johnson Foundation (RWJF)",
+      "category": "Major Private Foundation",
+      "url": "https://www.rwjf.org/en/grants/awarded-grants.html",
+      "source_type": "ai_scraper",
+      "api_endpoint": null,
+      "scraper_config": {
+        "use_playwright": true,
+        "crawl_depth": 0
+      },
+      "refresh_frequency": "weekly",
+      "is_high_priority": false,
+      "logo_url": null,
+      "status": "active",
+      "relevant_themes": [],
+      "notes": "No API; scraping required. Also in Candid FDO"
+    },
+    {
+      "name": "Rockefeller Foundation",
+      "category": "Major Private Foundation",
+      "url": "https://www.rockefellerfoundation.org/grants/",
+      "source_type": "ai_scraper",
+      "api_endpoint": null,
+      "scraper_config": {
+        "use_playwright": true,
+        "crawl_depth": 1
+      },
+      "refresh_frequency": "weekly",
+      "is_high_priority": false,
+      "logo_url": null,
+      "status": "active",
+      "relevant_themes": [
+        "health",
+        "AI",
+        "digital"
+      ],
+      "notes": "No API; scraping required. Accessible via Candid & ProPublica"
+    },
+    {
+      "name": "Bloomberg Philanthropies",
+      "category": "Major Private Foundation",
+      "url": "https://www.bloomberg.org/grants/",
+      "source_type": "ai_scraper",
+      "api_endpoint": null,
+      "scraper_config": {
+        "use_playwright": true,
+        "crawl_depth": 0
+      },
+      "refresh_frequency": "weekly",
+      "is_high_priority": false,
+      "logo_url": null,
+      "status": "active",
+      "relevant_themes": [],
+      "notes": "No API; scraping required. Some data via ProPublica 990"
+    },
+    {
+      "name": "Simons Foundation",
+      "category": "Major Private Foundation",
+      "url": "https://www.simonsfoundation.org/grants/",
+      "source_type": "ai_scraper",
+      "api_endpoint": null,
+      "scraper_config": {
+        "use_playwright": true,
+        "crawl_depth": 1
+      },
+      "refresh_frequency": "weekly",
+      "is_high_priority": false,
+      "logo_url": null,
+      "status": "active",
+      "relevant_themes": [],
+      "notes": "No API; scraping required"
+    },
+    {
+      "name": "Alfred P. Sloan Foundation",
+      "category": "Major Private Foundation",
+      "url": "https://sloan.org/grants-database",
+      "source_type": "ai_scraper",
+      "api_endpoint": null,
+      "scraper_config": {
+        "use_playwright": true,
+        "crawl_depth": 0
+      },
+      "refresh_frequency": "weekly",
+      "is_high_priority": false,
+      "logo_url": null,
+      "status": "active",
+      "relevant_themes": [],
+      "notes": "No API; scraping required. Available via Candid FDO"
+    },
+    {
+      "name": "Open Philanthropy (formerly OpenPhil)",
+      "category": "Major Private Foundation",
+      "url": "https://www.openphilanthropy.org/grants/",
+      "source_type": "ai_scraper",
+      "api_endpoint": null,
+      "scraper_config": {
+        "use_playwright": true,
+        "crawl_depth": 1
+      },
+      "refresh_frequency": "weekly",
+      "is_high_priority": false,
+      "logo_url": "/logos/open-philanthropy.svg",
+      "status": "active",
+      "relevant_themes": [
+        "health",
+        "AI",
+        "digital"
+      ],
+      "notes": "No API; structured HTML \u2014 relatively easy to scrape"
+    },
+    {
+      "name": "Chan Zuckerberg Initiative",
+      "category": "Major Private Foundation",
+      "url": "https://chanzuckerberg.com/grants-ventures/grants/",
+      "source_type": "ai_scraper",
+      "api_endpoint": null,
+      "scraper_config": {
+        "use_playwright": true,
+        "crawl_depth": 0
+      },
+      "refresh_frequency": "daily",
+      "is_high_priority": true,
+      "logo_url": "/logos/chan-zuckerberg.svg",
+      "status": "active",
+      "relevant_themes": [],
+      "notes": "No API; scraping required"
+    },
+    {
+      "name": "Andrew W. Mellon Foundation",
+      "category": "Major Private Foundation",
+      "url": "https://mellon.org/grants/grants-database/",
+      "source_type": "ai_scraper",
+      "api_endpoint": null,
+      "scraper_config": {
+        "use_playwright": true,
+        "crawl_depth": 0
+      },
+      "refresh_frequency": "weekly",
+      "is_high_priority": false,
+      "logo_url": null,
+      "status": "active",
+      "relevant_themes": [],
+      "notes": "No API; scraping required"
+    },
+    {
+      "name": "Kresge Foundation",
+      "category": "Major Private Foundation",
+      "url": "https://kresge.org/grants-and-loans/",
+      "source_type": "ai_scraper",
+      "api_endpoint": null,
+      "scraper_config": {
+        "use_playwright": true,
+        "crawl_depth": 0
+      },
+      "refresh_frequency": "weekly",
+      "is_high_priority": false,
+      "logo_url": null,
+      "status": "active",
+      "relevant_themes": [],
+      "notes": "No API; scraping required"
+    },
+    {
+      "name": "Lumina Foundation",
+      "category": "Major Private Foundation",
+      "url": "https://www.luminafoundation.org/grants/",
+      "source_type": "ai_scraper",
+      "api_endpoint": null,
+      "scraper_config": {
+        "use_playwright": true,
+        "crawl_depth": 1
+      },
+      "refresh_frequency": "weekly",
+      "is_high_priority": false,
+      "logo_url": null,
+      "status": "active",
+      "relevant_themes": [],
+      "notes": "No API; scraping required"
+    },
+    {
+      "name": "EU Funding & Tenders Portal (Horizon, LIFE, etc.)",
+      "category": "EU / European",
+      "url": "https://ec.europa.eu/info/funding-tenders/opportunities/portal/screen/home",
+      "source_type": "eu_funding",
+      "api_endpoint": null,
+      "scraper_config": {},
+      "refresh_frequency": "weekly",
+      "is_high_priority": false,
+      "logo_url": "/logos/horizon-europe.svg",
+      "status": "active",
+      "relevant_themes": [
+        "health",
+        "AI",
+        "digital"
+      ],
+      "notes": "Official EC API; covers 200+ programmes and \u20ac95.5B Horizon Europe budget"
+    },
+    {
+      "name": "Horizon Europe / CORDIS",
+      "category": "EU / European",
+      "url": "https://cordis.europa.eu",
+      "source_type": "ai_scraper",
+      "api_endpoint": null,
+      "scraper_config": {
+        "use_playwright": true,
+        "crawl_depth": 0
+      },
+      "refresh_frequency": "daily",
+      "is_high_priority": true,
+      "logo_url": "/logos/horizon-europe.svg",
+      "status": "active",
+      "relevant_themes": [],
+      "notes": "Open data via data.europa.eu; bulk CSV/XML downloads + API endpoint on api.store"
+    },
+    {
+      "name": "EU Funding & Grants Portal (eufundingportal.eu \u2013 aggregator)",
+      "category": "EU / European",
+      "url": "https://eufundingportal.eu",
+      "source_type": "eu_funding",
+      "api_endpoint": null,
+      "scraper_config": {},
+      "refresh_frequency": "weekly",
+      "is_high_priority": false,
+      "logo_url": null,
+      "status": "active",
+      "relevant_themes": [],
+      "notes": "No API; scraping required"
+    },
+    {
+      "name": "European Research Council (ERC)",
+      "category": "EU / European",
+      "url": "https://erc.europa.eu/funding/calls-for-proposals",
+      "source_type": "ai_scraper",
+      "api_endpoint": null,
+      "scraper_config": {
+        "use_playwright": true,
+        "crawl_depth": 0
+      },
+      "refresh_frequency": "weekly",
+      "is_high_priority": false,
+      "logo_url": "/logos/horizon-europe.svg",
+      "status": "active",
+      "relevant_themes": [],
+      "notes": "ERC calls accessible through the main EU Funding & Tenders Portal API"
+    },
+    {
+      "name": "European Innovation Council (EIC)",
+      "category": "EU / European",
+      "url": "https://eic.ec.europa.eu/eic-funding-opportunities_en",
+      "source_type": "eu_funding",
+      "api_endpoint": null,
+      "scraper_config": {},
+      "refresh_frequency": "weekly",
+      "is_high_priority": false,
+      "logo_url": "/logos/horizon-europe.svg",
+      "status": "active",
+      "relevant_themes": [],
+      "notes": "Accessible through EU Funding & Tenders Portal API"
+    },
+    {
+      "name": "European Structural & Investment Funds (ESIF / Cohesion)",
+      "category": "EU / European",
+      "url": "https://cohesiondata.ec.europa.eu/",
+      "source_type": "eu_funding",
+      "api_endpoint": null,
+      "scraper_config": {},
+      "refresh_frequency": "weekly",
+      "is_high_priority": false,
+      "logo_url": "/logos/horizon-europe.svg",
+      "status": "active",
+      "relevant_themes": [],
+      "notes": "Open data API; Socrata-based platform"
+    },
+    {
+      "name": "UKRI Gateway to Research (GtR)",
+      "category": "UK Government / Research Councils",
+      "url": "https://gtr.ukri.org",
+      "source_type": "ukri_gtr",
+      "api_endpoint": "https://gtr.ukri.org/gtr/api/projects",
+      "scraper_config": {
+        "params": {
+          "q": "AI health digital",
+          "f": "pro.t",
+          "s": 100
+        },
+        "items_key": "project",
+        "title_field": "title",
+        "desc_field": "abstractText",
+        "url_field": "url"
+      },
+      "refresh_frequency": "weekly",
+      "is_high_priority": false,
+      "logo_url": "/logos/ukri.svg",
+      "status": "active",
+      "relevant_themes": [],
+      "notes": "Free, open API; data available via 3 API endpoints. Also bulk CSV download"
+    },
+    {
+      "name": "UKRI Funding Opportunities",
+      "category": "UK Government / Research Councils",
+      "url": "https://www.ukri.org/opportunity/",
+      "source_type": "ai_scraper",
+      "api_endpoint": null,
+      "scraper_config": {
+        "use_playwright": true,
+        "crawl_depth": 0
+      },
+      "refresh_frequency": "daily",
+      "is_high_priority": true,
+      "logo_url": "/logos/ukri.svg",
+      "status": "active",
+      "relevant_themes": [],
+      "notes": "No API for live calls; scraping required. Awarded grants accessible via GtR API"
+    },
+    {
+      "name": "FCDO DevTracker (UK Foreign Aid)",
+      "category": "UK Government / Research Councils",
+      "url": "https://devtracker.fcdo.gov.uk",
+      "source_type": "ai_scraper",
+      "api_endpoint": null,
+      "scraper_config": {
+        "use_playwright": true,
+        "crawl_depth": 0
+      },
+      "refresh_frequency": "weekly",
+      "is_high_priority": false,
+      "logo_url": null,
+      "status": "active",
+      "relevant_themes": [
+        "health",
+        "AI",
+        "digital",
+        "global health"
+      ],
+      "notes": "Built on IATI OIPA API; data updated monthly; JSON download per programme"
+    },
+    {
+      "name": "UK International Development Funding (GOV.UK)",
+      "category": "UK Government / Research Councils",
+      "url": "https://www.gov.uk/international-development-funding",
+      "source_type": "ai_scraper",
+      "api_endpoint": null,
+      "scraper_config": {
+        "use_playwright": true,
+        "crawl_depth": 0
+      },
+      "refresh_frequency": "weekly",
+      "is_high_priority": false,
+      "logo_url": null,
+      "status": "active",
+      "relevant_themes": [
+        "global health"
+      ],
+      "notes": "No API; scraping required. Published under IATI standard"
+    },
+    {
+      "name": "IATI Datastore / D-Portal",
+      "category": "International Aid Transparency",
+      "url": "https://iatistandard.org",
+      "source_type": "iati",
+      "api_endpoint": null,
+      "scraper_config": {},
+      "refresh_frequency": "daily",
+      "is_high_priority": true,
+      "logo_url": null,
+      "status": "active",
+      "relevant_themes": [
+        "health",
+        "AI",
+        "digital"
+      ],
+      "notes": "REST API returning XML/JSON/CSV; d-portal.org is the browser-based explorer"
+    },
+    {
+      "name": "d-portal (IATI visualizer)",
+      "category": "International Aid Transparency",
+      "url": "https://d-portal.org",
+      "source_type": "iati",
+      "api_endpoint": null,
+      "scraper_config": {},
+      "refresh_frequency": "weekly",
+      "is_high_priority": false,
+      "logo_url": null,
+      "status": "active",
+      "relevant_themes": [
+        "global health"
+      ],
+      "notes": "No separate API; access data via IATI Datastore API"
+    },
+    {
+      "name": "AidData (College of William & Mary)",
+      "category": "International Aid Transparency",
+      "url": "https://www.aiddata.org",
+      "source_type": "ai_scraper",
+      "api_endpoint": null,
+      "scraper_config": {
+        "use_playwright": true,
+        "crawl_depth": 0
+      },
+      "refresh_frequency": "weekly",
+      "is_high_priority": false,
+      "logo_url": null,
+      "status": "active",
+      "relevant_themes": [
+        "health",
+        "AI",
+        "digital"
+      ],
+      "notes": "No live REST API; bulk dataset downloads in CSV/Stata format"
+    },
+    {
+      "name": "World Bank Open Data / Projects",
+      "category": "Multilateral Development Bank",
+      "url": "https://projects.worldbank.org",
+      "source_type": "ai_scraper",
+      "api_endpoint": null,
+      "scraper_config": {
+        "use_playwright": true,
+        "crawl_depth": 0
+      },
+      "refresh_frequency": "weekly",
+      "is_high_priority": false,
+      "logo_url": "/logos/world-bank.svg",
+      "status": "active",
+      "relevant_themes": [],
+      "notes": "Comprehensive free API; Indicators API, Projects API, Data Catalog API all documented"
+    },
+    {
+      "name": "Asian Development Bank (ADB) Tenders & Grants",
+      "category": "Multilateral Development Bank",
+      "url": "https://www.adb.org/projects/tenders",
+      "source_type": "ai_scraper",
+      "api_endpoint": null,
+      "scraper_config": {
+        "use_playwright": true,
+        "crawl_depth": 0
+      },
+      "refresh_frequency": "weekly",
+      "is_high_priority": false,
+      "logo_url": null,
+      "status": "active",
+      "relevant_themes": [],
+      "notes": "No formal public API; RSS feeds available; scraping or OpenOpps.com aggregator"
+    },
+    {
+      "name": "Inter-American Development Bank (IDB/IADB)",
+      "category": "Multilateral Development Bank",
+      "url": "https://www.iadb.org/en/how-we-can-work-together/public-sector/financing-solutions/grants",
+      "source_type": "ai_scraper",
+      "api_endpoint": null,
+      "scraper_config": {
+        "use_playwright": true,
+        "crawl_depth": 0
+      },
+      "refresh_frequency": "weekly",
+      "is_high_priority": false,
+      "logo_url": null,
+      "status": "active",
+      "relevant_themes": [],
+      "notes": "No public API; scraping required; some data via AidData"
+    },
+    {
+      "name": "African Development Bank (AfDB) Tenders",
+      "category": "Multilateral Development Bank",
+      "url": "https://www.afdb.org/en/projects-and-operations/procurement",
+      "source_type": "ai_scraper",
+      "api_endpoint": null,
+      "scraper_config": {
+        "use_playwright": true,
+        "crawl_depth": 0
+      },
+      "refresh_frequency": "weekly",
+      "is_high_priority": false,
+      "logo_url": null,
+      "status": "active",
+      "relevant_themes": [],
+      "notes": "No public API; scraping required; data via IATI if published"
+    },
+    {
+      "name": "European Bank for Reconstruction and Development (EBRD \u2013 ECEPP)",
+      "category": "Multilateral Development Bank",
+      "url": "https://ecepp.ebrd.com",
+      "source_type": "ai_scraper",
+      "api_endpoint": null,
+      "scraper_config": {
+        "use_playwright": true,
+        "crawl_depth": 0
+      },
+      "refresh_frequency": "weekly",
+      "is_high_priority": false,
+      "logo_url": null,
+      "status": "active",
+      "relevant_themes": [],
+      "notes": "No public API; ECEPP portal requires registration; scraping possible from public notices"
+    },
+    {
+      "name": "European Investment Bank (EIB)",
+      "category": "Multilateral Development Bank",
+      "url": "https://www.eib.org/en/projects/loans/index.htm",
+      "source_type": "ai_scraper",
+      "api_endpoint": null,
+      "scraper_config": {
+        "use_playwright": true,
+        "crawl_depth": 0
+      },
+      "refresh_frequency": "weekly",
+      "is_high_priority": false,
+      "logo_url": null,
+      "status": "active",
+      "relevant_themes": [],
+      "notes": "Open data portal with bulk downloads; no REST API but structured datasets available"
+    },
+    {
+      "name": "UNDP Funding Windows Portal",
+      "category": "UN / Multilateral Agency",
+      "url": "https://www.undp.org/funding/funding-windows/portal",
+      "source_type": "ai_scraper",
+      "api_endpoint": null,
+      "scraper_config": {
+        "use_playwright": true,
+        "crawl_depth": 0
+      },
+      "refresh_frequency": "weekly",
+      "is_high_priority": false,
+      "logo_url": "/logos/undp.svg",
+      "status": "active",
+      "relevant_themes": [
+        "global health"
+      ],
+      "notes": "No API; scraping required; UNDP publishes some IATI data"
+    },
+    {
+      "name": "UN Global Marketplace (UNGM) \u2013 Procurement",
+      "category": "UN / Multilateral Agency",
+      "url": "https://www.ungm.org/Public/Notice",
+      "source_type": "ai_scraper",
+      "api_endpoint": null,
+      "scraper_config": {
+        "use_playwright": true,
+        "crawl_depth": 0
+      },
+      "refresh_frequency": "weekly",
+      "is_high_priority": false,
+      "logo_url": null,
+      "status": "active",
+      "relevant_themes": [],
+      "notes": "No public API; scraping required"
+    },
+    {
+      "name": "UNICEF Supply Division / Procurement",
+      "category": "UN / Multilateral Agency",
+      "url": "https://www.unicef.org/supply/procurement-notices",
+      "source_type": "ai_scraper",
+      "api_endpoint": null,
+      "scraper_config": {
+        "use_playwright": true,
+        "crawl_depth": 0
+      },
+      "refresh_frequency": "weekly",
+      "is_high_priority": false,
+      "logo_url": "/logos/unicef.svg",
+      "status": "active",
+      "relevant_themes": [],
+      "notes": "No API; scraping required"
+    },
+    {
+      "name": "WHO Procurement / Calls",
+      "category": "UN / Multilateral Agency",
+      "url": "https://www.who.int/about/funding",
+      "source_type": "ai_scraper",
+      "api_endpoint": null,
+      "scraper_config": {
+        "use_playwright": true,
+        "crawl_depth": 0
+      },
+      "refresh_frequency": "weekly",
+      "is_high_priority": false,
+      "logo_url": "/logos/who.svg",
+      "status": "active",
+      "relevant_themes": [],
+      "notes": "No API; scraping required"
+    },
+    {
+      "name": "USAID (foreign aid grants/contracts)",
+      "category": "UN / Multilateral Agency",
+      "url": "https://www.usaid.gov/work-usaid/find-grant-contract-opportunities",
+      "source_type": "ai_scraper",
+      "api_endpoint": null,
+      "scraper_config": {
+        "use_playwright": true,
+        "crawl_depth": 0
+      },
+      "refresh_frequency": "weekly",
+      "is_high_priority": false,
+      "logo_url": "/logos/usaid.svg",
+      "status": "active",
+      "relevant_themes": [
+        "health",
+        "AI",
+        "digital"
+      ],
+      "notes": "Opportunities accessible via SAM.gov API and Grants.gov API. USAID DEC now archived"
+    },
+    {
+      "name": "Global Fund to Fight AIDS, TB & Malaria",
+      "category": "UN / Multilateral Agency",
+      "url": "https://www.theglobalfund.org/en/funding-model/",
+      "source_type": "ai_scraper",
+      "api_endpoint": null,
+      "scraper_config": {
+        "use_playwright": true,
+        "crawl_depth": 0
+      },
+      "refresh_frequency": "weekly",
+      "is_high_priority": false,
+      "logo_url": "/logos/global-fund.svg",
+      "status": "active",
+      "relevant_themes": [],
+      "notes": "No API; limited structured data; scraping required"
+    },
+    {
+      "name": "Gavi, the Vaccine Alliance",
+      "category": "UN / Multilateral Agency",
+      "url": "https://www.gavi.org/programmes-impact/programmatic-policies/funding-opportunities",
+      "source_type": "ai_scraper",
+      "api_endpoint": null,
+      "scraper_config": {
+        "use_playwright": true,
+        "crawl_depth": 0
+      },
+      "refresh_frequency": "weekly",
+      "is_high_priority": false,
+      "logo_url": null,
+      "status": "active",
+      "relevant_themes": [],
+      "notes": "No API; scraping required"
+    },
+    {
+      "name": "DevelopmentAid.org",
+      "category": "Aggregate / Commercial Database",
+      "url": "https://www.developmentaid.org/grants/search",
+      "source_type": "ai_scraper",
+      "api_endpoint": null,
+      "scraper_config": {
+        "use_playwright": true,
+        "crawl_depth": 0
+      },
+      "refresh_frequency": "weekly",
+      "is_high_priority": false,
+      "logo_url": null,
+      "status": "active",
+      "relevant_themes": [
+        "global health"
+      ],
+      "notes": "Paid API for partners; automates retrieval of grants, tenders, jobs. Contact DevelopmentAid for access"
+    },
+    {
+      "name": "Candid Foundation Directory Online (FDO)",
+      "category": "Aggregate / Commercial Database",
+      "url": "https://fconline.foundationcenter.org",
+      "source_type": "ai_scraper",
+      "api_endpoint": null,
+      "scraper_config": {
+        "use_playwright": true,
+        "crawl_depth": 0
+      },
+      "refresh_frequency": "weekly",
+      "is_high_priority": false,
+      "logo_url": null,
+      "status": "active",
+      "relevant_themes": [],
+      "notes": "Grants API with /funders and /recipients endpoints. Subscription-based"
+    },
+    {
+      "name": "Candid / 990 Finder (Nonprofit data)",
+      "category": "Aggregate / Commercial Database",
+      "url": "https://candid.org",
+      "source_type": "ai_scraper",
+      "api_endpoint": null,
+      "scraper_config": {
+        "use_playwright": true,
+        "crawl_depth": 0
+      },
+      "refresh_frequency": "weekly",
+      "is_high_priority": false,
+      "logo_url": null,
+      "status": "active",
+      "relevant_themes": [],
+      "notes": "Multiple APIs: Grants, Essentials, Profiles. Tiered pricing"
+    },
+    {
+      "name": "Instrumentl",
+      "category": "Aggregate / Commercial Database",
+      "url": "https://www.instrumentl.com",
+      "source_type": "ai_scraper",
+      "api_endpoint": null,
+      "scraper_config": {
+        "use_playwright": true,
+        "crawl_depth": 0
+      },
+      "refresh_frequency": "weekly",
+      "is_high_priority": false,
+      "logo_url": null,
+      "status": "active",
+      "relevant_themes": [],
+      "notes": "No public API; closed SaaS platform. Subscription required for access"
+    },
+    {
+      "name": "GrantWatch",
+      "category": "Aggregate / Commercial Database",
+      "url": "https://www.grantwatch.com",
+      "source_type": "ai_scraper",
+      "api_endpoint": null,
+      "scraper_config": {
+        "use_playwright": true,
+        "crawl_depth": 0
+      },
+      "refresh_frequency": "weekly",
+      "is_high_priority": false,
+      "logo_url": null,
+      "status": "active",
+      "relevant_themes": [
+        "global health"
+      ],
+      "notes": "No API; $249/yr subscription; scraping possible but ToS may restrict"
+    },
+    {
+      "name": "Pivot-RP (ProQuest/Clarivate)",
+      "category": "Aggregate / Commercial Database",
+      "url": "https://pivot.proquest.com",
+      "source_type": "ai_scraper",
+      "api_endpoint": null,
+      "scraper_config": {
+        "use_playwright": true,
+        "crawl_depth": 0
+      },
+      "refresh_frequency": "weekly",
+      "is_high_priority": false,
+      "logo_url": null,
+      "status": "active",
+      "relevant_themes": [],
+      "notes": "API used by universities for internal matching tools; requires institutional subscription"
+    },
+    {
+      "name": "OpenGrants.io",
+      "category": "Aggregate / Commercial Database",
+      "url": "https://ops.opengrants.io",
+      "source_type": "ai_scraper",
+      "api_endpoint": null,
+      "scraper_config": {
+        "use_playwright": true,
+        "crawl_depth": 0
+      },
+      "refresh_frequency": "weekly",
+      "is_high_priority": false,
+      "logo_url": null,
+      "status": "active",
+      "relevant_themes": [
+        "health",
+        "AI",
+        "digital"
+      ],
+      "notes": "REST/JSON API; developer portal at developer.opengrants.io; invite-only access"
+    },
+    {
+      "name": "GrantStation",
+      "category": "Aggregate / Commercial Database",
+      "url": "https://www.grantstation.com",
+      "source_type": "ai_scraper",
+      "api_endpoint": null,
+      "scraper_config": {
+        "use_playwright": true,
+        "crawl_depth": 0
+      },
+      "refresh_frequency": "weekly",
+      "is_high_priority": false,
+      "logo_url": null,
+      "status": "active",
+      "relevant_themes": [
+        "global health"
+      ],
+      "notes": "No public API; membership subscription required"
+    },
+    {
+      "name": "fundsforNGOs",
+      "category": "Aggregate / Commercial Database",
+      "url": "https://www.fundsforngos.org",
+      "source_type": "ai_scraper",
+      "api_endpoint": null,
+      "scraper_config": {
+        "use_playwright": true,
+        "crawl_depth": 1
+      },
+      "refresh_frequency": "weekly",
+      "is_high_priority": false,
+      "logo_url": null,
+      "status": "active",
+      "relevant_themes": [
+        "global health"
+      ],
+      "notes": "No API; free website; scraping feasible"
+    },
+    {
+      "name": "Terra Viva Grants",
+      "category": "Aggregate / Commercial Database",
+      "url": "https://www.terravivagrants.org",
+      "source_type": "ai_scraper",
+      "api_endpoint": null,
+      "scraper_config": {
+        "use_playwright": true,
+        "crawl_depth": 0
+      },
+      "refresh_frequency": "weekly",
+      "is_high_priority": false,
+      "logo_url": null,
+      "status": "active",
+      "relevant_themes": [],
+      "notes": "No API; free listings; scraping feasible"
+    },
+    {
+      "name": "Inside Philanthropy (Grant Finder)",
+      "category": "Aggregate / Commercial Database",
+      "url": "https://www.insidephilanthropy.com/find-a-grant",
+      "source_type": "ai_scraper",
+      "api_endpoint": null,
+      "scraper_config": {
+        "use_playwright": true,
+        "crawl_depth": 1
+      },
+      "refresh_frequency": "weekly",
+      "is_high_priority": false,
+      "logo_url": null,
+      "status": "active",
+      "relevant_themes": [],
+      "notes": "No API; subscription required; scraping restricted"
+    },
+    {
+      "name": "360Giving GrantNav (UK Philanthropic Grants)",
+      "category": "Aggregate / Commercial Database",
+      "url": "https://grantnav.threesixtygiving.org",
+      "source_type": "three60giving",
+      "api_endpoint": null,
+      "scraper_config": {},
+      "refresh_frequency": "weekly",
+      "is_high_priority": false,
+      "logo_url": null,
+      "status": "active",
+      "relevant_themes": [],
+      "notes": "Free HTTP/JSON API; bulk CSV/JSON download of full dataset; Datastore access for complex queries"
+    },
+    {
+      "name": "OpenAlex (research funding metadata)",
+      "category": "Aggregate / Commercial Database",
+      "url": "https://openalex.org",
+      "source_type": "openalex",
+      "api_endpoint": null,
+      "scraper_config": {},
+      "refresh_frequency": "weekly",
+      "is_high_priority": false,
+      "logo_url": null,
+      "status": "active",
+      "relevant_themes": [],
+      "notes": "Free open API; no key required for polite pool (<10 req/sec); CC0 data"
+    },
+    {
+      "name": "ProPublica Nonprofit Explorer (IRS 990)",
+      "category": "Aggregate / Commercial Database",
+      "url": "https://projects.propublica.org/nonprofits",
+      "source_type": "propublica",
+      "api_endpoint": null,
+      "scraper_config": {},
+      "refresh_frequency": "weekly",
+      "is_high_priority": false,
+      "logo_url": null,
+      "status": "active",
+      "relevant_themes": [],
+      "notes": "Free API; follows simple data terms of use; v2 API active"
+    },
+    {
+      "name": "eCivis (Government Grant Management)",
+      "category": "Aggregate / Commercial Database",
+      "url": "https://ecivis.com",
+      "source_type": "ai_scraper",
+      "api_endpoint": null,
+      "scraper_config": {
+        "use_playwright": true,
+        "crawl_depth": 0
+      },
+      "refresh_frequency": "weekly",
+      "is_high_priority": false,
+      "logo_url": null,
+      "status": "active",
+      "relevant_themes": [],
+      "notes": "API for enterprise clients; no public documentation"
+    },
+    {
+      "name": "OpenOpps.com (World Bank, ADB, IDB tenders)",
+      "category": "Aggregate / Commercial Database",
+      "url": "https://openopps.com",
+      "source_type": "ai_scraper",
+      "api_endpoint": null,
+      "scraper_config": {
+        "use_playwright": true,
+        "crawl_depth": 0
+      },
+      "refresh_frequency": "weekly",
+      "is_high_priority": false,
+      "logo_url": null,
+      "status": "active",
+      "relevant_themes": [],
+      "notes": "Commercial API aggregating multilateral development bank procurement"
+    },
+    {
+      "name": "Grand Challenges (BMGF / USAID / Grand Challenges Canada)",
+      "category": "International / Regional",
+      "url": "https://gcgh.grandchallenges.org/grants",
+      "source_type": "ai_scraper",
+      "api_endpoint": null,
+      "scraper_config": {
+        "use_playwright": true,
+        "crawl_depth": 0
+      },
+      "refresh_frequency": "weekly",
+      "is_high_priority": false,
+      "logo_url": null,
+      "status": "active",
+      "relevant_themes": [
+        "health",
+        "AI",
+        "digital",
+        "global health"
+      ],
+      "notes": "No API; searchable database on website; scraping feasible"
+    },
+    {
+      "name": "Horizon Europe NCP Portal",
+      "category": "International / Regional",
+      "url": "https://horizoneuropencpportal.eu",
+      "source_type": "ai_scraper",
+      "api_endpoint": null,
+      "scraper_config": {
+        "use_playwright": true,
+        "crawl_depth": 0
+      },
+      "refresh_frequency": "weekly",
+      "is_high_priority": false,
+      "logo_url": null,
+      "status": "active",
+      "relevant_themes": [],
+      "notes": "No API; informational portal; links back to EU F&T Portal"
+    },
+    {
+      "name": "EMDESK (Horizon Europe project management)",
+      "category": "International / Regional",
+      "url": "https://www.emdesk.com",
+      "source_type": "ai_scraper",
+      "api_endpoint": null,
+      "scraper_config": {
+        "use_playwright": true,
+        "crawl_depth": 0
+      },
+      "refresh_frequency": "weekly",
+      "is_high_priority": false,
+      "logo_url": null,
+      "status": "active",
+      "relevant_themes": [],
+      "notes": "No API for grant discovery; project management SaaS only"
+    },
+    {
+      "name": "Wellcome Leap (health moonshots)",
+      "category": "International / Regional",
+      "url": "https://wellcomeleap.org/our-programs/",
+      "source_type": "ai_scraper",
+      "api_endpoint": null,
+      "scraper_config": {
+        "use_playwright": true,
+        "crawl_depth": 0
+      },
+      "refresh_frequency": "weekly",
+      "is_high_priority": false,
+      "logo_url": null,
+      "status": "active",
+      "relevant_themes": [
+        "health",
+        "AI",
+        "digital"
+      ],
+      "notes": "No API; small number of active calls; monitor directly"
+    },
+    {
+      "name": "Bill & Melinda Gates Foundation \u2013 Grand Challenges Explorations",
+      "category": "International / Regional",
+      "url": "https://gcgh.grandchallenges.org",
+      "source_type": "ai_scraper",
+      "api_endpoint": null,
+      "scraper_config": {
+        "use_playwright": true,
+        "crawl_depth": 0
+      },
+      "refresh_frequency": "daily",
+      "is_high_priority": true,
+      "logo_url": null,
+      "status": "active",
+      "relevant_themes": [
+        "health",
+        "AI",
+        "digital"
+      ],
+      "notes": "No API; scraping required"
+    },
+    {
+      "name": "UK Research & Innovation (UKRI) \u2013 Active Opportunities",
+      "category": "International / Regional",
+      "url": "https://www.ukri.org/opportunity/",
+      "source_type": "ai_scraper",
+      "api_endpoint": null,
+      "scraper_config": {
+        "use_playwright": true,
+        "crawl_depth": 0
+      },
+      "refresh_frequency": "weekly",
+      "is_high_priority": false,
+      "logo_url": "/logos/ukri.svg",
+      "status": "active",
+      "relevant_themes": [],
+      "notes": "No API for live calls; awarded project data accessible via GtR API"
+    },
+    {
+      "name": "European Commission Open Data Portal",
+      "category": "International / Regional",
+      "url": "https://data.europa.eu",
+      "source_type": "ai_scraper",
+      "api_endpoint": null,
+      "scraper_config": {
+        "use_playwright": true,
+        "crawl_depth": 0
+      },
+      "refresh_frequency": "weekly",
+      "is_high_priority": false,
+      "logo_url": null,
+      "status": "active",
+      "relevant_themes": [],
+      "notes": "DCAT-AP compliant; SPARQL endpoint and REST API available"
+    },
+    {
+      "name": "Innovate UK \u2013 Smart Grants & Competitions",
+      "category": "International / Regional",
+      "url": "https://www.ukri.org/councils/innovate-uk/",
+      "source_type": "ai_scraper",
+      "api_endpoint": null,
+      "scraper_config": {
+        "use_playwright": true,
+        "crawl_depth": 0
+      },
+      "refresh_frequency": "weekly",
+      "is_high_priority": false,
+      "logo_url": "/logos/ukri.svg",
+      "status": "active",
+      "relevant_themes": [],
+      "notes": "No API; scraping required for open competitions; awarded data via GtR"
+    },
+    {
+      "name": "EUREKA Network (collaborative R&D)",
+      "category": "International / Regional",
+      "url": "https://www.eurekanetwork.org/open-calls/",
+      "source_type": "ai_scraper",
+      "api_endpoint": null,
+      "scraper_config": {
+        "use_playwright": true,
+        "crawl_depth": 0
+      },
+      "refresh_frequency": "weekly",
+      "is_high_priority": false,
+      "logo_url": null,
+      "status": "active",
+      "relevant_themes": [
+        "global health"
+      ],
+      "notes": "No API; scraping required"
+    },
+    {
+      "name": "Newton Fund / British Council",
+      "category": "International / Regional",
+      "url": "https://www.britishcouncil.org/education/he-science/opportunities",
+      "source_type": "ai_scraper",
+      "api_endpoint": null,
+      "scraper_config": {
+        "use_playwright": true,
+        "crawl_depth": 0
+      },
+      "refresh_frequency": "weekly",
+      "is_high_priority": false,
+      "logo_url": null,
+      "status": "active",
+      "relevant_themes": [
+        "global health"
+      ],
+      "notes": "No API; scraping required"
+    },
+    {
+      "name": "Climate & Clean Air Coalition (CCAC) Grants",
+      "category": "International / Regional",
+      "url": "https://www.ccacoalition.org/funding-opportunities",
+      "source_type": "ai_scraper",
+      "api_endpoint": null,
+      "scraper_config": {
+        "use_playwright": true,
+        "crawl_depth": 0
+      },
+      "refresh_frequency": "weekly",
+      "is_high_priority": false,
+      "logo_url": null,
+      "status": "active",
+      "relevant_themes": [
+        "health",
+        "AI",
+        "digital"
+      ],
+      "notes": "No API; small volume of calls; monitor directly"
+    },
+    {
+      "name": "GEF (Global Environment Facility) Projects",
+      "category": "International / Regional",
+      "url": "https://www.thegef.org/projects",
+      "source_type": "ai_scraper",
+      "api_endpoint": null,
+      "scraper_config": {
+        "use_playwright": true,
+        "crawl_depth": 0
+      },
+      "refresh_frequency": "weekly",
+      "is_high_priority": false,
+      "logo_url": null,
+      "status": "active",
+      "relevant_themes": [],
+      "notes": "Open data portal with API; project browser and bulk data downloads"
+    },
+    {
+      "name": "Green Climate Fund (GCF)",
+      "category": "International / Regional",
+      "url": "https://www.greenclimate.fund/projects",
+      "source_type": "ai_scraper",
+      "api_endpoint": null,
+      "scraper_config": {
+        "use_playwright": true,
+        "crawl_depth": 0
+      },
+      "refresh_frequency": "weekly",
+      "is_high_priority": false,
+      "logo_url": null,
+      "status": "active",
+      "relevant_themes": [
+        "health",
+        "AI",
+        "digital"
+      ],
+      "notes": "Open data portal; project data downloadable; REST API available"
+    },
+    {
+      "name": "Adaptation Fund",
+      "category": "International / Regional",
+      "url": "https://www.adaptation-fund.org/projects-programmes/",
+      "source_type": "ai_scraper",
+      "api_endpoint": null,
+      "scraper_config": {
+        "use_playwright": true,
+        "crawl_depth": 0
+      },
+      "refresh_frequency": "weekly",
+      "is_high_priority": false,
+      "logo_url": null,
+      "status": "active",
+      "relevant_themes": [
+        "health",
+        "AI",
+        "digital"
+      ],
+      "notes": "No formal API; project list scrapeable"
+    },
+    {
+      "name": "CGIAR Research Programs (agriculture)",
+      "category": "International / Regional",
+      "url": "https://www.cgiar.org/research/",
+      "source_type": "ai_scraper",
+      "api_endpoint": null,
+      "scraper_config": {
+        "use_playwright": true,
+        "crawl_depth": 0
+      },
+      "refresh_frequency": "weekly",
+      "is_high_priority": false,
+      "logo_url": null,
+      "status": "active",
+      "relevant_themes": [
+        "global health"
+      ],
+      "notes": "No API; limited structured grant data publicly available"
+    },
+    {
+      "name": "FundsforNGOs Premium / Grants Alert",
+      "category": "International / Regional",
+      "url": "https://www2.fundsforngos.org/",
+      "source_type": "ai_scraper",
+      "api_endpoint": null,
+      "scraper_config": {
+        "use_playwright": true,
+        "crawl_depth": 1
+      },
+      "refresh_frequency": "weekly",
+      "is_high_priority": false,
+      "logo_url": null,
+      "status": "active",
+      "relevant_themes": [
+        "global health"
+      ],
+      "notes": "No API; subscription email service; free and paid tiers"
+    },
+    {
+      "name": "ResearchProfessional (Clarivate)",
+      "category": "Science & Research Specific",
+      "url": "https://www.researchprofessional.com",
+      "source_type": "ai_scraper",
+      "api_endpoint": null,
+      "scraper_config": {
+        "use_playwright": true,
+        "crawl_depth": 0
+      },
+      "refresh_frequency": "weekly",
+      "is_high_priority": false,
+      "logo_url": null,
+      "status": "active",
+      "relevant_themes": [],
+      "notes": "Institutional API available; subscription required"
+    },
+    {
+      "name": "Dimensions (Digital Science) \u2013 Grants",
+      "category": "Science & Research Specific",
+      "url": "https://www.dimensions.ai/products/grants/",
+      "source_type": "ai_scraper",
+      "api_endpoint": null,
+      "scraper_config": {
+        "use_playwright": true,
+        "crawl_depth": 0
+      },
+      "refresh_frequency": "weekly",
+      "is_high_priority": false,
+      "logo_url": null,
+      "status": "active",
+      "relevant_themes": [],
+      "notes": "DSL query language API; free tier for non-commercial; institutional subscription for full access"
+    },
+    {
+      "name": "CrossRef Grant Metadata",
+      "category": "Science & Research Specific",
+      "url": "https://www.crossref.org/documentation/funder-registry/",
+      "source_type": "ai_scraper",
+      "api_endpoint": null,
+      "scraper_config": {
+        "use_playwright": true,
+        "crawl_depth": 0
+      },
+      "refresh_frequency": "weekly",
+      "is_high_priority": false,
+      "logo_url": null,
+      "status": "active",
+      "relevant_themes": [],
+      "notes": "Free REST API; funder data underpins OpenAlex and Dimensions grant metadata"
+    },
+    {
+      "name": "Europe PubMed Central (Europe PMC) \u2013 Grants",
+      "category": "Science & Research Specific",
+      "url": "https://europepmc.org/Funders",
+      "source_type": "ai_scraper",
+      "api_endpoint": null,
+      "scraper_config": {
+        "use_playwright": true,
+        "crawl_depth": 0
+      },
+      "refresh_frequency": "weekly",
+      "is_high_priority": false,
+      "logo_url": null,
+      "status": "active",
+      "relevant_themes": [],
+      "notes": "REST API with grant search; supports funders who mandate open access"
+    },
+    {
+      "name": "Semantic Scholar (AI2) \u2013 Funding metadata",
+      "category": "Science & Research Specific",
+      "url": "https://www.semanticscholar.org",
+      "source_type": "ai_scraper",
+      "api_endpoint": null,
+      "scraper_config": {
+        "use_playwright": true,
+        "crawl_depth": 0
+      },
+      "refresh_frequency": "weekly",
+      "is_high_priority": false,
+      "logo_url": null,
+      "status": "active",
+      "relevant_themes": [],
+      "notes": "Free API key; paper funding data extracted by AI; less complete than Dimensions"
+    }
+  ]
+}

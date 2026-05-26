@@ -16,6 +16,11 @@ from app.database import get_db
 from app.models.user import User, UserRole, InstitutionRole
 from app.models.institution import Institution
 from app.models.org_join_request import OrgJoinRequest, JoinRequestStatus
+from app.services.organization_setup import (
+    personal_workspace_name,
+    invited_member_role,
+    queue_org_scaffold,
+)
 
 router = APIRouter()
 settings = get_settings()
@@ -132,6 +137,7 @@ async def register(
             id=str(uuid.uuid4()),
             name=body.institution_name,
             domain=body.institution_domain,
+            is_personal=False,
         )
         db.add(inst)
         await db.flush()
@@ -143,8 +149,22 @@ async def register(
         inst = (await db.execute(select(Institution).where(Institution.id == body.institution_id))).scalar_one_or_none()
         if not inst:
             raise HTTPException(status_code=404, detail="Institution not found")
+        if inst.is_personal:
+            raise HTTPException(status_code=400, detail="Cannot join a personal workspace.")
         # User is created WITHOUT institution yet — pending approval
         account_status = "pending_approval"
+    else:
+        # No institution selected — auto-create a personal workspace with admin access
+        inst = Institution(
+            id=str(uuid.uuid4()),
+            name=personal_workspace_name(body.name),
+            is_personal=True,
+        )
+        db.add(inst)
+        await db.flush()
+        institution_id = inst.id
+        institution_role = InstitutionRole.ADMIN
+        user_role = UserRole.GRANT_LEAD
 
     user = User(
         id=str(uuid.uuid4()),
@@ -174,15 +194,7 @@ async def register(
     await db.commit()
 
     if institution_id and user_role == UserRole.GRANT_LEAD:
-        # Trigger org scaffold for newly created organizations
-        try:
-            from app.workers.celery_app import celery_app
-            celery_app.send_task(
-                "app.workers.org_tasks.scaffold_new_organization",
-                args=[institution_id, user.id],
-            )
-        except Exception:
-            pass
+        queue_org_scaffold(institution_id, user.id)
 
     token = create_access_token({"sub": user.id, "role": user.role})
     return Token(
@@ -255,11 +267,10 @@ async def accept_invite(
     # Check if user already exists
     existing_user = (await db.execute(select(User).where(User.email == email))).scalar_one_or_none()
     if existing_user:
-        # Link existing user to org
+        # Switch to invited org as a regular member (not admin)
         existing_user.institution_id = institution_id
         existing_user.institution_role = InstitutionRole.MEMBER
-        if role and existing_user.role == UserRole.REVIEWER:
-            existing_user.role = role
+        existing_user.role = invited_member_role(role)
         await db.commit()
         user = existing_user
     else:
@@ -269,7 +280,7 @@ async def accept_invite(
             name=body.name,
             email=email,
             hashed_password=get_password_hash(body.password),
-            role=role or UserRole.CONTRIBUTOR,
+            role=invited_member_role(role),
             institution_id=institution_id,
             institution_role=InstitutionRole.MEMBER,
         )
@@ -308,7 +319,7 @@ async def list_institutions(
     db: AsyncSession = Depends(get_db),
 ):
     """Return institutions for the registration search-and-join flow."""
-    query = select(Institution)
+    query = select(Institution).where(Institution.is_personal.is_(False))
     if q:
         query = query.where(Institution.name.ilike(f"%{q}%"))
     result = await db.execute(query.limit(20))

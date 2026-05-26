@@ -23,6 +23,12 @@ logger = structlog.get_logger()
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     logger.info("LiGHT Grant System starting", model=settings.ai.model, env=settings.environment)
+    try:
+        from app.services.grant_bootstrap import run_full_bootstrap
+        result = run_full_bootstrap()
+        logger.info("Grant pool bootstrap complete", **result)
+    except Exception as exc:
+        logger.warning("Grant pool bootstrap skipped or failed", error=str(exc))
     yield
     logger.info("LiGHT Grant System shutting down")
 

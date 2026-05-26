@@ -1,17 +1,14 @@
 """
-Fit Scorer — AI-powered fit scoring for opportunities.
-Scores opportunities against the team's thematic and strategic priorities
-as defined in config.yaml (fit_scoring section).
+Fit Scorer — AI-powered fit scoring for opportunities against an org grant profile.
 """
 import json
 from app.ai.client import chat_complete
-from app.config import get_settings
+from app.schemas.grant_profile import GrantProfile
 
-settings = get_settings()
-
-SYSTEM_PROMPT = """You are a grant fit scoring system for the LiGHT research group at EPFL.
+SYSTEM_PROMPT = """You are a grant fit scoring system for a research team.
 Score grant opportunities based on alignment with the team's research profile.
 Respond only with valid JSON."""
+
 
 async def score_opportunity(
     title: str,
@@ -21,37 +18,21 @@ async def score_opportunity(
     geography: str = "",
     award_amount: str = "",
     deadline: str = "",
+    profile: GrantProfile | None = None,
 ) -> dict:
-    """
-    Score a grant opportunity and return structured fit assessment.
+    profile = profile or GrantProfile()
+    themes = ", ".join(profile.keywords[:20]) or "general research"
+    geos = ", ".join(profile.geographies) or "global"
+    institution = profile.institution_name or "the research team"
+    projects = profile.projects or "Not specified"
 
-    Returns:
-        {
-          "fit_score": float (0-100),
-          "priority": str ("high_priority"|"worth_reviewing"|"watchlist"|"low_fit"),
-          "thematic_alignment": float (0-35),
-          "eligibility_match": float (0-20),
-          "deadline_feasibility": float (0-10),
-          "strategic_funder_priority": float (0-10),
-          "award_size_score": float (0-10),
-          "geographic_relevance": float (0-10),
-          "partner_feasibility": float (0-5),
-          "rationale": str,
-          "matched_themes": [str],
-          "risks": [str],
-          "flagged_keywords": [str],
-        }
-    """
-    scoring = settings.fit_scoring
-    themes = ", ".join(scoring.team_themes[:15])
-    geos = ", ".join(scoring.team_geographies)
-
-    user_prompt = f"""Score this grant opportunity for the LiGHT team at EPFL.
+    user_prompt = f"""Score this grant opportunity for {institution}.
 
 TEAM PROFILE:
-- Institution: {scoring.institution_name} (academic)
-- Core themes: {themes}
+- Institution: {institution}
+- Core themes / keywords: {themes}
 - Target geographies: {geos}
+- Active projects and context: {projects}
 
 OPPORTUNITY:
 Title: {title}

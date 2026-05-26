@@ -3,8 +3,9 @@
  * Base URL configured via NEXT_PUBLIC_API_URL environment variable.
  */
 import axios from 'axios';
+import { getApiBaseUrl } from './api-base-url';
 
-const API_BASE = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8000';
+const API_BASE = getApiBaseUrl();
 
 export const api = axios.create({
   baseURL: `${API_BASE}/api/v1`,
@@ -77,6 +78,15 @@ export const organizations = {
     api.post(`/organizations/${orgId}/invite`, data),
   requestToJoin: (orgId: string, message?: string) =>
     api.post(`/organizations/${orgId}/join-requests`, { institution_id: orgId, message }),
+  getGrantProfile: (id: string) => api.get(`/organizations/${id}/grant-profile`),
+  updateGrantProfile: (id: string, data: Record<string, unknown>) =>
+    api.patch(`/organizations/${id}/grant-profile`, data),
+  preseedStatus: (id: string) => api.get(`/organizations/${id}/preseed-status`),
+  listOrgSources: (id: string) => api.get(`/organizations/${id}/sources`),
+  toggleOrgSource: (orgId: string, sourceId: string, isEnabled: boolean) =>
+    api.patch(`/organizations/${orgId}/sources/${sourceId}`, { is_enabled: isEnabled }),
+  addOrgSource: (orgId: string, data: Record<string, unknown>) =>
+    api.post(`/organizations/${orgId}/sources`, data),
 };
 
 // ── Users ────────────────────────────────────────────────────────────────────
@@ -85,6 +95,9 @@ export const users = {
   get: (id: string) => api.get(`/users/${id}`),
   update: (id: string, data: Record<string, unknown>) => api.patch(`/users/${id}`, data),
   deactivate: (id: string) => api.delete(`/users/${id}`),
+  getGrantPreferences: () => api.get('/users/me/grant-preferences'),
+  updateGrantPreferences: (data: Record<string, unknown>) =>
+    api.patch('/users/me/grant-preferences', data),
 };
 
 // ── Opportunities ────────────────────────────────────────────────────────────
@@ -357,7 +370,7 @@ export function streamEditorChat(
 ): AbortController {
   const controller = new AbortController();
   const token = typeof window !== 'undefined' ? localStorage.getItem('access_token') : null;
-  const baseUrl = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8000';
+  const baseUrl = getApiBaseUrl();
 
   fetch(`${baseUrl}/api/v1/ai/editor-chat-stream`, {
     method: 'POST',
@@ -415,7 +428,7 @@ export function streamWritingChat(
 ): AbortController {
   const controller = new AbortController();
   const token = typeof window !== 'undefined' ? localStorage.getItem('access_token') : null;
-  const baseUrl = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8000';
+  const baseUrl = getApiBaseUrl();
 
   fetch(`${baseUrl}/api/v1/grants/${grantId}/writing/chat-stream`, {
     method: 'POST',
@@ -466,7 +479,7 @@ export function streamDraftGeneration(
 ): AbortController {
   const controller = new AbortController();
   const token = typeof window !== 'undefined' ? localStorage.getItem('access_token') : null;
-  const baseUrl = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8000';
+  const baseUrl = getApiBaseUrl();
 
   fetch(`${baseUrl}/api/v1/grants/${grantId}/writing/generate-draft`, {
     method: 'POST',

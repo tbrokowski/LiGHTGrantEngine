@@ -191,13 +191,11 @@ interface NewGrantForm {
 function NewGrantModal({
   onClose,
   onCreated,
-  defaultPersonal = false,
 }: {
   onClose: () => void;
   onCreated: (id: string) => void;
-  defaultPersonal?: boolean;
 }) {
-  const [isPersonal, setIsPersonal] = useState(defaultPersonal);
+  const [isPersonal, setIsPersonal] = useState(false);
   const [form, setForm] = useState<NewGrantForm>({
     title: '',
     funder: '',
@@ -603,7 +601,6 @@ export default function GrantsPage() {
   const [activeGroup, setActiveGroup] = useState('all');
   const [search, setSearch] = useState('');
   const [showModal, setShowModal] = useState(false);
-  const [defaultPersonal, setDefaultPersonal] = useState(false);
 
   function loadGrants() {
     grants.list({})
@@ -617,11 +614,6 @@ export default function GrantsPage() {
     loadGrants();
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
-
-  function openModal(personal: boolean) {
-    setDefaultPersonal(personal);
-    setShowModal(true);
-  }
 
   function handleCreated(id: string) {
     router.push(`/grants/${id}`);
@@ -698,33 +690,21 @@ export default function GrantsPage() {
         <NewGrantModal
           onClose={() => setShowModal(false)}
           onCreated={handleCreated}
-          defaultPersonal={defaultPersonal}
         />
       )}
 
       {/* ── Header ── */}
       <div className="flex items-center justify-between mb-6">
         <h1 className="text-xl font-semibold text-gray-900 tracking-tight">Grants</h1>
-        <div className="flex items-center gap-2">
-          <button
-            onClick={() => openModal(true)}
-            className="flex items-center gap-1.5 px-3 py-2 text-sm font-medium text-gray-700 bg-white border border-gray-200 rounded-xl hover:bg-gray-50 transition-colors"
-          >
-            <svg className="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2.5}>
-              <path strokeLinecap="round" strokeLinejoin="round" d="M12 4v16m8-8H4" />
-            </svg>
-            Personal draft
-          </button>
-          <button
-            onClick={() => openModal(false)}
-            className="flex items-center gap-1.5 px-4 py-2 text-sm font-medium text-white bg-gray-900 rounded-xl hover:bg-gray-700 transition-colors"
-          >
-            <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2.5}>
-              <path strokeLinecap="round" strokeLinejoin="round" d="M12 4v16m8-8H4" />
-            </svg>
-            New Grant
-          </button>
-        </div>
+        <button
+          onClick={() => setShowModal(true)}
+          className="flex items-center gap-1.5 px-4 py-2 text-sm font-medium text-white bg-gray-900 rounded-xl hover:bg-gray-700 transition-colors"
+        >
+          <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2.5}>
+            <path strokeLinecap="round" strokeLinejoin="round" d="M12 4v16m8-8H4" />
+          </svg>
+          Grant
+        </button>
       </div>
 
       {/* ── My Drafts section ── */}
@@ -822,7 +802,7 @@ export default function GrantsPage() {
           <div className="bg-white border border-gray-100 rounded-2xl shadow-sm px-6 py-16 text-center">
             <p className="text-sm font-medium text-gray-400">No grants yet.</p>
             <p className="text-xs text-gray-400 mt-1">
-              Create a personal draft to prototype, or add a grant to your org portfolio.
+              Use + Grant to create an organization grant or a private personal draft.
             </p>
             <Link
               href="/opportunities"

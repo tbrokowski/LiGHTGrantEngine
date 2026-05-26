@@ -33,6 +33,7 @@ class User(Base):
     team: Mapped[str | None] = mapped_column(String(200))
     is_active: Mapped[bool] = mapped_column(Boolean, default=True)
     notification_preferences: Mapped[dict] = mapped_column(JSON, default=dict)
+    grant_preferences: Mapped[dict] = mapped_column(JSON, default=dict)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
     last_login: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
     # Institution membership

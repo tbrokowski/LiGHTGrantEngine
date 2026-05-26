@@ -169,7 +169,8 @@ export default function GanttView({ grantId, items, onRefresh }: Props) {
     setExporting(true);
     try {
       const token = typeof window !== 'undefined' ? localStorage.getItem('access_token') : null;
-      const base = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8000';
+      const { getApiBaseUrl } = await import('@/lib/api-base-url');
+      const base = getApiBaseUrl();
       const res = await fetch(`${base}/api/v1/grants/${grantId}/gantt/export-pdf`, {
         headers: token ? { Authorization: `Bearer ${token}` } : {},
       });
