@@ -9,6 +9,7 @@ import { InvitePanel } from '@/components/settings/InvitePanel';
 import { ProfilePanel } from '@/components/settings/ProfilePanel';
 import { GrantFiltersPanel } from '@/components/settings/GrantFiltersPanel';
 import { useAuth } from '@/lib/auth';
+import type { AuthUser } from '@/lib/auth';
 
 function GoogleIntegrationCard() {
   const { user, refresh } = useAuth();
@@ -242,11 +243,142 @@ function ScraperConfigPanel({ sourceType, config, onChange }: ScraperConfigPanel
   return null;
 }
 
-type Tab = 'sources' | 'organization' | 'profile' | 'integrations';
+type Tab = 'sources' | 'organization' | 'profile' | 'integrations' | 'usage';
+
+function UsageTab({ user }: { user: AuthUser | null }) {
+  if (!user) return <p className="text-sm text-gray-400">Loading…</p>;
+
+  const used = user.ai_usage_cents;
+  const limit = user.ai_usage_limit_cents;
+  const hasLimit = limit > 0;
+  const pct = hasLimit ? Math.min(100, Math.round((used / limit) * 100)) : 0;
+  const usedDollars = (used / 100).toFixed(2);
+  const limitDollars = hasLimit ? (limit / 100).toFixed(2) : null;
+
+  const barColor =
+    pct >= 100 ? 'bg-red-500' :
+    pct >= 80  ? 'bg-amber-500' :
+    'bg-indigo-500';
+
+  const statusColor =
+    pct >= 100 ? 'text-red-600' :
+    pct >= 80  ? 'text-amber-600' :
+    'text-emerald-600';
+
+  const statusLabel =
+    pct >= 100 ? 'Limit reached' :
+    pct >= 80  ? 'Approaching limit' :
+    'Within limit';
+
+  return (
+    <div className="max-w-lg space-y-8">
+      <div>
+        <h2 className="text-base font-semibold text-gray-900 mb-1">Usage</h2>
+        <p className="text-sm text-gray-500">Monitor your AI usage and current limits for this billing period.</p>
+      </div>
+
+      {/* AI Usage card */}
+      <div className="border border-gray-200 rounded-2xl overflow-hidden">
+        <div className="px-5 py-4 border-b border-gray-100 flex items-center justify-between">
+          <div className="flex items-center gap-2.5">
+            <div className="w-8 h-8 rounded-lg bg-indigo-50 flex items-center justify-center">
+              <svg className="w-4 h-4 text-indigo-600" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+                <path strokeLinecap="round" strokeLinejoin="round" d="M9.813 15.904L9 18.75l-.813-2.846a4.5 4.5 0 00-3.09-3.09L2.25 12l2.846-.813a4.5 4.5 0 003.09-3.09L9 5.25l.813 2.846a4.5 4.5 0 003.09 3.09L15.75 12l-2.846.813a4.5 4.5 0 00-3.09 3.09z" />
+              </svg>
+            </div>
+            <div>
+              <p className="text-sm font-semibold text-gray-900">AI Usage</p>
+              <p className="text-xs text-gray-400">Current billing period</p>
+            </div>
+          </div>
+          {hasLimit && (
+            <span className={`text-xs font-medium ${statusColor}`}>{statusLabel}</span>
+          )}
+        </div>
+
+        <div className="px-5 py-5 space-y-4">
+          <div className="flex items-end justify-between">
+            <div>
+              <span className="text-3xl font-semibold text-gray-900">${usedDollars}</span>
+              {limitDollars && (
+                <span className="text-lg text-gray-400 ml-1">/ ${limitDollars}</span>
+              )}
+            </div>
+            {hasLimit && (
+              <span className="text-sm font-medium text-gray-500">{pct}% used</span>
+            )}
+          </div>
+
+          {hasLimit && (
+            <div>
+              <div className="w-full h-2.5 bg-gray-100 rounded-full overflow-hidden">
+                <div
+                  className={`h-full rounded-full transition-all duration-500 ${barColor}`}
+                  style={{ width: `${pct}%` }}
+                />
+              </div>
+              <div className="flex justify-between mt-1.5">
+                <span className="text-xs text-gray-400">$0.00</span>
+                <span className="text-xs text-gray-400">${limitDollars}</span>
+              </div>
+            </div>
+          )}
+
+          {!hasLimit && (
+            <p className="text-sm text-gray-400">No usage limit is set for your account.</p>
+          )}
+        </div>
+
+        {pct >= 100 && (
+          <div className="px-5 py-3 bg-red-50 border-t border-red-100 flex items-start gap-2.5">
+            <svg className="w-4 h-4 text-red-500 shrink-0 mt-0.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+              <path strokeLinecap="round" strokeLinejoin="round" d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z" />
+            </svg>
+            <div>
+              <p className="text-xs font-medium text-red-800">AI features are temporarily unavailable</p>
+              <p className="text-xs text-red-600 mt-0.5">You have reached your usage limit. Contact support to increase your limit.</p>
+            </div>
+          </div>
+        )}
+
+        {pct >= 80 && pct < 100 && (
+          <div className="px-5 py-3 bg-amber-50 border-t border-amber-100 flex items-center gap-2.5">
+            <svg className="w-4 h-4 text-amber-500 shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+              <path strokeLinecap="round" strokeLinejoin="round" d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
+            </svg>
+            <p className="text-xs text-amber-800">You are approaching your usage limit. Contact support if you need more capacity.</p>
+          </div>
+        )}
+      </div>
+
+      {/* Limits info */}
+      {hasLimit && (
+        <div className="border border-gray-200 rounded-2xl px-5 py-4 space-y-3">
+          <p className="text-sm font-semibold text-gray-900">Limits</p>
+          <div className="space-y-2">
+            <div className="flex items-center justify-between text-sm">
+              <span className="text-gray-500">AI usage limit</span>
+              <span className="font-medium text-gray-900">${limitDollars} / period</span>
+            </div>
+            <div className="flex items-center justify-between text-sm">
+              <span className="text-gray-500">Remaining</span>
+              <span className={`font-medium ${pct >= 100 ? 'text-red-600' : 'text-gray-900'}`}>
+                ${Math.max(0, (limit - used) / 100).toFixed(2)}
+              </span>
+            </div>
+          </div>
+          <p className="text-xs text-gray-400 pt-1 border-t border-gray-100">
+            To request a limit increase, contact your administrator or support.
+          </p>
+        </div>
+      )}
+    </div>
+  );
+}
 
 function SettingsPageInner() {
   const searchParams = useSearchParams();
-  const { refresh } = useAuth();
+  const { refresh, user: authUser } = useAuth();
   const googleConnected = searchParams.get('google_connected');
   const [activeTab, setActiveTab] = useState<Tab>(() => {
     return (searchParams.get('tab') as Tab) ?? 'sources';
@@ -403,6 +535,7 @@ function SettingsPageInner() {
     { id: 'organization', label: 'Organization', show: isAdmin && hasInstitution },
     { id: 'profile', label: 'My Profile', show: true },
     { id: 'integrations', label: 'Integrations', show: true },
+    { id: 'usage', label: 'Usage', show: true },
   ];
 
   return (
@@ -462,6 +595,11 @@ function SettingsPageInner() {
           <JoinRequestsPanel institutionId={currentUser.institution_id} />
           <InvitePanel institutionId={currentUser.institution_id} />
         </div>
+      )}
+
+      {/* Usage tab */}
+      {activeTab === 'usage' && (
+        <UsageTab user={authUser} />
       )}
 
       {/* Data Sources tab */}

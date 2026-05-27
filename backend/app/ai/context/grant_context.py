@@ -159,30 +159,30 @@ class GrantContextManager:
         user_query: str | None = None,
         include_rag: bool = True,
         conversation: GrantWritingConversation | None = None,
+        user: object | None = None,
     ) -> GrantContext:
         ctx = GrantContext()
         html = document_html or grant.editor_document or ""
         ctx.document_sections = parse_document_sections(html, grant.proposal_skeleton)
 
-        # Include linked Google Doc content so the AI can read the live proposal
-        if grant.google_doc_id:
+        # Include linked Google Doc content so the AI can read the live proposal.
+        # Requires the user to have connected their Google account.
+        if grant.google_doc_id and user is not None:
             try:
-                from app.config import get_settings as _get_settings
-                _settings = _get_settings()
-                sa_file = _settings.google_drive.service_account_file
-                if sa_file and sa_file != "/path/to/service-account.json":
-                    from app.services.google_docs import read_document_as_text
-                    import asyncio
-                    gdoc_text = await asyncio.get_event_loop().run_in_executor(
-                        None, read_document_as_text, grant.google_doc_id, sa_file
+                from app.services.google_auth import get_valid_google_token
+                from app.services.google_docs import read_document_as_text
+                import asyncio
+                access_token = await get_valid_google_token(user, db)  # type: ignore[arg-type]
+                gdoc_text = await asyncio.get_event_loop().run_in_executor(
+                    None, read_document_as_text, grant.google_doc_id, access_token
+                )
+                if gdoc_text:
+                    ctx.layers["google_doc"] = (
+                        f"LINKED GOOGLE DOC (live content — {len(gdoc_text.split())} words):\n"
+                        + gdoc_text[:8000]
                     )
-                    if gdoc_text:
-                        ctx.layers["google_doc"] = (
-                            f"LINKED GOOGLE DOC (live content — {len(gdoc_text.split())} words):\n"
-                            + gdoc_text[:8000]
-                        )
             except Exception:
-                pass  # Google Docs not configured or unavailable — continue without it
+                pass  # Google not connected or token invalid — continue without it
 
         if active_section_title:
             for sec in ctx.document_sections:

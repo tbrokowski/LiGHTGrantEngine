@@ -374,6 +374,7 @@ async def writing_chat_stream(
         document_html=req.document_context,
         user_query=last_user,
         conversation=conv,
+        user=current_user,
     )
     system_message = context_mgr.to_system_prompt(ctx)
     if req.selected_text:

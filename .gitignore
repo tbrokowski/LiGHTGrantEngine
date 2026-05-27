@@ -59,3 +59,5 @@ frontend/tsconfig.tsbuildinfo
 *.xlsx
 grant_funding_portals.xlsx
 backend/scripts/Opportunities.xlsx
+grantengine-497611-4efbab3b1d10.json
+*-serviceaccount*.json

@@ -2,7 +2,6 @@
 import { useRef, useState } from 'react';
 import { useAuth } from '@/lib/auth';
 import { clearAuthSession } from '@/lib/auth-cookie';
-import UsageIndicator from '@/components/ai/UsageIndicator';
 
 export default function TopBar() {
   const { user } = useAuth();
@@ -19,7 +18,6 @@ export default function TopBar() {
       <div />
       {user && (
         <div className="flex items-center gap-4">
-          <UsageIndicator />
           <div ref={ref} className="relative">
           <button
             onClick={() => setOpen(o => !o)}

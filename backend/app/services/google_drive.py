@@ -1,8 +1,8 @@
 """Google Drive integration — auto-folder creation for grant workspaces.
 
-Uses a service-account JSON key (set google_drive.service_account_file in
-config.yaml) so no user OAuth flow is required.  Share the parent folder
-with the service account's email address before use.
+Uses the connected user's OAuth access token so folders are created in the
+user's own Google Drive.  Call google_auth.get_valid_google_token() before
+invoking these functions to ensure the token is not expired.
 
 Requires: google-api-python-client, google-auth  (see requirements.txt)
 """
@@ -23,31 +23,31 @@ SUBFOLDER_NAMES = [
 ]
 
 _FOLDER_MIME = "application/vnd.google-apps.folder"
+_DRIVE_SCOPES = ["https://www.googleapis.com/auth/drive"]
 
 
-def _build_service(service_account_file: str) -> Any:
-    from google.oauth2 import service_account  # type: ignore[import]
+def _build_service(access_token: str) -> Any:
+    from google.oauth2.credentials import Credentials  # type: ignore[import]
     from googleapiclient.discovery import build  # type: ignore[import]
 
-    creds = service_account.Credentials.from_service_account_file(
-        service_account_file,
-        scopes=["https://www.googleapis.com/auth/drive"],
-    )
+    creds = Credentials(token=access_token)
     return build("drive", "v3", credentials=creds, cache_discovery=False)
 
 
-def _create_folder(service: Any, name: str, parent_id: str) -> str:
-    body = {"name": name[:255], "mimeType": _FOLDER_MIME, "parents": [parent_id]}
+def _create_folder(service: Any, name: str, parent_id: str | None) -> str:
+    body: dict[str, Any] = {"name": name[:255], "mimeType": _FOLDER_MIME}
+    if parent_id:
+        body["parents"] = [parent_id]
     result = service.files().create(body=body, fields="id").execute()
     return result["id"]
 
 
 def create_grant_folder_tree(
     grant_title: str,
-    service_account_file: str,
-    parent_folder_id: str,
+    access_token: str,
+    parent_folder_id: str | None = None,
 ) -> dict[str, str]:
-    """Create a structured grant folder in Google Drive.
+    """Create a structured grant folder in the user's Google Drive.
 
     Folder layout::
 
@@ -59,10 +59,16 @@ def create_grant_folder_tree(
             Call Documents/
             Correspondence/
 
+    Args:
+        grant_title: Name for the root folder.
+        access_token: Valid Google OAuth access token for the user.
+        parent_folder_id: Optional Drive folder ID to create inside. If None,
+            the folder is created in the user's Drive root.
+
     Returns:
         dict with ``root_folder_id`` and ``root_folder_url``.
     """
-    service = _build_service(service_account_file)
+    service = _build_service(access_token)
     root_id = _create_folder(service, grant_title, parent_folder_id)
 
     for subfolder in SUBFOLDER_NAMES:

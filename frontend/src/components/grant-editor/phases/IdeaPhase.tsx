@@ -197,7 +197,8 @@ export default function IdeaPhase({
   const docLinked = !!googleDocId;
 
   return (
-    <div className="flex-1 overflow-y-auto p-6 max-w-4xl mx-auto w-full space-y-6">
+    <div className="flex-1 overflow-y-auto">
+      <div className="max-w-4xl mx-auto w-full p-6 space-y-6">
       {/* Grant Idea */}
       <div>
         <h2 className="text-sm font-semibold text-gray-800 mb-1">Your Grant Idea</h2>
@@ -445,6 +446,7 @@ export default function IdeaPhase({
           {generating ? <Loader2 className="w-4 h-4 animate-spin" /> : <Sparkles className="w-4 h-4" />}
           Generate Skeleton
         </button>
+      </div>
       </div>
     </div>
   );

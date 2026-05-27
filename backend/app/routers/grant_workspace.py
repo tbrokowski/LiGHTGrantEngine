@@ -1385,24 +1385,12 @@ async def create_drive_folder(
     """Create a structured Google Drive folder tree for this grant and store the URL."""
     grant = await _get_grant_or_404(grant_id, db)
 
-    from app.config import get_settings
-
-    settings = get_settings()
-    drive_cfg = settings.google_drive
-    svc_account_file = drive_cfg.service_account_file
-    parent_folder_id = drive_cfg.parent_folder_id
-
-    if not svc_account_file or not parent_folder_id:
-        raise HTTPException(
-            503,
-            "Google Drive is not configured. Set google_drive.service_account_file "
-            "and google_drive.parent_folder_id in config.yaml.",
-        )
+    access_token = await _get_user_google_token(current_user, db)
 
     from app.services.google_drive import create_grant_folder_tree
 
     try:
-        result = create_grant_folder_tree(grant.title, svc_account_file, parent_folder_id)
+        result = create_grant_folder_tree(grant.title, access_token)
     except Exception as exc:
         raise HTTPException(502, f"Google Drive API error: {exc}") from exc
 
@@ -1510,31 +1498,22 @@ async def _sync_workspace_sections_from_headings(
 
 # ── Google Docs sync ───────────────────────────────────────────────────────────
 
-def _get_drive_config():
-    import os
-    from app.config import get_settings
-    settings = get_settings()
-    cfg = settings.google_drive
+async def _get_user_google_token(user: User, db: AsyncSession) -> str:
+    """Return a valid Google OAuth token for the user, or raise 403."""
+    from app.services.google_auth import get_valid_google_token
 
-    if not cfg.enabled:
+    if not user.google_access_token or not user.google_refresh_token:
         raise HTTPException(
-            503,
-            "Google Drive/Docs integration is disabled. "
-            "Set google_drive.enabled: true and configure service_account_file in config.yaml.",
+            403,
+            "Google account not connected. Go to Settings to connect your Google account.",
         )
-    placeholder = "/path/to/service-account.json"
-    if not cfg.service_account_file or cfg.service_account_file == placeholder:
+    try:
+        return await get_valid_google_token(user, db)
+    except Exception as exc:
         raise HTTPException(
-            503,
-            "Google Drive service account not configured. "
-            "Set google_drive.service_account_file to a valid path in config.yaml.",
-        )
-    if not os.path.exists(cfg.service_account_file):
-        raise HTTPException(
-            503,
-            f"Google Drive service account file not found at: {cfg.service_account_file}",
-        )
-    return cfg
+            403,
+            f"Unable to refresh Google token. Please reconnect your Google account in Settings. ({exc})",
+        ) from exc
 
 
 @router.get("/{grant_id}/docs/status")
@@ -1569,7 +1548,7 @@ async def create_google_doc(
             "created": False,
         }
 
-    cfg = _get_drive_config()
+    access_token = await _get_user_google_token(current_user, db)
     from app.services.google_docs import create_grant_doc
 
     # Use the grant's Drive folder id if available (extract from folder URL)
@@ -1581,7 +1560,7 @@ async def create_google_doc(
         result = create_grant_doc(
             title=grant.title,
             content_html=grant.editor_document or "",
-            service_account_file=cfg.service_account_file,
+            access_token=access_token,
             parent_folder_id=parent_folder_id,
         )
     except Exception as exc:
@@ -1667,14 +1646,14 @@ async def push_to_google_doc(
     if not grant.editor_document:
         raise HTTPException(400, "No document content to push.")
 
-    cfg = _get_drive_config()
+    access_token = await _get_user_google_token(current_user, db)
     from app.services.google_docs import push_to_doc
 
     try:
         push_to_doc(
             doc_id=grant.google_doc_id,
             content_html=grant.editor_document,
-            service_account_file=cfg.service_account_file,
+            access_token=access_token,
         )
     except Exception as exc:
         raise HTTPException(502, f"Google Docs API error: {exc}") from exc
@@ -1703,13 +1682,13 @@ async def pull_from_google_doc(
     if not grant.google_doc_id:
         raise HTTPException(400, "No Google Doc linked. Create one first via POST /docs/create.")
 
-    cfg = _get_drive_config()
+    access_token = await _get_user_google_token(current_user, db)
     from app.services.google_docs import pull_from_doc
 
     try:
         html = pull_from_doc(
             doc_id=grant.google_doc_id,
-            service_account_file=cfg.service_account_file,
+            access_token=access_token,
         )
     except Exception as exc:
         raise HTTPException(502, f"Google Docs API error: {exc}") from exc
@@ -1743,13 +1722,13 @@ async def get_google_doc_content(
     if not grant.google_doc_id:
         raise HTTPException(400, "No Google Doc linked.")
 
-    cfg = _get_drive_config()
+    access_token = await _get_user_google_token(current_user, db)
     from app.services.google_docs import read_document_as_text
 
     try:
         text = read_document_as_text(
             doc_id=grant.google_doc_id,
-            service_account_file=cfg.service_account_file,
+            access_token=access_token,
         )
     except Exception as exc:
         raise HTTPException(502, f"Google Docs API error: {exc}") from exc

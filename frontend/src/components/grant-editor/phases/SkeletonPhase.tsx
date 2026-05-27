@@ -25,7 +25,8 @@ export default function SkeletonPhase({
   };
 
   return (
-    <div className="flex-1 overflow-y-auto p-6 max-w-3xl mx-auto w-full space-y-5">
+    <div className="flex-1 overflow-y-auto">
+      <div className="max-w-3xl mx-auto w-full p-6 space-y-5">
       {skeleton.title_suggestion && (
         <div className="text-sm bg-indigo-50 border border-indigo-100 rounded-lg px-4 py-3">
           <span className="font-medium text-indigo-800">Suggested title: </span>
@@ -85,6 +86,7 @@ export default function SkeletonPhase({
           {generating ? <Loader2 className="w-4 h-4 animate-spin" /> : <Sparkles className="w-4 h-4" />}
           Generate Full Draft
         </button>
+      </div>
       </div>
     </div>
   );

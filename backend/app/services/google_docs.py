@@ -1,10 +1,14 @@
 """Google Docs API integration for grant document sync.
 
-Uses the same service-account credentials as google_drive.py.
-Requires: google-api-python-client, google-auth
+Uses the connected user's OAuth access token so documents are created and
+edited in the user's own Google account.  Call
+google_auth.get_valid_google_token() before invoking these functions to ensure
+the token is not expired.
 
 Push flow:  TipTap HTML  →  parse with html.parser  →  Docs API batchUpdate
 Pull flow:  Docs API document body  →  walk structural elements  →  HTML string
+
+Requires: google-api-python-client, google-auth
 """
 from __future__ import annotations
 
@@ -31,25 +35,21 @@ _TAG_TO_STYLE: dict[str, str] = {
 }
 
 
-# ── Service builder ────────────────────────────────────────────────────────────
+# ── Service builders ───────────────────────────────────────────────────────────
 
-def _build_docs_service(service_account_file: str) -> Any:
-    from google.oauth2 import service_account  # type: ignore[import]
+def _build_docs_service(access_token: str) -> Any:
+    from google.oauth2.credentials import Credentials  # type: ignore[import]
     from googleapiclient.discovery import build  # type: ignore[import]
 
-    creds = service_account.Credentials.from_service_account_file(
-        service_account_file, scopes=_DOCS_SCOPES
-    )
+    creds = Credentials(token=access_token)
     return build("docs", "v1", credentials=creds, cache_discovery=False)
 
 
-def _build_drive_service(service_account_file: str) -> Any:
-    from google.oauth2 import service_account  # type: ignore[import]
+def _build_drive_service(access_token: str) -> Any:
+    from google.oauth2.credentials import Credentials  # type: ignore[import]
     from googleapiclient.discovery import build  # type: ignore[import]
 
-    creds = service_account.Credentials.from_service_account_file(
-        service_account_file, scopes=_DOCS_SCOPES
-    )
+    creds = Credentials(token=access_token)
     return build("drive", "v3", credentials=creds, cache_discovery=False)
 
 
@@ -122,9 +122,6 @@ def _html_to_paragraphs(html: str) -> list[dict[str, Any]]:
 def _build_insert_requests(paragraphs: list[dict[str, Any]]) -> list[dict]:
     """Build Docs API batchUpdate requests to insert all paragraphs."""
     requests: list[dict] = []
-    # Insert from end so indexes don't shift; we'll build in reverse
-    # Instead, we insert at index 1 (after the implicit first para) and build forward
-    # using insertText then updateParagraphStyle per paragraph.
     index = 1  # Start at beginning of body
 
     for para in paragraphs:
@@ -157,22 +154,27 @@ def _build_insert_requests(paragraphs: list[dict[str, Any]]) -> list[dict]:
 def create_grant_doc(
     title: str,
     content_html: str,
-    service_account_file: str,
+    access_token: str,
     parent_folder_id: str | None = None,
 ) -> dict[str, str]:
     """Create a new Google Doc with grant content and return doc_id + doc_url.
 
     If parent_folder_id is provided, move the doc into that Drive folder.
+
+    Args:
+        title: Document title.
+        content_html: Initial HTML content.
+        access_token: Valid Google OAuth access token for the user.
+        parent_folder_id: Optional Drive folder ID to place the doc in.
     """
-    docs_svc = _build_docs_service(service_account_file)
+    docs_svc = _build_docs_service(access_token)
 
     doc = docs_svc.documents().create(body={"title": title[:255]}).execute()
     doc_id: str = doc["documentId"]
     doc_url = f"https://docs.google.com/document/d/{doc_id}/edit"
 
     if parent_folder_id:
-        drive_svc = _build_drive_service(service_account_file)
-        # Move into the grant's Drive folder
+        drive_svc = _build_drive_service(access_token)
         file_meta = drive_svc.files().get(fileId=doc_id, fields="parents").execute()
         old_parents = ",".join(file_meta.get("parents", []))
         drive_svc.files().update(
@@ -192,12 +194,17 @@ def create_grant_doc(
 def push_to_doc(
     doc_id: str,
     content_html: str,
-    service_account_file: str,
+    access_token: str,
 ) -> None:
-    """Overwrite Google Doc body with content_html."""
-    docs_svc = _build_docs_service(service_account_file)
+    """Overwrite Google Doc body with content_html.
 
-    # Fetch current doc to get body end index
+    Args:
+        doc_id: Google Docs document ID.
+        content_html: HTML content to write.
+        access_token: Valid Google OAuth access token for the user.
+    """
+    docs_svc = _build_docs_service(access_token)
+
     doc = docs_svc.documents().get(documentId=doc_id).execute()
     body = doc.get("body", {})
     content = body.get("content", [])
@@ -208,7 +215,6 @@ def push_to_doc(
 
     requests: list[dict] = []
 
-    # Delete existing body content (keep at least 1 char)
     if end_index > 2:
         requests.append(
             {
@@ -218,7 +224,6 @@ def push_to_doc(
             }
         )
 
-    # Insert new content
     paragraphs = _html_to_paragraphs(content_html)
     requests.extend(_build_insert_requests(paragraphs))
 
@@ -232,10 +237,15 @@ def push_to_doc(
 
 def pull_from_doc(
     doc_id: str,
-    service_account_file: str,
+    access_token: str,
 ) -> str:
-    """Read Google Doc and return HTML representation."""
-    docs_svc = _build_docs_service(service_account_file)
+    """Read Google Doc and return HTML representation.
+
+    Args:
+        doc_id: Google Docs document ID.
+        access_token: Valid Google OAuth access token for the user.
+    """
+    docs_svc = _build_docs_service(access_token)
     doc = docs_svc.documents().get(documentId=doc_id).execute()
     body = doc.get("body", {})
     content = body.get("content", [])
@@ -274,14 +284,18 @@ def pull_from_doc(
 
 def read_document_as_text(
     doc_id: str,
-    service_account_file: str,
+    access_token: str,
 ) -> str:
     """Read a Google Doc and return its content as plain text.
 
     Used by the AI context manager to include linked Google Doc content
     in the grant writing assistant's system prompt.
+
+    Args:
+        doc_id: Google Docs document ID.
+        access_token: Valid Google OAuth access token for the user.
     """
-    docs_svc = _build_docs_service(service_account_file)
+    docs_svc = _build_docs_service(access_token)
     doc = docs_svc.documents().get(documentId=doc_id).execute()
     body = doc.get("body", {})
     content = body.get("content", [])
