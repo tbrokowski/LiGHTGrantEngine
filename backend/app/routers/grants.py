@@ -69,6 +69,7 @@ class GrantCreate(BaseModel):
     themes: list[str] = []
     geographies: list[str] = []
     is_personal: bool = False
+    color: Optional[str] = None
 
 
 class GrantUpdate(BaseModel):
@@ -87,6 +88,7 @@ class GrantUpdate(BaseModel):
     notes: Optional[str] = None
     call_requirements: Optional[str] = None
     reporting_deadlines: Optional[list] = None
+    color: Optional[str] = None
 
 
 class StageTransition(BaseModel):
@@ -669,6 +671,7 @@ def _grant_summary(g: ActiveGrant) -> dict:
         "requested_amount": g.requested_amount,
         "currency": g.currency,
         "award_amount": g.award_amount,
+        "color": g.color,
         "created_at": str(g.created_at) if g.created_at else None,
         "updated_at": str(g.updated_at) if g.updated_at else None,
     }

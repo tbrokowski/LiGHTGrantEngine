@@ -38,6 +38,8 @@ _CONTENT_SELECTORS = [
     "main",
 ]
 
+_UKRI_GTR_API_PREFIX = "https://gtr.ukri.org/gtr/api/projects/"
+
 _USER_AGENT = "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36"
 _BROWSER_HEADERS = {
     "User-Agent": _USER_AGENT,
@@ -258,6 +260,56 @@ def _parse_html(html: str, detail_selectors: list[str] | None) -> dict:
     }
 
 
+def _fetch_ukri_gtr_api(url: str) -> dict:
+    """
+    Fetch a UKRI GtR JSON API project URL and convert it to the standard result dict.
+    The JSON API endpoint returns structured project data including abstractText.
+    """
+    try:
+        resp = httpx.get(
+            url,
+            timeout=30,
+            follow_redirects=True,
+            headers={
+                "Accept": "application/vnd.rcuk.gtr.json-v7",
+                "User-Agent": "LiGHT Grant System/1.0",
+            },
+        )
+        resp.raise_for_status()
+        data = resp.json()
+    except httpx.HTTPStatusError as e:
+        return _empty_result(f"HTTP {e.response.status_code} for {url}")
+    except Exception as e:
+        return _empty_result(str(e))
+
+    abstract = data.get("abstractText") or ""
+    title = data.get("title") or ""
+    grant_category = data.get("grantCategory") or ""
+    status = data.get("status") or ""
+
+    parts = []
+    if title:
+        parts.append(f"## {title}")
+    if grant_category:
+        parts.append(f"**Category:** {grant_category}")
+    if status:
+        parts.append(f"**Status:** {status}")
+    if abstract:
+        parts.append(abstract)
+
+    description = _clean_text("\n\n".join(parts)) if parts else None
+    parsed_text = description
+
+    return {
+        "description": description[:100_000] if description else None,
+        "parsed_text": parsed_text[:400_000] if parsed_text else None,
+        "short_summary": _extract_short_summary(_strip_markdown(abstract)) if abstract else None,
+        "pdf_urls": [],
+        "pdf_anchors": {},
+        "error": None if description else "no_content",
+    }
+
+
 def _empty_result(error: str | None = None) -> dict:
     return {
         "description": None,
@@ -306,6 +358,9 @@ class DetailPageParser:
                 "pdf_anchors": {},
                 "error": None,
             }
+
+        if url.startswith(_UKRI_GTR_API_PREFIX):
+            return _fetch_ukri_gtr_api(url)
 
         html, fetch_error = _fetch_html_httpx(url, self.timeout)
 

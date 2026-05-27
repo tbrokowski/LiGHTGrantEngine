@@ -155,7 +155,7 @@ export default function CallRequirementsPanel({ callAnalysis }: CallRequirements
       ) : null}
 
       {/* Required sections with per-section limits */}
-      {(requiredSections?.length || (sectionRequirements && Object.keys(sectionRequirements).length)) ? (
+      {(Array.isArray(requiredSections) && requiredSections.length > 0 || (sectionRequirements && Object.keys(sectionRequirements).length)) ? (
         <Section title="Required Sections">
           <div className="bg-white border border-gray-200 rounded-lg divide-y divide-gray-100">
             {(requiredSections || Object.keys(sectionRequirements || {})).map((sec, i) => {
@@ -185,7 +185,7 @@ export default function CallRequirementsPanel({ callAnalysis }: CallRequirements
       ) : null}
 
       {/* Evaluation criteria */}
-      {evaluationCriteria?.length ? (
+      {Array.isArray(evaluationCriteria) && evaluationCriteria.length > 0 ? (
         <Section title="Evaluation Criteria">
           <div className="bg-white border border-gray-200 rounded-lg p-3 space-y-1">
             {evaluationCriteria.map((c, i) => (
@@ -256,7 +256,7 @@ export default function CallRequirementsPanel({ callAnalysis }: CallRequirements
       )}
 
       {/* Risks */}
-      {risks?.length ? (
+      {Array.isArray(risks) && risks.length > 0 ? (
         <Section title="Risks & Concerns">
           <div className="bg-red-50 border border-red-100 rounded-lg p-3 space-y-1">
             {risks.map((r, i) => (
@@ -270,7 +270,7 @@ export default function CallRequirementsPanel({ callAnalysis }: CallRequirements
       ) : null}
 
       {/* Missing information */}
-      {missingInformation?.length ? (
+      {Array.isArray(missingInformation) && missingInformation.length > 0 ? (
         <Section title="Still Need to Find Out">
           <div className="bg-gray-50 border border-gray-200 rounded-lg p-3 space-y-1">
             {missingInformation.map((m, i) => (
@@ -284,7 +284,7 @@ export default function CallRequirementsPanel({ callAnalysis }: CallRequirements
       ) : null}
 
       {/* Next steps */}
-      {recommendedNextSteps?.length ? (
+      {Array.isArray(recommendedNextSteps) && recommendedNextSteps.length > 0 ? (
         <Section title="Recommended Next Steps">
           <div className="bg-indigo-50 border border-indigo-100 rounded-lg p-3 space-y-1">
             {recommendedNextSteps.map((step, i) => (

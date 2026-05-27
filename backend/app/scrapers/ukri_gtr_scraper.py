@@ -14,6 +14,11 @@ logger = structlog.get_logger()
 _BASE_URL = "https://gtr.ukri.org/gtr/api"
 _PROJECTS_URL = f"{_BASE_URL}/projects"
 
+# The old public portal (https://gtr.ukri.org/projects?ref=<UUID>) returns 404.
+# Use the stable JSON API endpoint as the opportunity URL so enrichment can parse it.
+def _project_api_url(proj_id: str) -> str:
+    return f"{_BASE_URL}/projects/{proj_id}"
+
 _DEFAULT_QUERY = "artificial intelligence health digital global"
 _PAGE_SIZE = 100
 
@@ -68,7 +73,7 @@ class UKRIGtRScraper(BaseScraper):
                     results.append(self._normalize({
                         "title": proj.get("title", ""),
                         "description": proj.get("abstractText", ""),
-                        "url": proj.get("url") or f"https://gtr.ukri.org/projects?ref={proj_id}",
+                        "url": _project_api_url(proj_id),
                         "funder": f"UKRI – {funder_name}",
                         "deadline": fund.get("end") if isinstance(fund, dict) else None,
                         "program_name": proj.get("grantCategory") or proj.get("status"),
