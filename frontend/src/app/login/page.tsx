@@ -1,12 +1,14 @@
 'use client';
-import { useState, useEffect } from 'react';
-import { useRouter } from 'next/navigation';
+import { useState, useEffect, Suspense } from 'react';
+import { useRouter, useSearchParams } from 'next/navigation';
 import Link from 'next/link';
 import { auth } from '@/lib/api';
 import { setAuthSession } from '@/lib/auth-cookie';
 
-export default function LoginPage() {
+function LoginForm() {
   const router = useRouter();
+  const searchParams = useSearchParams();
+  const next = searchParams.get('next') || '/dashboard';
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [error, setError] = useState('');
@@ -14,9 +16,9 @@ export default function LoginPage() {
 
   useEffect(() => {
     if (typeof window !== 'undefined' && localStorage.getItem('access_token')) {
-      router.replace('/dashboard');
+      router.replace(next);
     }
-  }, [router]);
+  }, [router, next]);
 
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault();
@@ -25,7 +27,7 @@ export default function LoginPage() {
     try {
       const res = await auth.login(email, password);
       setAuthSession(res.data.access_token);
-      router.push('/dashboard');
+      router.push(next);
     } catch {
       setError('Invalid email or password.');
     } finally {
@@ -117,5 +119,13 @@ export default function LoginPage() {
         </div>
       </div>
     </div>
+  );
+}
+
+export default function LoginPage() {
+  return (
+    <Suspense>
+      <LoginForm />
+    </Suspense>
   );
 }

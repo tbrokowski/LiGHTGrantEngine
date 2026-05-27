@@ -63,7 +63,7 @@ export default function OpportunityRow({
         {formatAward(opp.award_min, opp.award_max, opp.currency) ?? '—'}
       </td>
       <td className="px-4 py-3.5 text-center">
-        <ScoreBadge priority={opp.priority} />
+        <ScoreBadge priority={opp.priority} fitScore={opp.fit_score} />
       </td>
       <td className="px-3 py-3.5">
         <OpportunityActions

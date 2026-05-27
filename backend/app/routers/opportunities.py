@@ -536,7 +536,7 @@ def _opp_summary(o: Opportunity, is_read: bool = False, io: InstitutionOpportuni
         "status": status, "thematic_areas": o.thematic_areas,
         "award_min": o.award_min, "award_max": o.award_max, "currency": o.currency,
         "date_discovered": str(o.date_discovered),
-        "short_summary": (io.ai_summary[:200] if io and io.ai_summary else None) or o.short_summary,
+        "short_summary": o.short_summary or (io.ai_summary[:300] if io and io.ai_summary else None) or (o.ai_summary[:300] if o.ai_summary else None),
         "description": o.description or o.parsed_text,
         "has_description": bool(o.description or o.parsed_text),
         "funder_logo_url": o.funder_logo_url,

@@ -100,6 +100,9 @@ def surface_opportunity_for_institutions(opportunity_id: str) -> dict:
     return {"surfaced": surfaced}
 
 
+_LLM_TIERS = {"high_priority", "worth_reviewing", "watchlist", "low_fit"}
+
+
 @celery_app.task(name="app.workers.surfacing_tasks.rescore_institution", bind=True, max_retries=2)
 def rescore_institution(self, institution_id: str) -> dict:
     from app.config import get_settings
@@ -125,6 +128,8 @@ def rescore_institution(self, institution_id: str) -> dict:
             .where(InstitutionOpportunity.institution_id == institution_id)
         ).all()
         for io, opp in rows:
+            if io.priority in _LLM_TIERS:
+                continue  # preserve LLM score, do not overwrite with keyword score
             try:
                 result = keyword_score_opportunity(
                     title=opp.title,
@@ -180,6 +185,8 @@ def rescore_opportunity_for_institutions(opportunity_id: str) -> dict:
         ).all()
 
         for io, inst in rows:
+            if io.priority in _LLM_TIERS:
+                continue  # preserve LLM score, do not overwrite with keyword score
             profile = GrantProfile.from_dict(inst.grant_profile or {})
             threshold = profile.auto_queue_threshold
             try:

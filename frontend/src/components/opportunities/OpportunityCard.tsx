@@ -39,7 +39,7 @@ export default function OpportunityCard({ opp, onClick, selected, variant = 'def
             </div>
           </div>
         </div>
-        <ScoreBadge priority={opp.priority} />
+        <ScoreBadge priority={opp.priority} fitScore={opp.fit_score} />
       </div>
 
       {variant === 'focus' ? (

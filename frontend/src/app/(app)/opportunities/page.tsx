@@ -15,12 +15,6 @@ import {
   type ViewMode,
 } from '@/components/opportunities/types';
 
-const PRIORITY_ORDER: Record<string, number> = {
-  high_priority: 0, high: 0,
-  worth_reviewing: 1, medium: 1,
-  watchlist: 2, low_fit: 3, low: 2,
-};
-
 const EMPTY_FILTERS: OpportunityFilters = {
   search: '',
   priority: '',
@@ -76,13 +70,8 @@ function applyFilters(items: Opportunity[], filters: OpportunityFilters): Opport
       return bVal - aVal;
     });
   }
-  // default: relevance — sort by priority tier then fit_score descending
-  return [...filtered].sort((a, b) => {
-    const pa = PRIORITY_ORDER[a.priority ?? ''] ?? 99;
-    const pb = PRIORITY_ORDER[b.priority ?? ''] ?? 99;
-    if (pa !== pb) return pa - pb;
-    return (b.fit_score ?? 0) - (a.fit_score ?? 0);
-  });
+  // default: relevance — sort by fit_score descending (LLM scores encode tier already)
+  return [...filtered].sort((a, b) => (b.fit_score ?? 0) - (a.fit_score ?? 0));
 }
 
 function ColHead({ children, className = '' }: { children: React.ReactNode; className?: string }) {

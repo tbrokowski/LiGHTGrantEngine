@@ -10,22 +10,28 @@ const TIER_STYLES: Record<string, string> = {
 };
 
 const TIER_LABELS: Record<string, string> = {
-  high: 'High',
-  medium: 'Medium',
-  low: 'Low',
-  high_priority: 'High',
-  worth_reviewing: 'Medium',
-  watchlist: 'Low',
-  low_fit: 'Low',
+  high: 'High Fit',
+  medium: 'Medium Fit',
+  low: 'Low Fit',
+  high_priority: 'High Fit',
+  worth_reviewing: 'Medium Fit',
+  watchlist: 'Low Fit',
+  low_fit: 'Low Fit',
 };
 
-export default function ScoreBadge({ priority }: { priority: string | null }) {
+export default function ScoreBadge({
+  priority,
+  fitScore,
+}: {
+  priority: string | null;
+  fitScore?: number | null;
+}) {
   if (!priority) return <span className="text-gray-300">—</span>;
   const style = TIER_STYLES[priority] ?? 'bg-gray-100 text-gray-500 border border-gray-200';
   const label = TIER_LABELS[priority] ?? priority.replace(/_/g, ' ');
   return (
     <span className={`inline-flex items-center justify-center px-2 h-6 rounded text-xs font-semibold ${style}`}>
-      {label}
+      {label}{fitScore != null ? ` · ${Math.round(fitScore)}` : ''}
     </span>
   );
 }
