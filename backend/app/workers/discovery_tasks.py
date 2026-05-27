@@ -319,10 +319,14 @@ def check_source_health():
     cutoff = datetime.utcnow() - timedelta(days=10)
 
     with Session(engine) as db:
+        # Only flag sources that have been scanned before but haven't been
+        # checked recently. Sources with last_checked=NULL have never run
+        # and should not be penalised — they're awaiting their first scan.
         stale = db.execute(
             select(Source).where(
                 Source.status == "active",
-                (Source.last_checked == None) | (Source.last_checked < cutoff)
+                Source.last_checked != None,
+                Source.last_checked < cutoff
             )
         ).scalars().all()
 
