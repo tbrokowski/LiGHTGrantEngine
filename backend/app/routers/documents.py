@@ -2,7 +2,6 @@
 import uuid
 from typing import Optional
 from fastapi import APIRouter, Depends, HTTPException, UploadFile, File, Form
-from fastapi.responses import RedirectResponse
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 from app.database import get_db
@@ -122,12 +121,11 @@ async def serve_document_content(
     r2_key = storage.resolve_storage_key(doc.notes)
     if r2_key and storage.object_exists(r2_key):
         presigned = storage.get_presigned_url(r2_key, expires_in=3600)
-        return RedirectResponse(url=presigned, status_code=302)
+        return {"url": presigned}
 
     # Fallback: return parsed text if the binary is no longer in storage
     if doc.parsed_text:
-        from fastapi.responses import Response
-        return Response(content=doc.parsed_text.encode("utf-8"), media_type="text/plain")
+        return {"text": doc.parsed_text}
 
     raise HTTPException(404, "Document content not found")
 
