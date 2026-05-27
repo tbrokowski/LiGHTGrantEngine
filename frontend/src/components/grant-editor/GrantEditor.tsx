@@ -77,12 +77,15 @@ export default function GrantEditor({ grant, onGrantUpdate, onHeadingsChange }: 
   const ideaTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   useEffect(() => {
+    // Refresh from server to pick up any changes made by other collaborators.
+    // State is already initialized from props, so this is a background sync.
     grantWriting.status(grant.id).then((res) => {
       const d = res.data;
       if (d.grant_idea) setGrantIdea(d.grant_idea);
-      if (d.call_analysis) setCallAnalysis(d.call_analysis);
-      if (d.proposal_skeleton) setSkeleton(d.proposal_skeleton);
-      if (d.last_review) setReviewReport(d.last_review);
+      if (d.call_analysis && Object.keys(d.call_analysis).length) setCallAnalysis(d.call_analysis);
+      if (d.call_requirements) setCallRequirements(d.call_requirements);
+      if (d.proposal_skeleton && Object.keys(d.proposal_skeleton).length) setSkeleton(d.proposal_skeleton);
+      if (d.last_review && Object.keys(d.last_review).length) setReviewReport(d.last_review);
       if (d.writing_phase) setPhase(d.writing_phase as WritingPhase);
     }).catch(() => {});
     grantWriting.listCitations(grant.id).then((res) => setCitations(res.data)).catch(() => {});
@@ -105,12 +108,19 @@ export default function GrantEditor({ grant, onGrantUpdate, onHeadingsChange }: 
     }, 1500);
   }, [grant.id, onHeadingsChange]);
 
+  const handlePhaseChange = (newPhase: WritingPhase) => {
+    setPhase(newPhase);
+    // Persist the active phase so all collaborators land on the same tab on reload
+    grantWriting.saveIdea(grant.id, { grant_idea: grantIdea, writing_phase: newPhase })
+      .catch(() => {});
+  };
+
   const handleIdeaChange = (idea: string) => {
     setGrantIdea(idea);
     if (ideaTimer.current) clearTimeout(ideaTimer.current);
     ideaTimer.current = setTimeout(async () => {
       try {
-        await grantWriting.saveIdea(grant.id, { grant_idea: idea, writing_phase: 'idea' });
+        await grantWriting.saveIdea(grant.id, { grant_idea: idea, writing_phase: phase });
       } catch { /* ignore */ }
     }, 1000);
   };
@@ -252,7 +262,7 @@ export default function GrantEditor({ grant, onGrantUpdate, onHeadingsChange }: 
           {PHASE_TABS.map((tab) => (
             <button
               key={tab.id}
-              onClick={() => setPhase(tab.id)}
+              onClick={() => handlePhaseChange(tab.id)}
               className={`flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium rounded-lg transition-colors ${
                 phase === tab.id
                   ? 'bg-indigo-600 text-white'
@@ -306,6 +316,19 @@ export default function GrantEditor({ grant, onGrantUpdate, onHeadingsChange }: 
             }}
             onGenerateSkeleton={handleGenerateSkeleton}
             generating={generatingSkeleton}
+            googleDocId={grant.google_doc_id}
+            googleDocUrl={docUrl || grant.google_doc_url}
+            googleDocLastSynced={lastSynced || grant.google_doc_last_synced}
+            onDocLinked={(id, url) => {
+              setDocLinked(true);
+              setDocUrl(url);
+              onGrantUpdate();
+            }}
+            onDocPulled={(html) => {
+              setDocumentHtml(html);
+              handlePhaseChange('draft');
+              onGrantUpdate();
+            }}
           />
         )}
 

@@ -37,7 +37,8 @@ async def send_email(
         with smtplib.SMTP(settings.smtp_host, settings.smtp_port) as server:
             server.ehlo()
             server.starttls()
-            server.login("resend", settings.smtp_password)
+            smtp_user = settings.smtp_username or "resend"
+            server.login(smtp_user, settings.smtp_password)
             server.sendmail(settings.smtp_from, to, msg.as_string())
 
     loop = asyncio.get_event_loop()

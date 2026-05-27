@@ -272,6 +272,37 @@ def pull_from_doc(
     return "\n".join(html_parts)
 
 
+def read_document_as_text(
+    doc_id: str,
+    service_account_file: str,
+) -> str:
+    """Read a Google Doc and return its content as plain text.
+
+    Used by the AI context manager to include linked Google Doc content
+    in the grant writing assistant's system prompt.
+    """
+    docs_svc = _build_docs_service(service_account_file)
+    doc = docs_svc.documents().get(documentId=doc_id).execute()
+    body = doc.get("body", {})
+    content = body.get("content", [])
+
+    text_parts: list[str] = []
+    for element in content:
+        paragraph = element.get("paragraph")
+        if not paragraph:
+            continue
+        inline_text = ""
+        for pe in paragraph.get("elements", []):
+            text_run = pe.get("textRun")
+            if text_run:
+                inline_text += text_run.get("content", "")
+        stripped = inline_text.rstrip("\n")
+        if stripped:
+            text_parts.append(stripped)
+
+    return "\n".join(text_parts)
+
+
 def _write_content_to_doc(docs_svc: Any, doc_id: str, content_html: str) -> None:
     paragraphs = _html_to_paragraphs(content_html)
     requests = _build_insert_requests(paragraphs)

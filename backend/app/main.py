@@ -80,8 +80,9 @@ app.include_router(notifications.router, prefix=f"{API}/notifications", tags=["n
 app.include_router(analytics.router,     prefix=f"{API}/analytics",     tags=["analytics"])
 app.include_router(admin.router,         prefix=f"{API}/admin",         tags=["admin"])
 app.include_router(partners.router,      prefix=f"{API}/partners",      tags=["partners"])
-app.include_router(grant_workspace.router,   prefix=f"{API}/grants",        tags=["grant-workspace"])
-app.include_router(grant_writing.router,     prefix=f"{API}/grants",        tags=["grant-writing"])
+app.include_router(grant_workspace.router,         prefix=f"{API}/grants",  tags=["grant-workspace"])
+app.include_router(grant_writing.status_router,    prefix=f"{API}/grants",  tags=["grant-writing"])
+app.include_router(grant_writing.router,           prefix=f"{API}/grants",  tags=["grant-writing"])
 app.include_router(organizations.router,     prefix=f"{API}/organizations",  tags=["organizations"])
 
 

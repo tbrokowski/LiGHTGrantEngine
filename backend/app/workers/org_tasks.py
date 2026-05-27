@@ -91,7 +91,8 @@ def _send_welcome_email(to_email: str, to_name: str, org_name: str) -> None:
         with smtplib.SMTP(settings.smtp_host, settings.smtp_port) as server:
             server.ehlo()
             server.starttls()
-            server.login(settings.smtp_from, settings.smtp_password)
+            smtp_user = settings.smtp_username or "resend"
+            server.login(smtp_user, settings.smtp_password)
             server.sendmail(settings.smtp_from, to_email, msg.as_string())
     except Exception as e:
         logger.error("Failed to send welcome email: %s", e)

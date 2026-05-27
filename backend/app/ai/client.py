@@ -52,9 +52,10 @@ async def chat_complete(
     agent_overrides = ai_cfg.agent_overrides.get(agent_name or "", {})
     temp = temperature if temperature is not None else agent_overrides.get("temperature", gen.temperature)
     tokens = max_tokens if max_tokens is not None else agent_overrides.get("max_tokens", gen.max_tokens)
+    model = agent_overrides.get("model", ai_cfg.model)
 
     kwargs: dict[str, Any] = {
-        "model": ai_cfg.model,
+        "model": model,
         "messages": messages,
         "temperature": temp,
         "max_tokens": tokens,
@@ -63,7 +64,7 @@ async def chat_complete(
     if json_mode:
         kwargs["response_format"] = {"type": "json_object"}
 
-    logger.debug("AI chat call", agent=agent_name, model=ai_cfg.model, messages=len(messages))
+    logger.debug("AI chat call", agent=agent_name, model=model, messages=len(messages))
 
     async with _get_client() as client:
         response = await client.chat.completions.create(**kwargs)
@@ -93,12 +94,13 @@ async def chat_complete_stream(
     temp = temperature if temperature is not None else agent_overrides.get("temperature", gen.temperature)
     tokens = max_tokens if max_tokens is not None else agent_overrides.get("max_tokens", gen.max_tokens)
 
+    model = agent_overrides.get("model", ai_cfg.model)
     client = _get_client()
 
-    logger.debug("AI stream call", agent=agent_name, model=ai_cfg.model, messages=len(messages))
+    logger.debug("AI stream call", agent=agent_name, model=model, messages=len(messages))
 
     stream = await client.chat.completions.create(
-        model=ai_cfg.model,
+        model=model,
         messages=messages,
         temperature=temp,
         max_tokens=tokens,
@@ -146,9 +148,10 @@ async def chat_complete_tracked(
     agent_overrides = ai_cfg.agent_overrides.get(agent_name or "", {})
     temp = temperature if temperature is not None else agent_overrides.get("temperature", gen.temperature)
     tokens = max_tokens if max_tokens is not None else agent_overrides.get("max_tokens", gen.max_tokens)
+    model = agent_overrides.get("model", ai_cfg.model)
 
     kwargs: dict[str, Any] = {
-        "model": ai_cfg.model,
+        "model": model,
         "messages": messages,
         "temperature": temp,
         "max_tokens": tokens,
@@ -164,7 +167,7 @@ async def chat_complete_tracked(
     usage = response.usage
     pt = usage.prompt_tokens if usage else 0
     ct = usage.completion_tokens if usage else 0
-    cost = estimate_cost_cents(ai_cfg.model, pt, ct)
+    cost = estimate_cost_cents(model, pt, ct)
     return content, pt, ct, cost
 
 

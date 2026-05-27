@@ -17,6 +17,7 @@ from app.ai.orchestrator.grant_writing import GrantWritingOrchestrator
 from app.database import get_db
 from app.models.active_grant import ActiveGrant
 from app.models.document import Document, DocumentType, ProcessingStatus
+from app.models.workspace_file import WorkspaceFile, FileCategory, FileSourceType
 from app.models.grant_writing import GrantCitation, GrantWritingConversation
 from app.models.ai_run import AIRun, AgentType, AIRunStatus
 from datetime import datetime
@@ -25,8 +26,10 @@ from app.routers.auth import get_current_user
 from app.services.citation_lookup import search_citations
 from app.auth.permissions import grant_access
 
-# All writing routes require at minimum editor access
+# Write endpoints require editor access
 router = APIRouter(dependencies=[Depends(grant_access(require_editor=True))])
+# Read-only writing endpoints (viewers allowed)
+status_router = APIRouter(dependencies=[Depends(grant_access())])
 orchestrator = GrantWritingOrchestrator()
 context_mgr = GrantContextManager()
 
@@ -62,10 +65,9 @@ class WritingChatRequest(BaseModel):
 
 async def _get_grant(grant_id: str, db: AsyncSession) -> ActiveGrant:
     result = await db.execute(select(ActiveGrant).where(ActiveGrant.id == grant_id))
-    grant = result.scalar_one_or_none()
-    if not grant:
-        raise HTTPException(404, "Grant not found")
-    return grant
+    if grant := result.scalar_one_or_none():
+        return grant
+    raise HTTPException(404, "Grant not found")
 
 
 async def _log_ai_run(
@@ -105,11 +107,15 @@ async def _get_or_create_conversation(grant_id: str, db: AsyncSession) -> GrantW
 
 
 from app.services.document_parser import parse_uploaded_bytes
+
+
+@status_router.get("/{grant_id}/writing/status")
 async def writing_status(
     grant_id: str,
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ):
+    """Return full writing state for the grant. Accessible to all collaborators (including viewers)."""
     grant = await _get_grant(grant_id, db)
     skeleton = grant.proposal_skeleton or {}
     sections = skeleton.get("sections") or []
@@ -117,6 +123,7 @@ async def writing_status(
         "writing_phase": grant.writing_phase or "idea",
         "grant_idea": grant.grant_idea,
         "call_analysis": grant.call_analysis or {},
+        "call_requirements": grant.call_requirements,
         "proposal_skeleton": skeleton,
         "style_profile": grant.style_profile or {},
         "last_review": grant.last_review or {},
@@ -182,6 +189,22 @@ async def upload_call_document(
         notes=r2_key,
     )
     db.add(doc)
+
+    # Also register in workspace files so it appears in the Files tab
+    workspace_file = WorkspaceFile(
+        id=str(uuid.uuid4()),
+        grant_id=grant_id,
+        file_name=safe_name,
+        file_type=safe_name.rsplit(".", 1)[-1].lower() if "." in safe_name else "pdf",
+        file_category=FileCategory.CALL_DOCUMENTS,
+        file_url=file_url,
+        source_type=FileSourceType.UPLOADED,
+        uploaded_by=current_user.id,
+        owner_id=current_user.id,
+        ai_retrieval_allowed=True,
+        description="Call document uploaded for analysis",
+    )
+    db.add(workspace_file)
     await db.commit()
 
     analysis = await orchestrator.analyze_call_document(grant, parsed_text, db, grant.call_url or "")
@@ -189,6 +212,8 @@ async def upload_call_document(
     await db.refresh(grant)
     return {
         "document_id": doc_id,
+        "file_name": safe_name,
+        "file_url": file_url,
         "call_analysis": analysis,
         "call_requirements": grant.call_requirements,
         "parsed_chars": len(parsed_text),

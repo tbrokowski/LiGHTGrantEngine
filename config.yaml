@@ -13,14 +13,15 @@ ai:
     timeout_seconds: 120
   agent_overrides:
     call_analyzer:
+      model: gpt-4o
       temperature: 0.1
-      max_tokens: 2048
+      max_tokens: 4096
     go_no_go:
       temperature: 0.2
       max_tokens: 1500
     section_drafter:
-      temperature: 0.5
-      max_tokens: 4096
+      temperature: 0.4
+      max_tokens: 6000
     compliance_checker:
       temperature: 0.1
       max_tokens: 2048
@@ -28,8 +29,9 @@ ai:
       temperature: 0.1
       max_tokens: 512
     opportunity_summarizer:
-      temperature: 0.3
-      max_tokens: 2000
+      model: gpt-4o
+      temperature: 0.2
+      max_tokens: 3000
     style_profiler:
       temperature: 0.2
       max_tokens: 2048

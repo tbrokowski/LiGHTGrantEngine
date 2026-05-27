@@ -257,6 +257,8 @@ export const grants = {
     api.post(`/grants/${grantId}/docs/push`),
   pullFromGoogleDoc: (grantId: string) =>
     api.post(`/grants/${grantId}/docs/pull`),
+  getGoogleDocContent: (grantId: string) =>
+    api.get(`/grants/${grantId}/docs/content`),
   // Activity log
   getActivity: (grantId: string, limit?: number) =>
     api.get(`/grants/${grantId}/activity`, { params: { limit } }),

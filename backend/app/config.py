@@ -142,6 +142,7 @@ class Settings(BaseSettings):
     smtp_host: str = "smtp.resend.com"
     smtp_port: int = 587
     smtp_from: str = "onboarding@resend.dev"
+    smtp_username: Optional[str] = None  # defaults to "resend" for Resend, set to email for Gmail etc.
     smtp_password: Optional[str] = None
 
     # Google OAuth

@@ -137,6 +137,8 @@ class GrantWritingOrchestrator:
 
         eval_criteria = (grant.call_analysis or {}).get("evaluation_criteria", [])
         call_req = grant.call_requirements or ""
+        call_narrative_brief = (grant.call_analysis or {}).get("narrative_brief", "")
+        section_requirements_map = (grant.call_analysis or {}).get("section_requirements") or {}
         prior_summary = ""
 
         for i, sec in enumerate(sections):
@@ -191,6 +193,12 @@ class GrantWritingOrchestrator:
                     word_limit=word_limit,
                 )
             else:
+                # Look up per-section requirements from call analysis
+                sec_specific_req = (
+                    section_requirements_map.get(name)
+                    or section_requirements_map.get(name.lower())
+                    or sec.get("section_requirements")
+                )
                 result = await draft_section(
                     section_name=name,
                     section_type=sec_type,
@@ -205,6 +213,8 @@ class GrantWritingOrchestrator:
                     prior_sections_summary=prior_summary,
                     citations=citations,
                     grant_idea=grant.grant_idea or "",
+                    section_specific_requirements=sec_specific_req,
+                    call_narrative_brief=call_narrative_brief,
                 )
 
             draft_text = result.get("draft", "")
@@ -274,19 +284,69 @@ class GrantWritingOrchestrator:
         return report
 
     def _format_call_requirements(self, analysis: dict) -> str:
+        """Format call analysis as a comprehensive text block for agent context.
+
+        The narrative_brief is used as the primary content; structured fields follow
+        for downstream agents (skeleton, drafter, compliance checker).
+        """
         parts = []
-        if analysis.get("summary"):
+
+        if analysis.get("narrative_brief"):
+            parts.append(f"CALL BRIEF:\n{analysis['narrative_brief']}")
+        elif analysis.get("summary"):
             parts.append(f"SUMMARY: {analysis['summary']}")
+
         if analysis.get("evaluation_criteria"):
             parts.append("EVALUATION CRITERIA:\n" + "\n".join(f"- {c}" for c in analysis["evaluation_criteria"]))
+
         if analysis.get("required_sections"):
             parts.append("REQUIRED SECTIONS:\n" + "\n".join(f"- {s}" for s in analysis["required_sections"]))
+
         if analysis.get("section_requirements"):
             parts.append("SECTION REQUIREMENTS:\n" + json.dumps(analysis["section_requirements"], indent=2))
+
         if analysis.get("budget_constraints"):
-            parts.append(f"BUDGET: {analysis['budget_constraints']}")
-        if analysis.get("word_limit"):
-            parts.append(f"WORD LIMIT: {analysis['word_limit']}")
+            parts.append(f"BUDGET CONSTRAINTS: {analysis['budget_constraints']}")
+
+        if analysis.get("deadlines"):
+            dl = analysis["deadlines"]
+            if isinstance(dl, dict):
+                dl_lines = [f"  {k}: {v}" for k, v in dl.items() if v]
+                if dl_lines:
+                    parts.append("DEADLINES:\n" + "\n".join(dl_lines))
+            else:
+                parts.append(f"DEADLINES: {dl}")
+
+        if analysis.get("eligibility_checklist"):
+            critical = [
+                item for item in analysis["eligibility_checklist"]
+                if isinstance(item, dict) and item.get("critical")
+            ]
+            if critical:
+                lines = [f"  - {item.get('item', '')} [{item.get('notes', '')}]" for item in critical]
+                parts.append("CRITICAL ELIGIBILITY REQUIREMENTS:\n" + "\n".join(lines))
+
+        for field, label in [
+            ("word_limit", "WORD LIMIT"),
+            ("page_limit", "PAGE LIMIT"),
+            ("award_amount", "AWARD AMOUNT"),
+            ("project_duration", "PROJECT DURATION"),
+            ("geographic_eligibility", "GEOGRAPHIC ELIGIBILITY"),
+            ("required_partners", "PARTNERSHIP REQUIREMENTS"),
+            ("format_requirements", "FORMAT REQUIREMENTS"),
+            ("submission_portal", "SUBMISSION PORTAL"),
+            ("foa_number", "FOA/REFERENCE NUMBER"),
+            ("contact_info", "CONTACT INFO"),
+        ]:
+            if analysis.get(field):
+                parts.append(f"{label}: {analysis[field]}")
+
+        if analysis.get("risks"):
+            parts.append("RISKS & CONCERNS:\n" + "\n".join(f"- {r}" for r in analysis["risks"]))
+
+        if analysis.get("missing_information"):
+            parts.append("MISSING INFORMATION (to find out):\n" + "\n".join(f"- {m}" for m in analysis["missing_information"]))
+
         return "\n\n".join(parts)
 
 

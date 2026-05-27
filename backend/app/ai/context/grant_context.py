@@ -164,6 +164,26 @@ class GrantContextManager:
         html = document_html or grant.editor_document or ""
         ctx.document_sections = parse_document_sections(html, grant.proposal_skeleton)
 
+        # Include linked Google Doc content so the AI can read the live proposal
+        if grant.google_doc_id:
+            try:
+                from app.config import get_settings as _get_settings
+                _settings = _get_settings()
+                sa_file = _settings.google_drive.service_account_file
+                if sa_file and sa_file != "/path/to/service-account.json":
+                    from app.services.google_docs import read_document_as_text
+                    import asyncio
+                    gdoc_text = await asyncio.get_event_loop().run_in_executor(
+                        None, read_document_as_text, grant.google_doc_id, sa_file
+                    )
+                    if gdoc_text:
+                        ctx.layers["google_doc"] = (
+                            f"LINKED GOOGLE DOC (live content — {len(gdoc_text.split())} words):\n"
+                            + gdoc_text[:8000]
+                        )
+            except Exception:
+                pass  # Google Docs not configured or unavailable — continue without it
+
         if active_section_title:
             for sec in ctx.document_sections:
                 if sec.title.lower() == active_section_title.lower():
@@ -239,7 +259,7 @@ class GrantContextManager:
     def to_system_prompt(self, ctx: GrantContext) -> str:
         order = [
             "persona", "call_analysis", "call_requirements", "grant_idea",
-            "skeleton", "style_profile", "active_section", "adjacent_sections",
+            "skeleton", "style_profile", "google_doc", "active_section", "adjacent_sections",
             "archive_sections", "reusable_language", "citations", "conversation_summary",
         ]
         parts = []
@@ -262,6 +282,8 @@ class GrantContextManager:
         chips = []
         if ctx.layers.get("call_analysis") or ctx.layers.get("call_requirements"):
             chips.append("Call req")
+        if ctx.layers.get("google_doc"):
+            chips.append("Google Doc")
         if ctx.active_section:
             chips.append(ctx.active_section.title)
         if ctx.rag_sections:

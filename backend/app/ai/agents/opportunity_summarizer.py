@@ -74,7 +74,7 @@ async def generate_opportunity_summary(
 
     themes_str = ", ".join(thematic_areas) if thematic_areas else "Not specified"
 
-    user_prompt = f"""Generate a structured grant opportunity summary for the LiGHT team.
+    user_prompt = f"""Generate a thorough, detailed grant opportunity summary for the LiGHT team.
 
 GRANT DETAILS:
 Title: {title}
@@ -88,41 +88,58 @@ Fit Score: {f"{fit_score:.0f}/100" if fit_score else "Not scored yet"}
 URL: {opportunity_url or "N/A"}
 
 DESCRIPTION:
-{description[:4000] if description else "No description available."}
+{description or "No description available."}
 
 ELIGIBILITY:
-{eligibility[:1000] if eligibility else "Not specified."}
+{eligibility or "Not specified."}
 
 EXISTING FIT RATIONALE:
-{fit_rationale[:500] if fit_rationale else "None."}
+{fit_rationale or "None."}
 
 TEAM PROFILE:
 - Core themes: {team_themes}
 - Target geographies: {team_geos}
 - Institution: EPFL (academic, Switzerland, EU member)
 
-Generate a markdown summary using EXACTLY these sections (use ## for each header):
+Generate a comprehensive markdown summary using EXACTLY these sections (use ## for each header).
+Be detailed and specific — this summary is used by the team to decide whether to pursue the grant
+and to brief new team members. Do not be vague or generic.
 
 ## What This Grant Funds
-One clear paragraph explaining the funder's goals and what they will pay for.
+2–3 paragraphs: what the funder is trying to achieve, the specific problem they want to solve,
+the types of projects and approaches they want to support, and what a successful grantee looks like.
 
 ## Eligibility at a Glance
-Bullet list of key eligibility requirements. Flag any that LiGHT may not meet with ⚠️.
+Bullet list of ALL key eligibility requirements. Flag any that LiGHT may not meet with ⚠️.
+Include institution type, nationality, prior funding restrictions, co-PI requirements, etc.
 
 ## Key Dates
-Bullet list: deadline(s), LOI dates, any other milestones.
+Bullet list: all deadlines (full proposal, LOI, concept note, questions), estimated announcement date if known.
 
 ## Fit for LiGHT / EPFL
-2–3 sentences explaining why (or why not) this is a strong fit. Reference specific LiGHT projects or capabilities.
+3–4 sentences explaining why (or why not) this is a strong fit.
+Reference specific LiGHT research areas, past projects, or capabilities that align.
+Be honest about gaps or risks.
 
 ## Potential Projects to Propose
-Bullet list of 3–5 concrete project ideas LiGHT could submit, aligned to the funder's priorities. Be specific.
+Bullet list of 4–6 concrete, specific project ideas LiGHT could submit, each 2–3 sentences.
+Align each idea directly to the funder's stated priorities. Include rough methodologies.
+
+## Partnership Opportunities
+Which external partners, institutions, or NGOs would strengthen a LiGHT proposal for this call?
+Mention specific organization types or named organizations if relevant.
 
 ## Budget & Award Details
-Clear statement of award size, duration, number of expected awards, cost-sharing requirements if known.
+Award size, duration, number of expected awards, indirect cost rules, cost-sharing requirements,
+sub-award eligibility. Be specific about what can and cannot be funded.
+
+## Risk Flags
+Bullet list of reasons this grant might be difficult to win or implement for LiGHT.
+Include competition level, eligibility uncertainty, scope mismatches, or capacity concerns.
 
 ## Action Items
-Numbered list of immediate next steps the team should take."""
+Numbered list of concrete immediate next steps: who should be contacted, what documents to prepare,
+internal discussions needed, and a realistic go/no-go decision timeline."""
 
     try:
         response = await chat_complete(
@@ -131,8 +148,6 @@ Numbered list of immediate next steps the team should take."""
                 {"role": "user", "content": user_prompt},
             ],
             agent_name="opportunity_summarizer",
-            temperature=0.3,
-            max_tokens=2000,
         )
         # Response is already markdown — return as-is
         return response.strip()

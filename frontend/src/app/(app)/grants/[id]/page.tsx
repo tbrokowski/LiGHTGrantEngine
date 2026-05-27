@@ -400,6 +400,12 @@ function GrantDetailContent() {
               google_doc_id: grant.google_doc_id,
               google_doc_url: grant.google_doc_url,
               google_doc_last_synced: grant.google_doc_last_synced,
+              grant_idea: grant.grant_idea ?? null,
+              call_analysis: grant.call_analysis ?? {},
+              proposal_skeleton: grant.proposal_skeleton ?? {},
+              writing_phase: grant.writing_phase ?? null,
+              style_profile: grant.style_profile ?? {},
+              last_review: grant.last_review ?? null,
             }}
             onGrantUpdate={fetchGrant}
             onHeadingsChange={setDocumentHeadings}

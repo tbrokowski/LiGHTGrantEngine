@@ -33,7 +33,14 @@ async def list_documents(
     archive_id: Optional[str] = None,
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(get_current_user),
+    redis: aioredis.Redis = Depends(get_redis),
 ):
+    # Enforce grant membership when filtering by grant_id
+    if grant_id and not is_org_admin(current_user):
+        accessible = await get_user_grant_ids(current_user, db, redis)
+        if grant_id not in accessible:
+            raise HTTPException(403, "You do not have access to this grant's documents.")
+
     q = select(Document)
     if opportunity_id:
         q = q.where(Document.opportunity_id == opportunity_id)

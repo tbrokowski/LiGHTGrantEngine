@@ -1731,6 +1731,32 @@ async def pull_from_google_doc(
     return {"ok": True, "content_html": html, "last_synced": now.isoformat()}
 
 
+@router.get("/{grant_id}/docs/content")
+async def get_google_doc_content(
+    grant_id: str,
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    """Return the linked Google Doc content as plain text (for AI context or preview)."""
+    grant = await _get_grant_or_404(grant_id, db)
+
+    if not grant.google_doc_id:
+        raise HTTPException(400, "No Google Doc linked.")
+
+    cfg = _get_drive_config()
+    from app.services.google_docs import read_document_as_text
+
+    try:
+        text = read_document_as_text(
+            doc_id=grant.google_doc_id,
+            service_account_file=cfg.service_account_file,
+        )
+    except Exception as exc:
+        raise HTTPException(502, f"Google Docs API error: {exc}") from exc
+
+    return {"text": text, "word_count": len(text.split()), "google_doc_url": grant.google_doc_url}
+
+
 # ── Activity log ───────────────────────────────────────────────────────────────
 
 @router.get("/{grant_id}/activity")
