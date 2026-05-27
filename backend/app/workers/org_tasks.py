@@ -13,26 +13,24 @@ def scaffold_new_organization(self, institution_id: str, admin_user_id: str) -> 
     Run after a new organization is created.
     Fans out global sources and preseeds the grant feed.
     """
-    from sqlalchemy.ext.asyncio import create_async_engine, AsyncSession, async_sessionmaker
+    from sqlalchemy import create_engine, select
+    from sqlalchemy.orm import Session
     from app.config import get_settings
     from app.models.user import User
     from app.models.institution import Institution
     from app.services.email import send_email
-    from sqlalchemy import select
 
     settings = get_settings()
+    engine = create_engine(settings.database_url)
 
-    async def _run():
-        engine = create_async_engine(settings.database_url, echo=False)
-        async_session = async_sessionmaker(engine, class_=AsyncSession, expire_on_commit=False)
-
-        async with async_session() as db:
-            inst = (await db.execute(
+    try:
+        with Session(engine) as db:
+            inst = db.execute(
                 select(Institution).where(Institution.id == institution_id)
-            )).scalar_one_or_none()
-            user = (await db.execute(
+            ).scalar_one_or_none()
+            user = db.execute(
                 select(User).where(User.id == admin_user_id)
-            )).scalar_one_or_none()
+            ).scalar_one_or_none()
 
             if not inst or not user:
                 logger.warning("scaffold_new_organization: institution or user not found")
@@ -47,27 +45,21 @@ def scaffold_new_organization(self, institution_id: str, admin_user_id: str) -> 
                 <p>Best of luck with your grants!</p>
                 <p>— The LiGHT Grant Engine team</p>
                 """
-                await send_email(
+                asyncio.run(send_email(
                     to=user.email,
                     subject=f"Welcome to LiGHT Grant Engine — {inst.name} is ready",
                     html=html,
-                )
+                ))
             except Exception as e:
                 logger.warning("Welcome email failed for %s: %s", inst.name, e)
 
-        await engine.dispose()
-
-        celery_app.send_task(
-            "app.workers.surfacing_tasks.fan_out_sources_to_all",
-        )
+        celery_app.send_task("app.workers.surfacing_tasks.fan_out_sources_to_all")
         celery_app.send_task(
             "app.workers.surfacing_tasks.preseed_institution_grants",
             args=[institution_id],
         )
         return {"status": "ok", "institution_id": institution_id}
 
-    try:
-        return asyncio.run(_run())
     except Exception as exc:
         logger.error("scaffold_new_organization failed: %s", exc)
         raise self.retry(exc=exc, countdown=60)
