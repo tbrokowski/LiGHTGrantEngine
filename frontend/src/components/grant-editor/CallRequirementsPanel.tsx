@@ -58,7 +58,7 @@ function CollapsibleGroup({
           <span className="text-xs text-gray-400 ml-1">({count})</span>
         )}
       </button>
-      {open && <div className="mt-1">{children}</div>}
+      {open && <div className="mt-1.5">{children}</div>}
     </div>
   );
 }
@@ -68,7 +68,7 @@ export default function CallRequirementsPanel({ callAnalysis }: CallRequirements
 
   if (!callAnalysis || Object.keys(callAnalysis).length === 0) {
     return (
-      <p className="text-xs text-gray-400 italic">
+      <p className="text-sm text-gray-400 italic">
         Upload a call document to generate a detailed brief.
       </p>
     );
@@ -93,13 +93,13 @@ export default function CallRequirementsPanel({ callAnalysis }: CallRequirements
 
   const primaryDeadline = deadlines?.full_proposal || deadlines?.concept_note || deadlines?.loi;
 
-  // Build stats line
+  // Stats line
   const statParts = [
     awardAmount,
     primaryDeadline,
     wordLimit ? `${wordLimit} words` : null,
     projectDuration,
-  ].filter(Boolean);
+  ].filter(Boolean) as string[];
 
   // Critical eligibility flags
   const criticalFlags = (eligibilityChecklist || []).filter(
@@ -113,19 +113,19 @@ export default function CallRequirementsPanel({ callAnalysis }: CallRequirements
   const deadlineEntries = Object.entries(deadlines || {}).filter(([, v]) => v);
 
   return (
-    <div className="space-y-4">
+    <div className="space-y-5">
       {/* Stats line */}
-      {statParts.length > 0 && (
-        <p className="text-xs text-gray-400">
+      {(statParts.length > 0 || foaNumber) && (
+        <p className="text-sm text-gray-500">
           {statParts.map((part, i) => (
             <span key={i}>
-              {i > 0 && <span className="mx-1.5">·</span>}
+              {i > 0 && <span className="mx-2 text-gray-300">·</span>}
               {part}
             </span>
           ))}
           {foaNumber && (
             <span>
-              <span className="mx-1.5">·</span>
+              <span className="mx-2 text-gray-300">·</span>
               <span>Ref: {foaNumber}</span>
             </span>
           )}
@@ -134,23 +134,23 @@ export default function CallRequirementsPanel({ callAnalysis }: CallRequirements
 
       {/* Critical eligibility warnings */}
       {criticalFlags.map((item, i) => (
-        <p key={i} className="text-xs text-red-600">
+        <p key={i} className="text-sm text-red-600 leading-snug">
           ⚠ {item.item}{item.notes ? ` — ${item.notes}` : ''}
         </p>
       ))}
 
       {/* Geographic restriction warning */}
       {geographicEligibility && (
-        <p className="text-xs text-orange-600">
+        <p className="text-sm text-orange-600 leading-snug">
           ⚠ Eligibility: {geographicEligibility}
         </p>
       )}
 
       {/* Call Brief */}
       {(narrativeBrief || summary) && (
-        <div className="space-y-1">
-          <p className="text-xs font-semibold text-gray-500">Call Brief</p>
-          <div className="text-xs text-gray-700 leading-relaxed space-y-2">
+        <div className="space-y-1.5">
+          <p className="text-sm font-semibold text-gray-700">Call Brief</p>
+          <div className="text-sm text-gray-700 leading-relaxed space-y-2.5">
             {(narrativeBrief || summary || '').split('\n\n').filter(Boolean).map((para, i) => (
               <p key={i}>{para}</p>
             ))}
@@ -177,7 +177,7 @@ export default function CallRequirementsPanel({ callAnalysis }: CallRequirements
                   (req.evidence_needed?.length ?? 0) > 0
                 );
               return (
-                <div key={sec} className="py-2">
+                <div key={sec} className="py-2.5">
                   <div
                     className={`flex items-baseline gap-2 ${hasDetails ? 'cursor-pointer' : ''}`}
                     onClick={() => hasDetails && setExpandedSection(isExpanded ? null : sec)}
@@ -202,39 +202,39 @@ export default function CallRequirementsPanel({ callAnalysis }: CallRequirements
                     )}
                   </div>
                   {req?.requirements && !isExpanded && (
-                    <p className="text-xs text-gray-400 mt-0.5 pl-5 truncate">{req.requirements}</p>
+                    <p className="text-sm text-gray-400 mt-0.5 pl-5 truncate">{req.requirements}</p>
                   )}
                   {isExpanded && (
-                    <div className="mt-2 pl-5 space-y-3">
+                    <div className="mt-2.5 pl-5 space-y-3.5">
                       {req?.requirements && (
-                        <p className="text-xs text-gray-600">{req.requirements}</p>
+                        <p className="text-sm text-gray-600">{req.requirements}</p>
                       )}
                       {req?.key_asks && req.key_asks.length > 0 && (
                         <div>
-                          <p className="text-xs font-semibold text-gray-500">What the funder asks for</p>
-                          <ul className="mt-1 space-y-0.5">
+                          <p className="text-xs font-semibold text-gray-500 uppercase tracking-wide mb-1">What the funder asks for</p>
+                          <ul className="space-y-1">
                             {req.key_asks.map((ask, i) => (
-                              <li key={i} className="text-xs text-gray-600">• {ask}</li>
+                              <li key={i} className="text-sm text-gray-600">• {ask}</li>
                             ))}
                           </ul>
                         </div>
                       )}
                       {req?.questions_to_address && req.questions_to_address.length > 0 && (
                         <div>
-                          <p className="text-xs font-semibold text-gray-500">Questions to answer</p>
-                          <ul className="mt-1 space-y-0.5">
+                          <p className="text-xs font-semibold text-gray-500 uppercase tracking-wide mb-1">Questions to answer</p>
+                          <ul className="space-y-1">
                             {req.questions_to_address.map((q, i) => (
-                              <li key={i} className="text-xs text-gray-600">• {q}</li>
+                              <li key={i} className="text-sm text-gray-600">• {q}</li>
                             ))}
                           </ul>
                         </div>
                       )}
                       {req?.evidence_needed && req.evidence_needed.length > 0 && (
                         <div>
-                          <p className="text-xs font-semibold text-gray-500">Evidence needed</p>
-                          <ul className="mt-1 space-y-0.5">
+                          <p className="text-xs font-semibold text-gray-500 uppercase tracking-wide mb-1">Evidence needed</p>
+                          <ul className="space-y-1">
                             {req.evidence_needed.map((e, i) => (
-                              <li key={i} className="text-xs text-gray-600">• {e}</li>
+                              <li key={i} className="text-sm text-gray-600">• {e}</li>
                             ))}
                           </ul>
                         </div>
@@ -251,9 +251,9 @@ export default function CallRequirementsPanel({ callAnalysis }: CallRequirements
       {/* Evaluation Criteria */}
       {Array.isArray(evaluationCriteria) && evaluationCriteria.length > 0 && (
         <CollapsibleGroup label="Evaluation Criteria" count={evaluationCriteria.length}>
-          <ol className="space-y-1 pl-1">
+          <ol className="space-y-1.5 pl-1">
             {evaluationCriteria.map((c, i) => (
-              <li key={i} className="flex gap-2 text-xs text-gray-600">
+              <li key={i} className="flex gap-2 text-sm text-gray-600">
                 <span className="text-gray-400 shrink-0">{i + 1}.</span>
                 <span>{c}</span>
               </li>
@@ -265,9 +265,9 @@ export default function CallRequirementsPanel({ callAnalysis }: CallRequirements
       {/* Key Dates */}
       {deadlineEntries.length > 0 && (
         <CollapsibleGroup label="Key Dates" count={deadlineEntries.length}>
-          <div className="space-y-1">
+          <div className="space-y-1.5">
             {deadlineEntries.map(([key, val]) => (
-              <div key={key} className="flex justify-between text-xs">
+              <div key={key} className="flex justify-between text-sm">
                 <span className="text-gray-500 capitalize">{key.replace(/_/g, ' ')}</span>
                 <span className="text-gray-800 font-medium">{typeof val === 'string' ? val : JSON.stringify(val)}</span>
               </div>
@@ -279,16 +279,16 @@ export default function CallRequirementsPanel({ callAnalysis }: CallRequirements
       {/* Budget & Award */}
       {budgetConstraints && (
         <CollapsibleGroup label="Budget & Award">
-          <p className="text-xs text-gray-600">{budgetConstraints}</p>
+          <p className="text-sm text-gray-600">{budgetConstraints}</p>
         </CollapsibleGroup>
       )}
 
       {/* Risks */}
       {Array.isArray(risks) && risks.length > 0 && (
         <CollapsibleGroup label="Risks" count={risks.length}>
-          <ul className="space-y-1">
+          <ul className="space-y-1.5">
             {risks.map((r, i) => (
-              <li key={i} className="text-xs text-gray-600">• {r}</li>
+              <li key={i} className="text-sm text-gray-600">• {r}</li>
             ))}
           </ul>
         </CollapsibleGroup>
@@ -297,16 +297,16 @@ export default function CallRequirementsPanel({ callAnalysis }: CallRequirements
       {/* Submission */}
       {submissionPortal && (
         <CollapsibleGroup label="Submission">
-          <p className="text-xs text-gray-600">{submissionPortal}</p>
+          <p className="text-sm text-gray-600">{submissionPortal}</p>
         </CollapsibleGroup>
       )}
 
       {/* Missing information */}
       {Array.isArray(missingInformation) && missingInformation.length > 0 && (
         <CollapsibleGroup label="Still Need to Find Out" count={missingInformation.length}>
-          <ul className="space-y-1">
+          <ul className="space-y-1.5">
             {missingInformation.map((m, i) => (
-              <li key={i} className="text-xs text-gray-600">? {m}</li>
+              <li key={i} className="text-sm text-gray-600">? {m}</li>
             ))}
           </ul>
         </CollapsibleGroup>

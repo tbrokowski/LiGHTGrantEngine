@@ -64,12 +64,12 @@ export default function SkeletonPhase({
 
           {/* Narrative arc */}
           {skeleton.narrative_arc && (
-            <p className="text-xs italic text-gray-500">{skeleton.narrative_arc}</p>
+            <p className="text-sm italic text-gray-500">{skeleton.narrative_arc}</p>
           )}
 
           {/* Key messages — dot-separated inline */}
           {skeleton.key_messages && skeleton.key_messages.length > 0 && (
-            <p className="text-xs text-gray-400">
+            <p className="text-sm text-gray-400">
               {skeleton.key_messages.map((m, i) => (
                 <span key={i}>
                   {i > 0 && <span className="mx-1.5">·</span>}
@@ -111,7 +111,7 @@ export default function SkeletonPhase({
 
       {/* Sticky footer */}
       <div className="flex-shrink-0 border-t border-gray-200 px-6 py-3 flex items-center justify-between">
-        <p className="text-xs text-gray-400">Sections drafted one at a time with archive style matching</p>
+          <p className="text-sm text-gray-400">Sections drafted one at a time with archive style matching</p>
         <button
           onClick={onGenerateDraft}
           disabled={sections.length === 0 || generating}

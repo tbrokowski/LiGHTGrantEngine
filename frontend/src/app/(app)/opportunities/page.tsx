@@ -190,6 +190,13 @@ export default function OpportunitiesPage() {
     setShortlist(updater);
   }
 
+  function markUnreadLocal(id: string) {
+    const updater = (prev: Opportunity[]) =>
+      prev.map(o => o.id === id ? { ...o, is_read: false } : o);
+    setQueue(updater);
+    setShortlist(updater);
+  }
+
   async function handleMarkRead(id: string) {
     await opportunities.markRead(id);
     if (unreadOnly) {
@@ -205,6 +212,20 @@ export default function OpportunitiesPage() {
   async function handleMarkReadFocus(id: string) {
     await opportunities.markRead(id);
     markReadLocal(id);
+  }
+
+  async function handleToggleRead(id: string, isRead: boolean) {
+    if (isRead) {
+      await opportunities.markUnread(id);
+      markUnreadLocal(id);
+    } else {
+      await opportunities.markRead(id);
+      if (unreadOnly) {
+        removeFromList(id);
+      } else {
+        markReadLocal(id);
+      }
+    }
   }
 
   async function handleToggleBookmark(id: string, isBookmarked: boolean) {
@@ -239,6 +260,7 @@ export default function OpportunitiesPage() {
 
   const actionHandlers = {
     onToggleBookmark: handleToggleBookmark,
+    onToggleRead: handleToggleRead,
   };
 
   function renderTableBody(listItems: Opportunity[]) {

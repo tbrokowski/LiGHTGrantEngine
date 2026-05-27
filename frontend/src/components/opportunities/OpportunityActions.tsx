@@ -6,6 +6,7 @@ import type { Opportunity } from './types';
 export interface OpportunityActionHandlers {
   onToggleBookmark?: (id: string, isBookmarked: boolean) => void | Promise<void>;
   onStartGrant?: (id: string) => void | Promise<void>;
+  onToggleRead?: (id: string, isRead: boolean) => void | Promise<void>;
 }
 
 interface OpportunityActionsProps extends OpportunityActionHandlers {
@@ -20,6 +21,7 @@ export default function OpportunityActions({
   className = '',
   onToggleBookmark,
   onStartGrant,
+  onToggleRead,
 }: OpportunityActionsProps) {
   const [busy, setBusy] = useState<string | null>(null);
   const isBookmarked = opp.status === 'potential_fit';
@@ -42,7 +44,34 @@ export default function OpportunityActions({
     ? (() => { try { return new URL(opp.opportunity_url!).hostname.replace(/^www\./, ''); } catch { return null; } })()
     : null;
 
+  const isRead = !!opp.is_read;
   const isTable = mode === 'queue' || mode === 'shortlist';
+
+  const readToggle = onToggleRead ? (
+    <button
+      onClick={e => { e.stopPropagation(); run('read', () => onToggleRead(opp.id, isRead)); }}
+      disabled={!!busy}
+      title={isRead ? 'Mark as unread' : 'Mark as read'}
+      className={`${btnBase} flex items-center gap-1 disabled:opacity-40 transition-colors ${
+        isRead
+          ? 'text-gray-400 border-gray-200 hover:text-blue-600 hover:border-blue-300'
+          : 'text-blue-600 border-blue-300 bg-blue-50 hover:bg-blue-100'
+      }`}
+    >
+      {busy === 'read' ? (
+        <span className="w-2 h-2 rounded-full bg-current animate-pulse inline-block" />
+      ) : isRead ? (
+        <svg className="w-3.5 h-3.5" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth={2}>
+          <circle cx="8" cy="8" r="5" />
+        </svg>
+      ) : (
+        <svg className="w-3.5 h-3.5" viewBox="0 0 16 16" fill="currentColor">
+          <circle cx="8" cy="8" r="5" />
+        </svg>
+      )}
+    </button>
+  ) : null;
+
   const bookmark = onToggleBookmark ? (
     <BookmarkButton
       isBookmarked={isBookmarked}
@@ -70,11 +99,15 @@ export default function OpportunityActions({
       {isTable ? (
         <>
           {viewLink}
-          {bookmark && <div className="ml-auto shrink-0">{bookmark}</div>}
+          <div className="ml-auto flex items-center gap-1 shrink-0">
+            {readToggle}
+            {bookmark}
+          </div>
         </>
       ) : (
         <>
           {bookmark}
+          {readToggle}
           {viewLink}
           {onStartGrant && mode === 'focus' && (
             <button

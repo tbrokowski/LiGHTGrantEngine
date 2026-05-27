@@ -70,9 +70,9 @@ function CollapsibleSection({
         <ChevronDown
           className={`w-3.5 h-3.5 text-gray-400 transition-transform flex-shrink-0 ${expanded ? '' : '-rotate-90'}`}
         />
-        <span className="text-xs font-semibold text-gray-500">{label}</span>
+        <span className="text-sm font-semibold text-gray-500">{label}</span>
         {!expanded && summary && (
-          <span className="ml-1.5 text-xs font-normal text-gray-400 truncate flex-1">{summary}</span>
+          <span className="ml-1.5 text-sm font-normal text-gray-400 truncate flex-1">{summary}</span>
         )}
       </button>
       {expanded && <div className="mt-2">{children}</div>}
@@ -243,16 +243,6 @@ export default function IdeaPhase({
     }
   };
 
-  // --- Stats line for right panel ---
-  const analysis = callAnalysis as Record<string, unknown>;
-  const deadlines = analysis.deadlines as Record<string, string | null> | undefined;
-  const primaryDeadline = deadlines?.full_proposal || deadlines?.concept_note || deadlines?.loi;
-  const statParts = [
-    analysis.award_amount as string | undefined,
-    primaryDeadline ?? undefined,
-    analysis.word_limit ? `${analysis.word_limit} words` : undefined,
-    analysis.project_duration as string | undefined,
-  ].filter(Boolean) as string[];
 
   // --- Summaries for collapsed state ---
   const docSummary = uploadedDoc?.file_name ?? (hasExistingAnalysis ? 'Analyzed' : 'No document');
@@ -317,12 +307,12 @@ export default function IdeaPhase({
             />
 
             {uploading ? (
-              <div className="flex items-center gap-2 text-xs text-gray-500 py-1">
+              <div className="flex items-center gap-2 text-sm text-gray-500 py-1">
                 <Loader2 className="w-3.5 h-3.5 animate-spin text-indigo-500" />
                 Analyzing call document…
               </div>
             ) : uploadedDoc || hasExistingAnalysis ? (
-              <div className="flex items-center gap-2 text-xs text-gray-600">
+              <div className="flex items-center gap-2 text-sm text-gray-600">
                 <CheckCircle2 className="w-3.5 h-3.5 text-green-600 flex-shrink-0" />
                 <span className="flex-1 truncate">{uploadedDoc?.file_name ?? 'Call document analyzed'}</span>
                 {uploadedDoc?.file_url && (
@@ -333,7 +323,7 @@ export default function IdeaPhase({
                 <button
                   onClick={handleReanalyze}
                   disabled={reanalyzing}
-                  className="flex items-center gap-1 text-gray-400 hover:text-indigo-600 disabled:opacity-50 transition-colors"
+                  className="flex items-center gap-1 text-sm text-gray-400 hover:text-indigo-600 disabled:opacity-50 transition-colors"
                 >
                   <RefreshCw className={`w-3.5 h-3.5 ${reanalyzing ? 'animate-spin' : ''}`} />
                   Re-analyze
@@ -346,7 +336,7 @@ export default function IdeaPhase({
                 onDragOver={handleDragOver}
                 onDragLeave={handleDragLeave}
                 onClick={() => fileRef.current?.click()}
-                className={`flex items-center gap-1.5 text-xs py-1 w-full text-left transition-colors ${
+                className={`flex items-center gap-1.5 text-sm py-1 w-full text-left transition-colors ${
                   isDragOver ? 'text-indigo-600' : 'text-gray-400 hover:text-gray-600'
                 }`}
               >
@@ -365,7 +355,7 @@ export default function IdeaPhase({
           >
             {docLinked ? (
               <div className="space-y-2">
-                <div className="flex items-center gap-2 text-xs text-gray-600">
+                <div className="flex items-center gap-2 text-sm text-gray-600">
                   <CheckCircle2 className="w-3.5 h-3.5 text-green-600 flex-shrink-0" />
                   <a
                     href={googleDocUrl ?? '#'}
@@ -385,7 +375,7 @@ export default function IdeaPhase({
                   <button
                     onClick={handlePullFromDoc}
                     disabled={docSyncBusy}
-                    className="flex items-center gap-1 text-xs text-gray-400 hover:text-indigo-600 disabled:opacity-50 transition-colors"
+                    className="flex items-center gap-1 text-sm text-gray-400 hover:text-indigo-600 disabled:opacity-50 transition-colors"
                     title="Pull from Google Doc"
                   >
                     {docSyncState === 'pulling' ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <CloudDownload className="w-3.5 h-3.5" />}
@@ -394,7 +384,7 @@ export default function IdeaPhase({
                   <button
                     onClick={handlePushToDoc}
                     disabled={docSyncBusy}
-                    className="flex items-center gap-1 text-xs text-gray-400 hover:text-indigo-600 disabled:opacity-50 transition-colors"
+                    className="flex items-center gap-1 text-sm text-gray-400 hover:text-indigo-600 disabled:opacity-50 transition-colors"
                     title="Push to Google Doc"
                   >
                     {docSyncState === 'pushing' ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <CloudUpload className="w-3.5 h-3.5" />}
@@ -416,13 +406,13 @@ export default function IdeaPhase({
                 <button
                   onClick={handleLinkGoogleDoc}
                   disabled={docSyncBusy || !docLinkInput.trim()}
-                  className="text-xs text-indigo-600 hover:underline disabled:opacity-50"
+                  className="text-sm text-indigo-600 hover:underline disabled:opacity-50"
                 >
                   {docSyncState === 'linking' ? <Loader2 className="w-3 h-3 animate-spin" /> : 'Link'}
                 </button>
                 <button
                   onClick={() => { setShowDocLinkInput(false); setDocLinkInput(''); }}
-                  className="text-xs text-gray-400 hover:text-gray-600"
+                  className="text-sm text-gray-400 hover:text-gray-600"
                 >
                   Cancel
                 </button>
@@ -432,7 +422,7 @@ export default function IdeaPhase({
                 <button
                   onClick={() => setShowDocLinkInput(true)}
                   disabled={docSyncBusy}
-                  className="flex items-center gap-1 text-xs text-gray-400 hover:text-indigo-600 disabled:opacity-50 transition-colors"
+                  className="flex items-center gap-1 text-sm text-gray-400 hover:text-indigo-600 disabled:opacity-50 transition-colors"
                 >
                   <Link2 className="w-3.5 h-3.5" />
                   Link
@@ -440,7 +430,7 @@ export default function IdeaPhase({
                 <button
                   onClick={handleCreateGoogleDoc}
                   disabled={docSyncBusy}
-                  className="flex items-center gap-1 text-xs text-gray-400 hover:text-indigo-600 disabled:opacity-50 transition-colors"
+                  className="flex items-center gap-1 text-sm text-gray-400 hover:text-indigo-600 disabled:opacity-50 transition-colors"
                 >
                   {docSyncState === 'creating' ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <PlusCircle className="w-3.5 h-3.5" />}
                   Create
@@ -449,26 +439,14 @@ export default function IdeaPhase({
             )}
 
             {docSyncState === 'error' && docSyncError && (
-              <p className="text-xs text-red-600 mt-1">{docSyncError}</p>
+              <p className="text-sm text-red-600 mt-1">{docSyncError}</p>
             )}
           </CollapsibleSection>
         </div>
 
         {/* Right panel — call intelligence */}
         <div className="flex-1 overflow-y-auto p-5">
-          <p className="text-xs font-semibold text-gray-500 mb-3">Call Intelligence</p>
-
-          {statParts.length > 0 && (
-            <p className="text-xs text-gray-400 mb-4">
-              {statParts.map((part, i) => (
-                <span key={i}>
-                  {i > 0 && <span className="mx-1.5">·</span>}
-                  {part}
-                </span>
-              ))}
-            </p>
-          )}
-
+          <p className="text-sm font-semibold text-gray-500 mb-4">Call Intelligence</p>
           <CallRequirementsPanel callAnalysis={callAnalysis} />
         </div>
       </div>
@@ -476,7 +454,7 @@ export default function IdeaPhase({
       {/* Sticky footer */}
       <div className="flex-shrink-0 border-t border-gray-200 px-5 py-3 flex items-center justify-end gap-3">
         {generating && (
-          <p className="text-xs text-gray-400">Generating skeleton — you can navigate away and come back</p>
+          <p className="text-sm text-gray-400">Generating — you can navigate away and come back</p>
         )}
         <button
           onClick={onGenerateSkeleton}

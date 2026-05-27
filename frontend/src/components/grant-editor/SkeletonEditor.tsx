@@ -70,7 +70,7 @@ export default function SkeletonEditor({ sections, onChange }: SkeletonEditorPro
 
             <div className="flex items-start gap-3 pl-4">
               {/* Number */}
-              <span className="text-xs text-gray-400 mt-0.5 w-4 shrink-0 select-none">{i + 1}.</span>
+              <span className="text-sm text-gray-400 mt-0.5 w-4 shrink-0 select-none">{i + 1}.</span>
 
               <div className="flex-1 min-w-0">
                 {/* Row: name + word count + controls */}
@@ -109,7 +109,7 @@ export default function SkeletonEditor({ sections, onChange }: SkeletonEditorPro
 
                 {/* Requirements preview (collapsed) */}
                 {sec.requirements && !isExpanded && (
-                  <p className="text-xs text-gray-400 mt-0.5 truncate">{sec.requirements}</p>
+                  <p className="text-sm text-gray-400 mt-0.5 truncate">{sec.requirements}</p>
                 )}
 
                 {/* Expanded panel */}
@@ -117,7 +117,7 @@ export default function SkeletonEditor({ sections, onChange }: SkeletonEditorPro
                   <div className="mt-3 space-y-4">
                     {/* Requirements */}
                     <div>
-                      <label className="text-xs font-semibold text-gray-500">Requirements</label>
+                      <label className="text-sm font-semibold text-gray-500">Requirements</label>
                       <textarea
                         value={sec.requirements}
                         onChange={(e) => updateSection(i, { requirements: e.target.value })}
@@ -130,7 +130,7 @@ export default function SkeletonEditor({ sections, onChange }: SkeletonEditorPro
                     <div className="flex flex-wrap items-center gap-6">
                       {/* Word limit */}
                       <div className="flex items-center gap-2">
-                        <label className="text-xs font-semibold text-gray-500">Word limit</label>
+                        <label className="text-sm font-semibold text-gray-500">Word limit</label>
                         <input
                           type="number"
                           value={sec.word_limit ?? ''}
@@ -144,7 +144,7 @@ export default function SkeletonEditor({ sections, onChange }: SkeletonEditorPro
 
                       {/* Section type */}
                       <div className="flex items-center gap-2">
-                        <label className="text-xs font-semibold text-gray-500">Type</label>
+                        <label className="text-sm font-semibold text-gray-500">Type</label>
                         <input
                           value={sec.type}
                           onChange={(e) => updateSection(i, { type: e.target.value })}
@@ -155,8 +155,8 @@ export default function SkeletonEditor({ sections, onChange }: SkeletonEditorPro
 
                       {/* Priority */}
                       <div className="flex items-center gap-2">
-                        <label className="text-xs font-semibold text-gray-500">Priority</label>
-                        <div className="flex gap-2 text-xs">
+                        <label className="text-sm font-semibold text-gray-500">Priority</label>
+                        <div className="flex gap-2 text-sm">
                           {PRIORITIES.map((p) => (
                             <button
                               key={p}
@@ -176,7 +176,7 @@ export default function SkeletonEditor({ sections, onChange }: SkeletonEditorPro
                     </div>
 
                     {/* Move controls */}
-                    <div className="flex items-center gap-4 text-xs text-gray-400">
+                    <div className="flex items-center gap-4 text-sm text-gray-400">
                       <button
                         type="button"
                         onClick={() => moveSection(i, -1)}
@@ -201,7 +201,7 @@ export default function SkeletonEditor({ sections, onChange }: SkeletonEditorPro
                         <button
                           type="button"
                           onClick={() => setExpandedIntroArc(expandedIntroArc === i ? null : i)}
-                          className="text-xs text-indigo-600 hover:underline"
+                          className="text-sm text-indigo-600 hover:underline"
                         >
                           {expandedIntroArc === i ? 'Hide' : 'Edit'} intro arc
                         </button>
@@ -228,7 +228,7 @@ export default function SkeletonEditor({ sections, onChange }: SkeletonEditorPro
         <button
           type="button"
           onClick={addSection}
-          className="flex items-center gap-1.5 text-xs text-gray-400 hover:text-indigo-600 transition-colors"
+          className="flex items-center gap-1.5 text-sm text-gray-400 hover:text-indigo-600 transition-colors"
         >
           <Plus className="w-3.5 h-3.5" />
           Add section
