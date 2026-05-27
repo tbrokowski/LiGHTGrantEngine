@@ -4,7 +4,6 @@ export interface GraphFilterState {
   funder: string;
   theme: string;
   deadlineDays: string;
-  minScore: string;
 }
 
 interface GraphFiltersProps {
@@ -51,21 +50,10 @@ export default function GraphFilters({ filters, onChange, funders, themes }: Gra
         <option value="90">Next 90 days</option>
       </select>
 
-      <select
-        value={filters.minScore}
-        onChange={e => set('minScore', e.target.value)}
-        className="text-xs border border-gray-200 rounded-lg px-2.5 py-1.5 text-gray-700 focus:outline-none focus:ring-1 focus:ring-gray-300 bg-white"
-      >
-        <option value="">Any score</option>
-        <option value="40">Score ≥ 40</option>
-        <option value="60">Score ≥ 60</option>
-        <option value="80">Score ≥ 80</option>
-      </select>
-
-      {(filters.funder || filters.theme || filters.deadlineDays || filters.minScore) && (
+      {(filters.funder || filters.theme || filters.deadlineDays) && (
         <button
           type="button"
-          onClick={() => onChange({ funder: '', theme: '', deadlineDays: '', minScore: '' })}
+          onClick={() => onChange({ funder: '', theme: '', deadlineDays: '' })}
           className="text-xs text-gray-400 hover:text-gray-600 px-2 py-1.5 rounded-lg hover:bg-gray-100 transition-colors"
         >
           Clear filters

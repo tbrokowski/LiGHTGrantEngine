@@ -28,14 +28,22 @@ export interface OpportunityFilters {
 }
 
 export const PRIORITY_LABELS: Record<string, string> = {
-  high_priority: 'High',
-  worth_reviewing: 'Worth reviewing',
-  watchlist: 'Watchlist',
-  low_fit: 'Low fit',
+  high: 'High Fit',
+  medium: 'Medium Fit',
+  low: 'Low Fit',
+  // legacy fallbacks
+  high_priority: 'High Fit',
+  worth_reviewing: 'Medium Fit',
+  watchlist: 'Low Fit',
+  low_fit: 'Low Fit',
 };
 
 export const PRIORITY_COLORS: Record<string, string> = {
-  high_priority: 'bg-red-100 text-red-700',
+  high: 'bg-emerald-100 text-emerald-700',
+  medium: 'bg-amber-100 text-amber-700',
+  low: 'bg-gray-100 text-gray-500',
+  // legacy fallbacks
+  high_priority: 'bg-emerald-100 text-emerald-700',
   worth_reviewing: 'bg-amber-100 text-amber-700',
   watchlist: 'bg-sky-100 text-sky-700',
   low_fit: 'bg-gray-100 text-gray-500',

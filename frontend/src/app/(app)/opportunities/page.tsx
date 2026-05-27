@@ -49,7 +49,7 @@ const EMPTY_FILTERS: OpportunityFilters = {
 };
 
 const VIEW_STORAGE_KEY = 'opportunities_view_mode';
-const EMPTY_GRAPH_FILTERS: GraphFilterState = { funder: '', theme: '', deadlineDays: '', minScore: '' };
+const EMPTY_GRAPH_FILTERS: GraphFilterState = { funder: '', theme: '', deadlineDays: '' };
 
 function applyFilters(items: Opportunity[], filters: OpportunityFilters) {
   return items.filter(o => {
@@ -138,7 +138,6 @@ export default function OpportunitiesPage() {
     if (graphFilters.funder) params.funder = graphFilters.funder;
     if (graphFilters.theme) params.theme = graphFilters.theme;
     if (graphFilters.deadlineDays) params.deadline_days = graphFilters.deadlineDays;
-    if (graphFilters.minScore) params.min_score = graphFilters.minScore;
     opportunities.graphData(params)
       .then(r => {
         setGraphNodes(r.data.nodes || []);

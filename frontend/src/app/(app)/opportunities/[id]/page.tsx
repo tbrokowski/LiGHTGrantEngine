@@ -73,16 +73,24 @@ interface DeepReviewResult {
 }
 
 const PRIORITY_LABELS: Record<string, string> = {
-  high_priority: 'High priority',
-  worth_reviewing: 'Worth reviewing',
-  watchlist: 'Watchlist',
-  low_fit: 'Low fit',
+  high: 'High Fit',
+  medium: 'Medium Fit',
+  low: 'Low Fit',
+  // legacy fallbacks
+  high_priority: 'High Fit',
+  worth_reviewing: 'Medium Fit',
+  watchlist: 'Low Fit',
+  low_fit: 'Low Fit',
 };
 
 const PRIORITY_STYLES: Record<string, string> = {
-  high_priority: 'text-red-700 bg-red-50 border-red-100',
+  high: 'text-emerald-700 bg-emerald-50 border-emerald-100',
+  medium: 'text-amber-700 bg-amber-50 border-amber-100',
+  low: 'text-gray-500 bg-gray-100 border-gray-200',
+  // legacy fallbacks
+  high_priority: 'text-emerald-700 bg-emerald-50 border-emerald-100',
   worth_reviewing: 'text-amber-700 bg-amber-50 border-amber-100',
-  watchlist: 'text-blue-700 bg-blue-50 border-blue-100',
+  watchlist: 'text-sky-700 bg-sky-50 border-sky-100',
   low_fit: 'text-gray-500 bg-gray-100 border-gray-200',
 };
 
@@ -310,12 +318,6 @@ export default function OpportunityDetailPage() {
             </div>
           </div>
           <div className="shrink-0 flex flex-col items-end gap-2">
-            {opp.fit_score != null && (
-              <div className="text-right">
-                <div className="text-3xl font-bold text-gray-900 leading-none">{Math.round(opp.fit_score)}</div>
-                <div className="text-xs text-gray-400 mt-0.5">fit score</div>
-              </div>
-            )}
             {opp.priority && (
               <span className={`text-xs px-2.5 py-1 rounded border font-medium ${PRIORITY_STYLES[opp.priority] ?? 'text-gray-500 bg-gray-100 border-gray-200'}`}>
                 {PRIORITY_LABELS[opp.priority] ?? opp.priority.replace(/_/g, ' ')}
@@ -436,6 +438,19 @@ export default function OpportunityDetailPage() {
       {/* ── Overview Tab ── */}
       {activeTab === 'overview' && (
         <div className="space-y-3">
+          {/* Fit Rationale */}
+          {opp.fit_rationale && (
+            <div className={`rounded-lg px-4 py-3 border text-sm ${
+              (opp.priority === 'high' || opp.priority === 'high_priority')
+                ? 'bg-emerald-50 border-emerald-100 text-emerald-800'
+                : (opp.priority === 'medium' || opp.priority === 'worth_reviewing')
+                ? 'bg-amber-50 border-amber-100 text-amber-800'
+                : 'bg-gray-50 border-gray-200 text-gray-600'
+            }`}>
+              {opp.fit_rationale}
+            </div>
+          )}
+
           {/* Main Description */}
           <div className="bg-white border border-gray-200 rounded-lg p-5">
             <div className="flex items-center justify-between mb-3">
@@ -645,7 +660,7 @@ export default function OpportunityDetailPage() {
                   ? 'bg-amber-50 border-amber-200'
                   : 'bg-red-50 border-red-200'
               }`}>
-                <div className="flex items-start justify-between gap-4">
+                <div className="flex items-start gap-4">
                   <div>
                     <div className="flex items-center gap-2 mb-1">
                       <span className={`text-xs font-bold px-2.5 py-1 rounded-full uppercase tracking-wide ${
@@ -664,41 +679,8 @@ export default function OpportunityDetailPage() {
                     <p className="text-sm font-medium text-gray-800 mt-1">{deepReview.verdict}</p>
                     <p className="text-xs text-gray-600 mt-1 leading-relaxed">{deepReview.go_no_go_rationale}</p>
                   </div>
-                  <div className="shrink-0 text-center">
-                    <div className="text-3xl font-bold text-gray-900">{deepReview.fit_score}</div>
-                    <div className="text-xs text-gray-400">/ 100</div>
-                  </div>
                 </div>
               </div>
-
-              {/* Score breakdown */}
-              {deepReview.score_breakdown && Object.keys(deepReview.score_breakdown).length > 0 && (
-                <div className="bg-white border border-gray-200 rounded-lg p-5">
-                  <h3 className="text-xs font-semibold text-gray-500 uppercase tracking-wide mb-4">Score Breakdown</h3>
-                  <div className="space-y-2.5">
-                    {Object.entries(deepReview.score_breakdown).map(([key, val]) => {
-                      const max = key === 'thematic_alignment' ? 35 : key === 'eligibility_match' ? 20 : key === 'partner_feasibility' ? 5 : 10;
-                      const pct = Math.round(((val as number) / max) * 100);
-                      return (
-                        <div key={key} className="flex items-center gap-3">
-                          <div className="w-36 text-xs text-gray-500 capitalize shrink-0">
-                            {key.replace(/_/g, ' ')}
-                          </div>
-                          <div className="flex-1 h-2 bg-gray-100 rounded-full overflow-hidden">
-                            <div
-                              className="h-full bg-blue-500 rounded-full transition-all"
-                              style={{ width: `${pct}%` }}
-                            />
-                          </div>
-                          <div className="w-12 text-right text-xs text-gray-600 font-medium shrink-0">
-                            {val as number}/{max}
-                          </div>
-                        </div>
-                      );
-                    })}
-                  </div>
-                </div>
-              )}
 
               {/* Strengths + Risks */}
               <div className="grid grid-cols-1 md:grid-cols-2 gap-4">

@@ -15,6 +15,7 @@ export interface GraphNode {
   funder: string | null;
   deadline: string | null;
   fit_score: number | null;
+  priority: string | null;
   cluster_id: number | null;
   thematic_areas: string[];
   geography: string[];
@@ -355,7 +356,7 @@ export default function OpportunityGraphView({ nodes, clusters, edges }: Props) 
                 </span>
               </div>
             )}
-            {hoveredNode.fit_score !== null && (
+            {hoveredNode.priority && (
               <span
                 className="text-xs font-medium px-1.5 py-0.5 rounded-full"
                 style={{
@@ -363,7 +364,11 @@ export default function OpportunityGraphView({ nodes, clusters, edges }: Props) 
                   color: fitScoreColor(hoveredNode.fit_score),
                 }}
               >
-                Score {hoveredNode.fit_score}
+                {hoveredNode.priority === 'high' || hoveredNode.priority === 'high_priority'
+                  ? 'High Fit'
+                  : hoveredNode.priority === 'medium' || hoveredNode.priority === 'worth_reviewing'
+                  ? 'Medium Fit'
+                  : 'Low Fit'}
               </span>
             )}
             {hoveredNode.ai_summary && (

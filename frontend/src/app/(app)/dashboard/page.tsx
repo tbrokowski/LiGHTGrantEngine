@@ -28,16 +28,24 @@ interface QueueItem {
 }
 
 const PRIORITY_COLOR: Record<string, string> = {
-  high_priority: 'bg-red-100 text-red-600',
+  high: 'bg-emerald-100 text-emerald-700',
+  medium: 'bg-amber-100 text-amber-600',
+  low: 'bg-gray-100 text-gray-400',
+  // legacy fallbacks
+  high_priority: 'bg-emerald-100 text-emerald-700',
   worth_reviewing: 'bg-amber-100 text-amber-600',
   watchlist: 'bg-sky-100 text-sky-600',
   low_fit: 'bg-gray-100 text-gray-400',
 };
 
 const PRIORITY_LABEL: Record<string, string> = {
-  high_priority: 'High',
-  worth_reviewing: 'Worth Reviewing',
-  watchlist: 'Watchlist',
+  high: 'High Fit',
+  medium: 'Medium Fit',
+  low: 'Low Fit',
+  // legacy fallbacks
+  high_priority: 'High Fit',
+  worth_reviewing: 'Medium Fit',
+  watchlist: 'Low Fit',
   low_fit: 'Low Fit',
 };
 
@@ -59,18 +67,6 @@ function todayLabel() {
   return new Date().toLocaleDateString('en-US', { weekday: 'long', month: 'long', day: 'numeric' });
 }
 
-function ScoreBar({ score }: { score: number }) {
-  const pct = Math.min(100, Math.max(0, score));
-  const color = pct >= 80 ? 'bg-emerald-400' : pct >= 60 ? 'bg-amber-400' : 'bg-gray-300';
-  return (
-    <div className="flex items-center gap-1.5" title={`Fit score: ${Math.round(pct)}`}>
-      <div className="w-10 h-1.5 rounded-full bg-gray-100 overflow-hidden">
-        <div className={`h-full rounded-full ${color}`} style={{ width: `${pct}%` }} />
-      </div>
-      <span className="text-[10px] font-semibold text-gray-400 tabular-nums w-5 text-right">{Math.round(pct)}</span>
-    </div>
-  );
-}
 
 function loadStarredIds(): Set<string> {
   try {
@@ -247,7 +243,6 @@ export default function DashboardPage() {
                     </div>
                   </div>
                   <div className="shrink-0 flex items-center gap-2.5">
-                    {opp.fit_score != null && <ScoreBar score={opp.fit_score} />}
                     {opp.priority && (
                       <span className={`text-xs px-1.5 py-0.5 rounded-full font-medium ${PRIORITY_COLOR[opp.priority] ?? 'bg-gray-100 text-gray-400'}`}>
                         {PRIORITY_LABEL[opp.priority] ?? opp.priority}

@@ -142,9 +142,7 @@ def rescore_institution(self, institution_id: str) -> dict:
                 )
                 io.fit_score = result["fit_score"]
                 io.priority = result["priority"]
-                io.fit_rationale = (
-                    f"Keyword score — matched: {', '.join(result['matched_themes'][:5]) or 'none'}"
-                )
+                io.fit_rationale = result.get("fit_rationale", "")
                 if result.get("matched_themes"):
                     io.matched_themes = result["matched_themes"]
                 io.status = "needs_review" if io.fit_score >= threshold else "new"
@@ -201,9 +199,7 @@ def rescore_opportunity_for_institutions(opportunity_id: str) -> dict:
                 )
                 io.fit_score = result["fit_score"]
                 io.priority = result["priority"]
-                io.fit_rationale = (
-                    f"Keyword score — matched: {', '.join(result['matched_themes'][:5]) or 'none'}"
-                )
+                io.fit_rationale = result.get("fit_rationale", "")
                 if result.get("matched_themes"):
                     io.matched_themes = result["matched_themes"]
                 if io.status not in ("archived", "potential_fit", "in_review"):
