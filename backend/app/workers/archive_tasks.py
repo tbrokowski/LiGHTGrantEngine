@@ -2,7 +2,7 @@
 import asyncio
 import logging
 
-from celery.exceptions import MaxRetriesExceeded, SoftTimeLimitExceeded
+from celery.exceptions import MaxRetriesExceededError as MaxRetriesExceeded, SoftTimeLimitExceeded
 
 from app.workers.celery_app import celery_app
 
