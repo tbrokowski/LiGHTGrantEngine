@@ -149,7 +149,7 @@ export default function ArchiveDetailPage() {
     setReindexMessage('');
     try {
       await archive.reindexStyle(entry.id, { document_id: proposalDoc.id });
-      setReindexMessage('Re-index queued in the background. This page will refresh when indexing completes.');
+      setReindexMessage('Re-index queued. Content will update automatically when indexing completes.');
       load();
     } catch (err: unknown) {
       const detail = (err as { response?: { data?: { detail?: string } } }).response?.data?.detail;
@@ -270,7 +270,7 @@ export default function ArchiveDetailPage() {
 
       {(entry.indexing_status === 'pending' || entry.indexing_status === 'processing') && (
         <div className="mb-6 bg-amber-50 border border-amber-100 rounded-lg px-4 py-3 text-sm text-amber-800">
-          AI indexing is running in the background. This page refreshes automatically.
+          AI indexing is running in the background. Content will update automatically.
         </div>
       )}
       {entry.indexing_status === 'failed' && entry.indexing_error && (

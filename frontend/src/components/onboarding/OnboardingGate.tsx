@@ -1,13 +1,39 @@
 'use client';
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import { useAuth } from '@/lib/auth';
 import OnboardingWizard from './OnboardingWizard';
 
+function seenKey(userId: string | number) {
+  return `onboarding_seen_${userId}`;
+}
+
 export default function OnboardingGate() {
   const { user, loading } = useAuth();
-  const [dismissed, setDismissed] = useState(false);
+  // null = not yet determined, true = already seen, false = first time (show modal)
+  const [seen, setSeen] = useState<boolean | null>(null);
 
-  if (loading || !user || user.onboarding_complete || dismissed) return null;
+  useEffect(() => {
+    if (!user) {
+      setSeen(null);
+      return;
+    }
+    const alreadySeen =
+      user.onboarding_complete ||
+      !!localStorage.getItem(seenKey(user.id));
+    if (alreadySeen) {
+      localStorage.setItem(seenKey(user.id), '1');
+    }
+    setSeen(alreadySeen);
+  }, [user?.id, user?.onboarding_complete]);
 
-  return <OnboardingWizard onClose={() => setDismissed(true)} />;
+  function handleClose() {
+    if (user) {
+      localStorage.setItem(seenKey(user.id), '1');
+    }
+    setSeen(true);
+  }
+
+  if (loading || !user || seen !== false) return null;
+
+  return <OnboardingWizard onClose={handleClose} />;
 }

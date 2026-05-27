@@ -1,5 +1,5 @@
 'use client';
-import { useEffect, useState } from 'react';
+import { useEffect, useState, useCallback } from 'react';
 import { useRouter, useParams } from 'next/navigation';
 import Link from 'next/link';
 import { Sparkles, Check, AlertTriangle, Folder, ChevronRight, Loader2 } from 'lucide-react';
@@ -146,14 +146,46 @@ export default function OpportunityDetailPage() {
   const [refetching, setRefetching] = useState(false);
   const [generatingSummary, setGeneratingSummary] = useState(false);
   const [actionBusy, setActionBusy] = useState(false);
+  const [enriching, setEnriching] = useState(false);
+  const [enrichMessage, setEnrichMessage] = useState('');
 
-  useEffect(() => {
+  const fetchOpp = useCallback(() => {
     if (!id) return;
     opportunities.get(id)
       .then(r => setOpp(r.data))
       .catch(console.error)
       .finally(() => setLoading(false));
   }, [id]);
+
+  useEffect(() => { fetchOpp(); }, [fetchOpp]);
+
+  // Poll for updated content after a re-enrich task is queued
+  useEffect(() => {
+    if (!enriching || !id) return;
+    const prevDescription = opp?.description;
+    const prevSummary = opp?.ai_summary;
+    const interval = setInterval(async () => {
+      try {
+        const r = await opportunities.get(id);
+        const fresh = r.data as OpportunityDetail;
+        if (
+          (fresh.description && fresh.description !== prevDescription) ||
+          (fresh.ai_summary && fresh.ai_summary !== prevSummary)
+        ) {
+          setOpp(fresh);
+          setEnriching(false);
+          setEnrichMessage('');
+        }
+      } catch { /* silent */ }
+    }, 5000);
+    const timeout = setTimeout(() => {
+      clearInterval(interval);
+      setEnriching(false);
+      setEnrichMessage('Content generation is taking longer than expected. Try again in a few minutes.');
+    }, 120_000);
+    return () => { clearInterval(interval); clearTimeout(timeout); };
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [enriching, id]);
 
   async function handleDeepReview() {
     setReviewing(true);
@@ -176,9 +208,10 @@ export default function OpportunityDetailPage() {
     setRefetching(true);
     try {
       await api.post(`/opportunities/${id}/re-enrich`);
-      alert('Re-enrichment queued. Refresh the page in a moment to see updated content.');
+      setEnriching(true);
+      setEnrichMessage('Fetching content — this usually takes 20–60 seconds…');
     } catch {
-      alert('Failed to queue re-fetch.');
+      setEnrichMessage('Failed to queue re-fetch. Please try again.');
     } finally {
       setRefetching(false);
     }
@@ -193,9 +226,10 @@ export default function OpportunityDetailPage() {
     setGeneratingSummary(true);
     try {
       await api.post(`/opportunities/${id}/re-enrich`);
-      alert('AI summary generation queued. Refresh in a moment to see results.');
+      setEnriching(true);
+      setEnrichMessage('Generating AI summary — this usually takes 20–60 seconds…');
     } catch {
-      alert('Failed to queue summary generation.');
+      setEnrichMessage('Failed to queue summary generation. Please try again.');
     } finally {
       setGeneratingSummary(false);
     }
@@ -251,6 +285,18 @@ export default function OpportunityDetailPage() {
         <span>/</span>
         <span className="text-gray-600 truncate">{opp.title}</span>
       </div>
+
+      {/* Inline enrichment status banner */}
+      {enrichMessage && (
+        <div className={`mb-4 flex items-center gap-2 rounded-lg px-4 py-3 text-sm border ${
+          enriching
+            ? 'bg-amber-50 border-amber-100 text-amber-800'
+            : 'bg-red-50 border-red-100 text-red-700'
+        }`}>
+          {enriching && <Loader2 className="w-4 h-4 animate-spin shrink-0" />}
+          {enrichMessage}
+        </div>
+      )}
 
       {/* Header card */}
       <div className="bg-white border border-gray-200 rounded-lg p-6 mb-6">
