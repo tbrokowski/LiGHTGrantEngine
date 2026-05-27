@@ -16,9 +16,15 @@ router = APIRouter()
 
 @router.get("/my-tasks")
 async def my_tasks(db: AsyncSession = Depends(get_db), current_user: User = Depends(get_current_user)):
+    # Return all open tasks from every grant the user can access (institution-scoped)
+    accessible_grant_ids = await _get_accessible_grant_ids(current_user, db)
+    if not accessible_grant_ids:
+        return []
+
     q = select(Task).where(
-        or_(Task.owner_id == current_user.id, Task.assignee_ids.cast(String).contains(current_user.id)),
+        Task.grant_id.in_(accessible_grant_ids),
         Task.status.notin_(["complete", "dropped"]),
+        Task.parent_task_id.is_(None),  # top-level tasks only
     )
     result = await db.execute(q)
     task_list = result.scalars().all()
