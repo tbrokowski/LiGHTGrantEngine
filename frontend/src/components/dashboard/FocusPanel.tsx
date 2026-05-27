@@ -1,4 +1,5 @@
 'use client';
+import { useState } from 'react';
 import Link from 'next/link';
 
 export interface GrantItem {
@@ -20,6 +21,8 @@ export interface TaskItem {
   due_date: string | null;
   status: string;
   priority: string;
+  owner_id: string | null;
+  assignee_ids: string[];
 }
 
 function daysUntil(d?: string | null): number | null {
@@ -107,14 +110,21 @@ interface FocusPanelProps {
   grants: GrantItem[];
   tasks: TaskItem[];
   loading: boolean;
+  currentUserId?: string | null;
 }
 
-export default function FocusPanel({ tasks, loading }: FocusPanelProps) {
-  const withDate = tasks
+export default function FocusPanel({ tasks, loading, currentUserId }: FocusPanelProps) {
+  const [assignedOnly, setAssignedOnly] = useState(false);
+
+  const visibleTasks = assignedOnly && currentUserId
+    ? tasks.filter(t => t.owner_id === currentUserId || (t.assignee_ids ?? []).includes(currentUserId))
+    : tasks;
+
+  const withDate = visibleTasks
     .filter(t => t.due_date != null)
     .sort((a, b) => new Date(a.due_date!).getTime() - new Date(b.due_date!).getTime());
 
-  const withoutDate = tasks.filter(t => t.due_date == null);
+  const withoutDate = visibleTasks.filter(t => t.due_date == null);
 
   const sorted = [...withDate, ...withoutDate];
 
@@ -131,9 +141,21 @@ export default function FocusPanel({ tasks, loading }: FocusPanelProps) {
 
   return (
     <div className="bg-white border border-gray-100 rounded-2xl overflow-hidden flex flex-col h-full">
-      <div className="px-4 py-3.5 border-b border-gray-50 flex items-center justify-between">
+      <div className="px-4 py-3.5 border-b border-gray-50 flex items-center justify-between gap-2">
         <h2 className="text-sm font-semibold text-gray-900">Focus</h2>
-        <p className="text-[10px] text-gray-400 font-medium">{summaryText}</p>
+        <div className="flex items-center gap-2 ml-auto">
+          <button
+            onClick={() => setAssignedOnly(v => !v)}
+            className={`text-[10px] font-semibold px-2 py-1 rounded-full border transition-colors whitespace-nowrap ${
+              assignedOnly
+                ? 'bg-indigo-50 text-indigo-600 border-indigo-200'
+                : 'bg-white text-gray-400 border-gray-200 hover:border-gray-300 hover:text-gray-600'
+            }`}
+          >
+            Assigned to me
+          </button>
+          <p className="text-[10px] text-gray-400 font-medium shrink-0">{summaryText}</p>
+        </div>
       </div>
 
       {loading ? (

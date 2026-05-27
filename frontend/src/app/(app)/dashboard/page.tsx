@@ -187,7 +187,7 @@ export default function DashboardPage() {
       {/* ── Focus + Scratchpad ── */}
       <div className="grid grid-cols-1 lg:grid-cols-5 gap-5 items-stretch" style={{ minHeight: 280 }}>
         <div className="lg:col-span-3">
-          <FocusPanel grants={grantList} tasks={taskList} loading={loading} />
+          <FocusPanel grants={grantList} tasks={taskList} loading={loading} currentUserId={user?.id ?? null} />
         </div>
         <div className="lg:col-span-2">
           <Scratchpad />
