@@ -7,6 +7,13 @@ import {
 } from 'lucide-react';
 import { WorkspaceFile } from './types';
 import { grants } from '@/lib/api';
+import { openDocumentContent } from '@/lib/documents';
+
+/** Extract document ID if url is our internal content endpoint, else null. */
+function extractDocId(url: string): string | null {
+  const m = url.match(/\/documents\/([^/]+)\/content/);
+  return m ? m[1] : null;
+}
 
 interface Props {
   grantId: string;
@@ -47,6 +54,14 @@ function SourceIcon({ sourceType, className }: { sourceType: string; className?:
 }
 
 function FileCard({ file, onDelete }: { file: WorkspaceFile; onDelete: () => void }) {
+  const docId = file.file_url ? extractDocId(file.file_url) : null;
+
+  const handleOpen = (e: React.MouseEvent) => {
+    if (!docId) return;
+    e.preventDefault();
+    openDocumentContent(docId, file.file_name);
+  };
+
   return (
     <div className="bg-white border border-gray-200 rounded-xl p-3 hover:border-indigo-200 transition-colors group">
       <div className="flex items-start justify-between gap-2">
@@ -54,9 +69,10 @@ function FileCard({ file, onDelete }: { file: WorkspaceFile; onDelete: () => voi
           <div className="flex items-center gap-1.5">
             <SourceIcon sourceType={file.source_type} />
             <a
-              href={file.file_url}
+              href={file.file_url ?? '#'}
               target="_blank"
               rel="noopener noreferrer"
+              onClick={docId ? handleOpen : undefined}
               className="text-sm font-medium text-indigo-600 hover:underline truncate"
             >
               {file.file_name}
