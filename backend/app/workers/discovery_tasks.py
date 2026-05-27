@@ -231,8 +231,8 @@ def _process_listing(db, listing: dict, source_id: str, source_url: str | None =
         select(Opportunity).where(Opportunity.opportunity_url == call_url)
     ).scalar_one_or_none()
     if existing:
-        # Always re-queue enrichment on a full refresh so stale data gets updated
-        if existing.opportunity_url:
+        # Re-queue enrichment only if the record was never successfully fetched
+        if not existing.parsed_text and existing.opportunity_url:
             from app.workers.enrichment_tasks import enrich_opportunity
             enrich_opportunity.delay(str(existing.id))
         return "duplicate"
