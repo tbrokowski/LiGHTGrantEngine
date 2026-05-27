@@ -85,6 +85,7 @@ async def generate_proposal_outline(
     similar_str = _format_similar_grants(similar_grants or [])
     style_str = _format_style_profile(style_profile or {})
     style_section = f'STYLE PROFILE:\n{style_str}' if style_str else ''
+    team_pref_section = f'TEAM PREFERENCES: {team_preferences}' if team_preferences else ''
 
     user_prompt = f"""Think step by step before producing the outline:
 1. Identify the 3–5 highest-weight evaluation criteria from the call.
@@ -114,7 +115,7 @@ Budget constraints: {call_analysis.get('budget_constraints', '')}
 {similar_str}
 
 {style_section}
-{('TEAM PREFERENCES: ' + team_preferences) if team_preferences else ''}
+{team_pref_section}
 
 ---
 
