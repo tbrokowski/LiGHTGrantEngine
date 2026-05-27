@@ -112,8 +112,8 @@ Budget constraints: {call_analysis.get('budget_constraints', '')}
 
 {similar_str}
 
-{f'STYLE PROFILE:\\n{style_str}' if style_str else ''}
-{f'TEAM PREFERENCES: {team_preferences}' if team_preferences else ''}
+{('STYLE PROFILE:\n' + style_str) if style_str else ''}
+{('TEAM PREFERENCES: ' + team_preferences) if team_preferences else ''}
 
 ---
 
