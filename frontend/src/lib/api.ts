@@ -271,6 +271,8 @@ export const grants = {
     api.post(`/grants/${grantId}/docs/pull`),
   getGoogleDocContent: (grantId: string) =>
     api.get(`/grants/${grantId}/docs/content`),
+  getDocsRemoteStatus: (grantId: string) =>
+    api.get(`/grants/${grantId}/docs/remote-status`),
   // Activity log
   getActivity: (grantId: string, limit?: number) =>
     api.get(`/grants/${grantId}/activity`, { params: { limit } }),

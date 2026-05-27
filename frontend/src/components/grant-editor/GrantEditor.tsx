@@ -89,9 +89,19 @@ export default function GrantEditor({ grant, onGrantUpdate, onHeadingsChange }: 
   const [docLinked, setDocLinked] = useState(!!grant.google_doc_id);
   const [docUrl, setDocUrl] = useState(grant.google_doc_url || '');
   const [lastSynced, setLastSynced] = useState(grant.google_doc_last_synced || '');
+  // Keep ref in sync with state for use inside timer callbacks
+  useEffect(() => { docLinkedRef.current = docLinked; }, [docLinked]);
 
   const saveTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const ideaTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  // 30-second debounced push to Google Doc after editor changes
+  const googlePushTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  // True while an auto-sync operation is in progress (prevents concurrent runs)
+  const autoSyncInProgress = useRef(false);
+  // Track whether document content has changed since the last Google Doc push
+  const docChangedSinceLastPush = useRef(false);
+  // Stable ref to docLinked so timer callbacks always see the latest value
+  const docLinkedRef = useRef(!!grant.google_doc_id);
 
   /**
    * Apply a resolved skeleton result to this component instance.
@@ -171,8 +181,39 @@ export default function GrantEditor({ grant, onGrantUpdate, onHeadingsChange }: 
         clearInterval(pollingIntervalRef.current);
         pollingIntervalRef.current = null;
       }
+      if (googlePushTimer.current) {
+        clearTimeout(googlePushTimer.current);
+        googlePushTimer.current = null;
+      }
     };
   }, [grant.id, applySkeletonResult, startPollingStatus]);
+
+  // Auto-pull interval: every 30s, check if the Google Doc has been modified
+  // externally and pull it into the editor (Google Doc is the source of truth).
+  useEffect(() => {
+    if (!docLinked) return;
+    const interval = setInterval(async () => {
+      if (document.visibilityState !== 'visible') return;
+      if (autoSyncInProgress.current) return;
+      // Skip if the user just edited (push timer is pending — our version is newer)
+      if (docChangedSinceLastPush.current) return;
+      try {
+        const statusRes = await grants.getDocsRemoteStatus(grant.id);
+        if (!statusRes.data.has_remote_changes) return;
+        autoSyncInProgress.current = true;
+        const pullRes = await grants.pullFromGoogleDoc(grant.id);
+        setDocumentHtml(pullRes.data.content_html || '');
+        setLastSynced(pullRes.data.last_synced);
+        setSyncState('success');
+        setTimeout(() => setSyncState((s) => s === 'success' ? 'idle' : s), 3000);
+      } catch {
+        // Silent fail — manual pull always available
+      } finally {
+        autoSyncInProgress.current = false;
+      }
+    }, 30000);
+    return () => clearInterval(interval);
+  }, [docLinked, grant.id]);
 
   const getDocumentContext = useCallback(() => documentHtml.replace(/<[^>]+>/g, ' ').trim(), [documentHtml]);
 
@@ -181,6 +222,8 @@ export default function GrantEditor({ grant, onGrantUpdate, onHeadingsChange }: 
     setWordCount(words);
     setHeadings(heads);
     onHeadingsChange?.(heads);
+
+    // Auto-save to DB (1.5s debounce)
     if (saveTimer.current) clearTimeout(saveTimer.current);
     saveTimer.current = setTimeout(async () => {
       try {
@@ -189,6 +232,30 @@ export default function GrantEditor({ grant, onGrantUpdate, onHeadingsChange }: 
         console.error('Auto-save failed', e);
       }
     }, 1500);
+
+    // Mark that content has changed since last push, then schedule a push
+    // to Google Doc 30s after the last keystroke (only if a doc is linked).
+    docChangedSinceLastPush.current = true;
+    if (googlePushTimer.current) clearTimeout(googlePushTimer.current);
+    googlePushTimer.current = setTimeout(async () => {
+      if (!docChangedSinceLastPush.current) return;
+      if (autoSyncInProgress.current) return;
+      if (!docLinkedRef.current) return;
+      autoSyncInProgress.current = true;
+      docChangedSinceLastPush.current = false;
+      try {
+        // Save first so the push uses the latest content
+        await grants.saveDocument(grant.id, html, false);
+        const res = await grants.pushToGoogleDoc(grant.id);
+        setLastSynced(res.data.last_synced);
+        setSyncState('success');
+        setTimeout(() => setSyncState((s) => s === 'success' ? 'idle' : s), 3000);
+      } catch {
+        // Silent fail for auto-push — user can always push manually
+      } finally {
+        autoSyncInProgress.current = false;
+      }
+    }, 30000);
   }, [grant.id, onHeadingsChange]);
 
   const handlePhaseChange = (newPhase: WritingPhase) => {

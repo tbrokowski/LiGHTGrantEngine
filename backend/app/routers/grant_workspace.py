@@ -1531,6 +1531,65 @@ async def get_docs_status(
     }
 
 
+@router.get("/{grant_id}/docs/remote-status")
+async def get_docs_remote_status(
+    grant_id: str,
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    """Check whether the linked Google Doc has been modified since the last sync.
+
+    Uses a lightweight Drive API metadata call (no document content fetched).
+    Returns has_remote_changes=False immediately when no doc is linked or
+    when the user's Google token is unavailable.
+    """
+    from datetime import datetime, timezone
+
+    grant = await _get_grant_or_404(grant_id, db)
+
+    if not grant.google_doc_id:
+        return {"has_remote_changes": False, "remote_modified_at": None, "last_synced": None}
+
+    try:
+        access_token = await _get_user_google_token(current_user, db)
+    except HTTPException:
+        return {"has_remote_changes": False, "remote_modified_at": None, "last_synced": None}
+
+    try:
+        from google.oauth2.credentials import Credentials  # type: ignore[import]
+        from googleapiclient.discovery import build  # type: ignore[import]
+
+        creds = Credentials(token=access_token)
+        drive_svc = build("drive", "v3", credentials=creds, cache_discovery=False)
+        file_meta = drive_svc.files().get(
+            fileId=grant.google_doc_id, fields="modifiedTime"
+        ).execute()
+        remote_modified_str: str | None = file_meta.get("modifiedTime")
+    except Exception:
+        return {"has_remote_changes": False, "remote_modified_at": None, "last_synced": None}
+
+    if not remote_modified_str:
+        return {"has_remote_changes": False, "remote_modified_at": None, "last_synced": None}
+
+    remote_dt = datetime.fromisoformat(remote_modified_str.replace("Z", "+00:00"))
+
+    has_remote_changes = False
+    if grant.google_doc_last_synced:
+        last_synced = grant.google_doc_last_synced
+        if last_synced.tzinfo is None:
+            last_synced = last_synced.replace(tzinfo=timezone.utc)
+        has_remote_changes = remote_dt > last_synced
+    else:
+        # Never synced — treat any remote content as a change
+        has_remote_changes = True
+
+    return {
+        "has_remote_changes": has_remote_changes,
+        "remote_modified_at": remote_modified_str,
+        "last_synced": grant.google_doc_last_synced.isoformat() if grant.google_doc_last_synced else None,
+    }
+
+
 @router.post("/{grant_id}/docs/create")
 async def create_google_doc(
     grant_id: str,

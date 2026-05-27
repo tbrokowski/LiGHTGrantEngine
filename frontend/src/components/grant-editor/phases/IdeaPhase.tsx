@@ -180,18 +180,27 @@ export default function IdeaPhase({
   };
 
   // --- Google Docs ---
+  const extractDocError = (e: unknown, fallback: string): string => {
+    const detail = (e as { response?: { data?: { detail?: string } } }).response?.data?.detail;
+    return detail || (e as { message?: string }).message || fallback;
+  };
+
   const handleLinkGoogleDoc = async () => {
     if (!docLinkInput.trim()) return;
     setDocSyncState('linking');
     setDocSyncError('');
     try {
       const { data } = await grantsApi.linkGoogleDoc(grantId, docLinkInput.trim());
-      onDocLinked?.(data.google_doc_id, data.google_doc_url);
+      onDocLinked?.(data.doc_id, data.doc_url);
       setShowDocLinkInput(false);
       setDocLinkInput('');
+      // Auto-pull the linked doc content into the editor
+      setDocSyncState('pulling');
+      const pullRes = await grantsApi.pullFromGoogleDoc(grantId);
+      onDocPulled?.(pullRes.data.content_html || '');
       setDocSyncState('idle');
-    } catch {
-      setDocSyncError('Failed to link. Check the URL and try again.');
+    } catch (e) {
+      setDocSyncError(extractDocError(e, 'Failed to link. Check the URL and try again.'));
       setDocSyncState('error');
     }
   };
@@ -201,33 +210,35 @@ export default function IdeaPhase({
     setDocSyncError('');
     try {
       const res = await grantsApi.createGoogleDoc(grantId);
-      onDocLinked?.(res.data.google_doc_id, res.data.google_doc_url);
+      onDocLinked?.(res.data.doc_id, res.data.doc_url);
       setDocSyncState('idle');
-    } catch {
-      setDocSyncError('Failed to create Google Doc.');
+    } catch (e) {
+      setDocSyncError(extractDocError(e, 'Failed to create Google Doc.'));
       setDocSyncState('error');
     }
   };
 
   const handlePullFromDoc = async () => {
     setDocSyncState('pulling');
+    setDocSyncError('');
     try {
       const res = await grantsApi.pullFromGoogleDoc(grantId);
       onDocPulled?.(res.data.content_html || '');
       setDocSyncState('idle');
-    } catch {
-      setDocSyncError('Failed to pull from Google Doc.');
+    } catch (e) {
+      setDocSyncError(extractDocError(e, 'Failed to pull from Google Doc.'));
       setDocSyncState('error');
     }
   };
 
   const handlePushToDoc = async () => {
     setDocSyncState('pushing');
+    setDocSyncError('');
     try {
       await grantsApi.pushToGoogleDoc(grantId);
       setDocSyncState('idle');
-    } catch {
-      setDocSyncError('Failed to push to Google Doc.');
+    } catch (e) {
+      setDocSyncError(extractDocError(e, 'Failed to push to Google Doc.'));
       setDocSyncState('error');
     }
   };
