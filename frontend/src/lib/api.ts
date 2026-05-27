@@ -85,6 +85,12 @@ export const organizations = {
     api.patch(`/organizations/${orgId}/members/${userId}`, data),
   removeMember: (orgId: string, userId: string) =>
     api.delete(`/organizations/${orgId}/members/${userId}`),
+  orgGrants: (institutionId: string) =>
+    api.get(`/organizations/${institutionId}/grants`),
+  getMemberGrantMemberships: (orgId: string, userId: string) =>
+    api.get(`/organizations/${orgId}/members/${userId}/grant-memberships`),
+  setMemberGrantMemberships: (orgId: string, userId: string, grantIds: string[]) =>
+    api.put(`/organizations/${orgId}/members/${userId}/grant-memberships`, { grant_ids: grantIds }),
   joinRequests: (id: string) => api.get(`/organizations/${id}/join-requests`),
   approveRequest: (orgId: string, reqId: string) =>
     api.post(`/organizations/${orgId}/join-requests/${reqId}/approve`),

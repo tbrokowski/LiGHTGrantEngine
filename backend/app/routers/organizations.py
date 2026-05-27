@@ -250,6 +250,143 @@ async def remove_member(
     await invalidate_permission_cache(user_id, redis)
 
 
+# ── Member grant access (org-admin) ───────────────────────────────────────────
+
+@router.get("/{institution_id}/grants", dependencies=[Depends(require_org_admin())])
+async def list_org_grants_for_admin(
+    institution_id: str,
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    """Return all non-personal org grants for the admin member-access panel."""
+    from app.models.active_grant import ActiveGrant
+    result = await db.execute(
+        select(ActiveGrant).where(
+            ActiveGrant.institution_id == institution_id,
+            ActiveGrant.is_personal.is_(False),
+        )
+    )
+    grants = result.scalars().all()
+    return [
+        {
+            "id": g.id,
+            "title": g.title,
+            "funder": g.funder,
+            "grant_stage": g.grant_stage,
+            "status": g.status,
+        }
+        for g in grants
+    ]
+
+
+class GrantMembershipUpdate(BaseModel):
+    grant_ids: list[str]
+
+
+@router.get("/{institution_id}/members/{user_id}/grant-memberships", dependencies=[Depends(require_org_admin())])
+async def get_member_grant_memberships(
+    institution_id: str,
+    user_id: str,
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    """Return the grant IDs this org member has accepted GrantMember access to."""
+    from app.models.grant_member import GrantMember, GrantMemberStatus
+    from app.models.active_grant import ActiveGrant
+
+    # Only return memberships for grants belonging to this institution
+    subq = select(ActiveGrant.id).where(
+        ActiveGrant.institution_id == institution_id,
+        ActiveGrant.is_personal.is_(False),
+    )
+    result = await db.execute(
+        select(GrantMember).where(
+            GrantMember.user_id == user_id,
+            GrantMember.status == GrantMemberStatus.ACCEPTED,
+            GrantMember.grant_id.in_(subq),
+        )
+    )
+    members = result.scalars().all()
+    return {
+        "grant_ids": [m.grant_id for m in members],
+        "owner_grant_ids": [
+            m.grant_id for m in members
+            if m.role == "owner"
+        ],
+    }
+
+
+@router.put("/{institution_id}/members/{user_id}/grant-memberships", dependencies=[Depends(require_org_admin())])
+async def set_member_grant_memberships(
+    institution_id: str,
+    user_id: str,
+    body: GrantMembershipUpdate,
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+    redis: aioredis.Redis = Depends(get_redis),
+):
+    """Set the exact list of grants a member can access. Org-admin only.
+
+    Adds EDITOR/ACCEPTED GrantMember rows for new grants, removes rows for
+    de-selected grants (OWNER rows are never removed).
+    """
+    from app.models.grant_member import GrantMember, GrantMemberRole, GrantMemberStatus
+    from app.models.active_grant import ActiveGrant
+    from sqlalchemy import delete as sa_delete
+
+    # Verify the user is in this institution
+    target = (await db.execute(
+        select(User).where(User.id == user_id, User.institution_id == institution_id)
+    )).scalar_one_or_none()
+    if not target:
+        raise HTTPException(404, "Member not found in this organization.")
+
+    # Limit to grants that actually belong to this institution
+    org_grant_ids_result = await db.execute(
+        select(ActiveGrant.id).where(
+            ActiveGrant.institution_id == institution_id,
+            ActiveGrant.is_personal.is_(False),
+        )
+    )
+    valid_org_grant_ids = set(org_grant_ids_result.scalars().all())
+    requested_ids = set(body.grant_ids) & valid_org_grant_ids
+
+    # Fetch current memberships (all statuses) for this user in these org grants
+    existing_result = await db.execute(
+        select(GrantMember).where(
+            GrantMember.user_id == user_id,
+            GrantMember.grant_id.in_(valid_org_grant_ids),
+        )
+    )
+    existing = existing_result.scalars().all()
+    existing_by_grant: dict[str, GrantMember] = {m.grant_id: m for m in existing}
+
+    # Add new memberships
+    for grant_id in requested_ids:
+        if grant_id not in existing_by_grant:
+            db.add(GrantMember(
+                id=str(uuid.uuid4()),
+                grant_id=grant_id,
+                user_id=user_id,
+                email=target.email,
+                role=GrantMemberRole.EDITOR,
+                status=GrantMemberStatus.ACCEPTED,
+                invited_by_id=current_user.id,
+            ))
+        elif existing_by_grant[grant_id].status != GrantMemberStatus.ACCEPTED:
+            # Re-activate a previously pending/removed row
+            existing_by_grant[grant_id].status = GrantMemberStatus.ACCEPTED
+
+    # Remove memberships for de-selected grants (never remove OWNER rows)
+    for grant_id, member in existing_by_grant.items():
+        if grant_id not in requested_ids and member.role != GrantMemberRole.OWNER:
+            await db.delete(member)
+
+    await db.commit()
+    await invalidate_permission_cache(user_id, redis)
+    return {"grant_ids": list(requested_ids)}
+
+
 # ── Join requests ─────────────────────────────────────────────────────────────
 
 @router.post("/{institution_id}/join-requests", status_code=201)
