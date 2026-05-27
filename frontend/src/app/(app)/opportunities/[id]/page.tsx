@@ -436,14 +436,6 @@ export default function OpportunityDetailPage() {
       {/* ── Overview Tab ── */}
       {activeTab === 'overview' && (
         <div className="space-y-3">
-          {/* Fit Rationale */}
-          {opp.fit_rationale && (
-            <div className="bg-white border border-gray-200 rounded-lg p-5">
-              <h3 className="text-xs font-semibold text-gray-500 uppercase tracking-wide mb-2">Fit Rationale</h3>
-              <p className="text-sm text-gray-700 leading-relaxed">{opp.fit_rationale}</p>
-            </div>
-          )}
-
           {/* Main Description */}
           <div className="bg-white border border-gray-200 rounded-lg p-5">
             <div className="flex items-center justify-between mb-3">
