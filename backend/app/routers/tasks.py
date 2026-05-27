@@ -2,7 +2,7 @@
 from typing import Optional
 from datetime import date, timedelta
 from fastapi import APIRouter, Depends
-from sqlalchemy import select, and_, or_
+from sqlalchemy import select, and_, or_, String
 from sqlalchemy.ext.asyncio import AsyncSession
 from app.database import get_db
 from app.models.task import Task
@@ -17,7 +17,7 @@ router = APIRouter()
 @router.get("/my-tasks")
 async def my_tasks(db: AsyncSession = Depends(get_db), current_user: User = Depends(get_current_user)):
     q = select(Task).where(
-        or_(Task.owner_id == current_user.id, Task.assignee_ids.cast(str).contains(current_user.id)),
+        or_(Task.owner_id == current_user.id, Task.assignee_ids.cast(String).contains(current_user.id)),
         Task.status.notin_(["complete", "dropped"]),
     )
     result = await db.execute(q)
