@@ -212,6 +212,59 @@ def rescore_opportunity_for_institutions(opportunity_id: str) -> dict:
     return {"scored": scored}
 
 
+@celery_app.task(name="app.workers.surfacing_tasks.llm_rescore_institution", bind=True, max_retries=2)
+def llm_rescore_institution(self, institution_id: str) -> dict:
+    """Re-score all surfaced opportunities for an institution using the LLM fit scorer."""
+    from app.config import get_settings
+    from app.models.institution import Institution
+    from app.models.institution_opportunity import InstitutionOpportunity
+    from app.models.opportunity import Opportunity
+    from app.schemas.grant_profile import GrantProfile
+    from app.ai.agents.fit_scorer import score_opportunity
+
+    settings = get_settings()
+    engine = create_engine(settings.database_url)
+
+    scored = 0
+    failed = 0
+    with Session(engine) as db:
+        inst = db.get(Institution, institution_id)
+        if not inst:
+            return {"scored": 0, "failed": 0}
+        profile = GrantProfile.from_dict(inst.grant_profile or {})
+        threshold = profile.auto_queue_threshold
+        rows = db.execute(
+            select(InstitutionOpportunity, Opportunity)
+            .join(Opportunity, Opportunity.id == InstitutionOpportunity.opportunity_id)
+            .where(InstitutionOpportunity.institution_id == institution_id)
+        ).all()
+        for io, opp in rows:
+            try:
+                result = _run_async(score_opportunity(
+                    title=opp.title or "",
+                    description=opp.description or opp.parsed_text or opp.notes or "",
+                    funder=opp.funder or "",
+                    eligibility=opp.eligibility_criteria or "",
+                    geography=", ".join(opp.geography or []),
+                    award_amount=f"{opp.award_min or ''}–{opp.award_max or ''}" if (opp.award_min or opp.award_max) else "",
+                    deadline=str(opp.deadline) if opp.deadline else "",
+                    profile=profile,
+                ))
+                io.fit_score = result.get("fit_score", 0)
+                io.priority = result.get("priority", "low_fit")
+                io.fit_rationale = result.get("rationale", "")
+                if result.get("matched_themes"):
+                    io.matched_themes = result["matched_themes"]
+                io.status = "needs_review" if io.fit_score >= threshold else "new"
+                io.scored_at = datetime.now(timezone.utc)
+                scored += 1
+            except Exception as exc:
+                logger.warning("LLM rescore failed for opp %s: %s", opp.id, exc)
+                failed += 1
+        db.commit()
+    return {"scored": scored, "failed": failed}
+
+
 @celery_app.task(name="app.workers.surfacing_tasks.bootstrap_global_pool")
 def bootstrap_global_pool() -> dict:
     from app.services.grant_bootstrap import run_full_bootstrap

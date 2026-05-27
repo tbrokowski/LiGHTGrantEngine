@@ -1,8 +1,7 @@
 'use client';
 import { useEffect, useState, useCallback } from 'react';
 import { useRouter } from 'next/navigation';
-import { X, ChevronDown, ChevronUp, AlertCircle, CheckCircle, Loader2, Clock } from 'lucide-react';
-import { opportunities, sources } from '@/lib/api';
+import { opportunities } from '@/lib/api';
 import OpportunityRow from '@/components/opportunities/OpportunityRow';
 import FocusReview from '@/components/opportunities/FocusReview';
 import OpportunityFiltersBar from '@/components/opportunities/OpportunityFilters';
@@ -16,28 +15,11 @@ import {
   type ViewMode,
 } from '@/components/opportunities/types';
 
-interface ScanRun {
-  id: string;
-  source_id: string;
-  source_name: string;
-  started_at: string | null;
-  ended_at: string | null;
-  status: string;
-  records_found: number | null;
-  new_opportunities: number | null;
-  duplicates: number | null;
-  errors: string[];
-  log_summary: string | null;
-}
-
-interface ScanSummary {
-  sources_by_status: Record<string, number>;
-  total_opportunities: number;
-  running_scans: number;
-  recent_errors_24h: number;
-  last_run_at: string | null;
-  last_run_status: string | null;
-}
+const PRIORITY_ORDER: Record<string, number> = {
+  high_priority: 0, high: 0,
+  worth_reviewing: 1, medium: 1,
+  watchlist: 2, low_fit: 3, low: 2,
+};
 
 const EMPTY_FILTERS: OpportunityFilters = {
   search: '',
@@ -46,25 +28,60 @@ const EMPTY_FILTERS: OpportunityFilters = {
   deadlineBefore: '',
   deadlineAfter: '',
   awardMin: '',
+  hasDeadline: false,
+  sortBy: 'relevance',
 };
 
 const VIEW_STORAGE_KEY = 'opportunities_view_mode';
 const EMPTY_GRAPH_FILTERS: GraphFilterState = { funder: '', theme: '', deadlineDays: '' };
 
-function applyFilters(items: Opportunity[], filters: OpportunityFilters) {
-  return items.filter(o => {
+const PRIORITY_GROUPS: Record<string, string[]> = {
+  high: ['high', 'high_priority'],
+  medium: ['medium', 'worth_reviewing'],
+  low: ['low', 'low_fit', 'watchlist'],
+};
+
+function applyFilters(items: Opportunity[], filters: OpportunityFilters): Opportunity[] {
+  const filtered = items.filter(o => {
     const s = filters.search.toLowerCase();
     if (s && !o.title.toLowerCase().includes(s) && !(o.funder ?? '').toLowerCase().includes(s)) return false;
-    if (filters.priority && o.priority !== filters.priority) return false;
+    if (filters.priority) {
+      const group = PRIORITY_GROUPS[filters.priority];
+      if (group && !group.includes(o.priority ?? '')) return false;
+    }
     if (filters.theme && !o.thematic_areas?.some(t => t.toLowerCase().includes(filters.theme.toLowerCase()))) return false;
     if (filters.deadlineAfter && o.deadline && new Date(o.deadline) < new Date(filters.deadlineAfter)) return false;
     if (filters.deadlineBefore && o.deadline && new Date(o.deadline) > new Date(filters.deadlineBefore)) return false;
+    if (filters.hasDeadline && !o.deadline) return false;
     if (filters.awardMin) {
       const min = parseInt(filters.awardMin.replace(/,/g, ''), 10);
       const award = o.award_max ?? o.award_min ?? 0;
       if (!isNaN(min) && award < min) return false;
     }
     return true;
+  });
+
+  if (filters.sortBy === 'deadline') {
+    return [...filtered].sort((a, b) => {
+      if (!a.deadline && !b.deadline) return 0;
+      if (!a.deadline) return 1;
+      if (!b.deadline) return -1;
+      return new Date(a.deadline).getTime() - new Date(b.deadline).getTime();
+    });
+  }
+  if (filters.sortBy === 'award') {
+    return [...filtered].sort((a, b) => {
+      const aVal = a.award_max ?? a.award_min ?? 0;
+      const bVal = b.award_max ?? b.award_min ?? 0;
+      return bVal - aVal;
+    });
+  }
+  // default: relevance — sort by priority tier then fit_score descending
+  return [...filtered].sort((a, b) => {
+    const pa = PRIORITY_ORDER[a.priority ?? ''] ?? 99;
+    const pb = PRIORITY_ORDER[b.priority ?? ''] ?? 99;
+    if (pa !== pb) return pa - pb;
+    return (b.fit_score ?? 0) - (a.fit_score ?? 0);
   });
 }
 
@@ -83,11 +100,6 @@ export default function OpportunitiesPage() {
   const [queue, setQueue] = useState<Opportunity[]>([]);
   const [shortlist, setShortlist] = useState<Opportunity[]>([]);
   const [loading, setLoading] = useState(true);
-  const [refreshing, setRefreshing] = useState(false);
-  const [refreshBanner, setRefreshBanner] = useState('');
-  const [scanLogs, setScanLogs] = useState<ScanRun[]>([]);
-  const [showScanLogs, setShowScanLogs] = useState(false);
-  const [scanSummary, setScanSummary] = useState<ScanSummary | null>(null);
   const [filters, setFilters] = useState<OpportunityFilters>(EMPTY_FILTERS);
   const [showFilters, setShowFilters] = useState(false);
   const [pastExpanded, setPastExpanded] = useState(false);
@@ -162,7 +174,8 @@ export default function OpportunitiesPage() {
   const upcoming = filtered.filter(o => !isExpired(o.deadline) || !o.deadline);
   const past = filtered.filter(o => isExpired(o.deadline));
   const hasFilters = filters.search || filters.priority || filters.theme ||
-    filters.deadlineBefore || filters.deadlineAfter || filters.awardMin;
+    filters.deadlineBefore || filters.deadlineAfter || filters.awardMin ||
+    filters.hasDeadline || filters.sortBy !== 'relevance';
   const unreadCount = queue.filter(o => !o.is_read).length;
 
   function removeFromList(id: string) {
@@ -218,53 +231,6 @@ export default function OpportunitiesPage() {
     }
   }
 
-  const loadScanStatus = useCallback(async () => {
-    try {
-      const [runsRes, summaryRes] = await Promise.all([
-        sources.recentRuns(30),
-        sources.summary(),
-      ]);
-      setScanLogs(runsRes.data || []);
-      setScanSummary(summaryRes.data || null);
-    } catch {
-      // not critical
-    }
-  }, []);
-
-  async function handleRefreshAll() {
-    setRefreshing(true);
-    setRefreshBanner('');
-    try {
-      const res = await sources.runAll();
-      const count = res.data?.queued ?? '?';
-      setRefreshBanner(`Scan queued for ${count} active source${count !== 1 ? 's' : ''}. New opportunities will appear in a few minutes.`);
-      setShowScanLogs(true);
-      // Poll scan status to show live progress
-      await loadScanStatus();
-      const interval = setInterval(loadScanStatus, 8000);
-      setTimeout(() => {
-        clearInterval(interval);
-        setRefreshBanner('');
-        loadQueue();
-      }, 90000);
-    } catch (err: unknown) {
-      const status = (err as { response?: { status?: number } })?.response?.status;
-      if (status === 403) {
-        setRefreshBanner('Admin access required to trigger source scans.');
-      } else {
-        setRefreshBanner('Failed to trigger scan. Check that the backend is running.');
-      }
-      setTimeout(() => setRefreshBanner(''), 5000);
-    } finally {
-      setRefreshing(false);
-    }
-  }
-
-  async function handleShowScanLogs() {
-    setShowScanLogs(v => !v);
-    if (!showScanLogs) await loadScanStatus();
-  }
-
   useEffect(() => {
     if (focusIndex >= upcoming.length && upcoming.length > 0) {
       setFocusIndex(upcoming.length - 1);
@@ -298,87 +264,6 @@ export default function OpportunitiesPage() {
 
   return (
     <div className="px-8 py-8 max-w-6xl mx-auto">
-      {refreshBanner && (
-        <div className="mb-4 px-4 py-3 bg-blue-50 border border-blue-200 rounded-xl text-sm text-blue-700 flex items-center justify-between">
-          <span>{refreshBanner}</span>
-          <button onClick={() => setRefreshBanner('')} className="ml-3 text-blue-400 hover:text-blue-600"><X className="w-4 h-4" /></button>
-        </div>
-      )}
-
-      {/* Scan Debug Panel */}
-      {showScanLogs && (
-        <div className="mb-5 border border-gray-200 rounded-xl overflow-hidden bg-white">
-          <div className="flex items-center justify-between px-4 py-3 border-b border-gray-100 bg-gray-50">
-            <div className="flex items-center gap-3">
-              <span className="text-sm font-medium text-gray-700">Source Scan Log</span>
-              {scanSummary && (
-                <div className="flex items-center gap-3 text-xs text-gray-500">
-                  <span className="flex items-center gap-1">
-                    <span className="w-2 h-2 rounded-full bg-green-400 inline-block" />
-                    {scanSummary.sources_by_status?.active ?? 0} active
-                  </span>
-                  {(scanSummary.running_scans ?? 0) > 0 && (
-                    <span className="flex items-center gap-1 text-blue-600">
-                      <Loader2 className="w-3 h-3 animate-spin" />
-                      {scanSummary.running_scans} running
-                    </span>
-                  )}
-                  {(scanSummary.recent_errors_24h ?? 0) > 0 && (
-                    <span className="flex items-center gap-1 text-red-500">
-                      <AlertCircle className="w-3 h-3" />
-                      {scanSummary.recent_errors_24h} errors (24h)
-                    </span>
-                  )}
-                  <span>{scanSummary.total_opportunities?.toLocaleString()} opps in DB</span>
-                </div>
-              )}
-            </div>
-            <button onClick={() => setShowScanLogs(false)} className="text-gray-400 hover:text-gray-600">
-              <X className="w-4 h-4" />
-            </button>
-          </div>
-          <div className="max-h-64 overflow-y-auto">
-            {scanLogs.length === 0 ? (
-              <div className="px-4 py-6 text-center text-sm text-gray-400">No scan runs yet. Click &quot;Refresh Sources&quot; to start.</div>
-            ) : (
-              <table className="w-full text-xs">
-                <thead>
-                  <tr className="border-b border-gray-100 text-gray-400 uppercase tracking-wider">
-                    <th className="text-left px-4 py-2">Source</th>
-                    <th className="text-left px-4 py-2">Status</th>
-                    <th className="text-right px-4 py-2">Found</th>
-                    <th className="text-right px-4 py-2">New</th>
-                    <th className="text-left px-4 py-2">Started</th>
-                    <th className="text-left px-4 py-2">Error</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {scanLogs.map(run => (
-                    <tr key={run.id} className="border-b border-gray-50 hover:bg-gray-50">
-                      <td className="px-4 py-2 font-medium text-gray-700 max-w-[160px] truncate">{run.source_name}</td>
-                      <td className="px-4 py-2">
-                        {run.status === 'running' && <span className="flex items-center gap-1 text-blue-600"><Loader2 className="w-3 h-3 animate-spin" />running</span>}
-                        {run.status === 'success' && <span className="flex items-center gap-1 text-green-600"><CheckCircle className="w-3 h-3" />success</span>}
-                        {run.status === 'failed' && <span className="flex items-center gap-1 text-red-500"><AlertCircle className="w-3 h-3" />failed</span>}
-                        {!['running','success','failed'].includes(run.status) && <span className="text-gray-400">{run.status}</span>}
-                      </td>
-                      <td className="px-4 py-2 text-right text-gray-500">{run.records_found ?? '—'}</td>
-                      <td className="px-4 py-2 text-right text-gray-700 font-medium">{run.new_opportunities ?? '—'}</td>
-                      <td className="px-4 py-2 text-gray-400 whitespace-nowrap">
-                        {run.started_at ? new Date(run.started_at).toLocaleTimeString() : '—'}
-                      </td>
-                      <td className="px-4 py-2 text-red-500 max-w-[200px] truncate" title={run.errors?.[0]}>
-                        {run.errors?.[0] || run.log_summary || ''}
-                      </td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
-            )}
-          </div>
-        </div>
-      )}
-
       {/* Header */}
       <div className="flex items-start justify-between mb-6">
         <div>
@@ -406,29 +291,6 @@ export default function OpportunitiesPage() {
             }`}
           >
             Filters {hasFilters ? '·' : ''}
-          </button>
-          <button
-            onClick={handleShowScanLogs}
-            className={`px-3 py-1.5 text-sm rounded-lg border transition-colors flex items-center gap-1 ${
-              showScanLogs ? 'border-gray-900 bg-gray-900 text-white' : 'border-gray-200 text-gray-500 hover:border-gray-400 hover:text-gray-700'
-            }`}
-            title="Show scan log"
-          >
-            {showScanLogs ? <ChevronUp className="w-3.5 h-3.5" /> : <ChevronDown className="w-3.5 h-3.5" />}
-            <Clock className="w-3.5 h-3.5" />
-          </button>
-          <button
-            onClick={handleRefreshAll}
-            disabled={refreshing}
-            className="px-3 py-1.5 text-sm rounded-lg border border-gray-200 text-gray-600 hover:border-gray-400 hover:text-gray-900 transition-colors disabled:opacity-50 flex items-center gap-1.5"
-          >
-            <svg
-              className={`w-3.5 h-3.5 ${refreshing ? 'animate-spin' : ''}`}
-              fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}
-            >
-              <path strokeLinecap="round" strokeLinejoin="round" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" />
-            </svg>
-            {refreshing ? 'Scanning…' : 'Refresh Sources'}
           </button>
         </div>
       </div>

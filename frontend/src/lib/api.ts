@@ -116,6 +116,8 @@ export const organizations = {
     api.post(`/organizations/${id}/onboarding/complete`, data),
   aiAugmentProfile: (id: string, data: { raw_interests: string; org_name?: string; description?: string }) =>
     api.post(`/organizations/${id}/onboarding/ai-augment`, data),
+  triggerLlmRank: (id: string) =>
+    api.post(`/organizations/${id}/llm-rank`),
 };
 
 // ── Users ────────────────────────────────────────────────────────────────────

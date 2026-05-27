@@ -25,27 +25,29 @@ export interface OpportunityFilters {
   deadlineBefore: string;
   deadlineAfter: string;
   awardMin: string;
+  hasDeadline: boolean;
+  sortBy: 'relevance' | 'deadline' | 'award';
 }
 
 export const PRIORITY_LABELS: Record<string, string> = {
-  high: 'High Fit',
-  medium: 'Medium Fit',
-  low: 'Low Fit',
-  // legacy fallbacks
-  high_priority: 'High Fit',
-  worth_reviewing: 'Medium Fit',
-  watchlist: 'Low Fit',
-  low_fit: 'Low Fit',
+  high: 'High',
+  medium: 'Medium',
+  low: 'Low',
+  // legacy values
+  high_priority: 'High',
+  worth_reviewing: 'Medium',
+  watchlist: 'Low',
+  low_fit: 'Low',
 };
 
 export const PRIORITY_COLORS: Record<string, string> = {
   high: 'bg-emerald-100 text-emerald-700',
   medium: 'bg-amber-100 text-amber-700',
   low: 'bg-gray-100 text-gray-500',
-  // legacy fallbacks
+  // legacy values
   high_priority: 'bg-emerald-100 text-emerald-700',
   worth_reviewing: 'bg-amber-100 text-amber-700',
-  watchlist: 'bg-sky-100 text-sky-700',
+  watchlist: 'bg-gray-100 text-gray-500',
   low_fit: 'bg-gray-100 text-gray-500',
 };
 
@@ -91,5 +93,5 @@ export function isExpired(deadline: string | null) {
   return new Date(deadline) < new Date();
 }
 
-export type ViewMode = 'table' | 'focus';
+export type ViewMode = 'table' | 'focus' | 'graph';
 export type TabMode = 'queue' | 'shortlist';

@@ -658,6 +658,34 @@ async def update_grant_profile(
     return profile
 
 
+@router.post("/{institution_id}/llm-rank", dependencies=[Depends(require_org_admin())])
+async def trigger_llm_rank(
+    institution_id: str,
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    """Queue an LLM-powered rescore of all surfaced opportunities for this org."""
+    inst = await _get_institution_or_404(institution_id, db)
+    profile = inst.grant_profile or {}
+    if not profile.get("keywords"):
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Set organization keywords before running custom ranking.",
+        )
+    try:
+        from app.workers.celery_app import celery_app as _celery
+        _celery.send_task(
+            "app.workers.surfacing_tasks.llm_rescore_institution",
+            args=[institution_id],
+        )
+    except Exception:
+        raise HTTPException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            detail="Background worker unavailable. Ensure Celery is running.",
+        )
+    return {"message": "Custom AI ranking queued. Scores will update within a few minutes."}
+
+
 @router.get("/{institution_id}/preseed-status")
 async def preseed_status(
     institution_id: str,

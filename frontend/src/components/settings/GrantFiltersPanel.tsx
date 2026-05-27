@@ -1,7 +1,7 @@
 'use client';
 
-import { useEffect, useState } from 'react';
-import { organizations, users } from '@/lib/api';
+import { useEffect, useState, useCallback } from 'react';
+import { organizations, users, sources } from '@/lib/api';
 
 interface OrgSource {
   id: string;
@@ -11,6 +11,24 @@ interface OrgSource {
   category?: string;
   is_enabled: boolean;
   is_high_priority?: boolean;
+}
+
+interface ScanRun {
+  id: string;
+  source_name: string;
+  started_at: string | null;
+  status: string;
+  records_found: number | null;
+  new_opportunities: number | null;
+  errors: string[];
+  log_summary: string | null;
+}
+
+interface ScanSummary {
+  sources_by_status: Record<string, number>;
+  total_opportunities: number;
+  running_scans: number;
+  recent_errors_24h: number;
 }
 
 interface GrantProfile {
@@ -83,6 +101,13 @@ export function GrantFiltersPanel({ institutionId, isOrgAdmin }: GrantFiltersPan
   const [savingPersonal, setSavingPersonal] = useState(false);
   const [preseedStatus, setPreseedStatus] = useState<string | null>(null);
   const [message, setMessage] = useState<string | null>(null);
+  // Data management (admin-only)
+  const [refreshing, setRefreshing] = useState(false);
+  const [ranking, setRanking] = useState(false);
+  const [scanBanner, setScanBanner] = useState('');
+  const [scanLogs, setScanLogs] = useState<ScanRun[]>([]);
+  const [showScanLogs, setShowScanLogs] = useState(false);
+  const [scanSummary, setScanSummary] = useState<ScanSummary | null>(null);
 
   useEffect(() => {
     organizations.getGrantProfile(institutionId).then(r => setOrgProfile(r.data ?? {})).catch(() => {});
@@ -118,6 +143,60 @@ export function GrantFiltersPanel({ institutionId, isOrgAdmin }: GrantFiltersPan
   async function toggleSource(sourceId: string, enabled: boolean) {
     await organizations.toggleOrgSource(institutionId, sourceId, !enabled);
     setOrgSources(prev => prev.map(s => s.id === sourceId ? { ...s, is_enabled: !enabled } : s));
+  }
+
+  const loadScanStatus = useCallback(async () => {
+    try {
+      const [runsRes, summaryRes] = await Promise.all([
+        sources.recentRuns(30),
+        sources.summary(),
+      ]);
+      setScanLogs(runsRes.data || []);
+      setScanSummary(summaryRes.data || null);
+    } catch {
+      // not critical
+    }
+  }, []);
+
+  async function handleRefreshSources() {
+    setRefreshing(true);
+    setScanBanner('');
+    try {
+      const res = await sources.runAll();
+      const count = res.data?.queued ?? '?';
+      setScanBanner(`Scan queued for ${count} active source${count !== 1 ? 's' : ''}. New opportunities will appear in a few minutes.`);
+      setShowScanLogs(true);
+      await loadScanStatus();
+      const interval = setInterval(loadScanStatus, 8000);
+      setTimeout(() => {
+        clearInterval(interval);
+        setScanBanner('');
+      }, 90000);
+    } catch (err: unknown) {
+      const httpStatus = (err as { response?: { status?: number } })?.response?.status;
+      setScanBanner(httpStatus === 403
+        ? 'Admin access required to trigger source scans.'
+        : 'Failed to trigger scan. Check that the backend is running.');
+      setTimeout(() => setScanBanner(''), 5000);
+    } finally {
+      setRefreshing(false);
+    }
+  }
+
+  async function handleCustomRank() {
+    setRanking(true);
+    setScanBanner('');
+    try {
+      await organizations.triggerLlmRank(institutionId);
+      setScanBanner('Custom AI ranking queued. Scores will update within a few minutes.');
+      setTimeout(() => setScanBanner(''), 8000);
+    } catch (err: unknown) {
+      const data = (err as { response?: { data?: { detail?: string } } })?.response?.data;
+      setScanBanner(data?.detail ?? 'Failed to queue custom ranking.');
+      setTimeout(() => setScanBanner(''), 6000);
+    } finally {
+      setRanking(false);
+    }
   }
 
   return (
@@ -238,6 +317,126 @@ export function GrantFiltersPanel({ institutionId, isOrgAdmin }: GrantFiltersPan
           ))}
         </div>
       </section>
+
+      {isOrgAdmin && (
+        <section className="border border-gray-200 rounded-lg p-5 bg-white space-y-4">
+          <div>
+            <h3 className="text-sm font-semibold text-gray-900">Data management</h3>
+            <p className="text-xs text-gray-400 mt-0.5">Admin-only actions for refreshing grant data and scoring.</p>
+          </div>
+
+          {scanBanner && (
+            <div className="px-3 py-2 bg-blue-50 border border-blue-200 rounded-lg text-xs text-blue-700">
+              {scanBanner}
+            </div>
+          )}
+
+          <div className="flex flex-col sm:flex-row gap-3">
+            <div className="flex-1 border border-gray-100 rounded-lg p-4 bg-gray-50">
+              <p className="text-xs font-semibold text-gray-700 mb-1">Refresh Sources</p>
+              <p className="text-xs text-gray-400 mb-3">Re-scan all active grant sources and pull in new opportunities.</p>
+              <button
+                onClick={handleRefreshSources}
+                disabled={refreshing}
+                className="flex items-center gap-1.5 text-xs px-3 py-1.5 bg-gray-900 text-white rounded-md hover:bg-gray-800 disabled:opacity-50 transition-colors"
+              >
+                <svg className={`w-3 h-3 ${refreshing ? 'animate-spin' : ''}`} fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+                  <path strokeLinecap="round" strokeLinejoin="round" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" />
+                </svg>
+                {refreshing ? 'Scanning…' : 'Refresh Sources'}
+              </button>
+            </div>
+
+            <div className="flex-1 border border-gray-100 rounded-lg p-4 bg-gray-50">
+              <p className="text-xs font-semibold text-gray-700 mb-1">Custom Rank</p>
+              <p className="text-xs text-gray-400 mb-3">
+                Use AI to score all opportunities against your org profile and keywords — more precise than keyword matching alone. Results shown as High / Medium / Low fit.
+              </p>
+              <button
+                onClick={handleCustomRank}
+                disabled={ranking}
+                className="flex items-center gap-1.5 text-xs px-3 py-1.5 bg-violet-600 text-white rounded-md hover:bg-violet-700 disabled:opacity-50 transition-colors"
+              >
+                <svg className={`w-3 h-3 ${ranking ? 'animate-spin' : ''}`} fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+                  <path strokeLinecap="round" strokeLinejoin="round" d="M9.663 17h4.673M12 3v1m6.364 1.636l-.707.707M21 12h-1M4 12H3m3.343-5.657l-.707-.707m2.828 9.9a5 5 0 117.072 0l-.347.347a2 2 0 01-1.414.586H9.88a2 2 0 01-1.414-.586l-.347-.347z" />
+                </svg>
+                {ranking ? 'Queuing…' : 'Custom Rank'}
+              </button>
+            </div>
+          </div>
+
+          {/* Scan log toggle */}
+          <div>
+            <button
+              onClick={async () => {
+                const next = !showScanLogs;
+                setShowScanLogs(next);
+                if (next) await loadScanStatus();
+              }}
+              className="text-xs text-gray-400 hover:text-gray-600 flex items-center gap-1"
+            >
+              <svg className={`w-3 h-3 transition-transform ${showScanLogs ? 'rotate-180' : ''}`} fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+                <path strokeLinecap="round" strokeLinejoin="round" d="M19 9l-7 7-7-7" />
+              </svg>
+              {showScanLogs ? 'Hide scan log' : 'Show scan log'}
+            </button>
+
+            {showScanLogs && (
+              <div className="mt-3 border border-gray-200 rounded-lg overflow-hidden bg-white">
+                {scanSummary && (
+                  <div className="flex items-center gap-4 px-4 py-2 border-b border-gray-100 bg-gray-50 text-xs text-gray-500">
+                    <span className="flex items-center gap-1">
+                      <span className="w-1.5 h-1.5 rounded-full bg-green-400 inline-block" />
+                      {scanSummary.sources_by_status?.active ?? 0} active
+                    </span>
+                    {(scanSummary.running_scans ?? 0) > 0 && (
+                      <span className="text-blue-600">{scanSummary.running_scans} running</span>
+                    )}
+                    {(scanSummary.recent_errors_24h ?? 0) > 0 && (
+                      <span className="text-red-500">{scanSummary.recent_errors_24h} errors (24h)</span>
+                    )}
+                    <span>{scanSummary.total_opportunities?.toLocaleString()} opps in DB</span>
+                  </div>
+                )}
+                <div className="max-h-48 overflow-y-auto">
+                  {scanLogs.length === 0 ? (
+                    <p className="px-4 py-5 text-center text-xs text-gray-400">No scan runs yet.</p>
+                  ) : (
+                    <table className="w-full text-xs">
+                      <thead>
+                        <tr className="border-b border-gray-100 text-gray-400 uppercase tracking-wider">
+                          <th className="text-left px-4 py-2">Source</th>
+                          <th className="text-left px-4 py-2">Status</th>
+                          <th className="text-right px-4 py-2">Found</th>
+                          <th className="text-right px-4 py-2">New</th>
+                          <th className="text-left px-4 py-2">Started</th>
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {scanLogs.map(run => (
+                          <tr key={run.id} className="border-b border-gray-50 hover:bg-gray-50">
+                            <td className="px-4 py-2 font-medium text-gray-700 max-w-[160px] truncate">{run.source_name}</td>
+                            <td className="px-4 py-2">
+                              <span className={`${run.status === 'success' ? 'text-green-600' : run.status === 'failed' ? 'text-red-500' : run.status === 'running' ? 'text-blue-600' : 'text-gray-400'}`}>
+                                {run.status}
+                              </span>
+                            </td>
+                            <td className="px-4 py-2 text-right text-gray-500">{run.records_found ?? '—'}</td>
+                            <td className="px-4 py-2 text-right text-gray-700 font-medium">{run.new_opportunities ?? '—'}</td>
+                            <td className="px-4 py-2 text-gray-400 whitespace-nowrap">
+                              {run.started_at ? new Date(run.started_at).toLocaleTimeString() : '—'}
+                            </td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                  )}
+                </div>
+              </div>
+            )}
+          </div>
+        </section>
+      )}
     </div>
   );
 }
