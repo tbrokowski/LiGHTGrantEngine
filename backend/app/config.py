@@ -138,11 +138,14 @@ class Settings(BaseSettings):
     r2_secret_access_key: Optional[str] = None
     r2_bucket_name: str = "grantengine"
 
-    # SMTP / email
+    # Email (Resend HTTP API)
+    resend_api_key: Optional[str] = None
+    smtp_from: str = "onboarding@resend.dev"
+
+    # Legacy SMTP fields (unused — kept so existing .env files don't break)
     smtp_host: str = "smtp.resend.com"
     smtp_port: int = 587
-    smtp_from: str = "onboarding@resend.dev"
-    smtp_username: Optional[str] = None  # defaults to "resend" for Resend, set to email for Gmail etc.
+    smtp_username: Optional[str] = None
     smtp_password: Optional[str] = None
 
     # Google OAuth

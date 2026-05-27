@@ -17,6 +17,7 @@ celery_app = Celery(
         "app.workers.org_tasks",
         "app.workers.surfacing_tasks",
         "app.workers.archive_tasks",
+        "app.workers.clustering_tasks",
     ],
 )
 
@@ -57,5 +58,10 @@ celery_app.conf.beat_schedule = {
     "resurface-missing-institution-opps": {
         "task": "app.workers.surfacing_tasks.bootstrap_global_pool",
         "schedule": crontab(hour=3, minute=0),
+    },
+    "recluster-opportunities": {
+        "task": "app.workers.clustering_tasks.cluster_opportunities",
+        # Run every 6 hours — keeps graph communities fresh as new grants arrive
+        "schedule": crontab(hour="*/6", minute=30),
     },
 }

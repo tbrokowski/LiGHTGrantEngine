@@ -2,9 +2,9 @@
 import { useEffect, useState } from 'react';
 import Link from 'next/link';
 import { ChevronRight } from 'lucide-react';
-import { analytics, opportunities, grants } from '@/lib/api';
+import { analytics, opportunities, grants, tasks as tasksApi } from '@/lib/api';
 import { useAuth } from '@/lib/auth';
-import FocusPanel, { type GrantItem } from '@/components/dashboard/FocusPanel';
+import FocusPanel, { type GrantItem, type TaskItem } from '@/components/dashboard/FocusPanel';
 import Scratchpad from '@/components/dashboard/Scratchpad';
 import GrantTimeline from '@/components/dashboard/GrantTimeline';
 
@@ -85,6 +85,7 @@ export default function DashboardPage() {
   const [stats, setStats] = useState<DashboardStats | null>(null);
   const [queue, setQueue] = useState<QueueItem[]>([]);
   const [grantList, setGrantList] = useState<GrantItem[]>([]);
+  const [taskList, setTaskList] = useState<TaskItem[]>([]);
   const [loading, setLoading] = useState(true);
   const [starredIds, setStarredIds] = useState<Set<string>>(new Set());
 
@@ -102,10 +103,12 @@ export default function DashboardPage() {
       analytics.dashboard().catch(() => ({ data: null })),
       opportunities.queue().catch(() => ({ data: [] })),
       grants.list({ limit: 50 }).catch(() => ({ data: [] })),
-    ]).then(([statsRes, queueRes, grantsRes]) => {
+      tasksApi.myTasks().catch(() => ({ data: [] })),
+    ]).then(([statsRes, queueRes, grantsRes, tasksRes]) => {
       setStats(statsRes.data);
       setQueue((queueRes.data as QueueItem[]).slice(0, 10));
       setGrantList(grantsRes.data as GrantItem[]);
+      setTaskList(tasksRes.data as TaskItem[]);
     }).finally(() => setLoading(false));
   }, []);
 
@@ -188,7 +191,7 @@ export default function DashboardPage() {
       {/* ── Focus + Scratchpad ── */}
       <div className="grid grid-cols-1 lg:grid-cols-5 gap-5 items-stretch" style={{ minHeight: 280 }}>
         <div className="lg:col-span-3">
-          <FocusPanel grants={grantList} loading={loading} />
+          <FocusPanel grants={grantList} tasks={taskList} loading={loading} />
         </div>
         <div className="lg:col-span-2">
           <Scratchpad />

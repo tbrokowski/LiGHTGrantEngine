@@ -6,7 +6,7 @@ import { opportunities, sources } from '@/lib/api';
 import OpportunityRow from '@/components/opportunities/OpportunityRow';
 import FocusReview from '@/components/opportunities/FocusReview';
 import OpportunityFiltersBar from '@/components/opportunities/OpportunityFilters';
-import OpportunityGraphView, { GraphNode, GraphCluster } from '@/components/opportunities/OpportunityGraphView';
+import OpportunityGraphView, { GraphNode, GraphCluster, GraphEdge } from '@/components/opportunities/OpportunityGraphView';
 import GraphFilters, { GraphFilterState } from '@/components/opportunities/GraphFilters';
 import {
   isExpired,
@@ -95,6 +95,7 @@ export default function OpportunitiesPage() {
   const [focusIndex, setFocusIndex] = useState(0);
   const [graphNodes, setGraphNodes] = useState<GraphNode[]>([]);
   const [graphClusters, setGraphClusters] = useState<GraphCluster[]>([]);
+  const [graphEdges, setGraphEdges] = useState<GraphEdge[]>([]);
   const [graphLoading, setGraphLoading] = useState(false);
   const [graphFilters, setGraphFilters] = useState<GraphFilterState>(EMPTY_GRAPH_FILTERS);
 
@@ -142,6 +143,7 @@ export default function OpportunitiesPage() {
       .then(r => {
         setGraphNodes(r.data.nodes || []);
         setGraphClusters(r.data.clusters || []);
+        setGraphEdges(r.data.edges || []);
       })
       .catch(console.error)
       .finally(() => setGraphLoading(false));
@@ -538,7 +540,7 @@ export default function OpportunitiesPage() {
           {graphLoading ? (
             <div className="flex-1 flex items-center justify-center text-sm text-gray-400">Loading graph…</div>
           ) : (
-            <OpportunityGraphView nodes={graphNodes} clusters={graphClusters} />
+            <OpportunityGraphView nodes={graphNodes} clusters={graphClusters} edges={graphEdges} />
           )}
         </div>
       ) : activeTab === 'queue' && viewMode === 'focus' ? (

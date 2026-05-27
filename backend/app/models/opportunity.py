@@ -135,6 +135,10 @@ class Opportunity(Base):
     # Cluster assignment for graph view
     cluster_id: Mapped[int | None] = mapped_column(Integer, ForeignKey("opportunity_clusters.id"), nullable=True, index=True)
 
+    # UMAP 2D layout coordinates (set by clustering task)
+    umap_x: Mapped[float | None] = mapped_column(Float, nullable=True)
+    umap_y: Mapped[float | None] = mapped_column(Float, nullable=True)
+
     # Metadata
     date_discovered: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now(), index=True)
     date_updated: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now(), onupdate=func.now())

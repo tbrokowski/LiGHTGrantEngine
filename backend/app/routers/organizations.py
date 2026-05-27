@@ -449,8 +449,9 @@ async def invite_member_by_email(
     frontend_url = settings.base_url or "http://localhost:3000"
     invite_url = f"{frontend_url}/invite/{token}"
 
+    import asyncio
     from app.services.email import send_email
-    await send_email(
+    asyncio.create_task(send_email(
         to=body.email,
         subject=f"You're invited to join {inst.name} on LiGHT Grant Engine",
         html=f"""
@@ -458,7 +459,7 @@ async def invite_member_by_email(
         <p><a href="{invite_url}">Click here to accept the invitation</a></p>
         <p>This link expires in 48 hours.</p>
         """,
-    )
+    ))
 
     return {"message": f"Invite sent to {body.email}", "invite_url": invite_url}
 

@@ -16,13 +16,17 @@ router = APIRouter()
 
 @router.get("/my-tasks")
 async def my_tasks(db: AsyncSession = Depends(get_db), current_user: User = Depends(get_current_user)):
-    q = select(Task).where(
-        or_(Task.owner_id == current_user.id, Task.assignee_ids.cast(str).contains(current_user.id)),
-        Task.status.notin_(["complete","dropped"]),
+    q = (
+        select(Task, ActiveGrant.title.label("grant_title"))
+        .join(ActiveGrant, Task.grant_id == ActiveGrant.id)
+        .where(
+            or_(Task.owner_id == current_user.id, Task.assignee_ids.cast(str).contains(current_user.id)),
+            Task.status.notin_(["complete", "dropped"]),
+        )
     )
     result = await db.execute(q)
-    tasks = result.scalars().all()
-    return [_task_dict(t) for t in tasks]
+    rows = result.all()
+    return [{**_task_dict(t), "grant_title": grant_title} for t, grant_title in rows]
 
 @router.get("/overdue")
 async def overdue_tasks(db: AsyncSession = Depends(get_db), current_user: User = Depends(get_current_user)):

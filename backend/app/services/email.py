@@ -1,10 +1,7 @@
-"""Async email sending service via SMTP (Resend-compatible)."""
-import asyncio
+"""Async email sending service via Resend HTTP API."""
 import logging
-import smtplib
-from email.mime.multipart import MIMEMultipart
-from email.mime.text import MIMEText
-from functools import partial
+
+import httpx
 
 from app.config import get_settings
 
@@ -17,33 +14,33 @@ async def send_email(
     html: str,
     text: str | None = None,
 ) -> None:
-    """Send an HTML email asynchronously. Logs and swallows errors gracefully."""
+    """Send an HTML email via Resend HTTP API. Logs and swallows errors gracefully."""
     settings = get_settings()
 
-    if not settings.smtp_password:
-        logger.info("SMTP not configured — skipping email to %s: %s", to, subject)
+    if not settings.resend_api_key:
+        logger.info("Resend not configured — skipping email to %s: %s", to, subject)
         return
 
-    def _send() -> None:
-        msg = MIMEMultipart("alternative")
-        msg["Subject"] = subject
-        msg["From"] = settings.smtp_from
-        msg["To"] = to
+    payload: dict = {
+        "from": settings.smtp_from,
+        "to": [to],
+        "subject": subject,
+        "html": html,
+    }
+    if text:
+        payload["text"] = text
 
-        if text:
-            msg.attach(MIMEText(text, "plain"))
-        msg.attach(MIMEText(html, "html"))
-
-        with smtplib.SMTP(settings.smtp_host, settings.smtp_port) as server:
-            server.ehlo()
-            server.starttls()
-            smtp_user = settings.smtp_username or "resend"
-            server.login(smtp_user, settings.smtp_password)
-            server.sendmail(settings.smtp_from, to, msg.as_string())
-
-    loop = asyncio.get_event_loop()
     try:
-        await loop.run_in_executor(None, _send)
+        async with httpx.AsyncClient(timeout=15) as client:
+            resp = await client.post(
+                "https://api.resend.com/emails",
+                headers={
+                    "Authorization": f"Bearer {settings.resend_api_key}",
+                    "Content-Type": "application/json",
+                },
+                json=payload,
+            )
+            resp.raise_for_status()
         logger.info("Email sent to %s: %s", to, subject)
     except Exception as e:
         logger.error("Failed to send email to %s: %s", to, e)

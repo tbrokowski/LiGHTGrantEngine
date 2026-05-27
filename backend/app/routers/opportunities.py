@@ -193,8 +193,15 @@ async def get_graph_data(
     geography: Optional[str] = None,
     deadline_days: Optional[int] = None,
 ):
-    """Return nodes + cluster metadata for the opportunity graph view."""
+    """Return nodes, weighted edges, and cluster metadata for the graph view.
+
+    Edges come from the kNN cosine-similarity graph stored by the clustering
+    task and are filtered to pairs where both endpoints are in the current
+    result set. Capped at 2000 edges (highest-weight first) to stay
+    wire-friendly.
+    """
     from app.models.opportunity_cluster import OpportunityCluster
+    from app.models.opportunity_edge import OpportunityEdge
 
     q = select(Opportunity).where(
         Opportunity.status.notin_(["archived", "duplicate"])
@@ -221,6 +228,8 @@ async def get_graph_data(
     clusters = {c.id: {"id": c.id, "label": c.label, "color": c.color}
                 for c in clusters_result.scalars().all()}
 
+    node_ids: set[str] = {o.id for o in opps}
+
     nodes = []
     for o in opps:
         nodes.append({
@@ -234,10 +243,27 @@ async def get_graph_data(
             "geography": o.geography or [],
             "ai_summary": o.ai_summary or o.short_summary,
             "status": o.status,
+            "umap_x": o.umap_x,
+            "umap_y": o.umap_y,
         })
+
+    # Load edges where both endpoints are in the current result set.
+    # Filter server-side using ANY to avoid pulling the full edges table.
+    edges_result = await db.execute(
+        select(OpportunityEdge)
+        .where(OpportunityEdge.source_id.in_(node_ids))
+        .where(OpportunityEdge.target_id.in_(node_ids))
+        .order_by(OpportunityEdge.weight.desc())
+        .limit(2000)
+    )
+    edges = [
+        {"source": e.source_id, "target": e.target_id, "weight": e.weight}
+        for e in edges_result.scalars().all()
+    ]
 
     return {
         "nodes": nodes,
+        "edges": edges,
         "clusters": list(clusters.values()),
         "total": len(nodes),
     }
