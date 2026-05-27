@@ -2,7 +2,7 @@
 import asyncio
 import logging
 
-from celery.exceptions import SoftTimeLimitExceeded
+from celery.exceptions import MaxRetriesExceeded, SoftTimeLimitExceeded
 
 from app.workers.celery_app import celery_app
 
@@ -89,8 +89,23 @@ def index_archive(self, archive_id: str) -> dict:
             "Indexing timed out — the document may be too large or the AI service was slow.",
         )
         return {"error": "timed_out", "archive_id": archive_id}
+    except MaxRetriesExceeded:
+        logger.error("index_archive exceeded max retries for %s", archive_id)
+        _mark_failed(
+            archive_id,
+            "Indexing failed after multiple attempts. Click 'Re-index' to try again.",
+        )
+        return {"error": "max_retries", "archive_id": archive_id}
     except Exception as exc:
         logger.error("index_archive failed for %s: %s", archive_id, exc)
-        raise self.retry(exc=exc, countdown=120) from exc
+        try:
+            raise self.retry(exc=exc, countdown=120) from exc
+        except MaxRetriesExceeded:
+            logger.error("index_archive exceeded max retries for %s", archive_id)
+            _mark_failed(
+                archive_id,
+                "Indexing failed after multiple attempts. Click 'Re-index' to try again.",
+            )
+            return {"error": "max_retries", "archive_id": archive_id}
     finally:
         redis.delete(lock_key)

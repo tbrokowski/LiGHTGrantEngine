@@ -148,7 +148,7 @@ export function GrantFiltersPanel({ institutionId, isOrgAdmin }: GrantFiltersPan
   const loadScanStatus = useCallback(async () => {
     try {
       const [runsRes, summaryRes] = await Promise.all([
-        sources.recentRuns(30),
+        sources.recentRuns(100),
         sources.summary(),
       ]);
       setScanLogs(runsRes.data || []);

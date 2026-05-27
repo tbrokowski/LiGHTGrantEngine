@@ -53,6 +53,7 @@ class AIConfig(BaseModel):
 
 
 class FitScoringConfig(BaseModel):
+    background_llm: bool = False  # use LLM fit_scorer for every new opportunity (slower, costs tokens)
     thematic_alignment: int = 35
     eligibility_match: int = 20
     deadline_feasibility: int = 10

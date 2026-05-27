@@ -273,7 +273,11 @@ def _process_listing(db, listing: dict, source_id: str, source_url: str | None =
 
 @celery_app.task(name="app.workers.discovery_tasks.score_opportunity")
 def score_opportunity(opportunity_id: str):
-    """Score a newly enriched opportunity using keyword matching (zero LLM calls)."""
+    """Score a newly enriched opportunity.
+
+    Uses the LLM fit_scorer when fit_scoring.background_llm=true in config.yaml,
+    otherwise falls back to zero-cost keyword scoring.
+    """
     from sqlalchemy import create_engine
     from sqlalchemy.orm import Session
     from app.config import get_settings
@@ -287,21 +291,44 @@ def score_opportunity(opportunity_id: str):
         opp = db.get(Opportunity, opportunity_id)
         if not opp:
             return
-        result = keyword_score_opportunity(
-            title=opp.title,
-            description=opp.description or opp.parsed_text or "",
-            funder=opp.funder or "",
-            eligibility=opp.eligibility_criteria or "",
-            geography=opp.geography or [],
-            award_min=opp.award_min,
-            award_max=opp.award_max,
-            deadline=opp.deadline,
-            thematic_areas=opp.thematic_areas or [],
-        )
-        opp.fit_score = result["fit_score"]
-        opp.priority = result["priority"]
-        if result.get("matched_themes"):
-            opp.thematic_areas = list(set(opp.thematic_areas or []) | set(result["matched_themes"]))
+
+        use_llm = settings.fit_scoring.background_llm
+
+        if use_llm:
+            try:
+                from app.ai.agents.fit_scorer import score_opportunity as llm_score
+                result = asyncio.run(llm_score(
+                    title=opp.title,
+                    description=opp.description or opp.parsed_text or "",
+                    funder=opp.funder or "",
+                    eligibility=opp.eligibility_criteria or "",
+                    geography=", ".join(opp.geography or []),
+                    award_amount=f"{opp.award_min}–{opp.award_max}" if opp.award_min else "",
+                    deadline=str(opp.deadline) if opp.deadline else "",
+                ))
+                opp.fit_score = result.get("fit_score", 0)
+                opp.priority = result.get("priority", "low_fit")
+                opp.fit_rationale = result.get("rationale", "")
+            except Exception:
+                use_llm = False  # fall through to keyword scoring on LLM failure
+
+        if not use_llm:
+            result = keyword_score_opportunity(
+                title=opp.title,
+                description=opp.description or opp.parsed_text or "",
+                funder=opp.funder or "",
+                eligibility=opp.eligibility_criteria or "",
+                geography=opp.geography or [],
+                award_min=opp.award_min,
+                award_max=opp.award_max,
+                deadline=opp.deadline,
+                thematic_areas=opp.thematic_areas or [],
+            )
+            opp.fit_score = result["fit_score"]
+            opp.priority = result["priority"]
+            if result.get("matched_themes"):
+                opp.thematic_areas = list(set(opp.thematic_areas or []) | set(result["matched_themes"]))
+
         db.commit()
 
 

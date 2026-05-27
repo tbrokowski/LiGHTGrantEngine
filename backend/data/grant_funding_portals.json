@@ -444,18 +444,15 @@
     {
       "name": "Horizon Europe / CORDIS",
       "category": "EU / European",
-      "url": "https://cordis.europa.eu",
-      "source_type": "ai_scraper",
+      "url": "https://ec.europa.eu/info/funding-tenders/opportunities/portal/screen/opportunities/topic-search",
+      "source_type": "eu_funding",
       "api_endpoint": null,
-      "scraper_config": {
-        "use_playwright": true,
-        "crawl_depth": 0
-      },
+      "scraper_config": {},
       "refresh_frequency": "daily",
       "is_high_priority": true,
       "logo_url": "/logos/horizon-europe.svg",
       "status": "active",
-      "relevant_themes": [],
+      "relevant_themes": ["health", "AI", "digital", "research"],
       "notes": "Open data via data.europa.eu; bulk CSV/XML downloads + API endpoint on api.store"
     },
     {

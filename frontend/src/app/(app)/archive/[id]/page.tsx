@@ -1,5 +1,5 @@
 'use client';
-import { useEffect, useState, useCallback, useMemo } from 'react';
+import { useEffect, useState, useRef, useCallback, useMemo } from 'react';
 import { useParams } from 'next/navigation';
 import Link from 'next/link';
 import { ChevronDown, ChevronRight, X } from 'lucide-react';
@@ -80,6 +80,13 @@ const DOC_TYPE_LABEL: Record<string, string> = {
   budget: 'Budget',
 };
 
+const DOC_STATUS_LABEL: Record<string, string> = {
+  not_processed: 'Pending',
+  processing: 'Processing…',
+  processed: 'Processed',
+  failed: 'Parse failed',
+};
+
 function formatDate(d?: string | null) {
   if (!d) return null;
   try {
@@ -100,35 +107,43 @@ export default function ArchiveDetailPage() {
   const { id } = useParams<{ id: string }>();
   const [entry, setEntry] = useState<ArchiveDetail | null>(null);
   const [loading, setLoading] = useState(true);
+  const [refreshing, setRefreshing] = useState(false);
   const [reindexing, setReindexing] = useState(false);
   const [reindexMessage, setReindexMessage] = useState('');
   const [reindexError, setReindexError] = useState('');
   const [expandedSections, setExpandedSections] = useState<Record<string, boolean>>({});
   const [textPreviewDoc, setTextPreviewDoc] = useState<ArchiveDocument | null>(null);
   const [openingDocId, setOpeningDocId] = useState<string | null>(null);
+  const prevSectionCountRef = useRef(0);
 
-  const load = useCallback(() => {
+  const load = useCallback((silent = false) => {
     if (!id) return;
-    setLoading(true);
+    if (!silent) setLoading(true);
+    else setRefreshing(true);
     archive.get(id)
       .then(r => {
         const data = r.data as ArchiveDetail;
         setEntry(data);
-        if (data.sections?.length) {
+        // Only auto-expand sections when they first appear (0 → N transition)
+        if (data.sections?.length && prevSectionCountRef.current === 0) {
           const expanded: Record<string, boolean> = {};
           for (const s of data.sections) expanded[s.id] = true;
           setExpandedSections(expanded);
         }
+        prevSectionCountRef.current = data.sections?.length ?? 0;
       })
       .catch(console.error)
-      .finally(() => setLoading(false));
+      .finally(() => {
+        setLoading(false);
+        setRefreshing(false);
+      });
   }, [id]);
 
   useEffect(() => { load(); }, [load]);
 
   useEffect(() => {
     if (!entry || (entry.indexing_status !== 'pending' && entry.indexing_status !== 'processing')) return;
-    const timer = setInterval(load, 8000);
+    const timer = setInterval(() => load(true), 8000);
     return () => clearInterval(timer);
   }, [entry?.indexing_status, load]);
 
@@ -181,7 +196,7 @@ export default function ArchiveDetailPage() {
     setExpandedSections(prev => ({ ...prev, [sectionId]: !prev[sectionId] }));
   }
 
-  if (loading) return <div className="flex justify-center py-24 text-sm text-gray-400">Loading...</div>;
+  if (loading && !entry) return <div className="flex justify-center py-24 text-sm text-gray-400">Loading...</div>;
   if (!entry) {
     return (
       <div className="px-8 py-16 text-center text-gray-500 text-sm">
@@ -269,8 +284,14 @@ export default function ArchiveDetailPage() {
       </div>
 
       {(entry.indexing_status === 'pending' || entry.indexing_status === 'processing') && (
-        <div className="mb-6 bg-amber-50 border border-amber-100 rounded-lg px-4 py-3 text-sm text-amber-800">
-          AI indexing is running in the background. Content will update automatically.
+        <div className="mb-6 bg-amber-50 border border-amber-100 rounded-lg px-4 py-3 text-sm text-amber-800 flex items-center justify-between gap-3">
+          <span>AI indexing is running in the background. Content will update automatically.</span>
+          {refreshing && (
+            <svg className="w-3.5 h-3.5 shrink-0 animate-spin text-amber-600" fill="none" viewBox="0 0 24 24">
+              <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
+              <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z" />
+            </svg>
+          )}
         </div>
       )}
       {entry.indexing_status === 'failed' && entry.indexing_error && (
@@ -291,7 +312,7 @@ export default function ArchiveDetailPage() {
                     {DOC_TYPE_LABEL[doc.document_type ?? ''] ?? doc.document_type ?? 'Document'}
                   </span>
                   <span className="text-gray-800 font-medium truncate block">{doc.file_name ?? 'Untitled'}</span>
-                  <span className="text-xs text-gray-400">{doc.processing_status ?? '—'}</span>
+                  <span className="text-xs text-gray-400">{DOC_STATUS_LABEL[doc.processing_status ?? ''] ?? doc.processing_status ?? '—'}</span>
                 </div>
                 <div className="flex items-center gap-2 shrink-0">
                   <button
@@ -341,8 +362,13 @@ export default function ArchiveDetailPage() {
                   onClick={handleReindex}
                   disabled={reindexing}
                   className="text-xs px-3 py-1.5 rounded-lg border border-gray-200 text-gray-600 hover:bg-gray-50 disabled:opacity-50"
+                  title={(entry.indexing_status === 'pending' || entry.indexing_status === 'processing') ? 'Force re-index if stuck' : undefined}
                 >
-                  {reindexing ? 'Re-indexing...' : 'Re-index'}
+                  {reindexing
+                    ? 'Re-indexing...'
+                    : (entry.indexing_status === 'pending' || entry.indexing_status === 'processing')
+                      ? 'Force re-index'
+                      : 'Re-index'}
                 </button>
               )}
             </div>

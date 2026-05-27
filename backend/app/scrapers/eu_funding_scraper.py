@@ -99,7 +99,7 @@ class EUFundingScraper(BaseScraper):
                 f"https://ec.europa.eu/info/funding-tenders/opportunities/portal/screen/"
                 f"opportunities/topic-search#programme/null/keywords/{keywords.replace(' ', '+')}"
             )
-            page_text, _ = _fetch_page_text(search_url, use_playwright=False)
+            page_text, _ = _fetch_page_text(search_url, use_playwright=True)
             loop = asyncio.new_event_loop()
             try:
                 items = loop.run_until_complete(_llm_extract(page_text, self.source.name))

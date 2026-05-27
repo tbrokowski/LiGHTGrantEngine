@@ -65,11 +65,13 @@ class GrantCreate(BaseModel):
     external_deadline: Optional[date] = None
     internal_deadline: Optional[date] = None
     requested_amount: Optional[float] = None
+    award_amount: Optional[float] = None
     currency: Optional[str] = None
     themes: list[str] = []
     geographies: list[str] = []
     is_personal: bool = False
     color: Optional[str] = None
+    grant_stage: Optional[str] = None  # allows creating directly as 'active'
 
 
 class GrantUpdate(BaseModel):
@@ -94,6 +96,9 @@ class GrantUpdate(BaseModel):
 class StageTransition(BaseModel):
     stage: str  # proposal | pending | active | rejected | archived
     notes: Optional[str] = None
+    award_amount: Optional[float] = None      # used on → active
+    lessons_learned: Optional[str] = None     # used on → rejected / archived
+    outcome: Optional[str] = None             # override archive outcome (→ archived)
 
 
 # Valid stage transitions
@@ -237,6 +242,7 @@ async def create_grant(
     # Personal grants have no institution until promoted
     institution_id = None if data.is_personal else current_user.institution_id
 
+    now = datetime.utcnow()
     grant = ActiveGrant(
         id=str(uuid.uuid4()),
         internal_lead_id=current_user.id,
@@ -244,6 +250,9 @@ async def create_grant(
         created_by_id=current_user.id,
         **grant_data,
     )
+    if grant.grant_stage == "active":
+        grant.status = ActiveGrantStatus.AWARDED.value
+        grant.decision_at = now
     db.add(grant)
     await db.flush()
 
@@ -470,6 +479,89 @@ async def promote_grant(
     return {"id": grant.id, "is_personal": grant.is_personal, "institution_id": grant.institution_id}
 
 
+async def _upsert_grant_archive(
+    db: AsyncSession,
+    grant: ActiveGrant,
+    outcome: str,
+    lessons_learned: Optional[str] = None,
+    notes_override: Optional[str] = None,
+    close_grant: bool = False,
+) -> GrantArchive:
+    """Create or update a GrantArchive entry for the given grant.
+
+    When close_grant=True also sets grant.status = closed.
+    Does NOT commit — caller is responsible.
+    """
+    existing = (
+        await db.execute(select(GrantArchive).where(GrantArchive.grant_id == grant.id))
+    ).scalar_one_or_none()
+
+    if existing:
+        existing.outcome = outcome
+        if lessons_learned is not None:
+            existing.lessons_learned = lessons_learned
+        if notes_override is not None:
+            existing.notes = notes_override
+        if close_grant:
+            grant.status = ActiveGrantStatus.CLOSED.value
+        return existing
+
+    submitted_statuses = {"submitted", "under_review", "awarded", "rejected"}
+    archive = GrantArchive(
+        id=str(uuid.uuid4()),
+        grant_id=grant.id,
+        opportunity_id=grant.opportunity_id,
+        title=grant.title,
+        funder=grant.funder,
+        program=grant.program,
+        lead_pi=grant.pi_name,
+        co_pis=grant.co_pis or [],
+        team_members=grant.proposal_team or [],
+        partner_institutions=grant.partner_institutions or [],
+        themes=grant.themes or [],
+        geographies=grant.geographies or [],
+        submitted=grant.status in submitted_statuses,
+        outcome=outcome,
+        requested_amount=grant.requested_amount,
+        awarded_amount=grant.award_amount,
+        currency=grant.currency,
+        project_duration=grant.project_duration,
+        repository_folder_url=grant.drive_folder_url or grant.final_package_url,
+        notes=notes_override or grant.notes,
+        lessons_learned=lessons_learned,
+    )
+    db.add(archive)
+    if close_grant:
+        grant.status = ActiveGrantStatus.CLOSED.value
+    return archive
+
+
+async def _index_archive_from_grant(
+    db: AsyncSession, grant: ActiveGrant, archive: GrantArchive
+) -> None:
+    """Extract proposal text from the grant workspace, attach it to the archive, and queue indexing."""
+    proposal_text = _extract_grant_text(grant)
+    if not proposal_text.strip():
+        return
+    try:
+        document = Document(
+            id=str(uuid.uuid4()),
+            grant_id=grant.id,
+            archive_id=archive.id,
+            document_type=DocumentType.FULL_PROPOSAL,
+            file_name="workspace_proposal.txt",
+            parsed_text=proposal_text,
+            processing_status=ProcessingStatus.PROCESSED,
+        )
+        db.add(document)
+        archive.indexing_status = "pending"
+        await db.commit()
+        celery_app.send_task("app.workers.archive_tasks.index_archive", args=[archive.id])
+    except Exception as exc:
+        await db.rollback()
+        logger.warning("Archive ingest failed for grant %s: %s", grant.id, exc)
+
+
 @router.patch("/{grant_id}/stage")
 async def transition_stage(
     grant_id: str,
@@ -483,6 +575,9 @@ async def transition_stage(
     current_stage = grant.grant_stage or "proposal"
     new_stage = data.stage
 
+    # Rejection goes straight to archived (no intermediate rejected stage in UI)
+    effective_stage = "archived" if new_stage == "rejected" else new_stage
+
     allowed = _STAGE_TRANSITIONS.get(current_stage, [])
     if new_stage not in allowed:
         raise HTTPException(
@@ -491,23 +586,62 @@ async def transition_stage(
             f"Allowed transitions: {allowed}",
         )
 
-    grant.grant_stage = new_stage
+    grant.grant_stage = effective_stage
     if data.notes:
         grant.stage_notes = data.notes
 
     now = datetime.utcnow()
-    if new_stage == "pending":
-        grant.submitted_at = now
-        # Auto-set status to submitted
-        grant.status = "submitted"
-    elif new_stage in ("active",):
-        grant.decision_at = now
-        grant.status = "awarded"
-    elif new_stage == "rejected":
-        grant.decision_at = now
-        grant.status = "rejected"
 
-    await db.commit()
+    if new_stage == "pending":
+        # Submitted: snapshot the proposal into the archive (outcome=pending, grant stays live)
+        grant.submitted_at = now
+        grant.status = ActiveGrantStatus.SUBMITTED.value
+        archive = await _upsert_grant_archive(db, grant, outcome="pending", close_grant=False)
+        await db.commit()
+        await db.refresh(archive)
+        await _index_archive_from_grant(db, grant, archive)
+
+    elif new_stage == "active":
+        # Awarded: update archive outcome, record award amount
+        grant.decision_at = now
+        grant.status = ActiveGrantStatus.AWARDED.value
+        if data.award_amount is not None:
+            grant.award_amount = data.award_amount
+        await _upsert_grant_archive(db, grant, outcome="awarded", close_grant=False)
+        await db.commit()
+
+    elif new_stage == "rejected":
+        # Rejected → immediately archived
+        grant.decision_at = now
+        grant.status = ActiveGrantStatus.REJECTED.value
+        archive = await _upsert_grant_archive(
+            db, grant,
+            outcome="rejected",
+            lessons_learned=data.lessons_learned,
+            notes_override=data.notes,
+            close_grant=True,
+        )
+        await db.commit()
+        await db.refresh(archive)
+        await _index_archive_from_grant(db, grant, archive)
+
+    elif new_stage == "archived":
+        # Explicitly archived from active stage
+        archive_outcome = data.outcome or STATUS_TO_ARCHIVE_OUTCOME.get(grant.status, "awarded")
+        archive = await _upsert_grant_archive(
+            db, grant,
+            outcome=archive_outcome,
+            lessons_learned=data.lessons_learned,
+            notes_override=data.notes,
+            close_grant=True,
+        )
+        await db.commit()
+        await db.refresh(archive)
+        await _index_archive_from_grant(db, grant, archive)
+
+    else:
+        await db.commit()
+
     return {"id": grant.id, "grant_stage": grant.grant_stage, "status": grant.status}
 
 

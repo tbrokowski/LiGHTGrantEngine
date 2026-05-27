@@ -77,6 +77,51 @@ interface NewArchiveForm {
   text_reuse_allowed: boolean;
 }
 
+function FileUploadButton({
+  label,
+  file,
+  onPick,
+  inputRef,
+  accept,
+  hint,
+  required,
+}: {
+  label: string;
+  file: File | null;
+  onPick: (f: File | null) => void;
+  inputRef: React.RefObject<HTMLInputElement | null>;
+  accept: string;
+  hint: string;
+  required?: boolean;
+}) {
+  return (
+    <div>
+      <label className="block text-xs font-medium text-gray-500 mb-1.5">
+        {label} {required && <span className="text-red-400">*</span>}
+      </label>
+      <input
+        ref={inputRef}
+        type="file"
+        accept={accept}
+        className="hidden"
+        onChange={e => onPick(e.target.files?.[0] ?? null)}
+      />
+      <button
+        type="button"
+        onClick={() => inputRef.current?.click()}
+        className="w-full border border-dashed border-gray-300 rounded-xl px-3 py-3 text-sm text-left hover:border-gray-400 hover:bg-gray-50 transition-colors"
+      >
+        {file ? (
+          <span className="text-gray-800">{file.name}</span>
+        ) : (
+          <span className="text-gray-400">Click to upload</span>
+        )}
+      </button>
+      <p className="text-[10px] text-gray-400 mt-1">{hint}</p>
+    </div>
+  );
+}
+
 function NewArchiveModal({ onClose, onCreated }: { onClose: () => void; onCreated: (message?: string) => void }) {
   const [form, setForm] = useState<NewArchiveForm>({
     title: '',
@@ -155,51 +200,6 @@ function NewArchiveModal({ onClose, onCreated }: { onClose: () => void; onCreate
       setError(msg);
       setSaving(false);
     }
-  }
-
-  function FileUploadButton({
-    label,
-    file,
-    onPick,
-    inputRef,
-    accept,
-    hint,
-    required,
-  }: {
-    label: string;
-    file: File | null;
-    onPick: (f: File | null) => void;
-    inputRef: React.RefObject<HTMLInputElement | null>;
-    accept: string;
-    hint: string;
-    required?: boolean;
-  }) {
-    return (
-      <div>
-        <label className="block text-xs font-medium text-gray-500 mb-1.5">
-          {label} {required && <span className="text-red-400">*</span>}
-        </label>
-        <input
-          ref={inputRef}
-          type="file"
-          accept={accept}
-          className="hidden"
-          onChange={e => onPick(e.target.files?.[0] ?? null)}
-        />
-        <button
-          type="button"
-          onClick={() => inputRef.current?.click()}
-          className="w-full border border-dashed border-gray-300 rounded-xl px-3 py-3 text-sm text-left hover:border-gray-400 hover:bg-gray-50 transition-colors"
-        >
-          {file ? (
-            <span className="text-gray-800">{file.name}</span>
-          ) : (
-            <span className="text-gray-400">Click to upload</span>
-          )}
-        </button>
-        <p className="text-[10px] text-gray-400 mt-1">{hint}</p>
-      </div>
-    );
   }
 
   return (

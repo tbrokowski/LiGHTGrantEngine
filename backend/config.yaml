@@ -75,6 +75,7 @@ discovery:
   duplicate_url_exact: true
   auto_queue_threshold: 40
 fit_scoring:
+  background_llm: false  # set true to use fit_scorer LLM for every new opportunity (slower, costs tokens)
   thematic_alignment: 35
   eligibility_match: 20
   deadline_feasibility: 10
