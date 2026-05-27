@@ -3,6 +3,15 @@ import { useEffect, useState, useRef, useCallback } from 'react';
 import Link from 'next/link';
 import { archive } from '@/lib/api';
 import { useAuth } from '@/lib/auth';
+import ViewToggle from '@/components/opportunities/ViewToggle';
+import ArchiveGraphView, {
+  type ArchiveGraphNode,
+  type ArchiveGraphCluster,
+  type ArchiveGraphEdge,
+} from '@/components/archive/ArchiveGraphView';
+import ArchiveGraphFilters, {
+  type ArchiveGraphFilterState,
+} from '@/components/archive/ArchiveGraphFilters';
 
 interface ArchiveEntry {
   id: string;
@@ -418,18 +427,36 @@ function NewArchiveModal({ onClose, onCreated }: { onClose: () => void; onCreate
   );
 }
 
+const GRAPH_FILTERS_EMPTY: ArchiveGraphFilterState = {
+  funder: '',
+  outcome: '',
+  year: '',
+  theme: '',
+};
+
 export default function ArchivePage() {
   const { user } = useAuth();
   const canUpload = user?.role === 'admin' || user?.role === 'grant_lead' || user?.institution_role === 'admin';
 
+  // ── List view state ─────────────────────────────────────────────────────────
   const [entries, setEntries] = useState<ArchiveEntry[]>([]);
   const [loading, setLoading] = useState(true);
   const [search, setSearch] = useState('');
   const [outcomeFilter, setOutcomeFilter] = useState('');
   const [showModal, setShowModal] = useState(false);
-
   const [successMessage, setSuccessMessage] = useState('');
 
+  // ── View toggle ─────────────────────────────────────────────────────────────
+  const [viewMode, setViewMode] = useState<'list' | 'graph'>('list');
+
+  // ── Graph view state ─────────────────────────────────────────────────────────
+  const [graphNodes, setGraphNodes] = useState<ArchiveGraphNode[]>([]);
+  const [graphEdges, setGraphEdges] = useState<ArchiveGraphEdge[]>([]);
+  const [graphClusters, setGraphClusters] = useState<ArchiveGraphCluster[]>([]);
+  const [graphFilters, setGraphFilters] = useState<ArchiveGraphFilterState>(GRAPH_FILTERS_EMPTY);
+  const [graphLoading, setGraphLoading] = useState(false);
+
+  // ── List load ───────────────────────────────────────────────────────────────
   const load = useCallback(() => {
     setLoading(true);
     archive.list(search ? { search } : {})
@@ -448,6 +475,39 @@ export default function ArchivePage() {
     const timer = setInterval(load, 8000);
     return () => clearInterval(timer);
   }, [entries, load]);
+
+  // ── Graph load ───────────────────────────────────────────────────────────────
+  const loadGraph = useCallback((filters: ArchiveGraphFilterState) => {
+    setGraphLoading(true);
+    const params: Record<string, unknown> = {};
+    if (filters.funder) params.funder = filters.funder;
+    if (filters.outcome) params.outcome = filters.outcome;
+    if (filters.year) params.year = Number(filters.year);
+    if (filters.theme) params.theme = filters.theme;
+    archive.graphData(params)
+      .then(r => {
+        setGraphNodes(r.data.nodes ?? []);
+        setGraphEdges(r.data.edges ?? []);
+        setGraphClusters(r.data.clusters ?? []);
+      })
+      .catch(console.error)
+      .finally(() => setGraphLoading(false));
+  }, []);
+
+  useEffect(() => {
+    if (viewMode === 'graph') loadGraph(graphFilters);
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [viewMode]);
+
+  function handleGraphFiltersChange(f: ArchiveGraphFilterState) {
+    setGraphFilters(f);
+    loadGraph(f);
+  }
+
+  // ── Derived values for filters dropdowns ─────────────────────────────────────
+  const allFunders = [...new Set(entries.map(e => e.funder).filter(Boolean) as string[])].sort();
+  const allYears = [...new Set(entries.map(e => e.call_year).filter(Boolean) as number[])].sort((a, b) => b - a);
+  const allThemes = [...new Set(entries.flatMap(e => e.themes ?? []))].sort();
 
   function handleCreated(message?: string) {
     setShowModal(false);
@@ -469,7 +529,7 @@ export default function ArchivePage() {
   }, {});
 
   return (
-    <div className="px-8 py-8 max-w-6xl mx-auto">
+    <div className={viewMode === 'graph' ? 'flex flex-col h-full' : 'px-8 py-8 max-w-6xl mx-auto'}>
       {showModal && (
         <NewArchiveModal
           onClose={() => setShowModal(false)}
@@ -479,26 +539,29 @@ export default function ArchivePage() {
 
       {/* Success banner */}
       {successMessage && (
-        <div className="mb-4 flex items-center justify-between bg-emerald-50 border border-emerald-100 rounded-xl px-4 py-3 text-sm text-emerald-800">
+        <div className={`flex items-center justify-between bg-emerald-50 border border-emerald-100 rounded-xl px-4 py-3 text-sm text-emerald-800 ${viewMode === 'graph' ? 'mx-6 mt-4' : 'mb-4'}`}>
           <span>{successMessage}</span>
           <button onClick={() => setSuccessMessage('')} className="text-emerald-600 hover:text-emerald-800">×</button>
         </div>
       )}
 
       {/* Header */}
-      <div className="flex items-start justify-between mb-6">
+      <div className={`flex items-start justify-between ${viewMode === 'graph' ? 'px-6 pt-6 pb-3 shrink-0' : 'mb-6'}`}>
         <div>
           <h1 className="text-xl font-semibold text-gray-900 tracking-tight">Grant Archive</h1>
           <p className="text-sm text-gray-400 mt-0.5">Institutional memory — all past submissions</p>
         </div>
         <div className="flex items-center gap-2">
-          <input
-            type="text"
-            placeholder="Search archive…"
-            value={search}
-            onChange={e => setSearch(e.target.value)}
-            className="border border-gray-200 rounded-lg px-3 py-1.5 text-sm w-52 focus:outline-none focus:ring-1 focus:ring-gray-400 bg-white"
-          />
+          {viewMode === 'list' && (
+            <input
+              type="text"
+              placeholder="Search archive…"
+              value={search}
+              onChange={e => setSearch(e.target.value)}
+              className="border border-gray-200 rounded-lg px-3 py-1.5 text-sm w-52 focus:outline-none focus:ring-1 focus:ring-gray-400 bg-white"
+            />
+          )}
+          <ViewToggle view={viewMode} onChange={setViewMode} />
           {canUpload && (
             <button
               onClick={() => setShowModal(true)}
@@ -513,125 +576,162 @@ export default function ArchivePage() {
         </div>
       </div>
 
-      {/* Outcome filter tabs */}
-      <div className="flex gap-0 mb-6 border-b border-gray-100 overflow-x-auto">
-        {OUTCOMES.map(o => {
-          const count = outcomeCounts[o.value] ?? 0;
-          if (!o.value && !loading && entries.length === 0) return null;
-          return (
-            <button
-              key={o.value}
-              onClick={() => setOutcomeFilter(o.value)}
-              className={`flex items-center gap-1.5 px-4 py-2.5 text-sm font-medium border-b-2 -mb-px transition-colors whitespace-nowrap ${
-                outcomeFilter === o.value
-                  ? 'border-gray-900 text-gray-900'
-                  : 'border-transparent text-gray-400 hover:text-gray-700'
-              }`}
-            >
-              {o.label}
-              {count > 0 && (
-                <span className={`text-xs tabular-nums ${outcomeFilter === o.value ? 'text-gray-600' : 'text-gray-300'}`}>
-                  {count}
-                </span>
-              )}
-            </button>
-          );
-        })}
-      </div>
-
-      {/* Table */}
-      <div className="bg-white border border-gray-100 rounded-2xl shadow-sm overflow-hidden">
-        <table className="w-full text-sm">
-          <thead>
-            <tr className="border-b border-gray-50">
-              <th className="text-left px-5 py-3 text-xs font-medium text-gray-400 uppercase tracking-wider">Title</th>
-              <th className="text-left px-4 py-3 text-xs font-medium text-gray-400 uppercase tracking-wider hidden md:table-cell">Funder</th>
-              <th className="text-left px-4 py-3 text-xs font-medium text-gray-400 uppercase tracking-wider hidden lg:table-cell">PI</th>
-              <th className="text-left px-4 py-3 text-xs font-medium text-gray-400 uppercase tracking-wider hidden lg:table-cell">Year</th>
-              <th className="text-right px-4 py-3 text-xs font-medium text-gray-400 uppercase tracking-wider hidden lg:table-cell">Amount</th>
-              <th className="text-left px-4 py-3 text-xs font-medium text-gray-400 uppercase tracking-wider hidden md:table-cell">AI</th>
-              <th className="text-left px-4 py-3 text-xs font-medium text-gray-400 uppercase tracking-wider">Outcome</th>
-            </tr>
-          </thead>
-          <tbody className="divide-y divide-gray-50">
-            {loading ? (
-              <tr>
-                <td colSpan={7} className="px-5 py-14 text-center text-sm text-gray-300">Loading…</td>
-              </tr>
-            ) : filtered.length === 0 ? (
-              <tr>
-                <td colSpan={7} className="px-5 py-14 text-center">
-                  <p className="text-sm text-gray-400">
-                    {search ? 'No matches found.' : 'Archive is empty.'}
-                  </p>
-                  {!search && (
-                    <button
-                      onClick={() => setShowModal(true)}
-                      className="text-xs text-gray-400 hover:text-gray-600 underline underline-offset-2 mt-1"
-                    >
-                      Add the first entry
-                    </button>
-                  )}
-                </td>
-              </tr>
-            ) : (
-              filtered.map(entry => (
-                <tr key={entry.id} className="hover:bg-gray-50/70 transition-colors">
-                  <td className="px-5 py-3.5">
-                    <Link href={`/archive/${entry.id}`} className="font-medium text-gray-900 hover:text-gray-600 block truncate max-w-xs">
-                      {entry.title}
-                    </Link>
-                    {entry.themes?.length > 0 && (
-                      <span className="text-xs text-gray-400 mt-0.5 truncate block max-w-xs">
-                        {entry.themes.slice(0, 3).join(' · ')}
-                      </span>
-                    )}
-                  </td>
-                  <td className="px-4 py-3.5 text-sm text-gray-500 hidden md:table-cell truncate max-w-[160px]">
-                    {entry.funder ?? '—'}
-                  </td>
-                  <td className="px-4 py-3.5 text-sm text-gray-500 hidden lg:table-cell">{entry.lead_pi ?? '—'}</td>
-                  <td className="px-4 py-3.5 text-sm text-gray-500 hidden lg:table-cell tabular-nums">{entry.call_year ?? '—'}</td>
-                  <td className="px-4 py-3.5 text-sm text-gray-500 text-right hidden lg:table-cell whitespace-nowrap">
-                    {formatAmount(entry.awarded_amount ?? entry.requested_amount, entry.currency) ?? '—'}
-                  </td>
-                  <td className="px-4 py-3.5 hidden md:table-cell">
-                    <div className="flex flex-col gap-1">
-                      {entry.indexing_status === 'pending' || entry.indexing_status === 'processing' ? (
-                        <span className="text-xs px-2 py-0.5 rounded-full bg-amber-50 text-amber-700 font-medium w-fit">
-                          Indexing…
-                        </span>
-                      ) : entry.indexing_status === 'failed' ? (
-                        <span className="text-xs px-2 py-0.5 rounded-full bg-red-50 text-red-600 font-medium w-fit" title={entry.indexing_error ?? undefined}>
-                          Index failed
-                        </span>
-                      ) : (entry.section_count ?? 0) > 0 ? (
-                        <span className="text-xs px-2 py-0.5 rounded-full bg-indigo-50 text-indigo-700 font-medium w-fit">
-                          {entry.section_count} sections
-                        </span>
-                      ) : (
-                        <span className="text-xs text-gray-300">—</span>
-                      )}
-                      {entry.style_indexed && entry.indexing_status === 'complete' && (
-                        <span className="text-xs px-2 py-0.5 rounded-full bg-violet-50 text-violet-700 font-medium w-fit">
-                          Style
-                        </span>
-                      )}
-                    </div>
-                  </td>
-                  <td className="px-4 py-3.5">
-                    {entry.outcome ? (
-                      <span className={`text-xs px-2.5 py-0.5 rounded-full font-medium ${OUTCOME_STYLES[entry.outcome] ?? 'text-gray-500 bg-gray-100'}`}>
-                        {OUTCOMES.find(o => o.value === entry.outcome)?.label ?? entry.outcome}
-                      </span>
-                    ) : <span className="text-gray-300 text-xs">—</span>}
-                  </td>
-                </tr>
-              ))
+      {/* ── Graph view ───────────────────────────────────────────────────────── */}
+      {viewMode === 'graph' && (
+        <div className="flex flex-col flex-1 overflow-hidden">
+          {/* Graph filter bar */}
+          <div className="px-6 pb-3 shrink-0 flex items-center gap-3 flex-wrap">
+            <ArchiveGraphFilters
+              filters={graphFilters}
+              onChange={handleGraphFiltersChange}
+              funders={allFunders}
+              years={allYears}
+              themes={allThemes}
+            />
+            {graphLoading && (
+              <span className="text-xs text-gray-400 flex items-center gap-1.5">
+                <svg className="w-3 h-3 animate-spin" fill="none" viewBox="0 0 24 24">
+                  <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
+                  <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z" />
+                </svg>
+                Loading graph…
+              </span>
             )}
-          </tbody>
-        </table>
-      </div>
+          </div>
+          <div className="flex-1 overflow-hidden border-t border-gray-100">
+            <ArchiveGraphView
+              nodes={graphNodes}
+              edges={graphEdges}
+              clusters={graphClusters}
+            />
+          </div>
+        </div>
+      )}
+
+      {/* ── List view ────────────────────────────────────────────────────────── */}
+      {viewMode === 'list' && (
+        <>
+          {/* Outcome filter tabs */}
+          <div className="flex gap-0 mb-6 border-b border-gray-100 overflow-x-auto">
+            {OUTCOMES.map(o => {
+              const count = outcomeCounts[o.value] ?? 0;
+              if (!o.value && !loading && entries.length === 0) return null;
+              return (
+                <button
+                  key={o.value}
+                  onClick={() => setOutcomeFilter(o.value)}
+                  className={`flex items-center gap-1.5 px-4 py-2.5 text-sm font-medium border-b-2 -mb-px transition-colors whitespace-nowrap ${
+                    outcomeFilter === o.value
+                      ? 'border-gray-900 text-gray-900'
+                      : 'border-transparent text-gray-400 hover:text-gray-700'
+                  }`}
+                >
+                  {o.label}
+                  {count > 0 && (
+                    <span className={`text-xs tabular-nums ${outcomeFilter === o.value ? 'text-gray-600' : 'text-gray-300'}`}>
+                      {count}
+                    </span>
+                  )}
+                </button>
+              );
+            })}
+          </div>
+
+          {/* Table */}
+          <div className="bg-white border border-gray-100 rounded-2xl shadow-sm overflow-hidden">
+            <table className="w-full text-sm">
+              <thead>
+                <tr className="border-b border-gray-50">
+                  <th className="text-left px-5 py-3 text-xs font-medium text-gray-400 uppercase tracking-wider">Title</th>
+                  <th className="text-left px-4 py-3 text-xs font-medium text-gray-400 uppercase tracking-wider hidden md:table-cell">Funder</th>
+                  <th className="text-left px-4 py-3 text-xs font-medium text-gray-400 uppercase tracking-wider hidden lg:table-cell">PI</th>
+                  <th className="text-left px-4 py-3 text-xs font-medium text-gray-400 uppercase tracking-wider hidden lg:table-cell">Year</th>
+                  <th className="text-right px-4 py-3 text-xs font-medium text-gray-400 uppercase tracking-wider hidden lg:table-cell">Amount</th>
+                  <th className="text-left px-4 py-3 text-xs font-medium text-gray-400 uppercase tracking-wider hidden md:table-cell">AI</th>
+                  <th className="text-left px-4 py-3 text-xs font-medium text-gray-400 uppercase tracking-wider">Outcome</th>
+                </tr>
+              </thead>
+              <tbody className="divide-y divide-gray-50">
+                {loading ? (
+                  <tr>
+                    <td colSpan={7} className="px-5 py-14 text-center text-sm text-gray-300">Loading…</td>
+                  </tr>
+                ) : filtered.length === 0 ? (
+                  <tr>
+                    <td colSpan={7} className="px-5 py-14 text-center">
+                      <p className="text-sm text-gray-400">
+                        {search ? 'No matches found.' : 'Archive is empty.'}
+                      </p>
+                      {!search && (
+                        <button
+                          onClick={() => setShowModal(true)}
+                          className="text-xs text-gray-400 hover:text-gray-600 underline underline-offset-2 mt-1"
+                        >
+                          Add the first entry
+                        </button>
+                      )}
+                    </td>
+                  </tr>
+                ) : (
+                  filtered.map(entry => (
+                    <tr key={entry.id} className="hover:bg-gray-50/70 transition-colors">
+                      <td className="px-5 py-3.5">
+                        <Link href={`/archive/${entry.id}`} className="font-medium text-gray-900 hover:text-gray-600 block truncate max-w-xs">
+                          {entry.title}
+                        </Link>
+                        {entry.themes?.length > 0 && (
+                          <span className="text-xs text-gray-400 mt-0.5 truncate block max-w-xs">
+                            {entry.themes.slice(0, 3).join(' · ')}
+                          </span>
+                        )}
+                      </td>
+                      <td className="px-4 py-3.5 text-sm text-gray-500 hidden md:table-cell truncate max-w-[160px]">
+                        {entry.funder ?? '—'}
+                      </td>
+                      <td className="px-4 py-3.5 text-sm text-gray-500 hidden lg:table-cell">{entry.lead_pi ?? '—'}</td>
+                      <td className="px-4 py-3.5 text-sm text-gray-500 hidden lg:table-cell tabular-nums">{entry.call_year ?? '—'}</td>
+                      <td className="px-4 py-3.5 text-sm text-gray-500 text-right hidden lg:table-cell whitespace-nowrap">
+                        {formatAmount(entry.awarded_amount ?? entry.requested_amount, entry.currency) ?? '—'}
+                      </td>
+                      <td className="px-4 py-3.5 hidden md:table-cell">
+                        <div className="flex flex-col gap-1">
+                          {entry.indexing_status === 'pending' || entry.indexing_status === 'processing' ? (
+                            <span className="text-xs px-2 py-0.5 rounded-full bg-amber-50 text-amber-700 font-medium w-fit">
+                              Indexing…
+                            </span>
+                          ) : entry.indexing_status === 'failed' ? (
+                            <span className="text-xs px-2 py-0.5 rounded-full bg-red-50 text-red-600 font-medium w-fit" title={entry.indexing_error ?? undefined}>
+                              Index failed
+                            </span>
+                          ) : (entry.section_count ?? 0) > 0 ? (
+                            <span className="text-xs px-2 py-0.5 rounded-full bg-indigo-50 text-indigo-700 font-medium w-fit">
+                              {entry.section_count} sections
+                            </span>
+                          ) : (
+                            <span className="text-xs text-gray-300">—</span>
+                          )}
+                          {entry.style_indexed && entry.indexing_status === 'complete' && (
+                            <span className="text-xs px-2 py-0.5 rounded-full bg-violet-50 text-violet-700 font-medium w-fit">
+                              Style
+                            </span>
+                          )}
+                        </div>
+                      </td>
+                      <td className="px-4 py-3.5">
+                        {entry.outcome ? (
+                          <span className={`text-xs px-2.5 py-0.5 rounded-full font-medium ${OUTCOME_STYLES[entry.outcome] ?? 'text-gray-500 bg-gray-100'}`}>
+                            {OUTCOMES.find(o => o.value === entry.outcome)?.label ?? entry.outcome}
+                          </span>
+                        ) : <span className="text-gray-300 text-xs">—</span>}
+                      </td>
+                    </tr>
+                  ))
+                )}
+              </tbody>
+            </table>
+          </div>
+        </>
+      )}
     </div>
   );
 }

@@ -1,12 +1,22 @@
 'use client';
 import { useState, useCallback, useRef, useEffect } from 'react';
+import { toast } from 'sonner';
 import { grants, grantWriting, streamDraftGeneration } from '@/lib/api';
+import {
+  startGeneration,
+  getInFlight,
+  completeGeneration,
+  failGeneration,
+  isMarkedGenerating,
+  setWatching,
+  isBeingWatched,
+} from '@/lib/skeletonGenerationStore';
 import IdeaPhase from './phases/IdeaPhase';
 import SkeletonPhase from './phases/SkeletonPhase';
 import DraftPhase from './phases/DraftPhase';
 import type { SkeletonSection } from './SkeletonEditor';
 import {
-  CloudUpload, CloudDownload, ExternalLink, Check, Loader2,
+  CloudUpload, CloudDownload, Check, Loader2,
   AlertCircle, FileText, Lightbulb, LayoutList, PenLine,
 } from 'lucide-react';
 
@@ -57,6 +67,13 @@ export default function GrantEditor({ grant, onGrantUpdate, onHeadingsChange }: 
   const [headings, setHeadings] = useState<string[]>([]);
 
   const [generatingSkeleton, setGeneratingSkeleton] = useState(false);
+  const pollingIntervalRef = useRef<ReturnType<typeof setInterval> | null>(null);
+  // isMountedRef: true only while this specific component instance is mounted.
+  const isMountedRef = useRef(false);
+  // Stable ref to always call the latest onGrantUpdate without stale closure issues.
+  const onGrantUpdateRef = useRef(onGrantUpdate);
+  useEffect(() => { onGrantUpdateRef.current = onGrantUpdate; });
+
   const [generatingDraft, setGeneratingDraft] = useState(false);
   const [draftProgress, setDraftProgress] = useState<{ section: string; index: number; total: number } | null>(null);
 
@@ -76,20 +93,86 @@ export default function GrantEditor({ grant, onGrantUpdate, onHeadingsChange }: 
   const saveTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const ideaTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
 
-  useEffect(() => {
-    // Refresh from server to pick up any changes made by other collaborators.
-    // State is already initialized from props, so this is a background sync.
-    grantWriting.status(grant.id).then((res) => {
-      const d = res.data;
-      if (d.grant_idea) setGrantIdea(d.grant_idea);
-      if (d.call_analysis && Object.keys(d.call_analysis).length) setCallAnalysis(d.call_analysis);
-      if (d.call_requirements) setCallRequirements(d.call_requirements);
-      if (d.proposal_skeleton && Object.keys(d.proposal_skeleton).length) setSkeleton(d.proposal_skeleton);
-      if (d.last_review && Object.keys(d.last_review).length) setReviewReport(d.last_review);
-      if (d.writing_phase) setPhase(d.writing_phase as WritingPhase);
-    }).catch(() => {});
-    grantWriting.listCitations(grant.id).then((res) => setCitations(res.data)).catch(() => {});
+  /**
+   * Apply a resolved skeleton result to this component instance.
+   * Clears generation tracking and switches the editor to the skeleton tab.
+   */
+  const applySkeletonResult = useCallback((skeletonData: Record<string, unknown>) => {
+    completeGeneration(grant.id);
+    if (pollingIntervalRef.current) {
+      clearInterval(pollingIntervalRef.current);
+      pollingIntervalRef.current = null;
+    }
+    setSkeleton(skeletonData);
+    setPhase('skeleton');
+    setGeneratingSkeleton(false);
+    onGrantUpdateRef.current();
   }, [grant.id]);
+
+  /**
+   * Poll /writing/status every 3 s until writing_phase === 'skeleton'.
+   * Used as a fallback when the page was refreshed mid-generation (original
+   * HTTP request was killed) or when the component remounted while in-flight.
+   */
+  const startPollingStatus = useCallback(() => {
+    if (pollingIntervalRef.current) return;
+    pollingIntervalRef.current = setInterval(async () => {
+      try {
+        const res = await grantWriting.status(grant.id);
+        const d = res.data;
+        if (d.writing_phase === 'skeleton' && d.proposal_skeleton && Object.keys(d.proposal_skeleton).length) {
+          applySkeletonResult(d.proposal_skeleton as Record<string, unknown>);
+        }
+      } catch {
+        // Keep polling through transient errors
+      }
+    }, 3000);
+  }, [grant.id, applySkeletonResult]);
+
+  useEffect(() => {
+    isMountedRef.current = true;
+    setWatching(grant.id, true);
+
+    const inFlight = getInFlight(grant.id);
+    if (inFlight) {
+      // A generation is still in-flight from a previous visit during this session.
+      // Show the spinner and attach a handler so we update state when it resolves.
+      setGeneratingSkeleton(true);
+      inFlight.then((skeletonData) => {
+        if (isMountedRef.current) {
+          applySkeletonResult(skeletonData);
+        }
+      }).catch(() => {
+        if (isMountedRef.current) setGeneratingSkeleton(false);
+      });
+    } else if (isMarkedGenerating(grant.id)) {
+      // The page was refreshed while generation was in-progress — fall back to polling.
+      setGeneratingSkeleton(true);
+      startPollingStatus();
+    } else {
+      // Normal mount: sync from server to pick up collaborator changes.
+      grantWriting.status(grant.id).then((res) => {
+        const d = res.data;
+        if (d.grant_idea) setGrantIdea(d.grant_idea);
+        if (d.call_analysis && Object.keys(d.call_analysis).length) setCallAnalysis(d.call_analysis);
+        if (d.call_requirements) setCallRequirements(d.call_requirements);
+        if (d.proposal_skeleton && Object.keys(d.proposal_skeleton).length) setSkeleton(d.proposal_skeleton);
+        if (d.last_review && Object.keys(d.last_review).length) setReviewReport(d.last_review);
+        if (d.writing_phase) setPhase(d.writing_phase as WritingPhase);
+      }).catch(() => {});
+    }
+
+    grantWriting.listCitations(grant.id).then((res) => setCitations(res.data)).catch(() => {});
+
+    return () => {
+      isMountedRef.current = false;
+      setWatching(grant.id, false);
+      if (pollingIntervalRef.current) {
+        clearInterval(pollingIntervalRef.current);
+        pollingIntervalRef.current = null;
+      }
+    };
+  }, [grant.id, applySkeletonResult, startPollingStatus]);
 
   const getDocumentContext = useCallback(() => documentHtml.replace(/<[^>]+>/g, ' ').trim(), [documentHtml]);
 
@@ -129,13 +212,48 @@ export default function GrantEditor({ grant, onGrantUpdate, onHeadingsChange }: 
     setGeneratingSkeleton(true);
     try {
       await grantWriting.saveIdea(grant.id, { grant_idea: grantIdea, writing_phase: 'idea' });
-      const res = await grantWriting.generateSkeleton(grant.id);
-      setSkeleton(res.data.proposal_skeleton || {});
-      setPhase('skeleton');
-      onGrantUpdate();
-    } finally {
+    } catch {
       setGeneratingSkeleton(false);
+      return;
     }
+
+    // Fire the generation request. Do NOT await — the user can navigate away freely.
+    // The axios request continues running in the background; the result is persisted to the DB.
+    const grantId = grant.id;
+    const generationPromise = grantWriting.generateSkeleton(grantId)
+      .then((res) => (res.data.proposal_skeleton || {}) as Record<string, unknown>);
+
+    startGeneration(grantId, generationPromise);
+
+    generationPromise.then((skeletonData) => {
+      completeGeneration(grantId);
+      if (isMountedRef.current) {
+        // The user stayed on the page — update state directly.
+        setSkeleton(skeletonData);
+        setPhase('skeleton');
+        setGeneratingSkeleton(false);
+        onGrantUpdateRef.current();
+      } else if (!isBeingWatched(grantId)) {
+        // The user navigated away and hasn't returned — show a persistent toast.
+        toast.success('Skeleton ready!', {
+          description: 'Your grant proposal skeleton has been generated.',
+          action: {
+            label: 'View it',
+            onClick: () => { window.location.href = `/grants/${grantId}/write`; },
+          },
+          duration: Infinity,
+        });
+      }
+      // else: user navigated away and returned — the init useEffect's inFlight handler
+      // will apply the result when it detects the resolved promise.
+    }).catch((err) => {
+      failGeneration(grantId);
+      if (isMountedRef.current) {
+        setGeneratingSkeleton(false);
+      }
+      console.error('Skeleton generation failed', err);
+      toast.error('Skeleton generation failed. Please try again.');
+    });
   };
 
   const handleSkeletonChange = async (updated: Record<string, unknown>) => {

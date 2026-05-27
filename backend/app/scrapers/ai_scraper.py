@@ -53,7 +53,7 @@ Rules:
 - Do not include any prose or markdown outside the JSON.
 """
 
-_MAX_PAGE_CHARS = 12000  # keep well under context limits
+_MAX_PAGE_CHARS = 100_000  # GPT-4o 128k context window handles full grant pages
 _MAX_DETAIL_LINKS = 10   # cap detail pages per run to avoid long task times
 
 

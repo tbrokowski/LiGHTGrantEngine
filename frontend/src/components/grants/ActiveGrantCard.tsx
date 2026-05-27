@@ -42,7 +42,10 @@ export default function ActiveGrantCard({ grant }: Props) {
 
   return (
     <Link href={`/grants/${grant.id}`}>
-      <div className="group border border-emerald-100 bg-emerald-50/30 rounded-2xl px-5 py-4 hover:shadow-md hover:-translate-y-px transition-all duration-150 cursor-pointer">
+      <div
+        className="group border border-emerald-100 bg-emerald-50/30 rounded-2xl px-5 py-4 hover:shadow-md hover:-translate-y-px transition-all duration-150 cursor-pointer"
+        style={grant.color ? { borderLeftColor: grant.color, borderLeftWidth: '4px' } : undefined}
+      >
         <div className="flex items-start gap-3">
           <div className="flex-1 min-w-0">
             <div className="flex items-center gap-2 mb-1.5">

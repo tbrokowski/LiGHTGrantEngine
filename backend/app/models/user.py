@@ -46,6 +46,9 @@ class User(Base):
     # AI billing (personal usage only)
     ai_usage_cents: Mapped[int] = mapped_column(Integer, default=0, server_default="0", nullable=False)
     ai_usage_limit_cents: Mapped[int] = mapped_column(Integer, default=300, server_default="300", nullable=False)
+    # Module-level access permissions (e.g. {"can_view_grants": true, "can_view_archive": true})
+    # Org admins bypass these checks entirely — they always have full access.
+    module_permissions: Mapped[dict] = mapped_column(JSON, default=dict, server_default="{}")
     # Google OAuth
     google_access_token: Mapped[str | None] = mapped_column(Text, nullable=True)
     google_refresh_token: Mapped[str | None] = mapped_column(Text, nullable=True)

@@ -93,6 +93,30 @@ def is_ops_or_above(user: User) -> bool:
     return _role_rank(user.role) >= _role_rank(UserRole.OPERATIONS_MANAGER)
 
 
+# Sensible defaults when a user's module_permissions dict has no entry for a key.
+# - can_view_grants: False (requires explicit grant membership or org admin)
+# - can_view_archive: True  (backward-compatible; archive was always visible)
+# - can_view_partners: True (backward-compatible; partners were always visible)
+_MODULE_PERMISSION_DEFAULTS: dict[str, bool] = {
+    "can_view_grants": False,
+    "can_view_archive": True,
+    "can_view_partners": True,
+}
+
+
+def has_module_permission(user: User, key: str) -> bool:
+    """Return True if the user has access to a given module.
+
+    Org admins always return True regardless of stored permissions.
+    For regular members the value is read from User.module_permissions with a
+    sensible default (see _MODULE_PERMISSION_DEFAULTS).
+    """
+    if is_org_admin(user):
+        return True
+    perms: dict = user.module_permissions or {}
+    return perms.get(key, _MODULE_PERMISSION_DEFAULTS.get(key, False))
+
+
 # ---------------------------------------------------------------------------
 # Redis cache helpers
 # ---------------------------------------------------------------------------

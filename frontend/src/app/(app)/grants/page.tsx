@@ -5,6 +5,7 @@ import { grants } from '@/lib/api';
 import ProposalCard, { GrantSummary } from '@/components/grants/ProposalCard';
 import PendingCard from '@/components/grants/PendingCard';
 import ActiveGrantCard from '@/components/grants/ActiveGrantCard';
+import GrantColorPicker from '@/components/grants/GrantColorPicker';
 
 type TabId = 'proposals' | 'pending' | 'active';
 
@@ -35,10 +36,11 @@ interface NewGrantForm {
   pi_name: string;
   external_deadline: string;
   is_personal: boolean;
+  color: string | null;
 }
 
 function NewGrantModal({ onClose, onCreated }: { onClose: () => void; onCreated: (id: string) => void }) {
-  const [form, setForm] = useState<NewGrantForm>({ title: '', funder: '', pi_name: '', external_deadline: '', is_personal: false });
+  const [form, setForm] = useState<NewGrantForm>({ title: '', funder: '', pi_name: '', external_deadline: '', is_personal: false, color: null });
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState('');
   const firstRef = useRef<HTMLInputElement>(null);
@@ -62,6 +64,7 @@ function NewGrantModal({ onClose, onCreated }: { onClose: () => void; onCreated:
       if (form.funder) payload.funder = form.funder;
       if (form.pi_name) payload.pi_name = form.pi_name;
       if (form.external_deadline) payload.external_deadline = form.external_deadline;
+      if (form.color) payload.color = form.color;
       const res = await grants.create(payload);
       onCreated(res.data.id);
     } catch {
@@ -99,6 +102,7 @@ function NewGrantModal({ onClose, onCreated }: { onClose: () => void; onCreated:
               placeholder="Grant title"
               className="w-full border border-gray-200 rounded-xl px-3 py-2 text-sm text-gray-900 focus:outline-none focus:ring-1 focus:ring-gray-300 placeholder-gray-300" />
           </div>
+          <GrantColorPicker value={form.color} onChange={color => set('color', color)} />
           <div className="grid grid-cols-2 gap-3">
             <div>
               <label className="block text-xs font-medium text-gray-500 mb-1.5">Funder</label>

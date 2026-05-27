@@ -217,7 +217,7 @@ def merge_enrichment_text(
 
     if pdf_text:
         if len(pdf_text) > len(description):
-            description = pdf_text[:10000]
+            description = pdf_text[:100000]
         elif pdf_text.strip() and pdf_text.strip() not in (parsed_text or ""):
             parsed_text = _append_section(parsed_text, "## Call documents", pdf_text)
 
@@ -228,8 +228,8 @@ def merge_enrichment_text(
         short_summary = _extract_short_summary(_strip_markdown(description))
 
     return {
-        "description": description[:10000] if description else None,
-        "parsed_text": parsed_text[:20000] if parsed_text else None,
+        "description": description[:100000] if description else None,
+        "parsed_text": parsed_text[:400000] if parsed_text else None,
         "short_summary": short_summary,
     }
 

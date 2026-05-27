@@ -10,6 +10,7 @@ interface Props {
   grantId: string;
   items: GanttItem[];
   onRefresh: () => void;
+  grantColor?: string; // when set, tints task bars with the grant's identity color
 }
 
 const TYPE_BG: Record<string, string> = {
@@ -95,14 +96,17 @@ function computeCriticalPath(items: GanttItem[]): Set<string> {
 
 // ── Mapping ─────────────────────────────────────────────────────────────────
 
-function toGanttTask(item: GanttItem, isCritical: boolean): GanttTask | null {
+function toGanttTask(item: GanttItem, isCritical: boolean, grantColor?: string): GanttTask | null {
   if (!item.start_date || !item.end_date) return null;
   const start = new Date(item.start_date + 'T00:00:00');
   const end = new Date(item.end_date + 'T00:00:00');
   if (end <= start) end.setDate(end.getDate() + 1);
 
   const isMilestoneType = item.item_type === 'deadline' || item.item_type === 'milestone';
-  const bg = isCritical ? CRITICAL_BG : (TYPE_BG[item.item_type] ?? '#6b7280');
+  // Use grant color for regular task/subtask bars; keep type colors for milestones/deadlines/special types
+  const isRegularTask = item.item_type === 'task' || item.item_type === 'subtask';
+  const defaultBg = TYPE_BG[item.item_type] ?? '#6b7280';
+  const bg = isCritical ? CRITICAL_BG : (grantColor && isRegularTask ? grantColor : defaultBg);
   const bgSel = isCritical ? CRITICAL_SEL : bg;
 
   return {
@@ -132,11 +136,11 @@ function getWpColor(idx: number) {
   return WP_COLORS[idx % WP_COLORS.length];
 }
 
-function buildGroupedTasks(items: GanttItem[], criticalIds: Set<string>): GanttTask[] {
+function buildGroupedTasks(items: GanttItem[], criticalIds: Set<string>, grantColor?: string): GanttTask[] {
   const hasPackages = items.some((i) => i.work_package);
   if (!hasPackages) {
     return items.flatMap((i) => {
-      const t = toGanttTask(i, criticalIds.has(i.id));
+      const t = toGanttTask(i, criticalIds.has(i.id), grantColor);
       return t ? [t] : [];
     });
   }
@@ -167,7 +171,7 @@ function buildGroupedTasks(items: GanttItem[], criticalIds: Set<string>): GanttT
     const groupStart = new Date(Math.min(...starts));
     const groupEnd = new Date(Math.max(...ends));
     if (groupEnd <= groupStart) groupEnd.setDate(groupEnd.getDate() + 1);
-    const color = getWpColor(wpIdx);
+    const color = grantColor ?? getWpColor(wpIdx);
 
     result.push({
       id: `wp_${wpName}`,
@@ -186,7 +190,7 @@ function buildGroupedTasks(items: GanttItem[], criticalIds: Set<string>): GanttT
     } as GanttTask);
 
     for (const item of wpItems) {
-      const t = toGanttTask(item, criticalIds.has(item.id));
+      const t = toGanttTask(item, criticalIds.has(item.id), grantColor);
       if (t) {
         result.push({ ...t, project: `wp_${wpName}` } as GanttTask);
       }
@@ -195,7 +199,7 @@ function buildGroupedTasks(items: GanttItem[], criticalIds: Set<string>): GanttT
   });
 
   for (const item of ungrouped) {
-    const t = toGanttTask(item, criticalIds.has(item.id));
+    const t = toGanttTask(item, criticalIds.has(item.id), grantColor);
     if (t) result.push(t);
   }
 
@@ -204,7 +208,7 @@ function buildGroupedTasks(items: GanttItem[], criticalIds: Set<string>): GanttT
 
 // ── Component ────────────────────────────────────────────────────────────────
 
-export default function GanttView({ grantId, items, onRefresh }: Props) {
+export default function GanttView({ grantId, items, onRefresh, grantColor }: Props) {
   const [generating, setGenerating] = useState(false);
   const [exporting, setExporting] = useState(false);
   const [showCritical, setShowCritical] = useState(false);
@@ -221,12 +225,12 @@ export default function GanttView({ grantId, items, onRefresh }: Props) {
   const ganttTasks = useMemo(
     () =>
       groupByWorkPackage && hasWorkPackages
-        ? buildGroupedTasks(items, criticalIds)
+        ? buildGroupedTasks(items, criticalIds, grantColor)
         : items.flatMap((i) => {
-            const t = toGanttTask(i, criticalIds.has(i.id));
+            const t = toGanttTask(i, criticalIds.has(i.id), grantColor);
             return t ? [t] : [];
           }),
-    [items, criticalIds, groupByWorkPackage, hasWorkPackages],
+    [items, criticalIds, groupByWorkPackage, hasWorkPackages, grantColor],
   );
 
   const handleGenerate = async () => {

@@ -40,8 +40,9 @@ class GrantsGovScraper(BaseScraper):
                     "pagination": {
                         "page_offset": page,
                         "page_size": page_size,
-                        "sort_by": "opportunity_number",
-                        "order_by": "descending",
+                        "sort_order": [
+                            {"order_by": "post_date", "sort_direction": "descending"},
+                        ],
                     },
                     "filters": {
                         "opportunity_status": {"one_of": ["posted", "forecasted"]},

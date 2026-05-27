@@ -4,21 +4,21 @@ import Link from 'next/link';
 import { usePathname } from 'next/navigation';
 import { useEffect, useState } from 'react';
 import { opportunities } from '@/lib/api';
-import { useAuth } from '@/lib/auth';
+import { useAuth, isInstitutionAdmin, hasModulePermission, ModulePermissions } from '@/lib/auth';
 
 interface NavItem {
   href: string;
   label: string;
-  adminOnly?: boolean;
+  permissionKey?: keyof ModulePermissions;
 }
 
 const NAV: NavItem[] = [
   { href: '/dashboard', label: 'Dashboard' },
   { href: '/opportunities', label: 'Opportunities' },
-  { href: '/grants', label: 'Grants' },
-  { href: '/archive', label: 'Archive' },
-  { href: '/partners', label: 'Partners' },
-  { href: '/settings', label: 'Settings', adminOnly: true },
+  { href: '/grants', label: 'Grants', permissionKey: 'can_view_grants' },
+  { href: '/archive', label: 'Archive', permissionKey: 'can_view_archive' },
+  { href: '/partners', label: 'Partners', permissionKey: 'can_view_partners' },
+  { href: '/settings', label: 'Settings' },
 ];
 
 export default function Sidebar() {
@@ -26,15 +26,16 @@ export default function Sidebar() {
   const { user } = useAuth();
   const [queueCount, setQueueCount] = useState<number | null>(null);
 
-  const isAdmin = user?.institution_role === 'admin';
-
   useEffect(() => {
     opportunities.queueCounts()
       .then(r => setQueueCount(r.data?.unread ?? null))
       .catch(() => null);
   }, []);
 
-  const visibleNav = NAV.filter(item => !item.adminOnly || isAdmin);
+  const visibleNav = NAV.filter(item => {
+    if (!item.permissionKey) return true;
+    return hasModulePermission(user, item.permissionKey);
+  });
 
   return (
     <aside className="w-52 shrink-0 flex flex-col h-full bg-white border-r border-gray-100">

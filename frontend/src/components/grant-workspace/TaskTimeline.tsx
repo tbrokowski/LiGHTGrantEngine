@@ -28,9 +28,10 @@ interface Props {
   compact?: boolean; // true = overview (read-only, Month), false = full interactive (Week)
   grantId?: string;  // when provided, enables drag write-back
   onRefresh?: () => void;
+  grantColor?: string; // when set, tints all task bars with the grant's color
 }
 
-export default function TaskTimeline({ tasks, compact = false, grantId, onRefresh }: Props) {
+export default function TaskTimeline({ tasks, compact = false, grantId, onRefresh, grantColor }: Props) {
   const [viewMode, setViewMode] = useState<ViewMode>(compact ? ViewMode.Month : ViewMode.Week);
 
   const { ganttTasks, undatedCount } = useMemo(() => {
@@ -43,6 +44,8 @@ export default function TaskTimeline({ tasks, compact = false, grantId, onRefres
       if (end <= start) {
         end = new Date(start.getTime() + 86400000);
       }
+      const baseColor = STATUS_COLORS[t.status] ?? '#6366f1';
+      const barColor = grantColor ?? baseColor;
       return {
         id: t.id,
         name: t.title,
@@ -52,8 +55,8 @@ export default function TaskTimeline({ tasks, compact = false, grantId, onRefres
         type: 'task',
         isDisabled: compact || !grantId,
         styles: {
-          backgroundColor: STATUS_COLORS[t.status] ?? '#6366f1',
-          backgroundSelectedColor: STATUS_COLORS[t.status] ?? '#4f46e5',
+          backgroundColor: barColor,
+          backgroundSelectedColor: barColor,
           progressColor: 'rgba(255,255,255,0.4)',
           progressSelectedColor: 'rgba(255,255,255,0.5)',
         },
@@ -63,7 +66,7 @@ export default function TaskTimeline({ tasks, compact = false, grantId, onRefres
     ganttTasks.sort((a, b) => a.start.getTime() - b.start.getTime());
 
     return { ganttTasks, undatedCount };
-  }, [tasks, compact, grantId]);
+  }, [tasks, compact, grantId, grantColor]);
 
   const handleDateChange = useCallback(async (ganttTask: GanttTask) => {
     if (!grantId) return;

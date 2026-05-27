@@ -381,13 +381,22 @@ function SettingsPageInner() {
   const { refresh, user: authUser } = useAuth();
   const googleConnected = searchParams.get('google_connected');
   const [activeTab, setActiveTab] = useState<Tab>(() => {
-    return (searchParams.get('tab') as Tab) ?? 'sources';
+    // Honor explicit ?tab= param; otherwise default based on role (set after load)
+    return (searchParams.get('tab') as Tab) ?? 'profile';
   });
   const [currentUser, setCurrentUser] = useState<{ role?: string; institution_id?: string; institution_role?: string } | null>(null);
   const [googleSuccess, setGoogleSuccess] = useState(Boolean(googleConnected));
 
   useEffect(() => {
-    auth.me().then(r => setCurrentUser(r.data)).catch(() => {});
+    auth.me().then(r => {
+      setCurrentUser(r.data);
+      // If no explicit tab was specified in the URL, land on the best default
+      if (!searchParams.get('tab')) {
+        const isAdminUser = r.data?.role === 'admin' || r.data?.institution_role === 'admin';
+        const hasInst = Boolean(r.data?.institution_id);
+        setActiveTab(isAdminUser && hasInst ? 'sources' : 'profile');
+      }
+    }).catch(() => {});
     if (googleConnected) {
       refresh().catch(() => {});
       const t = setTimeout(() => setGoogleSuccess(false), 5000);
@@ -531,7 +540,9 @@ function SettingsPageInner() {
   const selectedTypeInfo = SOURCE_TYPES.find(t => t.value === newType);
 
   const tabs: { id: Tab; label: string; show?: boolean }[] = [
-    { id: 'sources', label: 'Data Sources', show: hasInstitution },
+    // Shown to all institution members; GrantFiltersPanel gates the admin-only sections internally
+    { id: 'sources', label: isAdmin ? 'Data Sources' : 'Grant Preferences', show: hasInstitution },
+    // Org management — admin only
     { id: 'organization', label: 'Organization', show: isAdmin && hasInstitution },
     { id: 'profile', label: 'My Profile', show: true },
     { id: 'integrations', label: 'Integrations', show: true },

@@ -23,6 +23,7 @@ export interface GrantSummary {
   currency: string | null;
   award_amount: number | null;
   tasks?: { status: string }[];
+  color?: string | null;
 }
 
 function daysUntil(dateStr: string | null): number | null {
@@ -104,7 +105,10 @@ export default function ProposalCard({ grant, onStageChange, onDelete }: Props) 
           onSuccess={(stage) => { setTransition(null); onStageChange(grant.id, stage); }}
         />
       )}
-      <div className={`group border rounded-2xl px-5 py-4 hover:shadow-md hover:-translate-y-px transition-all duration-150 ${cardBg}`}>
+      <div
+        className={`group border rounded-2xl px-5 py-4 hover:shadow-md hover:-translate-y-px transition-all duration-150 ${cardBg}`}
+        style={grant.color ? { borderLeftColor: grant.color, borderLeftWidth: '4px' } : undefined}
+      >
         <div className="flex items-start gap-3">
           <Link href={`/grants/${grant.id}`} className="flex-1 min-w-0">
             <div className="flex items-center gap-2 mb-1.5">

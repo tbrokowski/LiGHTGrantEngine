@@ -25,4 +25,5 @@ export interface GrantDetail {
   notes: string | null;
   call_requirements: string | null;
   editor_sections: Record<string, EditorSection>;
+  color?: string | null;
 }

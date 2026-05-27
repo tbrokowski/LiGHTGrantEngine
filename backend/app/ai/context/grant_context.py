@@ -146,7 +146,7 @@ class GrantContextManager:
         "Use [CUSTOMIZE: reason] for text needing tailoring and [VERIFY: item] for uncertain claims."
     )
 
-    def __init__(self, max_chars: int = 24000):
+    def __init__(self, max_chars: int = 96000):
         self.max_chars = max_chars
 
     async def build(
@@ -179,7 +179,7 @@ class GrantContextManager:
                 if gdoc_text:
                     ctx.layers["google_doc"] = (
                         f"LINKED GOOGLE DOC (live content — {len(gdoc_text.split())} words):\n"
-                        + gdoc_text[:8000]
+                        + gdoc_text[:24000]
                     )
             except Exception:
                 pass  # Google not connected or token invalid — continue without it
@@ -194,34 +194,34 @@ class GrantContextManager:
 
         ctx.layers["persona"] = self.PERSONA
         if grant.call_analysis:
-            ctx.layers["call_analysis"] = json.dumps(grant.call_analysis, indent=2)[:4000]
+            ctx.layers["call_analysis"] = json.dumps(grant.call_analysis, indent=2)[:16000]
         if grant.grant_idea:
-            ctx.layers["grant_idea"] = grant.grant_idea[:3000]
+            ctx.layers["grant_idea"] = grant.grant_idea[:8000]
         if grant.proposal_skeleton:
-            ctx.layers["skeleton"] = json.dumps(grant.proposal_skeleton, indent=2)[:4000]
+            ctx.layers["skeleton"] = json.dumps(grant.proposal_skeleton, indent=2)[:12000]
         if grant.style_profile:
-            ctx.layers["style_profile"] = json.dumps(grant.style_profile, indent=2)[:2500]
+            ctx.layers["style_profile"] = json.dumps(grant.style_profile, indent=2)[:6000]
         if grant.call_requirements:
-            ctx.layers["call_requirements"] = grant.call_requirements[:2000]
+            ctx.layers["call_requirements"] = grant.call_requirements[:8000]
 
         if ctx.active_section:
             ctx.layers["active_section"] = (
                 f"SECTION: {ctx.active_section.title}\n"
                 f"TYPE: {ctx.active_section.section_type}\n"
-                f"CONTENT:\n{ctx.active_section.plain_text[:6000]}"
+                f"CONTENT:\n{ctx.active_section.plain_text[:24000]}"
             )
 
         idx = next((i for i, s in enumerate(ctx.document_sections) if ctx.active_section and s.title == ctx.active_section.title), -1)
         adjacent = []
         if idx > 0:
-            adjacent.append(f"PREVIOUS — {ctx.document_sections[idx - 1].title}: {ctx.document_sections[idx - 1].plain_text[:800]}")
+            adjacent.append(f"PREVIOUS — {ctx.document_sections[idx - 1].title}: {ctx.document_sections[idx - 1].plain_text[:2400]}")
         if idx >= 0 and idx < len(ctx.document_sections) - 1:
-            adjacent.append(f"NEXT — {ctx.document_sections[idx + 1].title}: {ctx.document_sections[idx + 1].plain_text[:800]}")
+            adjacent.append(f"NEXT — {ctx.document_sections[idx + 1].title}: {ctx.document_sections[idx + 1].plain_text[:2400]}")
         if adjacent:
             ctx.layers["adjacent_sections"] = "\n".join(adjacent)
 
         if conversation and conversation.summary:
-            ctx.layers["conversation_summary"] = conversation.summary[:1500]
+            ctx.layers["conversation_summary"] = conversation.summary[:4000]
 
         if include_rag and user_query:
             query = f"{user_query} {grant.title} {grant.funder or ''}"
@@ -244,14 +244,14 @@ class GrantContextManager:
                 for s in ctx.rag_sections:
                     blocks.append(
                         f"[{s.get('section_type', '?')} — {s.get('grant_title', '?')}, "
-                        f"{s.get('funder', '?')}, {s.get('outcome', '?')}]\n{s.get('full_text', '')[:1200]}"
+                        f"{s.get('funder', '?')}, {s.get('outcome', '?')}]\n{s.get('full_text', '')[:4000]}"
                     )
                 ctx.layers["archive_sections"] = "\n\n".join(blocks)
             if ctx.rag_language:
                 blocks = []
                 for b in ctx.rag_language:
                     note = " [PARAPHRASE ONLY]" if b.get("paraphrase_only") else ""
-                    blocks.append(f"{b.get('title', '?')}{note}:\n{b.get('full_text', '')[:600]}")
+                    blocks.append(f"{b.get('title', '?')}{note}:\n{b.get('full_text', '')[:2000]}")
                 ctx.layers["reusable_language"] = "\n\n".join(blocks)
 
         return ctx

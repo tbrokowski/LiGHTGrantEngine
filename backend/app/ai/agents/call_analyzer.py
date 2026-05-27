@@ -17,7 +17,7 @@ understand exactly what this grant is looking for and what a strong proposal mus
 Always respond with valid JSON matching the schema requested.
 Be precise and factual. Capture every important requirement, no matter how minor it seems."""
 
-CHUNK_SIZE = 10_000
+CHUNK_SIZE = 400_000  # GPT-4o supports 128k tokens (~512k chars) — covers any real-world grant document
 CHUNK_OVERLAP = 500
 
 
@@ -48,13 +48,13 @@ CALL TEXT:
 
 Return a JSON object with these fields. Be THOROUGH and COMPLETE — do not summarize or skip details:
 
-- narrative_brief: A comprehensive multi-paragraph plain-English summary covering:
-    (1) What the funder is trying to accomplish and the problem they want to solve
-    (2) Who they want to fund and what kind of team/institution is a good fit
-    (3) What the project must include, deliver, and demonstrate
-    (4) What a strong proposal looks like — themes, approach, evidence they want to see
-    (5) Key constraints, eligibility conditions, and anything applicants often miss
-  Write this as flowing prose (4-8 paragraphs), not bullet points. Be detailed.
+- narrative_brief: A focused 3-4 paragraph plain-English synthesis for the proposal team:
+    (1) What the funder wants to achieve and the specific problem they are funding a solution for
+    (2) What a winning proposal MUST contain, demonstrate, and deliver — be concrete and specific
+    (3) Team composition, eligibility, and consortium requirements
+    (4) Critical constraints, budget rules, and common pitfalls that disqualify proposals
+  Write as tight, actionable prose only. No generic policy background. No repetition.
+  Each paragraph must give the team something concrete to act on.
 
 - summary: 2-3 sentence executive summary (for UI display and downstream agents)
 

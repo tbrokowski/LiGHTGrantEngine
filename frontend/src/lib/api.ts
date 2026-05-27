@@ -77,7 +77,11 @@ export const organizations = {
   get: (id: string) => api.get(`/organizations/${id}`),
   create: (data: { name: string; domain?: string }) => api.post('/organizations/', data),
   members: (id: string) => api.get(`/organizations/${id}/members`),
-  updateMember: (orgId: string, userId: string, data: { role: string }) =>
+  updateMember: (orgId: string, userId: string, data: {
+    role: string;
+    institution_role?: string;
+    module_permissions?: Record<string, boolean>;
+  }) =>
     api.patch(`/organizations/${orgId}/members/${userId}`, data),
   removeMember: (orgId: string, userId: string) =>
     api.delete(`/organizations/${orgId}/members/${userId}`),
@@ -310,6 +314,8 @@ export const archive = {
     api.post(`/archive/${archiveId}/ingest`, data || {}),
   reindexStyle: (archiveId: string, data?: Record<string, unknown>) =>
     api.post(`/archive/${archiveId}/reindex-style`, data || {}),
+  graphData: (params?: Record<string, unknown>) =>
+    api.get('/archive/graph-data', { params }),
 };
 
 // ── Sources ──────────────────────────────────────────────────────────────────

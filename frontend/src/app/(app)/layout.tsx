@@ -1,3 +1,4 @@
+import { Toaster } from 'sonner';
 import Sidebar from '@/components/layout/Sidebar';
 import TopBar from '@/components/layout/TopBar';
 import EmailVerificationBanner from '@/components/auth/EmailVerificationBanner';
@@ -20,6 +21,7 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
           </main>
         </div>
       </div>
+      <Toaster position="bottom-right" richColors closeButton />
     </AuthProvider>
   );
 }

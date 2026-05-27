@@ -38,7 +38,12 @@ _CONTENT_SELECTORS = [
     "main",
 ]
 
-_USER_AGENT = "LiGHT Grant System/1.0"
+_USER_AGENT = "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36"
+_BROWSER_HEADERS = {
+    "User-Agent": _USER_AGENT,
+    "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,*/*;q=0.8",
+    "Accept-Language": "en-US,en;q=0.9",
+}
 _MIN_DESCRIPTION_CHARS = 200
 _MAX_PDF_LINKS = 10
 _MIN_PDF_BYTES = 10_240  # skip tiny assets (logos, icons)
@@ -128,23 +133,35 @@ def _is_pdf_url(url: str) -> bool:
 
 
 def _fetch_html_httpx(url: str, timeout: int) -> tuple[str | None, str | None]:
-    """Return (html, error)."""
-    try:
+    """Return (html, error). Retries without SSL verification for sites with broken certs."""
+    def _do_get(verify: bool = True) -> tuple[str | None, str | None]:
         resp = httpx.get(
             url,
             timeout=timeout,
             follow_redirects=True,
-            headers={"User-Agent": _USER_AGENT},
+            headers=_BROWSER_HEADERS,
+            verify=verify,
         )
         resp.raise_for_status()
         content_type = (resp.headers.get("content-type") or "").lower()
         if "application/pdf" in content_type or _is_pdf_url(str(resp.url)):
             return None, "direct_pdf"
         return resp.text, None
+
+    try:
+        return _do_get(verify=True)
     except httpx.HTTPStatusError as e:
         return None, f"HTTP {e.response.status_code} for {url}"
     except Exception as e:
-        return None, str(e)
+        error_str = str(e)
+        if "SSL" in error_str or "certificate" in error_str.lower():
+            try:
+                return _do_get(verify=False)
+            except httpx.HTTPStatusError as retry_e:
+                return None, f"HTTP {retry_e.response.status_code} for {url}"
+            except Exception as retry_e:
+                return None, str(retry_e)
+        return None, error_str
 
 
 def _fetch_html_playwright(url: str, timeout: int) -> str | None:
@@ -192,7 +209,7 @@ def _discover_pdf_links(soup: BeautifulSoup, base_url: str, timeout: int) -> tup
                 pdf_url,
                 timeout=timeout,
                 follow_redirects=True,
-                headers={"User-Agent": _USER_AGENT},
+                headers=_BROWSER_HEADERS,
             )
             size = int(head.headers.get("content-length", 0) or 0)
             if size and size < _MIN_PDF_BYTES:
@@ -235,8 +252,8 @@ def _parse_html(html: str, detail_selectors: list[str] | None) -> dict:
     description_text = description_text or full_text
     return {
         "soup": soup,
-        "description": description_text[:10000] if description_text else None,
-        "parsed_text": full_text[:20000] if full_text else None,
+        "description": description_text[:100000] if description_text else None,
+        "parsed_text": full_text[:400000] if full_text else None,
         "short_summary": _extract_short_summary(_strip_markdown(description_text)) if description_text else None,
     }
 

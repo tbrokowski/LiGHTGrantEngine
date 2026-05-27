@@ -42,6 +42,7 @@ interface Props {
   tasks: Task[];
   onRefresh: () => void;
   documentHeadings?: string[];
+  grantColor?: string;
 }
 
 function StatChip({ label, value, accent }: { label: string; value: number; accent?: string }) {
@@ -53,7 +54,7 @@ function StatChip({ label, value, accent }: { label: string; value: number; acce
   );
 }
 
-export default function TasksHub({ grantId, tasks, onRefresh, documentHeadings = [] }: Props) {
+export default function TasksHub({ grantId, tasks, onRefresh, documentHeadings = [], grantColor }: Props) {
   const [view, setView] = useState<HubView>('board');
   const [checklist, setChecklist] = useState<ChecklistItem[]>([]);
   const [checklistLoaded, setChecklistLoaded] = useState(false);
@@ -165,6 +166,7 @@ export default function TasksHub({ grantId, tasks, onRefresh, documentHeadings =
                 compact={false}
                 grantId={grantId}
                 onRefresh={onRefresh}
+                grantColor={grantColor}
               />
             )}
           </div>
@@ -176,6 +178,7 @@ export default function TasksHub({ grantId, tasks, onRefresh, documentHeadings =
               grantId={grantId}
               items={ganttItems}
               onRefresh={fetchGantt}
+              grantColor={grantColor}
             />
           ) : (
             <div className="flex justify-center py-12 text-sm text-gray-400">Loading…</div>

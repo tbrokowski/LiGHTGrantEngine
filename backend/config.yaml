@@ -13,23 +13,28 @@ ai:
     timeout_seconds: 120
   agent_overrides:
     call_analyzer:
+      model: gpt-4o
       temperature: 0.1
-      max_tokens: 2048
+      max_tokens: 8000
     go_no_go:
       temperature: 0.2
       max_tokens: 1500
     section_drafter:
       temperature: 0.5
-      max_tokens: 4096
+      max_tokens: 8000
+    section_splitter:
+      temperature: 0.1
+      max_tokens: 8000
     compliance_checker:
       temperature: 0.1
-      max_tokens: 2048
+      max_tokens: 4096
     fit_scorer:
       temperature: 0.1
       max_tokens: 512
     opportunity_summarizer:
+      model: gpt-4o
       temperature: 0.3
-      max_tokens: 2000
+      max_tokens: 4000
     style_profiler:
       temperature: 0.2
       max_tokens: 2048
@@ -38,16 +43,19 @@ ai:
       max_tokens: 2048
     grant_reviewer:
       temperature: 0.2
-      max_tokens: 3000
+      max_tokens: 6000
     intro_architect:
       temperature: 0.5
-      max_tokens: 4096
+      max_tokens: 8000
     citation_agent:
       temperature: 0.1
       max_tokens: 2048
     grant_writer:
       temperature: 0.4
-      max_tokens: 4096
+      max_tokens: 8000
+    memory_agent:
+      temperature: 0.2
+      max_tokens: 6000
     ai_scraper:
       temperature: 0.0
       max_tokens: 4096

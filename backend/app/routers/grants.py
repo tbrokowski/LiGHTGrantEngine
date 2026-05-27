@@ -32,6 +32,7 @@ from app.auth.permissions import (
     grant_access,
     require_role,
     is_org_admin,
+    has_module_permission,
     get_redis,
     invalidate_permission_cache,
     get_user_grant_ids,
@@ -187,7 +188,8 @@ async def list_grants(
         elif not include_inactive:
             q = q.where(ActiveGrant.status.notin_(INACTIVE_STATUSES))
 
-        if not is_org_admin(current_user):
+        if not is_org_admin(current_user) and not has_module_permission(current_user, "can_view_grants"):
+            # Restrict to grants where the user has an explicit relationship
             member_grant_ids_q = select(GrantMember.grant_id).where(
                 GrantMember.user_id == current_user.id,
                 GrantMember.status == GrantMemberStatus.ACCEPTED,

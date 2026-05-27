@@ -73,7 +73,15 @@ def index_archive(self, archive_id: str) -> dict:
             await engine.dispose()
 
     try:
-        return asyncio.run(_run())
+        result = asyncio.run(_run())
+        # Trigger archive re-clustering after indexing succeeds. Delay 5 minutes
+        # to give the embed_section Celery jobs time to populate section embeddings.
+        from app.workers.celery_app import celery_app as _app
+        _app.send_task(
+            "app.workers.archive_clustering_tasks.cluster_archives",
+            countdown=300,
+        )
+        return result
     except SoftTimeLimitExceeded:
         logger.error("index_archive timed out for %s", archive_id)
         _mark_failed(

@@ -2,6 +2,12 @@
 import { createContext, useContext, useEffect, useState, ReactNode } from 'react';
 import { auth } from '@/lib/api';
 
+export interface ModulePermissions {
+  can_view_grants: boolean;
+  can_view_archive: boolean;
+  can_view_partners: boolean;
+}
+
 export interface AuthUser {
   id: string;
   name: string;
@@ -14,6 +20,7 @@ export interface AuthUser {
   ai_usage_cents: number;
   ai_usage_limit_cents: number;
   google_access_token?: string | null;
+  module_permissions: ModulePermissions;
 }
 
 interface AuthContextValue {
@@ -64,4 +71,10 @@ export function useAuth() {
 
 export function isInstitutionAdmin(user: AuthUser | null): boolean {
   return user?.role === 'admin' || user?.institution_role === 'admin';
+}
+
+export function hasModulePermission(user: AuthUser | null, key: keyof ModulePermissions): boolean {
+  if (!user) return false;
+  if (isInstitutionAdmin(user)) return true;
+  return user.module_permissions?.[key] ?? false;
 }

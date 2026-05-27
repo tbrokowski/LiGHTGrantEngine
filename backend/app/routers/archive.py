@@ -17,7 +17,7 @@ from app.routers.auth import get_current_user
 from app.services.archive_ingestion import create_archive_with_files
 from app.workers.celery_app import celery_app
 from app.config import get_settings
-from app.auth.permissions import require_role
+from app.auth.permissions import require_role, has_module_permission
 
 router = APIRouter()
 
@@ -42,8 +42,15 @@ class ArchiveCreate(BaseModel):
     notes: Optional[str] = None
 
 
+_SKIP_COLUMNS = frozenset({"embedding"})
+
+
 def _archive_dict(archive: GrantArchive, section_count: int = 0) -> dict:
-    data = {c.name: getattr(archive, c.name) for c in archive.__table__.columns}
+    data = {
+        c.name: getattr(archive, c.name)
+        for c in archive.__table__.columns
+        if c.name not in _SKIP_COLUMNS
+    }
     for f in ("submission_date", "decision_date", "created_at", "updated_at", "style_indexed_at"):
         if data.get(f):
             data[f] = str(data[f])
@@ -54,7 +61,7 @@ def _archive_dict(archive: GrantArchive, section_count: int = 0) -> dict:
     return data
 
 
-@router.get("/")  # all org members can read the archive
+@router.get("/")
 async def list_archive(
     funder: Optional[str] = None,
     outcome: Optional[str] = None,
@@ -62,6 +69,9 @@ async def list_archive(
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ):
+    if not has_module_permission(current_user, "can_view_archive"):
+        from fastapi import HTTPException as _HTTPException
+        raise _HTTPException(status_code=403, detail="You do not have access to the archive.")
     q = select(GrantArchive)
     if funder:
         q = q.where(GrantArchive.funder.ilike(f"%{funder}%"))
@@ -83,6 +93,91 @@ async def list_archive(
         counts = {row[0]: row[1] for row in count_result.all()}
 
     return [_archive_dict(a, counts.get(a.id, 0)) for a in archives]
+
+
+@router.get("/graph-data")
+async def get_archive_graph_data(
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+    funder: Optional[str] = None,
+    outcome: Optional[str] = None,
+    theme: Optional[str] = None,
+    year: Optional[int] = None,
+):
+    """Return nodes, weighted edges, and cluster metadata for the archive graph view.
+
+    Only includes archives that have been clustered (umap_x IS NOT NULL). Edges
+    come from the kNN cosine-similarity graph built by cluster_archives and are
+    filtered to pairs where both endpoints are in the current result set.
+    Capped at 2000 edges (highest-weight first) to stay wire-friendly.
+    """
+    from app.models.archive_cluster import ArchiveCluster
+    from app.models.archive_edge import ArchiveEdge
+
+    q = select(GrantArchive).where(
+        GrantArchive.indexing_status == "complete",
+        GrantArchive.umap_x.isnot(None),
+    )
+    if funder:
+        q = q.where(GrantArchive.funder.ilike(f"%{funder}%"))
+    if outcome:
+        q = q.where(GrantArchive.outcome == outcome)
+    if theme:
+        q = q.where(GrantArchive.themes.contains([theme]))
+    if year:
+        q = q.where(GrantArchive.call_year == year)
+    q = q.limit(500)
+
+    result = await db.execute(q)
+    archives = result.scalars().all()
+
+    clusters_result = await db.execute(select(ArchiveCluster))
+    clusters = {
+        c.id: {"id": c.id, "label": c.label, "color": c.color}
+        for c in clusters_result.scalars().all()
+    }
+
+    node_ids: set[str] = {a.id for a in archives}
+
+    nodes = [
+        {
+            "id": a.id,
+            "title": a.title,
+            "funder": a.funder,
+            "outcome": a.outcome,
+            "call_year": a.call_year,
+            "lead_pi": a.lead_pi,
+            "requested_amount": a.requested_amount,
+            "awarded_amount": a.awarded_amount,
+            "currency": a.currency,
+            "themes": a.themes or [],
+            "geographies": a.geographies or [],
+            "cluster_id": a.cluster_id,
+            "umap_x": a.umap_x,
+            "umap_y": a.umap_y,
+            "indexing_status": a.indexing_status,
+        }
+        for a in archives
+    ]
+
+    edges_result = await db.execute(
+        select(ArchiveEdge)
+        .where(ArchiveEdge.source_id.in_(node_ids))
+        .where(ArchiveEdge.target_id.in_(node_ids))
+        .order_by(ArchiveEdge.weight.desc())
+        .limit(2000)
+    )
+    edges = [
+        {"source": e.source_id, "target": e.target_id, "weight": e.weight}
+        for e in edges_result.scalars().all()
+    ]
+
+    return {
+        "nodes": nodes,
+        "edges": edges,
+        "clusters": list(clusters.values()),
+        "total": len(nodes),
+    }
 
 
 @router.post("/", status_code=201, dependencies=[Depends(require_role(UserRole.GRANT_LEAD))])

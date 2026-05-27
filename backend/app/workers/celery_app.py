@@ -18,6 +18,7 @@ celery_app = Celery(
         "app.workers.surfacing_tasks",
         "app.workers.archive_tasks",
         "app.workers.clustering_tasks",
+        "app.workers.archive_clustering_tasks",
     ],
 )
 
@@ -63,5 +64,10 @@ celery_app.conf.beat_schedule = {
         "task": "app.workers.clustering_tasks.cluster_opportunities",
         # Run every 6 hours — keeps graph communities fresh as new grants arrive
         "schedule": crontab(hour="*/6", minute=30),
+    },
+    "recluster-archives": {
+        "task": "app.workers.archive_clustering_tasks.cluster_archives",
+        # Run every 6 hours, offset by 15 minutes from opportunity clustering
+        "schedule": crontab(hour="*/6", minute=45),
     },
 }

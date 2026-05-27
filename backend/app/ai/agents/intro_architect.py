@@ -30,12 +30,12 @@ async def draft_introduction(
     if retrieved_sections:
         prior_str += "\nCONTENT EXEMPLARS (substance reference):\n"
         for s in retrieved_sections[:3]:
-            prior_str += f"\n--- {s.get('section_type', '?')} from {s.get('grant_title', '?')} ---\n{s.get('full_text', '')[:1500]}\n"
+            prior_str += f"\n--- {s.get('section_type', '?')} from {s.get('grant_title', '?')} ---\n{s.get('full_text', '')[:4000]}\n"
 
     if style_exemplars:
         prior_str += "\nSTYLE EXEMPLARS (match voice and openings):\n"
         for s in style_exemplars[:3]:
-            prior_str += f"\n--- {s.get('section_type', '?')} from {s.get('grant_title', '?')} ({s.get('outcome', '?')}) ---\n{s.get('full_text', '')[:1200]}\n"
+            prior_str += f"\n--- {s.get('section_type', '?')} from {s.get('grant_title', '?')} ({s.get('outcome', '?')}) ---\n{s.get('full_text', '')[:3000]}\n"
 
     cite_str = ""
     if citations:
@@ -50,10 +50,10 @@ async def draft_introduction(
 FUNDER: {funder}
 {limit_str}
 GRANT IDEA:
-{grant_idea[:2000]}
+{grant_idea[:8000]}
 
 CALL REQUIREMENTS:
-{call_requirements[:3000]}
+{call_requirements[:8000]}
 
 EVALUATION CRITERIA:
 {chr(10).join(f'- {c}' for c in evaluation_criteria)}
@@ -62,7 +62,7 @@ NARRATIVE ARC (follow this structure exactly):
 {arc_str}
 
 STYLE PROFILE:
-{json.dumps(style_profile or {}, indent=2)[:2000]}
+{json.dumps(style_profile or {}, indent=2)[:6000]}
 
 ARCHIVE EXEMPLARS:
 {prior_str}

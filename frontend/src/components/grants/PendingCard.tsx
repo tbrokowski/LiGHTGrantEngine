@@ -39,7 +39,10 @@ export default function PendingCard({ grant, onStageChange }: Props) {
           onSuccess={(stage) => { setTransition(null); onStageChange(grant.id, stage); }}
         />
       )}
-      <div className="group border border-gray-200 bg-gray-50/60 rounded-2xl px-5 py-4 hover:shadow-sm hover:-translate-y-px transition-all duration-150">
+      <div
+        className="group border border-gray-200 bg-gray-50/60 rounded-2xl px-5 py-4 hover:shadow-sm hover:-translate-y-px transition-all duration-150"
+        style={grant.color ? { borderLeftColor: grant.color, borderLeftWidth: '4px' } : undefined}
+      >
         <div className="flex items-start gap-3">
           <Link href={`/grants/${grant.id}`} className="flex-1 min-w-0">
             <div className="flex items-center gap-2 mb-1.5">

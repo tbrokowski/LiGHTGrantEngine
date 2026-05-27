@@ -48,11 +48,15 @@ class JoinRequestCreate(BaseModel):
 
 class MemberRoleUpdate(BaseModel):
     role: str  # UserRole enum value
+    institution_role: Optional[str] = None  # "admin" | "member" — if provided, promotes/demotes
+    module_permissions: Optional[dict] = None  # e.g. {"can_view_grants": true}
 
 
 class OrgInviteRequest(BaseModel):
     email: str
     role: str = UserRole.CONTRIBUTOR
+    institution_role: str = "member"  # "admin" | "member"
+    module_permissions: dict = {}  # e.g. {"can_view_grants": true, "can_view_archive": true}
 
 
 class GrantProfileUpdate(BaseModel):
@@ -173,6 +177,7 @@ async def list_members(
             "email": u.email,
             "role": u.role,
             "institution_role": u.institution_role,
+            "module_permissions": u.module_permissions or {},
             "created_at": u.created_at.isoformat() if u.created_at else None,
         }
         for u in users
@@ -188,7 +193,7 @@ async def update_member_role(
     current_user: User = Depends(get_current_user),
     redis: aioredis.Redis = Depends(get_redis),
 ):
-    """Change a member's org role. Requires org_admin."""
+    """Change a member's role, institution_role, and/or module_permissions. Requires org_admin."""
     result = await db.execute(
         select(User).where(User.id == user_id, User.institution_id == institution_id)
     )
@@ -201,9 +206,25 @@ async def update_member_role(
     except ValueError:
         raise HTTPException(400, f"Invalid role: {body.role}")
 
+    if body.institution_role is not None:
+        if body.institution_role not in ("admin", "member"):
+            raise HTTPException(400, "institution_role must be 'admin' or 'member'.")
+        # Prevent the current user from demoting themselves
+        if user_id == current_user.id and body.institution_role != "admin":
+            raise HTTPException(400, "You cannot remove your own admin privileges.")
+        user.institution_role = body.institution_role
+
+    if body.module_permissions is not None:
+        user.module_permissions = body.module_permissions
+
     await db.commit()
     await invalidate_permission_cache(user_id, redis)
-    return {"id": user.id, "role": user.role}
+    return {
+        "id": user.id,
+        "role": user.role,
+        "institution_role": user.institution_role,
+        "module_permissions": user.module_permissions,
+    }
 
 
 @router.delete("/{institution_id}/members/{user_id}", status_code=204, dependencies=[Depends(require_org_admin())])
@@ -439,6 +460,8 @@ async def invite_member_by_email(
         "institution_id": institution_id,
         "email": body.email,
         "role": body.role,
+        "institution_role": body.institution_role,
+        "module_permissions": body.module_permissions,
         "invited_by": current_user.id,
     })
 

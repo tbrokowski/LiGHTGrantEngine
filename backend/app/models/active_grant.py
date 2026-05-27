@@ -86,6 +86,7 @@ class ActiveGrant(Base):
     themes: Mapped[list] = mapped_column(JSON, default=list)
     geographies: Mapped[list] = mapped_column(JSON, default=list)
     submission_type: Mapped[str | None] = mapped_column(String(100))
+    color: Mapped[str | None] = mapped_column(String(7), nullable=True)
 
     # Outcome
     decision_outcome: Mapped[str | None] = mapped_column(String(100))

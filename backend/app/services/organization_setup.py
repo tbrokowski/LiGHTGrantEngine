@@ -15,8 +15,17 @@ def personal_workspace_name(display_name: str) -> str:
 
 
 def invited_member_role(role: Optional[str]) -> str:
-    """Map an invite token role to a non-admin org membership role."""
-    allowed = {UserRole.VIEWER, UserRole.CONTRIBUTOR, UserRole.REVIEWER}
+    """Map an invite token role to a valid org membership role.
+
+    Admin-level UserRole (admin) is excluded here — institution_role handles org-admin status.
+    """
+    allowed = {
+        UserRole.VIEWER,
+        UserRole.CONTRIBUTOR,
+        UserRole.REVIEWER,
+        UserRole.OPERATIONS_MANAGER,
+        UserRole.GRANT_LEAD,
+    }
     if role in allowed:
         return role
     return UserRole.CONTRIBUTOR

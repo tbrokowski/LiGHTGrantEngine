@@ -12,6 +12,7 @@ from app.database import get_db
 from app.models.partner import Partner, PartnerUpdate, PartnerGrantLink
 from app.models.user import User
 from app.routers.auth import get_current_user
+from app.auth.permissions import has_module_permission
 
 router = APIRouter()
 
@@ -173,6 +174,8 @@ async def list_partners(
     current_user: User = Depends(get_current_user),
 ):
     """List and search partners. Supports free-text search on name/email/org."""
+    if not has_module_permission(current_user, "can_view_partners"):
+        raise HTTPException(status_code=403, detail="You do not have access to partners.")
     stmt = select(Partner)
 
     if status:

@@ -11,6 +11,7 @@ export interface GrantItem {
   grant_stage: string;
   external_deadline: string | null;
   internal_deadline: string | null;
+  color?: string | null;
 }
 
 export interface TaskItem {
@@ -18,6 +19,7 @@ export interface TaskItem {
   title: string;
   grant_id: string;
   grant_title: string;
+  grant_color?: string | null;
   due_date: string | null;
   status: string;
   priority: string;
@@ -60,6 +62,8 @@ interface TaskRowProps {
 }
 
 function TaskRow({ task, days }: TaskRowProps) {
+  const grantColor = task.grant_color ?? null;
+
   const urgencyDot =
     days !== null && days < 0  ? 'bg-red-400' :
     days !== null && days <= 7 ? 'bg-amber-400' :
@@ -82,6 +86,7 @@ function TaskRow({ task, days }: TaskRowProps) {
     <Link
       href={`/grants/${task.grant_id}?tab=tasks`}
       className="flex items-center gap-2 px-4 py-2.5 hover:bg-gray-50/80 transition-colors group"
+      style={grantColor ? { borderLeft: `3px solid ${grantColor}` } : { borderLeft: '3px solid transparent' }}
     >
       <span className={`w-1.5 h-1.5 rounded-full shrink-0 ${urgencyDot}`} />
       <div className="flex-1 min-w-0">

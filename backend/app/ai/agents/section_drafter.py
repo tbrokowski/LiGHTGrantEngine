@@ -54,19 +54,19 @@ async def draft_section(
             prior_str += f"\n--- {s.get('section_type','?')} from {s.get('grant_title','?')} ({s.get('funder','?')}, {s.get('outcome','?')}) | Permission: {perm}"
             if warnings:
                 prior_str += f" | WARNINGS: {'; '.join(warnings)}"
-            prior_str += f"\n{s.get('full_text','')[:1500]}\n"
+            prior_str += f"\n{s.get('full_text','')[:4000]}\n"
 
     if style_exemplars:
         prior_str += "\n\nSTYLE EXEMPLARS (match voice, tone, and paragraph patterns):\n"
         for s in style_exemplars[:3]:
-            prior_str += f"\n--- {s.get('section_type','?')} from {s.get('grant_title','?')} ({s.get('outcome','?')}) ---\n{s.get('full_text','')[:1200]}\n"
+            prior_str += f"\n--- {s.get('section_type','?')} from {s.get('grant_title','?')} ({s.get('outcome','?')}) ---\n{s.get('full_text','')[:3000]}\n"
 
     lang_str = ""
     if reusable_language:
         lang_str = "\n\nAPPROVED REUSABLE LANGUAGE:\n"
         for block in reusable_language[:3]:
             note = " [PARAPHRASE ONLY]" if block.get("paraphrase_only") else " [DIRECT USE OK]"
-            lang_str += f"\n{block.get('title','?')}{note}:\n{block.get('full_text','')[:800]}\n"
+            lang_str += f"\n{block.get('title','?')}{note}:\n{block.get('full_text','')[:2000]}\n"
 
     cite_str = ""
     if citations:
@@ -76,7 +76,7 @@ async def draft_section(
 
     style_str = ""
     if style_profile:
-        style_str = f"\n\nSTYLE PROFILE:\n{json.dumps(style_profile, indent=2)[:2000]}\n"
+        style_str = f"\n\nSTYLE PROFILE:\n{json.dumps(style_profile, indent=2)[:6000]}\n"
 
     # Per-section word/page limit from call analysis takes precedence over generic limit
     sec_req = section_specific_requirements or {}
@@ -100,19 +100,19 @@ SECTION PRIORITY: {sec_priority.upper()}
 {limit_str}
 
 GRANT IDEA:
-{grant_idea[:2000] if grant_idea else 'See call requirements'}
+{grant_idea[:8000] if grant_idea else 'See call requirements'}
 
 CALL BRIEF (overall funder goals and what a strong proposal must include):
-{call_narrative_brief[:3000] if call_narrative_brief else call_requirements[:2000]}
+{call_narrative_brief[:12000] if call_narrative_brief else call_requirements[:8000]}
 
 CALL REQUIREMENTS FOR THIS SPECIFIC SECTION:
-{sec_specific_reqs or call_requirements[:2000]}
+{sec_specific_reqs or call_requirements[:8000]}
 
 EVALUATION CRITERIA TO ADDRESS (address each one explicitly):
 {chr(10).join(f'- {c}' for c in (evaluation_criteria or []))}
 
 PRIOR SECTIONS SUMMARY (maintain narrative continuity and avoid repetition):
-{prior_sections_summary[:2000] if prior_sections_summary else 'This may be the first section.'}
+{prior_sections_summary[:6000] if prior_sections_summary else 'This may be the first section.'}
 
 {f'ADDITIONAL INSTRUCTIONS: {user_instructions}' if user_instructions else ''}
 {style_str}

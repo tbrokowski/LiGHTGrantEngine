@@ -8,8 +8,8 @@ Split the proposal into logical sections with accurate typing.
 Respond with valid JSON only."""
 
 SECTION_TYPES = [s.value for s in SectionType]
-MAX_INPUT_CHARS = 30_000
-CHUNK_SIZE = 25_000
+MAX_INPUT_CHARS = 400_000  # GPT-4o 128k context handles full proposal documents
+CHUNK_SIZE = 400_000
 
 
 def _prepare_text(parsed_text: str) -> tuple[str, bool]:
@@ -154,12 +154,12 @@ async def _split_long_document(parsed_text: str, funder: str) -> tuple[list[dict
     regex_sections = _regex_fallback(text)
     if not _is_weak_split(regex_sections):
         warnings.append(
-            "Long document indexed using full-text heading detection (all sections preserved)."
+            "Very long document indexed using full-text heading detection (all sections preserved)."
         )
         return regex_sections, warnings
 
     warnings.append(
-        "Long document: using chunked LLM splitting to preserve content beyond 30k characters."
+        "Very long document: using chunked LLM splitting to preserve all content."
     )
     chunks = _chunk_text(text)
     all_sections: list[dict] = []
@@ -207,7 +207,7 @@ async def split_proposal_into_sections(parsed_text: str, funder: str = "") -> tu
     text, truncated = _prepare_text(parsed_text)
     if truncated:
         warnings.append(
-            "Document exceeded 30k characters; splitter saw truncated text. "
+            "Document exceeded 400k characters; splitter saw truncated text. "
             "Review section boundaries manually if needed."
         )
 

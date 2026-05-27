@@ -8,6 +8,7 @@ import { useAuth } from '@/lib/auth';
 import type { EditorSection } from '@/lib/types';
 import WorkspaceNav, { WorkspaceTab } from '@/components/grant-workspace/WorkspaceNav';
 import WorkspaceDashboard from '@/components/grant-workspace/WorkspaceDashboard';
+import GrantColorPicker from '@/components/grants/GrantColorPicker';
 import FileLibrary from '@/components/grant-workspace/FileLibrary';
 import BudgetPanel from '@/components/grant-workspace/BudgetPanel';
 import MoreTab from '@/components/grant-workspace/MoreTab';
@@ -73,6 +74,7 @@ interface GrantDetail {
   writing_phase?: string;
   last_review?: Record<string, unknown>;
   is_personal?: boolean;
+  color?: string | null;
 }
 
 const PRIORITY_COLORS: Record<string, string> = {
@@ -127,6 +129,7 @@ function GrantDetailContent() {
   const [activeTab, setActiveTab] = useState<WorkspaceTab>(initialTab);
   const [myGrantRole, setMyGrantRole] = useState<string | null>(null);
   const [promoting, setPromoting] = useState(false);
+  const [showColorPicker, setShowColorPicker] = useState(false);
 
   // Workspace data
   const [summary, setSummary] = useState<WorkspaceSummary | null>(null);
@@ -225,6 +228,18 @@ function GrantDetailContent() {
   const handleStatusChange = useCallback((newStatus: string) => {
     setGrant((g) => g ? { ...g, status: newStatus } : g);
   }, []);
+
+  const handleColorChange = useCallback(async (color: string | null) => {
+    if (!id) return;
+    setGrant((g) => g ? { ...g, color } : g);
+    setShowColorPicker(false);
+    try {
+      await grants.update(id, { color });
+    } catch {
+      // revert on failure
+      fetchGrant();
+    }
+  }, [id, fetchGrant]);
 
   async function handlePromote() {
     if (!id) return;
@@ -328,16 +343,33 @@ function GrantDetailContent() {
 
           {/* Row 2: title + status + metadata */}
           <div className="flex items-start justify-between gap-4 mb-3">
-            <div className="min-w-0">
-              <h1 className="text-lg font-semibold text-gray-900 leading-tight truncate">{grant.title}</h1>
-              <div className="flex items-center gap-2 flex-wrap mt-1">
-                {grant.funder && <span className="text-sm text-gray-500">{grant.funder}</span>}
-                {grant.program && (
-                  <>
-                    <span className="text-gray-300 text-sm">·</span>
-                    <span className="text-sm text-gray-400">{grant.program}</span>
-                  </>
+            <div className="min-w-0 flex items-start gap-2.5">
+              {/* Color swatch / picker */}
+              <div className="relative shrink-0 mt-1">
+                <button
+                  type="button"
+                  title="Grant color"
+                  onClick={() => setShowColorPicker((v) => !v)}
+                  className="w-4 h-4 rounded-full border-2 border-white shadow ring-1 ring-gray-200 hover:ring-gray-400 transition-all mt-0.5"
+                  style={{ backgroundColor: grant.color ?? '#e5e7eb' }}
+                />
+                {showColorPicker && (
+                  <div className="absolute left-0 top-7 z-30 bg-white border border-gray-200 rounded-xl shadow-lg p-3 w-max">
+                    <GrantColorPicker value={grant.color} onChange={handleColorChange} label="" />
+                  </div>
                 )}
+              </div>
+              <div className="min-w-0">
+                <h1 className="text-lg font-semibold text-gray-900 leading-tight truncate">{grant.title}</h1>
+                <div className="flex items-center gap-2 flex-wrap mt-1">
+                  {grant.funder && <span className="text-sm text-gray-500">{grant.funder}</span>}
+                  {grant.program && (
+                    <>
+                      <span className="text-gray-300 text-sm">·</span>
+                      <span className="text-sm text-gray-400">{grant.program}</span>
+                    </>
+                  )}
+                </div>
               </div>
             </div>
             <div className="shrink-0 pt-0.5">
@@ -455,7 +487,7 @@ function GrantDetailContent() {
                       Manage tasks →
                     </button>
                   </div>
-                  <TaskTimeline tasks={taskList} compact={true} />
+                  <TaskTimeline tasks={taskList} compact={true} grantColor={grant.color ?? undefined} />
                 </div>
               </div>
             )}
@@ -467,6 +499,7 @@ function GrantDetailContent() {
                 tasks={taskList}
                 onRefresh={refreshTasks}
                 documentHeadings={documentHeadings}
+                grantColor={grant.color ?? undefined}
               />
             )}
 

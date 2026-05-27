@@ -63,21 +63,34 @@ function GrantBar({ grant, windowDays, containerW, today, starred }: GrantBarPro
   const isUrgent = daysLeft !== null && daysLeft >= 0 && daysLeft <= 7;
   const isSoon = daysLeft !== null && daysLeft > 7 && daysLeft <= 30;
 
-  const barColor = starred
+  const barColor = grant.color
+    ? ''
+    : starred
     ? 'bg-indigo-200'
     : isOverdue ? 'bg-red-200'
     : isUrgent ? 'bg-amber-200'
     : isSoon ? 'bg-amber-100'
     : 'bg-emerald-100';
 
-  const barBorder = starred
+  const barBorder = grant.color
+    ? ''
+    : starred
     ? 'border-indigo-300'
     : isOverdue ? 'border-red-300'
     : isUrgent ? 'border-amber-300'
     : isSoon ? 'border-amber-200'
     : 'border-emerald-200';
 
-  const deadlineMarkerColor = isOverdue ? 'bg-red-400' : isUrgent ? 'bg-amber-400' : isSoon ? 'bg-amber-300' : 'bg-emerald-400';
+  const barStyle = grant.color
+    ? { backgroundColor: grant.color + '33', borderColor: grant.color + '99' }
+    : undefined;
+
+  const deadlineMarkerColor = grant.color
+    ? ''
+    : isOverdue ? 'bg-red-400' : isUrgent ? 'bg-amber-400' : isSoon ? 'bg-amber-300' : 'bg-emerald-400';
+  const deadlineMarkerStyle = grant.color
+    ? { backgroundColor: grant.color }
+    : undefined;
 
   // Internal deadline marker position within bar
   const intMarkerPx = intDays !== null && intDays >= 0 && intDays <= windowDays
@@ -95,7 +108,10 @@ function GrantBar({ grant, windowDays, containerW, today, starred }: GrantBarPro
     <div className="flex items-center" style={{ height: ROW_H }}>
       {/* Label */}
       <div className="shrink-0 flex items-center gap-1.5 pr-3" style={{ width: LABEL_W }}>
-        <span className={`w-1.5 h-1.5 rounded-full shrink-0 ${STAGE_DOT[grant.grant_stage] ?? 'bg-gray-300'}`} />
+        <span
+          className={`w-1.5 h-1.5 rounded-full shrink-0 ${grant.color ? '' : (STAGE_DOT[grant.grant_stage] ?? 'bg-gray-300')}`}
+          style={grant.color ? { backgroundColor: grant.color } : undefined}
+        />
         <Link href={`/grants/${grant.id}`} className="min-w-0">
           <p className="text-xs font-medium text-gray-700 truncate hover:text-gray-900 transition-colors leading-tight">
             {grant.title}
@@ -112,7 +128,7 @@ function GrantBar({ grant, windowDays, containerW, today, starred }: GrantBarPro
         {extDays !== null && extDays > -windowDays && (
           <div
             className={`absolute top-1/2 -translate-y-1/2 h-5 rounded-full border ${barColor} ${barBorder}`}
-            style={{ left: barStartPx, width: barWidthPx }}
+            style={{ left: barStartPx, width: barWidthPx, ...barStyle }}
           >
             {/* Internal deadline tick */}
             {intMarkerPx !== null && intMarkerPx > 4 && intMarkerPx < barWidthPx - 4 && (
@@ -125,6 +141,7 @@ function GrantBar({ grant, windowDays, containerW, today, starred }: GrantBarPro
             {/* Deadline cap */}
             <div
               className={`absolute right-0 top-0 bottom-0 w-1.5 rounded-r-full ${deadlineMarkerColor}`}
+              style={deadlineMarkerStyle}
             />
           </div>
         )}

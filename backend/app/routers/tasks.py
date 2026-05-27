@@ -29,16 +29,23 @@ async def my_tasks(db: AsyncSession = Depends(get_db), current_user: User = Depe
     result = await db.execute(q)
     task_list = result.scalars().all()
 
-    # Batch-fetch grant titles for all unique grant IDs
+    # Batch-fetch grant titles and colors for all unique grant IDs
     grant_ids = list({t.grant_id for t in task_list})
-    grant_title_map: dict[str, str] = {}
+    grant_map: dict[str, tuple[str, str | None]] = {}
     if grant_ids:
         grants_result = await db.execute(
-            select(ActiveGrant.id, ActiveGrant.title).where(ActiveGrant.id.in_(grant_ids))
+            select(ActiveGrant.id, ActiveGrant.title, ActiveGrant.color).where(ActiveGrant.id.in_(grant_ids))
         )
-        grant_title_map = {row[0]: row[1] for row in grants_result.all()}
+        grant_map = {row[0]: (row[1], row[2]) for row in grants_result.all()}
 
-    return [{**_task_dict(t), "grant_title": grant_title_map.get(t.grant_id, "")} for t in task_list]
+    return [
+        {
+            **_task_dict(t),
+            "grant_title": grant_map.get(t.grant_id, ("", None))[0],
+            "grant_color": grant_map.get(t.grant_id, ("", None))[1],
+        }
+        for t in task_list
+    ]
 
 @router.get("/overdue")
 async def overdue_tasks(db: AsyncSession = Depends(get_db), current_user: User = Depends(get_current_user)):
