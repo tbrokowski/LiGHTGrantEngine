@@ -303,6 +303,7 @@ export const archive = {
   createWithDocument: (formData: FormData) =>
     api.post('/archive/create-with-document', formData, {
       headers: { 'Content-Type': 'multipart/form-data' },
+      timeout: 90_000,
     }),
   update: (id: string, data: Record<string, unknown>) => api.patch(`/archive/${id}`, data),
   ingest: (archiveId: string, data?: Record<string, unknown>) =>

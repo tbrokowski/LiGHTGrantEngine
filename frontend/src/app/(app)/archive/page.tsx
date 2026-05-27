@@ -136,8 +136,14 @@ function NewArchiveModal({ onClose, onCreated }: { onClose: () => void; onCreate
         'AI indexing is running in the background — you can continue working.'
       );
     } catch (err: unknown) {
-      const detail = (err as { response?: { data?: { detail?: string } } }).response?.data?.detail;
-      setError(typeof detail === 'string' ? detail : 'Failed to save archive entry. Please try again.');
+      const axiosErr = err as { code?: string; response?: { data?: { detail?: string } } };
+      const detail = axiosErr.response?.data?.detail;
+      const msg = typeof detail === 'string'
+        ? detail
+        : axiosErr.code === 'ECONNABORTED'
+          ? 'Upload timed out. The file may be too large or the server is busy — please try again.'
+          : 'Failed to save archive entry. Please try again.';
+      setError(msg);
       setSaving(false);
     }
   }
@@ -200,6 +206,15 @@ function NewArchiveModal({ onClose, onCreated }: { onClose: () => void; onCreate
         </div>
         <form id="archive-form" onSubmit={handleSubmit} className="px-6 py-5 space-y-4 overflow-y-auto flex-1">
           {error && <p className="text-sm text-red-600 bg-red-50 rounded-lg px-3 py-2">{error}</p>}
+          {saving && (
+            <div className="flex items-center gap-2.5 text-xs text-amber-700 bg-amber-50 border border-amber-100 rounded-lg px-3 py-2.5">
+              <svg className="w-3.5 h-3.5 shrink-0 animate-spin" fill="none" viewBox="0 0 24 24">
+                <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
+                <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z" />
+              </svg>
+              Uploading documents… this may take a moment for large files.
+            </div>
+          )}
 
           <div>
             <label className="block text-xs font-medium text-gray-500 mb-1.5">Title <span className="text-red-400">*</span></label>
@@ -385,9 +400,17 @@ function NewArchiveModal({ onClose, onCreated }: { onClose: () => void; onCreate
             type="submit"
             form="archive-form"
             disabled={saving}
-            className="flex-1 px-4 py-2 text-sm font-medium text-white bg-gray-900 rounded-xl hover:bg-gray-700 disabled:opacity-50 transition-colors"
+            className="flex-1 px-4 py-2 text-sm font-medium text-white bg-gray-900 rounded-xl hover:bg-gray-700 disabled:opacity-50 transition-colors flex items-center justify-center gap-2"
           >
-            {saving ? 'Saving…' : 'Add to Archive'}
+            {saving ? (
+              <>
+                <svg className="w-4 h-4 animate-spin" fill="none" viewBox="0 0 24 24">
+                  <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
+                  <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z" />
+                </svg>
+                Uploading…
+              </>
+            ) : 'Add to Archive'}
           </button>
         </div>
       </div>
