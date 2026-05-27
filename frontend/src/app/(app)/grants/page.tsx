@@ -129,6 +129,132 @@ function NewGrantModal({ onClose, onCreated }: { onClose: () => void; onCreated:
   );
 }
 
+interface NewActiveGrantForm {
+  title: string;
+  funder: string;
+  pi_name: string;
+  award_amount: string;
+  currency: string;
+  external_deadline: string;
+  is_personal: boolean;
+  color: string | null;
+}
+
+function NewActiveGrantModal({ onClose, onCreated }: { onClose: () => void; onCreated: () => void }) {
+  const [form, setForm] = useState<NewActiveGrantForm>({
+    title: '', funder: '', pi_name: '', award_amount: '', currency: 'USD',
+    external_deadline: '', is_personal: false, color: null,
+  });
+  const [saving, setSaving] = useState(false);
+  const [error, setError] = useState('');
+  const firstRef = useRef<HTMLInputElement>(null);
+  useEffect(() => { firstRef.current?.focus(); }, []);
+
+  function set<K extends keyof NewActiveGrantForm>(k: K, v: NewActiveGrantForm[K]) {
+    setForm(prev => ({ ...prev, [k]: v }));
+  }
+
+  async function handleSubmit(e: React.FormEvent) {
+    e.preventDefault();
+    if (!form.title.trim()) { setError('Title is required.'); return; }
+    setSaving(true);
+    setError('');
+    try {
+      const payload: Record<string, unknown> = {
+        title: form.title.trim(),
+        grant_stage: 'active',
+        is_personal: form.is_personal,
+      };
+      if (form.funder) payload.funder = form.funder;
+      if (form.pi_name) payload.pi_name = form.pi_name;
+      if (form.award_amount) {
+        const parsed = parseFloat(form.award_amount.replace(/,/g, ''));
+        if (!isNaN(parsed)) payload.award_amount = parsed;
+      }
+      if (form.currency) payload.currency = form.currency;
+      if (form.external_deadline) payload.external_deadline = form.external_deadline;
+      if (form.color) payload.color = form.color;
+      await grants.create(payload);
+      onCreated();
+    } catch {
+      setError('Failed to create grant. Please try again.');
+      setSaving(false);
+    }
+  }
+
+  return (
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/30 backdrop-blur-sm">
+      <div className="bg-white rounded-2xl shadow-2xl w-full max-w-md mx-4">
+        <div className="px-6 py-5 border-b border-gray-100 flex items-center justify-between">
+          <h2 className="text-base font-semibold text-gray-900">Add Active Grant</h2>
+          <button onClick={onClose} className="text-gray-400 hover:text-gray-600 p-1 rounded-lg hover:bg-gray-100">
+            <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+              <path strokeLinecap="round" strokeLinejoin="round" d="M6 18L18 6M6 6l12 12" />
+            </svg>
+          </button>
+        </div>
+        <form onSubmit={handleSubmit} className="px-6 py-5 space-y-4">
+          {error && <p className="text-sm text-red-600 bg-red-50 rounded-lg px-3 py-2">{error}</p>}
+          <div className="flex items-center gap-1 bg-gray-100 rounded-xl p-1">
+            <button type="button" onClick={() => set('is_personal', false)}
+              className={`flex-1 text-xs font-medium py-1.5 rounded-lg transition-colors ${!form.is_personal ? 'bg-white text-gray-900 shadow-sm' : 'text-gray-500'}`}>
+              Organization
+            </button>
+            <button type="button" onClick={() => set('is_personal', true)}
+              className={`flex-1 text-xs font-medium py-1.5 rounded-lg transition-colors ${form.is_personal ? 'bg-white text-gray-900 shadow-sm' : 'text-gray-500'}`}>
+              Personal
+            </button>
+          </div>
+          <div>
+            <label className="block text-xs font-medium text-gray-500 mb-1.5">Title <span className="text-red-400">*</span></label>
+            <input ref={firstRef} type="text" value={form.title} onChange={e => set('title', e.target.value)}
+              placeholder="Grant title"
+              className="w-full border border-gray-200 rounded-xl px-3 py-2 text-sm text-gray-900 focus:outline-none focus:ring-1 focus:ring-gray-300 placeholder-gray-300" />
+          </div>
+          <GrantColorPicker value={form.color} onChange={color => set('color', color)} />
+          <div className="grid grid-cols-2 gap-3">
+            <div>
+              <label className="block text-xs font-medium text-gray-500 mb-1.5">Funder</label>
+              <input type="text" value={form.funder} onChange={e => set('funder', e.target.value)} placeholder="Organization"
+                className="w-full border border-gray-200 rounded-xl px-3 py-2 text-sm focus:outline-none focus:ring-1 focus:ring-gray-300 placeholder-gray-300" />
+            </div>
+            <div>
+              <label className="block text-xs font-medium text-gray-500 mb-1.5">Lead PI</label>
+              <input type="text" value={form.pi_name} onChange={e => set('pi_name', e.target.value)} placeholder="PI name"
+                className="w-full border border-gray-200 rounded-xl px-3 py-2 text-sm focus:outline-none focus:ring-1 focus:ring-gray-300 placeholder-gray-300" />
+            </div>
+          </div>
+          <div className="grid grid-cols-3 gap-3">
+            <div>
+              <label className="block text-xs font-medium text-gray-500 mb-1.5">Currency</label>
+              <input type="text" value={form.currency} onChange={e => set('currency', e.target.value)} placeholder="USD"
+                className="w-full border border-gray-200 rounded-xl px-3 py-2 text-sm focus:outline-none focus:ring-1 focus:ring-gray-300 placeholder-gray-300" />
+            </div>
+            <div className="col-span-2">
+              <label className="block text-xs font-medium text-gray-500 mb-1.5">Award amount</label>
+              <input type="text" value={form.award_amount} onChange={e => set('award_amount', e.target.value)} placeholder="e.g. 250000"
+                className="w-full border border-gray-200 rounded-xl px-3 py-2 text-sm focus:outline-none focus:ring-1 focus:ring-gray-300 placeholder-gray-300" />
+            </div>
+          </div>
+          <div>
+            <label className="block text-xs font-medium text-gray-500 mb-1.5">End / reporting deadline</label>
+            <input type="date" value={form.external_deadline} onChange={e => set('external_deadline', e.target.value)}
+              className="w-full border border-gray-200 rounded-xl px-3 py-2 text-sm focus:outline-none focus:ring-1 focus:ring-gray-300" />
+          </div>
+          <div className="flex gap-2 pt-1">
+            <button type="button" onClick={onClose}
+              className="flex-1 px-4 py-2 text-sm text-gray-600 border border-gray-200 rounded-xl hover:bg-gray-50">Cancel</button>
+            <button type="submit" disabled={saving}
+              className="flex-1 px-4 py-2 text-sm font-medium text-white bg-emerald-600 rounded-xl hover:bg-emerald-700 disabled:opacity-50">
+              {saving ? 'Adding…' : 'Add Grant'}
+            </button>
+          </div>
+        </form>
+      </div>
+    </div>
+  );
+}
+
 export default function GrantsPage() {
   const router = useRouter();
   const [tab, setTab] = useState<TabId>('proposals');
@@ -136,6 +262,7 @@ export default function GrantsPage() {
   const [loading, setLoading] = useState(true);
   const [search, setSearch] = useState('');
   const [showModal, setShowModal] = useState(false);
+  const [showActiveModal, setShowActiveModal] = useState(false);
 
   function loadGrants() {
     grants.list({})
@@ -152,6 +279,12 @@ export default function GrantsPage() {
 
   function handleCreated(id: string) {
     router.push(`/grants/${id}`);
+  }
+
+  function handleActiveCreated() {
+    setShowActiveModal(false);
+    setLoading(true);
+    loadGrants();
   }
 
   function handleStageChange(id: string, newStage: string) {
@@ -196,19 +329,40 @@ export default function GrantsPage() {
           onCreated={handleCreated}
         />
       )}
+      {showActiveModal && (
+        <NewActiveGrantModal
+          onClose={() => setShowActiveModal(false)}
+          onCreated={handleActiveCreated}
+        />
+      )}
 
       {/* Header */}
       <div className="flex items-center justify-between mb-6">
         <h1 className="text-xl font-semibold text-gray-900 tracking-tight">Grants</h1>
-        <button
-          onClick={() => setShowModal(true)}
-          className="flex items-center gap-1.5 px-4 py-2 text-sm font-medium text-white bg-gray-900 rounded-xl hover:bg-gray-700 transition-colors"
-        >
-          <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2.5}>
-            <path strokeLinecap="round" strokeLinejoin="round" d="M12 4v16m8-8H4" />
-          </svg>
-          New Proposal
-        </button>
+        <div className="flex items-center gap-2">
+          {tab === 'active' && (
+            <button
+              onClick={() => setShowActiveModal(true)}
+              className="flex items-center gap-1.5 px-4 py-2 text-sm font-medium text-emerald-700 border border-emerald-200 bg-emerald-50 rounded-xl hover:bg-emerald-100 transition-colors"
+            >
+              <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2.5}>
+                <path strokeLinecap="round" strokeLinejoin="round" d="M12 4v16m8-8H4" />
+              </svg>
+              Add Active Grant
+            </button>
+          )}
+          {tab !== 'active' && (
+            <button
+              onClick={() => setShowModal(true)}
+              className="flex items-center gap-1.5 px-4 py-2 text-sm font-medium text-white bg-gray-900 rounded-xl hover:bg-gray-700 transition-colors"
+            >
+              <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2.5}>
+                <path strokeLinecap="round" strokeLinejoin="round" d="M12 4v16m8-8H4" />
+              </svg>
+              New Proposal
+            </button>
+          )}
+        </div>
       </div>
 
       {/* Tab bar */}
@@ -256,6 +410,14 @@ export default function GrantsPage() {
         ) : tabGrants.length === 0 ? (
           <div className="bg-white border border-gray-100 rounded-2xl px-6 py-16 text-center">
             <p className="text-sm font-medium text-gray-400">{currentTab.emptyText}</p>
+            {tab === 'active' && (
+              <button
+                onClick={() => setShowActiveModal(true)}
+                className="mt-3 text-xs text-gray-400 hover:text-gray-600 underline underline-offset-2"
+              >
+                Add the first active grant
+              </button>
+            )}
           </div>
         ) : tab === 'proposals' ? (
           tabGrants.map(g => (
@@ -272,11 +434,17 @@ export default function GrantsPage() {
               key={g.id}
               grant={g}
               onStageChange={handleStageChange}
+              onDelete={handleDelete}
             />
           ))
         ) : (
           tabGrants.map(g => (
-            <ActiveGrantCard key={g.id} grant={g} />
+            <ActiveGrantCard
+              key={g.id}
+              grant={g}
+              onStageChange={handleStageChange}
+              onDelete={handleDelete}
+            />
           ))
         )}
       </div>

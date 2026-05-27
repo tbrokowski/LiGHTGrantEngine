@@ -154,7 +154,7 @@ export const grants = {
   get: (id: string) => api.get(`/grants/${id}`),
   create: (data: Record<string, unknown>) => api.post('/grants/', data),
   update: (id: string, data: Record<string, unknown>) => api.patch(`/grants/${id}`, data),
-  updateStage: (id: string, data: { stage: string; notes?: string }) =>
+  updateStage: (id: string, data: { stage: string; notes?: string; award_amount?: number; lessons_learned?: string; outcome?: string }) =>
     api.patch(`/grants/${id}/stage`, data),
   updateReporting: (id: string, deadlines: unknown[]) =>
     api.patch(`/grants/${id}/reporting`, { reporting_deadlines: deadlines }),

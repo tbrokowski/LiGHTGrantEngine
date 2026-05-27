@@ -18,9 +18,10 @@ function daysUntil(dateStr: string | null): number | null {
 interface Props {
   grant: GrantSummary;
   onStageChange: (id: string, newStage: string) => void;
+  onDelete: (id: string) => void;
 }
 
-export default function PendingCard({ grant, onStageChange }: Props) {
+export default function PendingCard({ grant, onStageChange, onDelete }: Props) {
   const [transition, setTransition] = useState<'accept' | 'reject' | null>(null);
   const [menuOpen, setMenuOpen] = useState(false);
 
@@ -35,6 +36,7 @@ export default function PendingCard({ grant, onStageChange }: Props) {
           grantId={grant.id}
           grantTitle={grant.title}
           transitionType={transition}
+          requestedAmount={transition === 'accept' ? grant.requested_amount : undefined}
           onClose={() => setTransition(null)}
           onSuccess={(stage) => { setTransition(null); onStageChange(grant.id, stage); }}
         />
@@ -91,6 +93,14 @@ export default function PendingCard({ grant, onStageChange }: Props) {
                     className="w-full text-left px-3 py-2 text-sm text-red-600 hover:bg-red-50"
                   >
                     Mark Rejected
+                  </button>
+                  <div className="my-1 border-t border-gray-100" />
+                  <button
+                    type="button"
+                    onClick={() => { setMenuOpen(false); onDelete(grant.id); }}
+                    className="w-full text-left px-3 py-2 text-sm text-red-600 hover:bg-red-50"
+                  >
+                    Delete
                   </button>
                 </div>
               )}
