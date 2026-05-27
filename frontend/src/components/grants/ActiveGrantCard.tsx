@@ -81,7 +81,9 @@ export default function ActiveGrantCard({ grant, onStageChange, onDelete }: Prop
             <div className="mt-2.5 flex items-center gap-3 flex-wrap">
               <TaskProgress tasks={grant.tasks} />
               {awardedDate && (
-                <span className="text-xs text-gray-400">Awarded {awardedDate}</span>
+                <span className="text-xs text-gray-400 bg-gray-50 border border-gray-100 px-2 py-0.5 rounded-full">
+                  Awarded {awardedDate}
+                </span>
               )}
             </div>
           </Link>
@@ -91,7 +93,7 @@ export default function ActiveGrantCard({ grant, onStageChange, onDelete }: Prop
               <button
                 type="button"
                 onClick={() => setMenuOpen(v => !v)}
-                className="w-7 h-7 rounded-lg flex items-center justify-center text-gray-300 hover:text-gray-500 hover:bg-gray-100 transition-colors"
+                className="w-7 h-7 rounded-lg flex items-center justify-center text-gray-400 hover:text-gray-700 hover:bg-gray-100 transition-colors"
               >
                 <svg className="w-4 h-4" fill="currentColor" viewBox="0 0 24 24">
                   <circle cx="12" cy="5" r="1.5" /><circle cx="12" cy="12" r="1.5" /><circle cx="12" cy="19" r="1.5" />

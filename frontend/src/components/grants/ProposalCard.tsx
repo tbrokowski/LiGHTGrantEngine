@@ -74,6 +74,12 @@ function TaskProgress({ tasks }: { tasks?: { status: string }[] }) {
   );
 }
 
+function formatAmount(amount: number | null, currency: string | null) {
+  if (!amount) return null;
+  const fmt = new Intl.NumberFormat('en-US', { notation: 'compact', maximumFractionDigits: 1 });
+  return `${currency ?? '$'}${fmt.format(amount)}`;
+}
+
 interface Props {
   grant: GrantSummary;
   onStageChange: (id: string, newStage: string) => void;
@@ -94,6 +100,9 @@ export default function ProposalCard({ grant, onStageChange, onDelete }: Props) 
   if (grant.funder) meta.push(grant.funder);
   if (grant.pi_name) meta.push(grant.pi_name);
 
+  const amountLabel = formatAmount(grant.requested_amount, grant.currency);
+  const themes = (grant.themes ?? []).slice(0, 3);
+
   return (
     <>
       {transition && (
@@ -111,10 +120,15 @@ export default function ProposalCard({ grant, onStageChange, onDelete }: Props) 
       >
         <div className="flex items-start gap-3">
           <Link href={`/grants/${grant.id}`} className="flex-1 min-w-0">
-            <div className="flex items-center gap-2 mb-1.5">
+            <div className="flex items-center gap-2 mb-1.5 flex-wrap">
               <PriorityTag grantId={grant.id} priority={priority} onUpdate={setPriority} />
               {isPersonal && (
                 <span className="text-xs text-gray-400 bg-gray-100 px-1.5 py-0.5 rounded-full">Personal</span>
+              )}
+              {amountLabel && (
+                <span className="text-xs font-medium text-gray-500 bg-gray-100 px-2 py-0.5 rounded-full">
+                  {amountLabel}
+                </span>
               )}
             </div>
             <h3 className="text-sm font-semibold text-gray-900 leading-snug group-hover:text-blue-700 transition-colors">
@@ -122,6 +136,15 @@ export default function ProposalCard({ grant, onStageChange, onDelete }: Props) 
             </h3>
             {meta.length > 0 && (
               <p className="text-xs text-gray-400 mt-1 truncate">{meta.join(' · ')}</p>
+            )}
+            {themes.length > 0 && (
+              <div className="mt-1.5 flex flex-wrap gap-1">
+                {themes.map(theme => (
+                  <span key={theme} className="text-[10px] font-medium text-indigo-600 bg-indigo-50 px-1.5 py-0.5 rounded-full">
+                    {theme}
+                  </span>
+                ))}
+              </div>
             )}
             <div className="mt-2 flex items-center gap-3 flex-wrap">
               <DeadlineChip dateStr={grant.external_deadline} />
@@ -134,7 +157,7 @@ export default function ProposalCard({ grant, onStageChange, onDelete }: Props) 
               <button
                 type="button"
                 onClick={() => setMenuOpen(v => !v)}
-                className="w-7 h-7 rounded-lg flex items-center justify-center text-gray-300 hover:text-gray-600 hover:bg-white/80 transition-colors"
+                className="w-7 h-7 rounded-lg flex items-center justify-center text-gray-400 hover:text-gray-700 hover:bg-white/80 transition-colors"
               >
                 <svg className="w-4 h-4" fill="currentColor" viewBox="0 0 24 24">
                   <circle cx="12" cy="5" r="1.5" /><circle cx="12" cy="12" r="1.5" /><circle cx="12" cy="19" r="1.5" />
