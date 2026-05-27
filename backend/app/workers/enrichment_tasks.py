@@ -203,7 +203,7 @@ def generate_ai_summary(self, opportunity_id: str):
 
         try:
             from app.ai.agents.opportunity_summarizer import generate_opportunity_summary
-            summary = _run_async(generate_opportunity_summary(
+            result = _run_async(generate_opportunity_summary(
                 title=opp.title,
                 funder=opp.funder or "",
                 description=opp.description or opp.parsed_text or "",
@@ -219,10 +219,17 @@ def generate_ai_summary(self, opportunity_id: str):
                 fit_score=opp.fit_score,
                 fit_rationale=opp.fit_rationale or "",
             ))
-            opp.ai_summary = summary
+            opp.ai_summary = result["full_summary"]
+            if result["short_description"]:
+                opp.short_summary = result["short_description"]
             db.commit()
-            logger.info("AI summary generated", opp_id=opportunity_id, length=len(summary))
-            return {"status": "ok", "length": len(summary)}
+            logger.info(
+                "AI summary generated",
+                opp_id=opportunity_id,
+                summary_length=len(result["full_summary"]),
+                short_desc_length=len(result["short_description"]),
+            )
+            return {"status": "ok", "length": len(result["full_summary"])}
         except Exception as e:
             logger.error("AI summary generation failed", opp_id=opportunity_id, error=str(e))
             raise self.retry(exc=e)

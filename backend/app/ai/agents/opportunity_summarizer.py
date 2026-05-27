@@ -1,15 +1,13 @@
 """
-Opportunity Summarizer — generates a structured markdown AI summary for a grant opportunity.
+Opportunity Summarizer — translates, reformats, and summarises a grant opportunity.
 
-The summary is specifically tailored for the LiGHT research group at EPFL, explaining:
-- What the grant funds
-- Eligibility requirements in plain language
-- Key dates
-- How LiGHT could apply and what projects to propose
-- Budget and award details
-- Immediate action items
+For every opportunity the pipeline produces two English-language outputs:
 
-Output is stored in Opportunity.ai_summary as markdown for rich rendering in the frontend.
+  short_description  — 2–3 sentence card teaser (plain prose, no markdown)
+  full_summary       — rich markdown document with ## sections for deep reading
+
+Both are returned as a JSON object so a single LLM call handles translation +
+formatting in one shot, regardless of the original source language.
 """
 import json
 import structlog
@@ -21,8 +19,12 @@ settings = get_settings()
 
 _SYSTEM_PROMPT = """\
 You are a grant intelligence analyst for the LiGHT (Learning & Intelligent Health Technologies) \
-research group at EPFL (École Polytechnique Fédérale de Lausanne). Your role is to write \
-clear, actionable grant opportunity summaries for the team.
+research group at EPFL (École Polytechnique Fédérale de Lausanne).
+
+IMPORTANT RULES:
+1. ALL output must be in clear, fluent English — translate any non-English source text first.
+2. Return ONLY a valid JSON object with exactly two keys: "short_description" and "full_summary".
+3. Do not wrap the JSON in markdown code fences or add any text outside the JSON.
 
 The LiGHT team focuses on:
 - AI for health, clinical AI, foundation models, federated learning, edge AI
@@ -31,9 +33,15 @@ The LiGHT team focuses on:
 - Partnerships across sub-Saharan Africa, South Asia, Southeast Asia
 - Institution: EPFL (academic, Switzerland, EU)
 
-Write summaries in structured markdown. Be concrete and practical — tell the team \
-exactly what to do, what projects fit, and flag any eligibility concerns. \
-Be direct, not verbose."""
+short_description format:
+  2–3 sentences of plain prose (no markdown, no bullets). Clearly state what the grant funds,
+  who is eligible, and the award size / deadline if known. Written for a researcher scanning
+  a card who needs to decide in 5 seconds whether to click through.
+
+full_summary format:
+  Rich markdown document using ## headers. Use **bold** for key terms, bullet lists for
+  eligibility / dates / action items, and normal paragraphs for explanatory sections.
+  Be concrete and actionable — tell the team exactly what to do."""
 
 
 async def generate_opportunity_summary(
@@ -51,12 +59,13 @@ async def generate_opportunity_summary(
     opportunity_url: str = "",
     fit_score: float | None = None,
     fit_rationale: str = "",
-) -> str:
+) -> dict:
     """
-    Generate a structured markdown AI summary for a grant opportunity.
+    Translate, reformat, and summarise a grant opportunity.
 
-    Returns a markdown string with sections covering funding scope, eligibility,
-    key dates, LiGHT fit, proposed projects, and action items.
+    Returns a dict with:
+      "short_description" — plain-prose English card teaser (2–3 sentences)
+      "full_summary"      — rich markdown document (## sections, bold, bullets)
     """
     scoring = settings.fit_scoring
     team_themes = ", ".join(scoring.team_themes[:15])
@@ -74,83 +83,101 @@ async def generate_opportunity_summary(
 
     themes_str = ", ".join(thematic_areas) if thematic_areas else "Not specified"
 
-    user_prompt = f"""Generate a thorough, detailed grant opportunity summary for the LiGHT team.
+    user_prompt = f"""Translate (if needed) and reformat this grant opportunity for the LiGHT team.
+Return a JSON object with "short_description" and "full_summary".
 
-GRANT DETAILS:
-Title: {title}
-Funder: {funder}
-Award: {award_range}
-Deadline: {deadline or "Not specified"}
-LOI Deadline: {loi_deadline or "N/A"}
-Geography: {geography or "Not specified"}
-Thematic Areas: {themes_str}
-Fit Score: {f"{fit_score:.0f}/100" if fit_score else "Not scored yet"}
-URL: {opportunity_url or "N/A"}
+─── SOURCE DETAILS ───────────────────────────────────────
+Title:          {title}
+Funder:         {funder}
+Award:          {award_range}
+Deadline:       {deadline or "Not specified"}
+LOI Deadline:   {loi_deadline or "N/A"}
+Geography:      {geography or "Not specified"}
+Themes:         {themes_str}
+Fit Score:      {f"{fit_score:.0f}/100" if fit_score else "Not scored yet"}
+URL:            {opportunity_url or "N/A"}
 
-DESCRIPTION:
+DESCRIPTION (may be in any language — translate to English):
 {description or "No description available."}
 
-ELIGIBILITY:
+ELIGIBILITY (may be in any language — translate to English):
 {eligibility or "Not specified."}
 
-EXISTING FIT RATIONALE:
-{fit_rationale or "None."}
+FIT RATIONALE: {fit_rationale or "None."}
 
 TEAM PROFILE:
 - Core themes: {team_themes}
 - Target geographies: {team_geos}
 - Institution: EPFL (academic, Switzerland, EU member)
+──────────────────────────────────────────────────────────
 
-Generate a comprehensive markdown summary using EXACTLY these sections (use ## for each header).
-Be detailed and specific — this summary is used by the team to decide whether to pursue the grant
-and to brief new team members. Do not be vague or generic.
+"short_description": 2–3 sentences of plain English prose for the opportunity card.
+  State what the grant funds, who qualifies, and the award/deadline. No markdown.
+
+"full_summary": Full markdown document with EXACTLY these ## sections:
 
 ## What This Grant Funds
-2–3 paragraphs: what the funder is trying to achieve, the specific problem they want to solve,
-the types of projects and approaches they want to support, and what a successful grantee looks like.
+2–3 paragraphs: funder's goal, problem they want to solve, types of projects supported,
+what a successful grantee looks like.
 
 ## Eligibility at a Glance
-Bullet list of ALL key eligibility requirements. Flag any that LiGHT may not meet with ⚠️.
-Include institution type, nationality, prior funding restrictions, co-PI requirements, etc.
+Bullet list of ALL eligibility requirements. Use ⚠️ to flag any LiGHT may not meet.
+Include institution type, nationality, prior funding restrictions, co-PI rules.
 
 ## Key Dates
-Bullet list: all deadlines (full proposal, LOI, concept note, questions), estimated announcement date if known.
+Bullet list of all deadlines (full proposal, LOI, concept note, Q&A window).
 
 ## Fit for LiGHT / EPFL
-3–4 sentences explaining why (or why not) this is a strong fit.
-Reference specific LiGHT research areas, past projects, or capabilities that align.
-Be honest about gaps or risks.
+3–4 sentences on why (or why not) this is a strong fit. Reference specific LiGHT
+research areas. Be honest about gaps or risks.
 
 ## Potential Projects to Propose
-Bullet list of 4–6 concrete, specific project ideas LiGHT could submit, each 2–3 sentences.
-Align each idea directly to the funder's stated priorities. Include rough methodologies.
+4–6 concrete project ideas LiGHT could submit, each 2–3 sentences. Align each to
+the funder's stated priorities with rough methodology.
 
 ## Partnership Opportunities
-Which external partners, institutions, or NGOs would strengthen a LiGHT proposal for this call?
-Mention specific organization types or named organizations if relevant.
+Which external partners, institutions, or NGOs would strengthen a LiGHT proposal?
 
 ## Budget & Award Details
-Award size, duration, number of expected awards, indirect cost rules, cost-sharing requirements,
-sub-award eligibility. Be specific about what can and cannot be funded.
+Award size, duration, number of awards, indirect cost rules, sub-award eligibility.
 
 ## Risk Flags
-Bullet list of reasons this grant might be difficult to win or implement for LiGHT.
-Include competition level, eligibility uncertainty, scope mismatches, or capacity concerns.
+Bullet list: competition level, eligibility uncertainty, scope mismatches, capacity concerns.
 
 ## Action Items
-Numbered list of concrete immediate next steps: who should be contacted, what documents to prepare,
-internal discussions needed, and a realistic go/no-go decision timeline."""
+Numbered list of concrete next steps: contacts, documents to prepare, go/no-go timeline."""
 
     try:
-        response = await chat_complete(
+        raw = await chat_complete(
             messages=[
                 {"role": "system", "content": _SYSTEM_PROMPT},
                 {"role": "user", "content": user_prompt},
             ],
             agent_name="opportunity_summarizer",
         )
-        # Response is already markdown — return as-is
-        return response.strip()
+        # Strip markdown fences if the model wraps the JSON
+        cleaned = raw.strip()
+        if cleaned.startswith("```"):
+            cleaned = cleaned.split("```", 2)[1]
+            if cleaned.startswith("json"):
+                cleaned = cleaned[4:]
+            cleaned = cleaned.rsplit("```", 1)[0].strip()
+
+        result = json.loads(cleaned)
+        return {
+            "short_description": result.get("short_description", "").strip(),
+            "full_summary": result.get("full_summary", "").strip(),
+        }
+    except json.JSONDecodeError:
+        # Fallback: treat the whole response as the full summary
+        logger.warning("Opportunity summarizer returned non-JSON, using as full_summary", title=title)
+        return {
+            "short_description": "",
+            "full_summary": raw.strip() if raw else f"## Summary Unavailable\n\nFailed to parse AI response.",
+        }
     except Exception as e:
         logger.error("Opportunity summarizer failed", title=title, error=str(e))
-        return f"## Summary Unavailable\n\nFailed to generate AI summary: {e}"
+        return {
+            "short_description": "",
+            "full_summary": f"## Summary Unavailable\n\nFailed to generate AI summary: {e}",
+        }
