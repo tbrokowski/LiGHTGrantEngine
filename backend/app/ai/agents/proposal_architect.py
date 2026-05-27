@@ -1,16 +1,72 @@
 """
 Agent 4: Proposal Architect
-Generates a proposal outline with section assignments and timeline.
+Generates a detailed proposal outline grounded in the call's specific deliverables,
+evaluation criteria, and awarded-grant structures from the archive.
 """
 import json
 from app.ai.client import chat_complete
 from app.ai.context.grant_context import DEFAULT_INTRO_ARC
 
-SYSTEM_PROMPT = """You are an expert proposal architect for global health AI research grants.
-You create detailed proposal outlines based on call requirements and institutional experience.
+SYSTEM_PROMPT = """You are a senior grants strategist with deep expertise in structuring
+competitive research proposals across all domains and funders.
+
+Your task is to produce a detailed, fundable proposal outline tailored to the specific
+call and applicant's idea.
+
+Guiding principles:
+- Mirror section structures and word distributions from awarded grants shown in the context
+- For every section, surface the funder's specific asks, questions it must answer, and evidence needed
+- Ensure the narrative arc creates a compelling through-line from problem to solution
+- Be concrete and specific — vague section requirements produce weak drafts
+- Sections must map directly to evaluation criteria; make that mapping explicit in each section's requirements
+- Use the key_asks and questions_to_address from the call analysis to populate each section's requirements field
+
 Respond with valid JSON."""
 
 INTRO_SECTION_TYPES = {"introduction", "background", "problem_statement", "executive_summary", "justification"}
+
+
+def _format_style_profile(profile: dict) -> str:
+    """Format style profile as readable prose rather than raw JSON."""
+    if not profile:
+        return ""
+    lines = []
+    for key, val in profile.items():
+        if key in ("archive_style_sources",):
+            continue
+        if isinstance(val, list):
+            lines.append(f"{key.replace('_', ' ').title()}: {', '.join(str(v) for v in val[:5])}")
+        elif isinstance(val, str) and val:
+            lines.append(f"{key.replace('_', ' ').title()}: {val}")
+    return "\n".join(lines)
+
+
+def _format_structure_templates(templates: list[dict]) -> str:
+    """Format archive structure templates with full section detail."""
+    if not templates:
+        return ""
+    lines = ["ARCHIVE STRUCTURES (section order and word counts from awarded grants):"]
+    for tmpl in templates[:3]:
+        lines.append(f"\n--- {tmpl.get('grant_title', '?')} ({tmpl.get('funder', '?')}, {tmpl.get('outcome', '?')}) ---")
+        for sec in tmpl.get("sections", []):
+            lines.append(
+                f"  {sec.get('order', '?')}. {sec.get('title', '?')} "
+                f"[{sec.get('section_type', '?')}] ~{sec.get('word_count', '?')} words"
+            )
+    return "\n".join(lines)
+
+
+def _format_similar_grants(grants: list[dict]) -> str:
+    """Format similar grants with section and funder context."""
+    if not grants:
+        return ""
+    lines = ["RELEVANT AWARDED GRANTS (content and structure reference):"]
+    for g in grants[:8]:
+        lines.append(
+            f"- {g.get('grant_title', '?')}: {g.get('section_type', '?')} section "
+            f"from {g.get('funder', '?')} ({g.get('outcome', '?')})"
+        )
+    return "\n".join(lines)
 
 
 async def generate_proposal_outline(
@@ -23,57 +79,68 @@ async def generate_proposal_outline(
     external_deadline: str = "",
     grant_idea: str = "",
     style_profile: dict | None = None,
+    call_requirements_text: str = "",
 ) -> dict:
-    sections_req = call_analysis.get("required_sections", [])
-    section_requirements = call_analysis.get("section_requirements", {})
-    eval_criteria = call_analysis.get("evaluation_criteria", [])
-    budget = call_analysis.get("budget_constraints", "")
+    structure_str = _format_structure_templates(structure_templates or [])
+    similar_str = _format_similar_grants(similar_grants or [])
+    style_str = _format_style_profile(style_profile or {})
 
-    prior_str = ""
-    if similar_grants:
-        prior_str = "\nRELEVANT PRIOR GRANTS (content reference):\n" + "\n".join([
-            f"- {g.get('grant_title','?')}: {g.get('section_type','?')} section from {g.get('funder','?')} ({g.get('outcome','?')})"
-            for g in similar_grants[:8]
-        ])
+    user_prompt = f"""Think step by step before producing the outline:
+1. Identify the 3–5 highest-weight evaluation criteria from the call.
+2. Assign each criterion to the section(s) best placed to address it.
+3. Verify the section list covers all required sections from the call.
+Then produce the full JSON outline.
 
-    structure_str = ""
-    if structure_templates:
-        structure_str = "\nMATCH THESE ARCHIVE STRUCTURES (section order and word counts from awarded grants):\n"
-        for tmpl in structure_templates[:3]:
-            structure_str += f"\n--- {tmpl.get('grant_title','?')} ({tmpl.get('funder','?')}, {tmpl.get('outcome','?')}) ---\n"
-            for sec in tmpl.get("sections", []):
-                structure_str += (
-                    f"  {sec.get('order', '?')}. {sec.get('title', '?')} "
-                    f"[{sec.get('section_type', '?')}] ~{sec.get('word_count', '?')} words\n"
-                )
+---
 
-    user_prompt = f"""Create a detailed proposal outline for: {opportunity_title}
+GRANT: {opportunity_title}
+EXTERNAL DEADLINE: {external_deadline or 'Not specified'}
+INTERNAL DEADLINE: {internal_deadline or 'Not specified'}
 
 GRANT IDEA:
-{grant_idea[:2000] if grant_idea else 'Not provided'}
+{grant_idea or 'Not provided'}
 
-REQUIRED SECTIONS: {sections_req}
-SECTION REQUIREMENTS: {json.dumps(section_requirements)[:2000]}
-EVALUATION CRITERIA: {eval_criteria}
-BUDGET CONSTRAINTS: {budget}
-EXTERNAL DEADLINE: {external_deadline}
-INTERNAL DEADLINE: {internal_deadline}
+CALL REQUIREMENTS (narrative brief, evaluation criteria, per-section deliverables):
+{call_requirements_text or 'Not provided — use call_analysis fields below'}
+
+CALL ANALYSIS (structured):
+Required sections: {call_analysis.get('required_sections', [])}
+Evaluation criteria: {call_analysis.get('evaluation_criteria', [])}
+Budget constraints: {call_analysis.get('budget_constraints', '')}
+
 {structure_str}
-{prior_str}
+
+{similar_str}
+
+{f'STYLE PROFILE:\\n{style_str}' if style_str else ''}
 {f'TEAM PREFERENCES: {team_preferences}' if team_preferences else ''}
-{f'STYLE PROFILE: {json.dumps(style_profile)[:1500]}' if style_profile else ''}
 
-Create a comprehensive proposal outline. For each section include:
-- name, type (standard section types), requirements, word_limit (null if unknown),
-  priority (high/medium/low), suggested_lead, suggested_prior_material, order (int)
+---
 
-For intro-type sections (introduction, background, problem statement), also include:
-- intro_arc: the 6-beat narrative arc with beat, label, guidance fields
+Produce a comprehensive proposal outline. For each section include:
+- name: section title
+- type: standard section type (introduction, background, methods, impact_statement, etc.)
+- requirements: a concrete, specific description of what this section must contain — incorporate the
+  funder's key_asks and questions_to_address for this section where available
+- word_limit: integer or null
+- priority: "high" | "medium" | "low"
+- suggested_lead: suggested lead author or role
+- order: integer
 
-Also include: title_suggestion, narrative_arc, document_checklist, compliance_checklist,
-internal_timeline, recommended_prior_materials, key_messages, warnings.
+For intro-type sections (introduction, background, problem_statement, executive_summary, justification),
+also include intro_arc: the 6-beat narrative arc with beat, label, guidance fields.
 
-Return as JSON."""
+Top-level fields to include:
+- sections: [array of section objects]
+- title_suggestion: a compelling, specific title for the proposal
+- narrative_arc: one sentence describing the through-line from problem to solution
+- key_messages: list of 3–5 core messages reviewers should take away
+- document_checklist: list of required attachments/appendices
+- compliance_checklist: list of hard compliance requirements
+- internal_timeline: list of key internal milestones with suggested dates
+- warnings: list of risks or concerns about this proposal's competitiveness
+
+Return valid JSON only."""
 
     response = await chat_complete(
         messages=[

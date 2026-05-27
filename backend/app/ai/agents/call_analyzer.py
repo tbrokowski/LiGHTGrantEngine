@@ -10,8 +10,8 @@ import json
 import asyncio
 from app.ai.client import chat_complete
 
-SYSTEM_PROMPT = """You are an expert grant analyst for a global health AI research team (LiGHT at EPFL).
-Your task is to analyze grant calls and produce a thorough, complete analysis that helps the team
+SYSTEM_PROMPT = """You are an expert grant analyst.
+Your task is to analyze grant calls and produce a thorough, complete analysis that helps proposal teams
 understand exactly what this grant is looking for and what a strong proposal must include.
 
 Always respond with valid JSON matching the schema requested.
@@ -65,7 +65,15 @@ Return a JSON object with these fields. Be THOROUGH and COMPLETE — do not summ
 - required_sections: list of proposal sections required by the call
 
 - section_requirements: object mapping section name to:
-    {{"requirements": str, "word_limit": int|null, "page_limit": str|null, "priority": "high"|"medium"|"low"}}
+    {{
+      "requirements": str,          (one-sentence description of this section's purpose)
+      "word_limit": int|null,
+      "page_limit": str|null,
+      "priority": "high"|"medium"|"low",
+      "key_asks": [str],            (3–6 bullet points of what the funder explicitly asks for in this section — pull from the call text)
+      "questions_to_address": [str], (3–5 strategic questions this section must answer to satisfy reviewers)
+      "evidence_needed": [str]      (2–4 specific data points, proof, or citations the section should include)
+    }}
 
 - deadlines: object with fields: full_proposal, loi, concept_note, questions_due (null if not applicable)
 

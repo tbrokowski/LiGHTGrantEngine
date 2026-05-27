@@ -1,6 +1,7 @@
 'use client';
 
-import { Calendar, DollarSign, FileText, Clock, AlertTriangle, CheckSquare, ArrowRight } from 'lucide-react';
+import { useState } from 'react';
+import { ChevronDown } from 'lucide-react';
 
 interface EligibilityItem {
   item: string;
@@ -14,6 +15,9 @@ interface SectionRequirement {
   word_limit?: number | null;
   page_limit?: string | null;
   priority?: string;
+  key_asks?: string[];
+  questions_to_address?: string[];
+  evidence_needed?: string[];
 }
 
 interface Deadlines {
@@ -27,31 +31,46 @@ interface CallRequirementsPanelProps {
   callAnalysis: Record<string, unknown>;
 }
 
-function QuickChip({ icon, label, value }: { icon: React.ReactNode; label: string; value: string }) {
+function CollapsibleGroup({
+  label,
+  count,
+  defaultOpen = false,
+  children,
+}: {
+  label: string;
+  count?: number;
+  defaultOpen?: boolean;
+  children: React.ReactNode;
+}) {
+  const [open, setOpen] = useState(defaultOpen);
   return (
-    <div className="flex items-center gap-1.5 bg-white border border-gray-200 rounded-full px-3 py-1.5 text-xs">
-      <span className="text-gray-400">{icon}</span>
-      <span className="text-gray-500">{label}:</span>
-      <span className="font-medium text-gray-800">{value}</span>
-    </div>
-  );
-}
-
-function Section({ title, children }: { title: string; children: React.ReactNode }) {
-  return (
-    <div className="space-y-1.5">
-      <h3 className="text-xs font-semibold text-gray-700 uppercase tracking-wide">{title}</h3>
-      {children}
+    <div>
+      <button
+        type="button"
+        onClick={() => setOpen(!open)}
+        className="flex items-center gap-1.5 w-full text-left py-1"
+      >
+        <ChevronDown
+          className={`w-3.5 h-3.5 text-gray-400 transition-transform ${open ? '' : '-rotate-90'}`}
+        />
+        <span className="text-sm font-semibold text-gray-800">{label}</span>
+        {count !== undefined && (
+          <span className="text-xs text-gray-400 ml-1">({count})</span>
+        )}
+      </button>
+      {open && <div className="mt-1">{children}</div>}
     </div>
   );
 }
 
 export default function CallRequirementsPanel({ callAnalysis }: CallRequirementsPanelProps) {
+  const [expandedSection, setExpandedSection] = useState<string | null>(null);
+
   if (!callAnalysis || Object.keys(callAnalysis).length === 0) {
     return (
-      <div className="text-xs text-gray-400 italic p-4 bg-gray-50 rounded-lg border border-dashed border-gray-200">
+      <p className="text-xs text-gray-400 italic">
         Upload a call document to generate a detailed brief.
-      </div>
+      </p>
     );
   }
 
@@ -60,7 +79,6 @@ export default function CallRequirementsPanel({ callAnalysis }: CallRequirements
   const awardAmount = callAnalysis.award_amount as string | undefined;
   const projectDuration = callAnalysis.project_duration as string | undefined;
   const wordLimit = callAnalysis.word_limit as string | undefined;
-  const pageLimit = callAnalysis.page_limit as string | undefined;
   const deadlines = callAnalysis.deadlines as Deadlines | undefined;
   const requiredSections = callAnalysis.required_sections as string[] | undefined;
   const sectionRequirements = callAnalysis.section_requirements as Record<string, SectionRequirement> | undefined;
@@ -68,234 +86,231 @@ export default function CallRequirementsPanel({ callAnalysis }: CallRequirements
   const eligibilityChecklist = callAnalysis.eligibility_checklist as EligibilityItem[] | undefined;
   const risks = callAnalysis.risks as string[] | undefined;
   const missingInformation = callAnalysis.missing_information as string[] | undefined;
-  const recommendedNextSteps = callAnalysis.recommended_next_steps as string[] | undefined;
-  const geographicEligibility = callAnalysis.geographic_eligibility as string | undefined;
-  const budgetConstraints = callAnalysis.budget_constraints as string | undefined;
   const submissionPortal = callAnalysis.submission_portal as string | undefined;
   const foaNumber = callAnalysis.foa_number as string | undefined;
-  const rawContactInfo = callAnalysis.contact_info;
-  const contactInfo: string | undefined =
-    typeof rawContactInfo === 'string'
-      ? rawContactInfo
-      : rawContactInfo && typeof rawContactInfo === 'object'
-      ? [
-          (rawContactInfo as Record<string, unknown>).program_officer_name,
-          (rawContactInfo as Record<string, unknown>).email,
-          (rawContactInfo as Record<string, unknown>).questions_deadline
-            ? `Questions by: ${(rawContactInfo as Record<string, unknown>).questions_deadline}`
-            : null,
-        ]
-          .filter(Boolean)
-          .join(' · ')
-      : undefined;
+  const budgetConstraints = callAnalysis.budget_constraints as string | undefined;
+  const geographicEligibility = callAnalysis.geographic_eligibility as string | undefined;
 
-  // Build quick-glance chips
-  const chips: { icon: React.ReactNode; label: string; value: string }[] = [];
-  if (awardAmount) chips.push({ icon: <DollarSign className="w-3 h-3" />, label: 'Award', value: awardAmount });
-  if (projectDuration) chips.push({ icon: <Clock className="w-3 h-3" />, label: 'Duration', value: projectDuration });
   const primaryDeadline = deadlines?.full_proposal || deadlines?.concept_note || deadlines?.loi;
-  if (primaryDeadline) chips.push({ icon: <Calendar className="w-3 h-3" />, label: 'Deadline', value: primaryDeadline });
-  if (wordLimit) chips.push({ icon: <FileText className="w-3 h-3" />, label: 'Words', value: wordLimit });
-  if (pageLimit) chips.push({ icon: <FileText className="w-3 h-3" />, label: 'Pages', value: pageLimit });
+
+  // Build stats line
+  const statParts = [
+    awardAmount,
+    primaryDeadline,
+    wordLimit ? `${wordLimit} words` : null,
+    projectDuration,
+  ].filter(Boolean);
 
   // Critical eligibility flags
   const criticalFlags = (eligibilityChecklist || []).filter(
     (item) => item.critical && item.met === false
   );
-  const eligibilityWarnings = (eligibilityChecklist || []).filter(
-    (item) => item.met === false && !item.critical
-  );
+
+  const sectionKeys = requiredSections?.length
+    ? requiredSections
+    : Object.keys(sectionRequirements || {});
+
+  const deadlineEntries = Object.entries(deadlines || {}).filter(([, v]) => v);
 
   return (
     <div className="space-y-4">
-      {/* Quick-glance chips */}
-      {chips.length > 0 && (
-        <div className="flex flex-wrap gap-2">
-          {chips.map((chip, i) => (
-            <QuickChip key={i} icon={chip.icon} label={chip.label} value={chip.value} />
+      {/* Stats line */}
+      {statParts.length > 0 && (
+        <p className="text-xs text-gray-400">
+          {statParts.map((part, i) => (
+            <span key={i}>
+              {i > 0 && <span className="mx-1.5">·</span>}
+              {part}
+            </span>
           ))}
           {foaNumber && (
-            <div className="flex items-center gap-1.5 bg-blue-50 border border-blue-200 rounded-full px-3 py-1.5 text-xs text-blue-700">
-              <span className="font-medium">Ref:</span> {foaNumber}
-            </div>
+            <span>
+              <span className="mx-1.5">·</span>
+              <span>Ref: {foaNumber}</span>
+            </span>
           )}
-        </div>
+        </p>
       )}
 
-      {/* Critical eligibility blockers */}
-      {criticalFlags.length > 0 && (
-        <div className="bg-red-50 border border-red-200 rounded-lg p-3 space-y-1">
-          <div className="flex items-center gap-1.5 text-xs font-semibold text-red-800">
-            <AlertTriangle className="w-3.5 h-3.5" />
-            Critical eligibility concerns
-          </div>
-          {criticalFlags.map((item, i) => (
-            <div key={i} className="text-xs text-red-700 pl-5">
-              • {item.item}{item.notes ? ` — ${item.notes}` : ''}
-            </div>
-          ))}
-        </div>
+      {/* Critical eligibility warnings */}
+      {criticalFlags.map((item, i) => (
+        <p key={i} className="text-xs text-red-600">
+          ⚠ {item.item}{item.notes ? ` — ${item.notes}` : ''}
+        </p>
+      ))}
+
+      {/* Geographic restriction warning */}
+      {geographicEligibility && (
+        <p className="text-xs text-orange-600">
+          ⚠ Eligibility: {geographicEligibility}
+        </p>
       )}
 
-      {/* Narrative brief — the main content */}
-      {narrativeBrief ? (
-        <Section title="Call Brief">
-          <div className="text-xs text-gray-700 leading-relaxed bg-white border border-gray-200 rounded-lg p-4 space-y-3">
-            {narrativeBrief.split('\n\n').filter(Boolean).map((para, i) => (
+      {/* Call Brief */}
+      {(narrativeBrief || summary) && (
+        <div className="space-y-1">
+          <p className="text-xs font-semibold text-gray-500">Call Brief</p>
+          <div className="text-xs text-gray-700 leading-relaxed space-y-2">
+            {(narrativeBrief || summary || '').split('\n\n').filter(Boolean).map((para, i) => (
               <p key={i}>{para}</p>
             ))}
           </div>
-        </Section>
-      ) : summary ? (
-        <Section title="Summary">
-          <div className="text-xs text-gray-700 bg-white border border-gray-200 rounded-lg p-3">
-            {summary}
-          </div>
-        </Section>
-      ) : null}
+        </div>
+      )}
 
-      {/* Required sections with per-section limits */}
-      {(Array.isArray(requiredSections) && requiredSections.length > 0 || (sectionRequirements && Object.keys(sectionRequirements).length)) ? (
-        <Section title="Required Sections">
-          <div className="bg-white border border-gray-200 rounded-lg divide-y divide-gray-100">
-            {(requiredSections || Object.keys(sectionRequirements || {})).map((sec, i) => {
+      {/* Required Sections — expanded by default */}
+      {sectionKeys.length > 0 && (
+        <CollapsibleGroup
+          label="Required Sections"
+          count={sectionKeys.length}
+          defaultOpen
+        >
+          <div className="divide-y divide-gray-100">
+            {sectionKeys.map((sec) => {
               const req = sectionRequirements?.[sec];
+              const isExpanded = expandedSection === sec;
+              const hasDetails =
+                req &&
+                (
+                  (req.key_asks?.length ?? 0) > 0 ||
+                  (req.questions_to_address?.length ?? 0) > 0 ||
+                  (req.evidence_needed?.length ?? 0) > 0
+                );
               return (
-                <div key={i} className="flex items-start gap-2 px-3 py-2 text-xs">
-                  <CheckSquare className="w-3.5 h-3.5 text-indigo-400 flex-shrink-0 mt-0.5" />
-                  <div className="flex-1">
-                    <span className="font-medium text-gray-800">{sec}</span>
-                    {req?.requirements && (
-                      <p className="text-gray-500 mt-0.5">{req.requirements}</p>
+                <div key={sec} className="py-2">
+                  <div
+                    className={`flex items-baseline gap-2 ${hasDetails ? 'cursor-pointer' : ''}`}
+                    onClick={() => hasDetails && setExpandedSection(isExpanded ? null : sec)}
+                  >
+                    {hasDetails && (
+                      <ChevronDown
+                        className={`w-3 h-3 text-gray-300 flex-shrink-0 mt-0.5 transition-transform ${isExpanded ? '' : '-rotate-90'}`}
+                      />
+                    )}
+                    {!hasDetails && <span className="w-3 flex-shrink-0" />}
+                    <span className="text-sm font-medium text-gray-800 flex-1">{sec}</span>
+                    {req?.word_limit && (
+                      <span className="text-xs text-gray-400">{req.word_limit} words</span>
+                    )}
+                    {req?.page_limit && !req?.word_limit && (
+                      <span className="text-xs text-gray-400">{req.page_limit} pages</span>
+                    )}
+                    {req?.priority && (
+                      <span className={`text-xs ${req.priority === 'high' ? 'text-gray-700 font-medium' : 'text-gray-400'}`}>
+                        {req.priority.charAt(0).toUpperCase() + req.priority.slice(1)}
+                      </span>
                     )}
                   </div>
-                  {(req?.word_limit || req?.page_limit) && (
-                    <span className="text-gray-400 whitespace-nowrap">
-                      {req.word_limit ? `${req.word_limit}w` : ''}{req.word_limit && req.page_limit ? ' / ' : ''}{req.page_limit ? `${req.page_limit}p` : ''}
-                    </span>
+                  {req?.requirements && !isExpanded && (
+                    <p className="text-xs text-gray-400 mt-0.5 pl-5 truncate">{req.requirements}</p>
                   )}
-                  {req?.priority === 'high' && (
-                    <span className="text-red-600 text-xs font-medium">High</span>
+                  {isExpanded && (
+                    <div className="mt-2 pl-5 space-y-3">
+                      {req?.requirements && (
+                        <p className="text-xs text-gray-600">{req.requirements}</p>
+                      )}
+                      {req?.key_asks && req.key_asks.length > 0 && (
+                        <div>
+                          <p className="text-xs font-semibold text-gray-500">What the funder asks for</p>
+                          <ul className="mt-1 space-y-0.5">
+                            {req.key_asks.map((ask, i) => (
+                              <li key={i} className="text-xs text-gray-600">• {ask}</li>
+                            ))}
+                          </ul>
+                        </div>
+                      )}
+                      {req?.questions_to_address && req.questions_to_address.length > 0 && (
+                        <div>
+                          <p className="text-xs font-semibold text-gray-500">Questions to answer</p>
+                          <ul className="mt-1 space-y-0.5">
+                            {req.questions_to_address.map((q, i) => (
+                              <li key={i} className="text-xs text-gray-600">• {q}</li>
+                            ))}
+                          </ul>
+                        </div>
+                      )}
+                      {req?.evidence_needed && req.evidence_needed.length > 0 && (
+                        <div>
+                          <p className="text-xs font-semibold text-gray-500">Evidence needed</p>
+                          <ul className="mt-1 space-y-0.5">
+                            {req.evidence_needed.map((e, i) => (
+                              <li key={i} className="text-xs text-gray-600">• {e}</li>
+                            ))}
+                          </ul>
+                        </div>
+                      )}
+                    </div>
                   )}
                 </div>
               );
             })}
           </div>
-        </Section>
-      ) : null}
+        </CollapsibleGroup>
+      )}
 
-      {/* Evaluation criteria */}
-      {Array.isArray(evaluationCriteria) && evaluationCriteria.length > 0 ? (
-        <Section title="Evaluation Criteria">
-          <div className="bg-white border border-gray-200 rounded-lg p-3 space-y-1">
+      {/* Evaluation Criteria */}
+      {Array.isArray(evaluationCriteria) && evaluationCriteria.length > 0 && (
+        <CollapsibleGroup label="Evaluation Criteria" count={evaluationCriteria.length}>
+          <ol className="space-y-1 pl-1">
             {evaluationCriteria.map((c, i) => (
-              <div key={i} className="flex gap-2 text-xs text-gray-700">
-                <span className="text-indigo-400 font-bold flex-shrink-0">{i + 1}.</span>
+              <li key={i} className="flex gap-2 text-xs text-gray-600">
+                <span className="text-gray-400 shrink-0">{i + 1}.</span>
                 <span>{c}</span>
+              </li>
+            ))}
+          </ol>
+        </CollapsibleGroup>
+      )}
+
+      {/* Key Dates */}
+      {deadlineEntries.length > 0 && (
+        <CollapsibleGroup label="Key Dates" count={deadlineEntries.length}>
+          <div className="space-y-1">
+            {deadlineEntries.map(([key, val]) => (
+              <div key={key} className="flex justify-between text-xs">
+                <span className="text-gray-500 capitalize">{key.replace(/_/g, ' ')}</span>
+                <span className="text-gray-800 font-medium">{typeof val === 'string' ? val : JSON.stringify(val)}</span>
               </div>
             ))}
           </div>
-        </Section>
-      ) : null}
+        </CollapsibleGroup>
+      )}
 
-      {/* Budget constraints */}
+      {/* Budget & Award */}
       {budgetConstraints && (
-        <Section title="Budget & Award">
-          <div className="bg-white border border-gray-200 rounded-lg p-3 text-xs text-gray-700">
-            {budgetConstraints}
-          </div>
-        </Section>
-      )}
-
-      {/* All deadlines */}
-      {deadlines && Object.values(deadlines).some(Boolean) && (
-        <Section title="Key Dates">
-          <div className="bg-white border border-gray-200 rounded-lg divide-y divide-gray-100">
-            {Object.entries(deadlines).map(([key, val]) =>
-              val ? (
-                <div key={key} className="flex justify-between items-center px-3 py-2 text-xs">
-                  <span className="text-gray-500 capitalize">{key.replace(/_/g, ' ')}</span>
-                  <span className="font-medium text-gray-800">{typeof val === 'string' ? val : JSON.stringify(val)}</span>
-                </div>
-              ) : null
-            )}
-          </div>
-        </Section>
-      )}
-
-      {/* Geographic eligibility */}
-      {geographicEligibility && (
-        <Section title="Geographic Eligibility">
-          <div className="bg-white border border-gray-200 rounded-lg p-3 text-xs text-gray-700">
-            {geographicEligibility}
-          </div>
-        </Section>
-      )}
-
-      {/* Eligibility warnings (non-critical) */}
-      {eligibilityWarnings.length > 0 && (
-        <Section title="Eligibility Notes">
-          <div className="bg-amber-50 border border-amber-200 rounded-lg p-3 space-y-1">
-            {eligibilityWarnings.map((item, i) => (
-              <div key={i} className="text-xs text-amber-800">
-                • {item.item}{item.notes ? ` — ${item.notes}` : ''}
-              </div>
-            ))}
-          </div>
-        </Section>
-      )}
-
-      {/* Submission info */}
-      {(submissionPortal || contactInfo) && (
-        <Section title="Submission">
-          <div className="bg-white border border-gray-200 rounded-lg p-3 space-y-1 text-xs text-gray-700">
-            {submissionPortal && <p><span className="font-medium">Portal:</span> {submissionPortal}</p>}
-            {contactInfo && <p><span className="font-medium">Contact:</span> {contactInfo}</p>}
-          </div>
-        </Section>
+        <CollapsibleGroup label="Budget & Award">
+          <p className="text-xs text-gray-600">{budgetConstraints}</p>
+        </CollapsibleGroup>
       )}
 
       {/* Risks */}
-      {Array.isArray(risks) && risks.length > 0 ? (
-        <Section title="Risks & Concerns">
-          <div className="bg-red-50 border border-red-100 rounded-lg p-3 space-y-1">
+      {Array.isArray(risks) && risks.length > 0 && (
+        <CollapsibleGroup label="Risks" count={risks.length}>
+          <ul className="space-y-1">
             {risks.map((r, i) => (
-              <div key={i} className="text-xs text-red-700 flex gap-2">
-                <AlertTriangle className="w-3 h-3 flex-shrink-0 mt-0.5" />
-                <span>{r}</span>
-              </div>
+              <li key={i} className="text-xs text-gray-600">• {r}</li>
             ))}
-          </div>
-        </Section>
-      ) : null}
+          </ul>
+        </CollapsibleGroup>
+      )}
+
+      {/* Submission */}
+      {submissionPortal && (
+        <CollapsibleGroup label="Submission">
+          <p className="text-xs text-gray-600">{submissionPortal}</p>
+        </CollapsibleGroup>
+      )}
 
       {/* Missing information */}
-      {Array.isArray(missingInformation) && missingInformation.length > 0 ? (
-        <Section title="Still Need to Find Out">
-          <div className="bg-gray-50 border border-gray-200 rounded-lg p-3 space-y-1">
+      {Array.isArray(missingInformation) && missingInformation.length > 0 && (
+        <CollapsibleGroup label="Still Need to Find Out" count={missingInformation.length}>
+          <ul className="space-y-1">
             {missingInformation.map((m, i) => (
-              <div key={i} className="text-xs text-gray-600 flex gap-2">
-                <span className="text-gray-400 flex-shrink-0">?</span>
-                <span>{m}</span>
-              </div>
+              <li key={i} className="text-xs text-gray-600">? {m}</li>
             ))}
-          </div>
-        </Section>
-      ) : null}
-
-      {/* Next steps */}
-      {Array.isArray(recommendedNextSteps) && recommendedNextSteps.length > 0 ? (
-        <Section title="Recommended Next Steps">
-          <div className="bg-indigo-50 border border-indigo-100 rounded-lg p-3 space-y-1">
-            {recommendedNextSteps.map((step, i) => (
-              <div key={i} className="flex gap-2 text-xs text-indigo-800">
-                <ArrowRight className="w-3 h-3 flex-shrink-0 mt-0.5 text-indigo-400" />
-                <span>{step}</span>
-              </div>
-            ))}
-          </div>
-        </Section>
-      ) : null}
+          </ul>
+        </CollapsibleGroup>
+      )}
     </div>
   );
 }

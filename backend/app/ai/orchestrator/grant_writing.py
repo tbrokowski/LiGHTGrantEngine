@@ -110,6 +110,7 @@ class GrantWritingOrchestrator:
             structure_templates=structure_templates,
             grant_idea=grant.grant_idea or "",
             style_profile=grant.style_profile or {},
+            call_requirements_text=grant.call_requirements or "",
             external_deadline=str(grant.external_deadline) if grant.external_deadline else "",
             internal_deadline=str(grant.internal_deadline) if grant.internal_deadline else "",
         )
@@ -303,7 +304,29 @@ class GrantWritingOrchestrator:
             parts.append("REQUIRED SECTIONS:\n" + "\n".join(f"- {s}" for s in analysis["required_sections"]))
 
         if analysis.get("section_requirements"):
-            parts.append("SECTION REQUIREMENTS:\n" + json.dumps(analysis["section_requirements"], indent=2))
+            sec_lines = ["SECTION REQUIREMENTS:"]
+            for sec_name, sec_data in analysis["section_requirements"].items():
+                if not isinstance(sec_data, dict):
+                    continue
+                priority = (sec_data.get("priority") or "").upper()
+                word_limit = sec_data.get("word_limit") or sec_data.get("page_limit")
+                limit_str = f" | {word_limit} words" if word_limit else ""
+                sec_lines.append(f"\n§ {sec_name}  [{priority}{limit_str}]")
+                if sec_data.get("requirements"):
+                    sec_lines.append(f"  Requirements: {sec_data['requirements']}")
+                if sec_data.get("key_asks"):
+                    sec_lines.append("  Funder specifically asks for:")
+                    for ask in sec_data["key_asks"]:
+                        sec_lines.append(f"    - {ask}")
+                if sec_data.get("questions_to_address"):
+                    sec_lines.append("  Questions this section must answer:")
+                    for q in sec_data["questions_to_address"]:
+                        sec_lines.append(f"    - {q}")
+                if sec_data.get("evidence_needed"):
+                    sec_lines.append("  Evidence needed:")
+                    for e in sec_data["evidence_needed"]:
+                        sec_lines.append(f"    - {e}")
+            parts.append("\n".join(sec_lines))
 
         if analysis.get("budget_constraints"):
             parts.append(f"BUDGET CONSTRAINTS: {analysis['budget_constraints']}")
