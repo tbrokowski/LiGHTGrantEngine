@@ -93,7 +93,8 @@ def _get_funder_logo_url(funder_name: str) -> str | None:
 
 @celery_app.task(name="app.workers.discovery_tasks.scan_all_sources", bind=True, max_retries=2)
 def scan_all_sources(self):
-    """Weekly full scan of all active sources."""
+    """Full scan of all non-paused sources. Includes broken/under_review so every
+    source gets a fresh attempt when triggered manually via Refresh Sources."""
     from sqlalchemy import select, create_engine
     from sqlalchemy.orm import Session
     from app.config import get_settings
@@ -103,7 +104,9 @@ def scan_all_sources(self):
     # Use sync engine for Celery tasks
     engine = create_engine(settings.database_url)
     with Session(engine) as db:
-        sources = db.execute(select(Source).where(Source.status == "active")).scalars().all()
+        sources = db.execute(
+            select(Source).where(Source.status.in_(["active", "broken", "under_review"]))
+        ).scalars().all()
         for source in sources:
             scan_source.delay(str(source.id))
     return {"queued": len(sources) if sources else 0}
@@ -192,7 +195,8 @@ def scan_source(self, source_id: str):
             run.updated_opportunities = updated_count
             run.duplicates = dup_count
 
-            # Update source stats
+            # Update source stats; restore broken/under_review sources on success
+            source.status = "active"
             source.last_checked = datetime.utcnow()
             source.last_successful_run = datetime.utcnow()
             source.opportunities_discovered += len(raw_listings)
@@ -227,8 +231,8 @@ def _process_listing(db, listing: dict, source_id: str, source_url: str | None =
         select(Opportunity).where(Opportunity.opportunity_url == call_url)
     ).scalar_one_or_none()
     if existing:
-        # Re-queue enrichment if we previously only stored a listing snippet
-        if not existing.parsed_text and existing.opportunity_url:
+        # Always re-queue enrichment on a full refresh so stale data gets updated
+        if existing.opportunity_url:
             from app.workers.enrichment_tasks import enrich_opportunity
             enrich_opportunity.delay(str(existing.id))
         return "duplicate"

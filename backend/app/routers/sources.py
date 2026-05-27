@@ -192,11 +192,13 @@ async def run_all_sources(
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ):
-    """Queue an immediate scan of all active sources."""
-    result = await db.execute(select(Source).where(Source.status == "active"))
+    """Queue a full refresh of all non-paused sources (active, broken, and under_review)."""
+    result = await db.execute(
+        select(Source).where(Source.status.in_(["active", "broken", "under_review"]))
+    )
     count = len(result.scalars().all())
     bg.add_task(_trigger_all_sources_scan)
-    return {"message": f"Scan queued for {count} active source{'s' if count != 1 else ''}", "queued": count}
+    return {"message": f"Scan queued for {count} source{'s' if count != 1 else ''}", "queued": count}
 
 
 @router.patch("/{source_id}", dependencies=[Depends(require_org_admin())])
