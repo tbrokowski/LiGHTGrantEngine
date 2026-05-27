@@ -73,7 +73,21 @@ export default function CallRequirementsPanel({ callAnalysis }: CallRequirements
   const budgetConstraints = callAnalysis.budget_constraints as string | undefined;
   const submissionPortal = callAnalysis.submission_portal as string | undefined;
   const foaNumber = callAnalysis.foa_number as string | undefined;
-  const contactInfo = callAnalysis.contact_info as string | undefined;
+  const rawContactInfo = callAnalysis.contact_info;
+  const contactInfo: string | undefined =
+    typeof rawContactInfo === 'string'
+      ? rawContactInfo
+      : rawContactInfo && typeof rawContactInfo === 'object'
+      ? [
+          (rawContactInfo as Record<string, unknown>).program_officer_name,
+          (rawContactInfo as Record<string, unknown>).email,
+          (rawContactInfo as Record<string, unknown>).questions_deadline
+            ? `Questions by: ${(rawContactInfo as Record<string, unknown>).questions_deadline}`
+            : null,
+        ]
+          .filter(Boolean)
+          .join(' · ')
+      : undefined;
 
   // Build quick-glance chips
   const chips: { icon: React.ReactNode; label: string; value: string }[] = [];
@@ -201,7 +215,7 @@ export default function CallRequirementsPanel({ callAnalysis }: CallRequirements
               val ? (
                 <div key={key} className="flex justify-between items-center px-3 py-2 text-xs">
                   <span className="text-gray-500 capitalize">{key.replace(/_/g, ' ')}</span>
-                  <span className="font-medium text-gray-800">{val}</span>
+                  <span className="font-medium text-gray-800">{typeof val === 'string' ? val : JSON.stringify(val)}</span>
                 </div>
               ) : null
             )}
