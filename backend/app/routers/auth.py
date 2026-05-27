@@ -1,7 +1,7 @@
 """Authentication endpoints."""
 import uuid
 import secrets
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 from typing import Optional
 
 from fastapi import APIRouter, Depends, HTTPException, status
@@ -366,7 +366,7 @@ async def _send_verification_email(user_id: str, email: str, name: str, db: Asyn
 
     async def _do(session: AsyncSession) -> None:
         token = secrets.token_urlsafe(32)
-        expires = datetime.utcnow() + timedelta(hours=24)
+        expires = datetime.now(timezone.utc) + timedelta(hours=24)
         verification = EmailVerification(
             id=str(_uuid.uuid4()),
             user_id=user_id,
@@ -429,7 +429,7 @@ async def verify_email(
         raise HTTPException(400, "Invalid verification token")
     if verification.used_at:
         raise HTTPException(400, "Verification token already used")
-    if verification.expires_at < datetime.utcnow():
+    if verification.expires_at < datetime.now(timezone.utc):
         raise HTTPException(400, "Verification token expired")
 
     verification.used_at = datetime.utcnow()
@@ -448,7 +448,7 @@ async def google_oauth_start(current_user: User = Depends(get_current_user)):
     """Redirect URL for starting Google OAuth flow."""
     if not settings.google_client_id:
         raise HTTPException(400, "Google OAuth not configured")
-    redirect_uri = f"{settings.base_url}/api/v1/auth/google/callback"
+    redirect_uri = f"{settings.api_url}/api/v1/auth/google/callback"
     scope = "openid email https://www.googleapis.com/auth/drive.file https://www.googleapis.com/auth/documents"
     url = (
         "https://accounts.google.com/o/oauth2/v2/auth"
@@ -474,7 +474,7 @@ async def google_oauth_callback(
     if not settings.google_client_id or not settings.google_client_secret:
         raise HTTPException(400, "Google OAuth not configured")
 
-    redirect_uri = f"{settings.base_url}/api/v1/auth/google/callback"
+    redirect_uri = f"{settings.api_url}/api/v1/auth/google/callback"
     token_url = "https://oauth2.googleapis.com/token"
     async with httpx.AsyncClient() as client:
         resp = await client.post(token_url, data={
