@@ -16,17 +16,23 @@ router = APIRouter()
 
 @router.get("/my-tasks")
 async def my_tasks(db: AsyncSession = Depends(get_db), current_user: User = Depends(get_current_user)):
-    q = (
-        select(Task, ActiveGrant.title.label("grant_title"))
-        .join(ActiveGrant, Task.grant_id == ActiveGrant.id)
-        .where(
-            or_(Task.owner_id == current_user.id, Task.assignee_ids.cast(str).contains(current_user.id)),
-            Task.status.notin_(["complete", "dropped"]),
-        )
+    q = select(Task).where(
+        or_(Task.owner_id == current_user.id, Task.assignee_ids.cast(str).contains(current_user.id)),
+        Task.status.notin_(["complete", "dropped"]),
     )
     result = await db.execute(q)
-    rows = result.all()
-    return [{**_task_dict(t), "grant_title": grant_title} for t, grant_title in rows]
+    task_list = result.scalars().all()
+
+    # Batch-fetch grant titles for all unique grant IDs
+    grant_ids = list({t.grant_id for t in task_list})
+    grant_title_map: dict[str, str] = {}
+    if grant_ids:
+        grants_result = await db.execute(
+            select(ActiveGrant.id, ActiveGrant.title).where(ActiveGrant.id.in_(grant_ids))
+        )
+        grant_title_map = {row[0]: row[1] for row in grants_result.all()}
+
+    return [{**_task_dict(t), "grant_title": grant_title_map.get(t.grant_id, "")} for t in task_list]
 
 @router.get("/overdue")
 async def overdue_tasks(db: AsyncSession = Depends(get_db), current_user: User = Depends(get_current_user)):
@@ -74,7 +80,10 @@ async def _get_accessible_grant_ids(user: User, db: AsyncSession) -> list[str]:
 
 def _task_dict(t: Task) -> dict:
     d = {c.name: getattr(t, c.name) for c in t.__table__.columns}
-    for f in ["due_date", "created_at", "completed_at"]:
+    for f in ["due_date", "start_date"]:
         if d.get(f):
             d[f] = str(d[f])
+    for f in ["created_at", "completed_at"]:
+        if d.get(f):
+            d[f] = d[f].isoformat() if hasattr(d[f], "isoformat") else str(d[f])
     return d
