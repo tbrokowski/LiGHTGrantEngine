@@ -11,9 +11,12 @@ RUN apt-get update && apt-get install -y \
 COPY requirements.txt .
 RUN pip install --no-cache-dir -r requirements.txt
 
-# --with-deps auto-installs the exact system libraries required by the
-# installed Chromium version, self-healing on future Playwright upgrades.
-RUN playwright install chromium --with-deps
+# Fresh apt-get update is required here because the earlier layer wiped
+# /var/lib/apt/lists/*. --with-deps calls apt-get install internally so
+# it needs up-to-date package lists available in the same RUN step.
+RUN apt-get update \
+    && playwright install --with-deps chromium \
+    && rm -rf /var/lib/apt/lists/*
 
 COPY . .
 
