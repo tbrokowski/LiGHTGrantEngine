@@ -268,6 +268,9 @@ async def accept_invite(
         institution_id = payload.get("institution_id")
         email = payload.get("email")
         role = payload.get("role", UserRole.CONTRIBUTOR)
+        # New fields encoded by the updated invite endpoint
+        invited_institution_role = payload.get("institution_role", "member")
+        invited_module_permissions = payload.get("module_permissions") or {}
         if not institution_id or not email:
             raise credentials_exc
     except JWTError:
@@ -277,14 +280,21 @@ async def accept_invite(
     if not inst:
         raise HTTPException(404, "Organization not found")
 
+    # Resolve institution_role from invite
+    resolved_institution_role = (
+        InstitutionRole.ADMIN
+        if invited_institution_role == "admin"
+        else InstitutionRole.MEMBER
+    )
+
     # Check if user already exists
     existing_user = (await db.execute(select(User).where(User.email == email))).scalar_one_or_none()
     if existing_user:
-        # Switch to invited org as a regular member (not admin)
         existing_user.institution_id = institution_id
-        existing_user.institution_role = InstitutionRole.MEMBER
+        existing_user.institution_role = resolved_institution_role
         existing_user.role = invited_member_role(role)
         existing_user.email_verified = True
+        existing_user.module_permissions = invited_module_permissions
         await db.commit()
         user = existing_user
     else:
@@ -296,8 +306,9 @@ async def accept_invite(
             hashed_password=get_password_hash(body.password),
             role=invited_member_role(role),
             institution_id=institution_id,
-            institution_role=InstitutionRole.MEMBER,
+            institution_role=resolved_institution_role,
             email_verified=True,
+            module_permissions=invited_module_permissions,
         )
         db.add(user)
         await db.commit()
@@ -318,6 +329,19 @@ async def accept_invite(
 
 @router.get("/me")
 async def me(current_user: User = Depends(get_current_user)):
+    from app.auth.permissions import is_org_admin, _MODULE_PERMISSION_DEFAULTS
+
+    # Build the effective module_permissions dict, merging defaults with stored values.
+    # Org admins always have all permissions set to True.
+    if is_org_admin(current_user):
+        effective_perms = {k: True for k in _MODULE_PERMISSION_DEFAULTS}
+    else:
+        stored = current_user.module_permissions or {}
+        effective_perms = {
+            k: stored.get(k, default)
+            for k, default in _MODULE_PERMISSION_DEFAULTS.items()
+        }
+
     return {
         "id": current_user.id,
         "name": current_user.name,
@@ -330,6 +354,7 @@ async def me(current_user: User = Depends(get_current_user)):
         "ai_usage_cents": current_user.ai_usage_cents,
         "ai_usage_limit_cents": current_user.ai_usage_limit_cents,
         "google_access_token": "connected" if current_user.google_access_token else None,
+        "module_permissions": effective_perms,
     }
 
 
@@ -446,20 +471,21 @@ async def verify_email(
 @router.get("/google")
 async def google_oauth_start(current_user: User = Depends(get_current_user)):
     """Redirect URL for starting Google OAuth flow."""
+    from urllib.parse import urlencode
+
     if not settings.google_client_id:
         raise HTTPException(400, "Google OAuth not configured")
     redirect_uri = f"{settings.api_url}/api/v1/auth/google/callback"
-    scope = "openid email https://www.googleapis.com/auth/drive.file https://www.googleapis.com/auth/documents"
-    url = (
-        "https://accounts.google.com/o/oauth2/v2/auth"
-        f"?client_id={settings.google_client_id}"
-        f"&redirect_uri={redirect_uri}"
-        f"&response_type=code"
-        f"&scope={scope}"
-        f"&access_type=offline"
-        f"&prompt=consent"
-        f"&state={current_user.id}"
-    )
+    params = {
+        "client_id": settings.google_client_id,
+        "redirect_uri": redirect_uri,
+        "response_type": "code",
+        "scope": "openid email https://www.googleapis.com/auth/drive.file https://www.googleapis.com/auth/documents",
+        "access_type": "offline",
+        "prompt": "consent",
+        "state": str(current_user.id),
+    }
+    url = "https://accounts.google.com/o/oauth2/v2/auth?" + urlencode(params)
     return {"authorization_url": url}
 
 
