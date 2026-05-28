@@ -787,6 +787,7 @@ async def _delete_grant_data(db: AsyncSession, grant_id: str) -> None:
     await db.execute(delete(GrantWritingConversation).where(GrantWritingConversation.grant_id == grant_id))
     await db.execute(delete(GrantCitation).where(GrantCitation.grant_id == grant_id))
     await db.execute(delete(Document).where(Document.grant_id == grant_id))
+    await db.execute(delete(GrantMember).where(GrantMember.grant_id == grant_id))
     await db.execute(delete(ActiveGrant).where(ActiveGrant.id == grant_id))
 
 

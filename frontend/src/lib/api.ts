@@ -137,6 +137,7 @@ export const opportunities = {
   queue: (params?: { unread_only?: boolean }) => api.get('/opportunities/queue', { params }),
   queueCounts: () => api.get('/opportunities/queue/counts'),
   shortlist: () => api.get('/opportunities/shortlist'),
+  orgShortlist: () => api.get('/opportunities/org-shortlist'),
   graphData: (params?: Record<string, unknown>) => api.get('/opportunities/graph-data', { params }),
   get: (id: string) => api.get(`/opportunities/${id}`),
   create: (data: Record<string, unknown>) => api.post('/opportunities/', data),
@@ -145,7 +146,10 @@ export const opportunities = {
   convertToGrant: (id: string) => api.post(`/opportunities/${id}/convert-to-grant`),
   markRead: (id: string) => api.post(`/opportunities/${id}/mark-read`),
   markUnread: (id: string) => api.post(`/opportunities/${id}/mark-unread`),
+  addToShortlist: (id: string) => api.post(`/opportunities/${id}/add-to-shortlist`),
   removeFromShortlist: (id: string) => api.post(`/opportunities/${id}/remove-from-shortlist`),
+  promoteToOrgShortlist: (id: string) => api.post(`/opportunities/${id}/promote-to-org-shortlist`),
+  removeFromOrgShortlist: (id: string) => api.post(`/opportunities/${id}/remove-from-org-shortlist`),
 };
 
 // ── Active Grants ────────────────────────────────────────────────────────────
@@ -407,6 +411,12 @@ export const ai = {
     section_type?: string;
     document_context?: string;
   }) => api.post('/ai/improve-selection', data),
+};
+
+// ── Web proxy (in-editor browser pane) ───────────────────────────────────────
+export const proxy = {
+  fetchPage: (url: string) =>
+    api.get<{ title: string; html: string; url: string }>('/proxy/web', { params: { url } }),
 };
 
 // ── Streaming AI chat (uses native fetch for SSE) ─────────────────────────────

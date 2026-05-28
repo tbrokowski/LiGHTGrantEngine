@@ -7,8 +7,13 @@ To switch models or providers, update config.yaml:ai.
 """
 from typing import Any, AsyncIterator, Optional
 import structlog
-from openai import AsyncOpenAI
-from tenacity import retry, stop_after_attempt, wait_exponential
+from openai import AsyncOpenAI, RateLimitError
+from tenacity import (
+    retry,
+    retry_if_exception_type,
+    stop_after_attempt,
+    wait_random_exponential,
+)
 
 from app.config import get_settings
 
@@ -25,7 +30,15 @@ def _get_client() -> AsyncOpenAI:
     )
 
 
-@retry(stop=stop_after_attempt(3), wait=wait_exponential(multiplier=1, min=2, max=10))
+@retry(
+    retry=retry_if_exception_type(RateLimitError),
+    stop=stop_after_attempt(5),
+    # Random jitter prevents all concurrent callers from retrying in sync,
+    # which would recreate the same 429 storm. 60s ceiling gives the API
+    # time to refill its token bucket between attempts.
+    wait=wait_random_exponential(min=5, max=60),
+    reraise=True,
+)
 async def chat_complete(
     messages: list[dict],
     temperature: Optional[float] = None,
@@ -131,7 +144,12 @@ def estimate_cost_cents(model: str, prompt_tokens: int, completion_tokens: int) 
     return max(0, round(total_cents))
 
 
-@retry(stop=stop_after_attempt(3), wait=wait_exponential(multiplier=1, min=2, max=10))
+@retry(
+    retry=retry_if_exception_type(RateLimitError),
+    stop=stop_after_attempt(5),
+    wait=wait_random_exponential(min=5, max=60),
+    reraise=True,
+)
 async def chat_complete_tracked(
     messages: list[dict],
     temperature: Optional[float] = None,

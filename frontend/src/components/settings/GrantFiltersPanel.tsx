@@ -108,6 +108,8 @@ export function GrantFiltersPanel({ institutionId, isOrgAdmin }: GrantFiltersPan
   const [scanLogs, setScanLogs] = useState<ScanRun[]>([]);
   const [showScanLogs, setShowScanLogs] = useState(false);
   const [scanSummary, setScanSummary] = useState<ScanSummary | null>(null);
+  const [runningSources, setRunningSources] = useState<Record<string, boolean>>({});
+  const [sourceRunResults, setSourceRunResults] = useState<Record<string, 'queued' | 'error'>>({});
 
   useEffect(() => {
     organizations.getGrantProfile(institutionId).then(r => setOrgProfile(r.data ?? {})).catch(() => {});
@@ -180,6 +182,27 @@ export function GrantFiltersPanel({ institutionId, isOrgAdmin }: GrantFiltersPan
       setTimeout(() => setScanBanner(''), 5000);
     } finally {
       setRefreshing(false);
+    }
+  }
+
+  async function handleRunSource(sourceId: string) {
+    setRunningSources(prev => ({ ...prev, [sourceId]: true }));
+    setSourceRunResults(prev => { const n = { ...prev }; delete n[sourceId]; return n; });
+    try {
+      await sources.runNow(sourceId);
+      setSourceRunResults(prev => ({ ...prev, [sourceId]: 'queued' }));
+      setShowScanLogs(true);
+      await loadScanStatus();
+      setTimeout(() => {
+        setSourceRunResults(prev => { const n = { ...prev }; delete n[sourceId]; return n; });
+      }, 8000);
+    } catch {
+      setSourceRunResults(prev => ({ ...prev, [sourceId]: 'error' }));
+      setTimeout(() => {
+        setSourceRunResults(prev => { const n = { ...prev }; delete n[sourceId]; return n; });
+      }, 5000);
+    } finally {
+      setRunningSources(prev => ({ ...prev, [sourceId]: false }));
     }
   }
 
@@ -293,26 +316,68 @@ export function GrantFiltersPanel({ institutionId, isOrgAdmin }: GrantFiltersPan
             <p className="text-sm text-gray-400 py-4">Loading sources…</p>
           ) : orgSources.map(s => (
             <div key={s.id} className="flex items-center justify-between py-2.5 gap-3">
-              <div className="min-w-0">
+              <div className="min-w-0 flex-1">
                 <p className="text-sm font-medium text-gray-900 truncate">{s.name}</p>
                 {s.category && <p className="text-xs text-gray-400">{s.category}</p>}
               </div>
-              {isOrgAdmin ? (
-                <button
-                  onClick={() => toggleSource(s.id, s.is_enabled)}
-                  className={`text-xs px-2.5 py-1 rounded-md border shrink-0 ${
-                    s.is_enabled
-                      ? 'border-green-200 text-green-700 bg-green-50 hover:bg-green-100'
-                      : 'border-gray-200 text-gray-500 bg-gray-50 hover:bg-gray-100'
-                  }`}
-                >
-                  {s.is_enabled ? 'Enabled' : 'Disabled'}
-                </button>
-              ) : (
-                <span className={`text-xs px-2 py-0.5 rounded ${s.is_enabled ? 'text-green-700 bg-green-50' : 'text-gray-400 bg-gray-50'}`}>
-                  {s.is_enabled ? 'Active' : 'Off'}
-                </span>
-              )}
+              <div className="flex items-center gap-2 shrink-0">
+                {isOrgAdmin && (
+                  <button
+                    onClick={() => handleRunSource(s.id)}
+                    disabled={runningSources[s.id]}
+                    title="Run scan for this source"
+                    className={`text-xs px-2.5 py-1 rounded-md border transition-colors ${
+                      sourceRunResults[s.id] === 'queued'
+                        ? 'border-blue-200 text-blue-700 bg-blue-50'
+                        : sourceRunResults[s.id] === 'error'
+                        ? 'border-red-200 text-red-600 bg-red-50'
+                        : 'border-gray-200 text-gray-600 bg-white hover:bg-gray-50 disabled:opacity-50'
+                    }`}
+                  >
+                    {runningSources[s.id] ? (
+                      <span className="flex items-center gap-1">
+                        <svg className="w-3 h-3 animate-spin" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+                          <path strokeLinecap="round" strokeLinejoin="round" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" />
+                        </svg>
+                        Running…
+                      </span>
+                    ) : sourceRunResults[s.id] === 'queued' ? (
+                      <span className="flex items-center gap-1">
+                        <svg className="w-3 h-3" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+                          <path strokeLinecap="round" strokeLinejoin="round" d="M5 13l4 4L19 7" />
+                        </svg>
+                        Queued
+                      </span>
+                    ) : sourceRunResults[s.id] === 'error' ? (
+                      'Failed'
+                    ) : (
+                      <span className="flex items-center gap-1">
+                        <svg className="w-3 h-3" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+                          <path strokeLinecap="round" strokeLinejoin="round" d="M14.752 11.168l-3.197-2.132A1 1 0 0010 9.87v4.263a1 1 0 001.555.832l3.197-2.132a1 1 0 000-1.664z" />
+                          <path strokeLinecap="round" strokeLinejoin="round" d="M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
+                        </svg>
+                        Run
+                      </span>
+                    )}
+                  </button>
+                )}
+                {isOrgAdmin ? (
+                  <button
+                    onClick={() => toggleSource(s.id, s.is_enabled)}
+                    className={`text-xs px-2.5 py-1 rounded-md border ${
+                      s.is_enabled
+                        ? 'border-green-200 text-green-700 bg-green-50 hover:bg-green-100'
+                        : 'border-gray-200 text-gray-500 bg-gray-50 hover:bg-gray-100'
+                    }`}
+                  >
+                    {s.is_enabled ? 'Enabled' : 'Disabled'}
+                  </button>
+                ) : (
+                  <span className={`text-xs px-2 py-0.5 rounded ${s.is_enabled ? 'text-green-700 bg-green-50' : 'text-gray-400 bg-gray-50'}`}>
+                    {s.is_enabled ? 'Active' : 'Off'}
+                  </span>
+                )}
+              </div>
             </div>
           ))}
         </div>

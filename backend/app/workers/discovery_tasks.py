@@ -91,6 +91,9 @@ def _get_funder_logo_url(funder_name: str) -> str | None:
     return None
 
 
+_SCAN_STAGGER_SECONDS = 15  # gap between each scan_source dispatch
+
+
 @celery_app.task(name="app.workers.discovery_tasks.scan_all_sources", bind=True, max_retries=2)
 def scan_all_sources(self):
     """Full scan of all non-paused sources. Includes broken/under_review so every
@@ -107,8 +110,14 @@ def scan_all_sources(self):
         sources = db.execute(
             select(Source).where(Source.status.in_(["active", "broken", "under_review"]))
         ).scalars().all()
-        for source in sources:
-            scan_source.delay(str(source.id))
+        # Stagger dispatches to avoid simultaneous LLM call storms that
+        # exhaust the OpenAI rate limit (429s). AI-scraper sources cause
+        # the most load, so every task gets a countdown offset.
+        for i, source in enumerate(sources):
+            scan_source.apply_async(
+                args=[str(source.id)],
+                countdown=i * _SCAN_STAGGER_SECONDS,
+            )
     return {"queued": len(sources) if sources else 0}
 
 
@@ -126,12 +135,23 @@ def scan_high_priority_sources():
         sources = db.execute(
             select(Source).where(Source.status == "active", Source.is_high_priority == True)
         ).scalars().all()
-        for source in sources:
-            scan_source.delay(str(source.id))
+        for i, source in enumerate(sources):
+            scan_source.apply_async(
+                args=[str(source.id)],
+                countdown=i * _SCAN_STAGGER_SECONDS,
+            )
     return {"queued": len(sources) if sources else 0}
 
 
-@celery_app.task(name="app.workers.discovery_tasks.scan_source", bind=True, max_retries=3)
+@celery_app.task(
+    name="app.workers.discovery_tasks.scan_source",
+    bind=True,
+    max_retries=3,
+    # Hard cap at 4 per minute across all workers — each AI-scraper source
+    # makes 1-2 LLM calls, so this keeps concurrent API pressure well under
+    # the OpenAI gpt-4o-mini RPM limit.
+    rate_limit="4/m",
+)
 def scan_source(self, source_id: str):
     """
     Scan a single source for new opportunities.

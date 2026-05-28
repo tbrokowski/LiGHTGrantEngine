@@ -8,7 +8,7 @@ import { formatDate, formatAward, type Opportunity } from './types';
 interface OpportunityRowProps extends OpportunityActionHandlers {
   opp: Opportunity;
   index: number;
-  mode?: 'queue' | 'shortlist';
+  mode?: 'queue' | 'shortlist' | 'org-shortlist';
 }
 
 export default function OpportunityRow({

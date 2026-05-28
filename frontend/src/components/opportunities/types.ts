@@ -16,6 +16,8 @@ export interface Opportunity {
   funder_logo_url: string | null;
   opportunity_url: string | null;
   is_read?: boolean;
+  is_personal_shortlisted?: boolean;
+  is_on_org_shortlist?: boolean;
 }
 
 export interface OpportunityFilters {
@@ -94,4 +96,4 @@ export function isExpired(deadline: string | null) {
 }
 
 export type ViewMode = 'table' | 'focus' | 'graph';
-export type TabMode = 'queue' | 'shortlist';
+export type TabMode = 'queue' | 'shortlist' | 'org-shortlist';

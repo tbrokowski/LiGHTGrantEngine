@@ -188,7 +188,7 @@ export default function GrantEditor({ grant, onGrantUpdate, onHeadingsChange }: 
     };
   }, [grant.id, applySkeletonResult, startPollingStatus]);
 
-  // Auto-pull interval: every 30s, check if the Google Doc has been modified
+  // Auto-pull interval: every 8s, check if the Google Doc has been modified
   // externally and pull it into the editor (Google Doc is the source of truth).
   useEffect(() => {
     if (!docLinked) return;
@@ -211,7 +211,7 @@ export default function GrantEditor({ grant, onGrantUpdate, onHeadingsChange }: 
       } finally {
         autoSyncInProgress.current = false;
       }
-    }, 30000);
+    }, 8000);
     return () => clearInterval(interval);
   }, [docLinked, grant.id]);
 
@@ -234,7 +234,7 @@ export default function GrantEditor({ grant, onGrantUpdate, onHeadingsChange }: 
     }, 1500);
 
     // Mark that content has changed since last push, then schedule a push
-    // to Google Doc 30s after the last keystroke (only if a doc is linked).
+    // to Google Doc 5s after the last keystroke (only if a doc is linked).
     docChangedSinceLastPush.current = true;
     if (googlePushTimer.current) clearTimeout(googlePushTimer.current);
     googlePushTimer.current = setTimeout(async () => {
@@ -243,6 +243,7 @@ export default function GrantEditor({ grant, onGrantUpdate, onHeadingsChange }: 
       if (!docLinkedRef.current) return;
       autoSyncInProgress.current = true;
       docChangedSinceLastPush.current = false;
+      setSyncState('pushing');
       try {
         // Save first so the push uses the latest content
         await grants.saveDocument(grant.id, html, false);
@@ -252,10 +253,11 @@ export default function GrantEditor({ grant, onGrantUpdate, onHeadingsChange }: 
         setTimeout(() => setSyncState((s) => s === 'success' ? 'idle' : s), 3000);
       } catch {
         // Silent fail for auto-push — user can always push manually
+        setSyncState('idle');
       } finally {
         autoSyncInProgress.current = false;
       }
-    }, 30000);
+    }, 5000);
   }, [grant.id, onHeadingsChange]);
 
   const handlePhaseChange = (newPhase: WritingPhase) => {
@@ -467,13 +469,30 @@ export default function GrantEditor({ grant, onGrantUpdate, onHeadingsChange }: 
               <a href={docUrl} target="_blank" rel="noopener noreferrer" className="text-xs text-blue-600 hover:underline">
                 Google Doc
               </a>
-              <button onClick={handlePush} disabled={syncBusy} className="text-xs text-gray-500 hover:text-gray-800 disabled:opacity-40">
-                {syncState === 'pushing' ? <Loader2 className="w-3 h-3 animate-spin" /> : <CloudUpload className="w-3 h-3" />}
+              {syncState === 'pushing' && (
+                <span className="flex items-center gap-1 text-xs text-gray-400">
+                  <Loader2 className="w-3 h-3 animate-spin" />
+                  Syncing…
+                </span>
+              )}
+              {syncState === 'pulling' && (
+                <span className="flex items-center gap-1 text-xs text-gray-400">
+                  <Loader2 className="w-3 h-3 animate-spin" />
+                  Pulling…
+                </span>
+              )}
+              {syncState === 'success' && (
+                <span className="flex items-center gap-1 text-xs text-green-600">
+                  <Check className="w-3 h-3" />
+                  Synced
+                </span>
+              )}
+              <button onClick={handlePush} disabled={syncBusy} title="Push to Google Doc" className="text-xs text-gray-400 hover:text-gray-700 disabled:opacity-40 ml-1">
+                <CloudUpload className="w-3.5 h-3.5" />
               </button>
-              <button onClick={handlePull} disabled={syncBusy} className="text-xs text-gray-500 hover:text-gray-800 disabled:opacity-40">
-                {syncState === 'pulling' ? <Loader2 className="w-3 h-3 animate-spin" /> : <CloudDownload className="w-3 h-3" />}
+              <button onClick={handlePull} disabled={syncBusy} title="Pull from Google Doc" className="text-xs text-gray-400 hover:text-gray-700 disabled:opacity-40">
+                <CloudDownload className="w-3.5 h-3.5" />
               </button>
-              {syncState === 'success' && <Check className="w-3.5 h-3.5 text-green-500" />}
             </div>
           )}
         </div>
@@ -532,6 +551,8 @@ export default function GrantEditor({ grant, onGrantUpdate, onHeadingsChange }: 
             grantId={grant.id}
             documentHtml={documentHtml}
             callRequirements={callRequirements}
+            grantIdea={grantIdea}
+            skeleton={skeleton}
             selectedText={selectedText}
             activeSection={activeSection}
             contextChips={contextChips}

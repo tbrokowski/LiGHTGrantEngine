@@ -8,6 +8,8 @@ from .task import Task
 from .document import Document
 from .section import ProposalSection
 from .archive import GrantArchive
+from .archive_cluster import ArchiveCluster
+from .archive_edge import ArchiveEdge
 from .language import ReusableLanguageBlock
 from .notification import Notification
 from .ai_run import AIRun
@@ -35,6 +37,7 @@ __all__ = [
     "Institution", "User", "Source", "SourceRun", "Opportunity", "OpportunityReview",
     "OpportunityCluster",
     "ActiveGrant", "Task", "Document", "ProposalSection", "GrantArchive",
+    "ArchiveCluster", "ArchiveEdge",
     "ReusableLanguageBlock", "Notification", "AIRun", "Comment", "FunderProfile",
     "Partner", "PartnerUpdate", "PartnerGrantLink",
     "Milestone", "GanttItem", "WorkspaceSection", "ChecklistItem",

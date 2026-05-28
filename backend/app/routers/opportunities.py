@@ -2,9 +2,10 @@
 from typing import Optional
 from datetime import date, datetime, timezone
 
+import redis.asyncio as aioredis
 from fastapi import APIRouter, Depends, HTTPException, Query, BackgroundTasks
 from pydantic import BaseModel
-from sqlalchemy import select, and_, or_, func, desc
+from sqlalchemy import select, and_, or_, func, desc, delete
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.database import get_db
@@ -12,10 +13,13 @@ from app.models.opportunity import Opportunity, OpportunityReview, OpportunitySt
 from app.models.institution_opportunity import InstitutionOpportunity
 from app.models.document import Document
 from app.models.user_opportunity_state import UserOpportunityState
+from app.models.user_shortlist import UserShortlist
 from app.models.user import User
 from app.models.institution import Institution
 from app.models.institution_source import InstitutionSource
+from app.models.grant_member import GrantMember, GrantMemberRole, GrantMemberStatus
 from app.routers.auth import get_current_user
+from app.auth.permissions import get_redis, invalidate_permission_cache
 from app.config import get_settings
 from app.schemas.grant_profile import (
     GrantProfile, UserGrantPreferences, merge_keywords, opportunity_matches_keywords,
@@ -168,7 +172,16 @@ async def review_queue(
     )
     if unread_only:
         items = [o for o in items if not read_map.get(o.id)]
-    return [_opp_summary(o, is_read=read_map.get(o.id, False), io=io_map.get(o.id)) for o in items]
+    personal_map = await _load_personal_shortlist_map(db, current_user.id, [o.id for o in items])
+    return [
+        _opp_summary(
+            o,
+            is_read=read_map.get(o.id, False),
+            io=io_map.get(o.id),
+            is_personal_shortlisted=personal_map.get(o.id, False),
+        )
+        for o in items
+    ]
 
 
 @router.get("/queue/counts")
@@ -270,15 +283,70 @@ async def get_graph_data(
 
 
 @router.get("/shortlist")
-async def shortlist(
+async def personal_shortlist(
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ):
-    """Returns shortlisted opportunities for the user's institution."""
+    """Returns the current user's personal shortlist."""
+    sl_result = await db.execute(
+        select(UserShortlist.opportunity_id)
+        .where(UserShortlist.user_id == current_user.id)
+        .order_by(UserShortlist.added_at.desc())
+    )
+    opp_ids = [row[0] for row in sl_result.all()]
+    if not opp_ids:
+        return []
+
+    opps_result = await db.execute(
+        select(Opportunity).where(Opportunity.id.in_(opp_ids))
+    )
+    opps = {o.id: o for o in opps_result.scalars().all()}
+
+    io_map: dict[str, InstitutionOpportunity] = {}
+    if current_user.institution_id:
+        ios_result = await db.execute(
+            select(InstitutionOpportunity).where(
+                InstitutionOpportunity.institution_id == current_user.institution_id,
+                InstitutionOpportunity.opportunity_id.in_(opp_ids),
+            )
+        )
+        io_map = {io.opportunity_id: io for io in ios_result.scalars().all()}
+
+    read_map = await _load_read_map(db, current_user.id, opp_ids)
+
+    result = []
+    for opp_id in opp_ids:
+        opp = opps.get(opp_id)
+        if opp:
+            io = io_map.get(opp_id)
+            result.append(_opp_summary(
+                opp,
+                is_read=read_map.get(opp_id, False),
+                io=io,
+                is_personal_shortlisted=True,
+            ))
+    return result
+
+
+@router.get("/org-shortlist")
+async def org_shortlist(
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    """Returns the organization-level shortlist (potential_fit) for the user's institution."""
     items, read_map, io_map = await _fetch_institution_feed(
         db, current_user, statuses=SHORTLIST_STATUSES
     )
-    return [_opp_summary(o, is_read=read_map.get(o.id, False), io=io_map.get(o.id)) for o in items]
+    personal_map = await _load_personal_shortlist_map(db, current_user.id, [o.id for o in items])
+    return [
+        _opp_summary(
+            o,
+            is_read=read_map.get(o.id, False),
+            io=io_map.get(o.id),
+            is_personal_shortlisted=personal_map.get(o.id, False),
+        )
+        for o in items
+    ]
 
 
 @router.get("/{opp_id}")
@@ -411,6 +479,7 @@ async def convert_to_grant(
     opp_id: str,
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(get_current_user),
+    redis: aioredis.Redis = Depends(get_redis),
 ):
     """Convert an opportunity into an active grant workspace, loading full call context."""
     import uuid
@@ -433,10 +502,24 @@ async def convert_to_grant(
         themes=opp.thematic_areas,
         geographies=opp.geography,
         internal_lead_id=current_user.id,
+        institution_id=current_user.institution_id,
+        created_by_id=current_user.id,
         call_requirements=call_reqs or None,
     )
     db.add(grant)
     await db.flush()  # get grant.id before commit
+
+    # Creator gets owner membership so grant_access() works for all users
+    member = GrantMember(
+        id=str(uuid.uuid4()),
+        grant_id=grant.id,
+        user_id=current_user.id,
+        email=current_user.email,
+        role=GrantMemberRole.OWNER,
+        status=GrantMemberStatus.ACCEPTED,
+        invited_by_id=current_user.id,
+    )
+    db.add(member)
 
     # Link existing opportunity documents to the new grant
     doc_result = await db.execute(
@@ -464,6 +547,7 @@ async def convert_to_grant(
 
     await db.commit()
     await db.refresh(grant)
+    await invalidate_permission_cache(current_user.id, redis)
 
     # Queue PDF fetcher if no existing documents and a source URL is available
     if not existing_docs and opp.opportunity_url:
@@ -501,19 +585,76 @@ async def mark_unread(
     return {"id": opp_id, "is_read": False}
 
 
+@router.post("/{opp_id}/add-to-shortlist")
+async def add_to_shortlist(
+    opp_id: str,
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    """Add an opportunity to the current user's personal shortlist."""
+    await _get_opp_or_404(opp_id, db)
+    existing = await db.execute(
+        select(UserShortlist).where(
+            UserShortlist.user_id == current_user.id,
+            UserShortlist.opportunity_id == opp_id,
+        )
+    )
+    if not existing.scalar_one_or_none():
+        db.add(UserShortlist(user_id=current_user.id, opportunity_id=opp_id))
+        await db.commit()
+    return {"id": opp_id, "shortlisted": True}
+
+
 @router.post("/{opp_id}/remove-from-shortlist")
 async def remove_from_shortlist(
     opp_id: str,
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ):
-    opp = await _get_opp_or_404(opp_id, db)
+    """Remove an opportunity from the current user's personal shortlist."""
+    await _get_opp_or_404(opp_id, db)
+    await db.execute(
+        delete(UserShortlist).where(
+            UserShortlist.user_id == current_user.id,
+            UserShortlist.opportunity_id == opp_id,
+        )
+    )
+    await db.commit()
+    return {"id": opp_id, "shortlisted": False}
+
+
+@router.post("/{opp_id}/promote-to-org-shortlist")
+async def promote_to_org_shortlist(
+    opp_id: str,
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    """Promote an opportunity to the organization-level shortlist (potential_fit)."""
+    if not current_user.institution_id:
+        raise HTTPException(400, "You must belong to an organization to use the org shortlist")
+    await _get_opp_or_404(opp_id, db)
+    io = await _get_institution_opp(db, current_user, opp_id)
+    if not io:
+        raise HTTPException(404, "Opportunity is not in your organization's feed")
+    io.status = "potential_fit"
+    await db.commit()
+    return {"id": opp_id, "is_on_org_shortlist": True}
+
+
+@router.post("/{opp_id}/remove-from-org-shortlist")
+async def remove_from_org_shortlist(
+    opp_id: str,
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    """Remove an opportunity from the organization-level shortlist."""
+    await _get_opp_or_404(opp_id, db)
     io = await _get_institution_opp(db, current_user, opp_id)
     if not io or io.status != "potential_fit":
-        raise HTTPException(400, "Opportunity is not on the shortlist")
+        raise HTTPException(400, "Opportunity is not on the org shortlist")
     io.status = "in_review"
     await db.commit()
-    return {"id": opp_id, "status": io.status}
+    return {"id": opp_id, "is_on_org_shortlist": False}
 
 
 # ── Helpers ───────────────────────────────────────────────────────────────────
@@ -525,7 +666,12 @@ async def _get_opp_or_404(opp_id: str, db: AsyncSession) -> Opportunity:
     return opp
 
 
-def _opp_summary(o: Opportunity, is_read: bool = False, io: InstitutionOpportunity | None = None) -> dict:
+def _opp_summary(
+    o: Opportunity,
+    is_read: bool = False,
+    io: InstitutionOpportunity | None = None,
+    is_personal_shortlisted: bool = False,
+) -> dict:
     fit_score = io.fit_score if io else o.fit_score
     priority = io.priority if io else o.priority
     status = io.status if io else o.status
@@ -543,6 +689,8 @@ def _opp_summary(o: Opportunity, is_read: bool = False, io: InstitutionOpportuni
         "opportunity_url": o.opportunity_url,
         "is_read": is_read,
         "fit_rationale": io.fit_rationale if io else o.fit_rationale,
+        "is_personal_shortlisted": is_personal_shortlisted,
+        "is_on_org_shortlist": bool(io and io.status == "potential_fit"),
     }
 
 
@@ -678,6 +826,20 @@ async def _load_read_map(
     result = await db.execute(q)
     states = result.scalars().all()
     return {s.opportunity_id: True for s in states}
+
+
+async def _load_personal_shortlist_map(
+    db: AsyncSession, user_id: str, opp_ids: list[str]
+) -> dict[str, bool]:
+    if not opp_ids:
+        return {}
+    result = await db.execute(
+        select(UserShortlist.opportunity_id).where(
+            UserShortlist.user_id == user_id,
+            UserShortlist.opportunity_id.in_(opp_ids),
+        )
+    )
+    return {row[0]: True for row in result.all()}
 
 
 async def _mark_read(db: AsyncSession, user_id: str, opp_id: str) -> None:

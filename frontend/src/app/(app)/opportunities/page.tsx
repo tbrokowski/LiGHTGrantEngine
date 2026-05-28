@@ -88,6 +88,7 @@ export default function OpportunitiesPage() {
   const [viewMode, setViewMode] = useState<ViewMode>('table');
   const [queue, setQueue] = useState<Opportunity[]>([]);
   const [shortlist, setShortlist] = useState<Opportunity[]>([]);
+  const [orgShortlist, setOrgShortlist] = useState<Opportunity[]>([]);
   const [loading, setLoading] = useState(true);
   const [filters, setFilters] = useState<OpportunityFilters>(EMPTY_FILTERS);
   const [showFilters, setShowFilters] = useState(false);
@@ -121,10 +122,19 @@ export default function OpportunitiesPage() {
       .finally(() => setLoading(false));
   }, []);
 
+  const loadOrgShortlist = useCallback(() => {
+    setLoading(true);
+    opportunities.orgShortlist()
+      .then(r => setOrgShortlist(r.data))
+      .catch(console.error)
+      .finally(() => setLoading(false));
+  }, []);
+
   useEffect(() => {
     if (activeTab === 'queue') loadQueue();
-    else loadShortlist();
-  }, [activeTab, loadQueue, loadShortlist]);
+    else if (activeTab === 'shortlist') loadShortlist();
+    else loadOrgShortlist();
+  }, [activeTab, loadQueue, loadShortlist, loadOrgShortlist]);
 
   function setView(mode: ViewMode | 'graph') {
     setViewMode(mode as ViewMode);
@@ -158,7 +168,7 @@ export default function OpportunitiesPage() {
     setFilters(prev => ({ ...prev, [key]: value }));
   }
 
-  const items = activeTab === 'queue' ? queue : shortlist;
+  const items = activeTab === 'queue' ? queue : activeTab === 'shortlist' ? shortlist : orgShortlist;
   const filtered = applyFilters(items, filters);
   const upcoming = filtered.filter(o => !isExpired(o.deadline) || !o.deadline);
   const past = filtered.filter(o => isExpired(o.deadline));
@@ -166,10 +176,12 @@ export default function OpportunitiesPage() {
     filters.deadlineBefore || filters.deadlineAfter || filters.awardMin ||
     filters.hasDeadline || filters.sortBy !== 'relevance';
   const unreadCount = queue.filter(o => !o.is_read).length;
+  const orgShortlistCount = orgShortlist.length;
 
   function removeFromList(id: string) {
     if (activeTab === 'queue') setQueue(prev => prev.filter(o => o.id !== id));
-    else setShortlist(prev => prev.filter(o => o.id !== id));
+    else if (activeTab === 'shortlist') setShortlist(prev => prev.filter(o => o.id !== id));
+    else setOrgShortlist(prev => prev.filter(o => o.id !== id));
   }
 
   function markReadLocal(id: string) {
@@ -177,6 +189,7 @@ export default function OpportunitiesPage() {
       prev.map(o => o.id === id ? { ...o, is_read: true } : o);
     setQueue(updater);
     setShortlist(updater);
+    setOrgShortlist(updater);
   }
 
   function markUnreadLocal(id: string) {
@@ -184,6 +197,7 @@ export default function OpportunitiesPage() {
       prev.map(o => o.id === id ? { ...o, is_read: false } : o);
     setQueue(updater);
     setShortlist(updater);
+    setOrgShortlist(updater);
   }
 
   async function handleMarkRead(id: string) {
@@ -220,14 +234,32 @@ export default function OpportunitiesPage() {
   async function handleToggleBookmark(id: string, isBookmarked: boolean) {
     if (isBookmarked) {
       await opportunities.removeFromShortlist(id);
+      // also clear personal shortlist flag locally in queue
+      setQueue(prev => prev.map(o => o.id === id ? { ...o, is_personal_shortlisted: false } : o));
     } else {
-      await opportunities.update(id, { status: 'potential_fit' });
+      await opportunities.addToShortlist(id);
       await opportunities.markRead(id);
+      // reflect in queue without removing item (item stays in queue, appears in shortlist tab too)
+      setQueue(prev => prev.map(o => o.id === id ? { ...o, is_personal_shortlisted: true, is_read: true } : o));
     }
-    if (activeTab === 'queue' || isBookmarked) {
+    // remove from current list if we're on the shortlist/org-shortlist tabs, or if un-bookmarking
+    if (activeTab !== 'queue') {
       removeFromList(id);
+    }
+  }
+
+  async function handlePromoteToOrg(id: string, isOnOrg: boolean) {
+    if (isOnOrg) {
+      await opportunities.removeFromOrgShortlist(id);
+      const updater = (prev: Opportunity[]) =>
+        prev.map(o => o.id === id ? { ...o, is_on_org_shortlist: false } : o);
+      setShortlist(updater);
+      setOrgShortlist(prev => prev.filter(o => o.id !== id));
     } else {
-      markReadLocal(id);
+      await opportunities.promoteToOrgShortlist(id);
+      const updater = (prev: Opportunity[]) =>
+        prev.map(o => o.id === id ? { ...o, is_on_org_shortlist: true } : o);
+      setShortlist(updater);
     }
   }
 
@@ -250,6 +282,8 @@ export default function OpportunitiesPage() {
   const actionHandlers = {
     onToggleBookmark: handleToggleBookmark,
     onToggleRead: handleToggleRead,
+    onPromoteToOrg: handlePromoteToOrg,
+    onStartGrant: handleStartGrant,
   };
 
   function renderTableBody(listItems: Opportunity[]) {
@@ -257,17 +291,24 @@ export default function OpportunitiesPage() {
       return (
         <tr>
           <td colSpan={6} className="px-5 py-12 text-center text-sm text-gray-400">
-            {hasFilters ? 'No matches for current filters.' : activeTab === 'queue' ? 'Queue is empty.' : 'Shortlist is empty.'}
+            {hasFilters
+            ? 'No matches for current filters.'
+            : activeTab === 'queue'
+            ? 'Queue is empty.'
+            : activeTab === 'shortlist'
+            ? 'Your shortlist is empty. Bookmark opportunities from the queue to add them here.'
+            : 'No opportunities on the org shortlist yet. Promote items from your personal shortlist.'}
           </td>
         </tr>
       );
     }
+    const rowMode = activeTab === 'org-shortlist' ? 'org-shortlist' : activeTab === 'shortlist' ? 'shortlist' : 'queue';
     return listItems.map((opp, i) => (
       <OpportunityRow
         key={opp.id}
         opp={opp}
         index={i}
-        mode={activeTab}
+        mode={rowMode}
         {...actionHandlers}
       />
     ));
@@ -282,7 +323,9 @@ export default function OpportunitiesPage() {
           <p className="text-sm text-gray-400 mt-0.5">
             {loading ? 'Loading…' : activeTab === 'queue'
               ? `${queue.length} in queue · ${unreadCount} unread · ${upcoming.length} upcoming`
-              : `${shortlist.length} shortlisted`}
+              : activeTab === 'shortlist'
+              ? `${shortlist.length} bookmarked`
+              : `${orgShortlist.length} on org shortlist`}
           </p>
         </div>
         <div className="flex items-center gap-2">
@@ -309,25 +352,45 @@ export default function OpportunitiesPage() {
       {/* Tabs + view toggle */}
       <div className="flex items-center justify-between mb-5 border-b border-gray-200">
         <div className="flex gap-0">
-          {(['queue', 'shortlist'] as const).map(tab => (
-            <button
-              key={tab}
-              onClick={() => { setActiveTab(tab); setFocusIndex(0); }}
-              className={`px-4 py-2.5 text-sm font-medium border-b-2 -mb-px transition-colors ${
-                activeTab === tab
-                  ? 'border-gray-900 text-gray-900'
-                  : 'border-transparent text-gray-400 hover:text-gray-600'
-              }`}
-            >
-              {tab === 'queue' ? 'Review Queue' : 'Shortlist'}
-              {tab === 'queue' && unreadCount > 0 && (
-                <span className="ml-1.5 text-xs bg-blue-100 text-blue-700 px-1.5 py-0.5 rounded-full">{unreadCount}</span>
-              )}
-              {tab === 'shortlist' && shortlist.length > 0 && (
-                <span className="ml-1.5 text-xs bg-amber-100 text-amber-700 px-1.5 py-0.5 rounded-full">{shortlist.length}</span>
-              )}
-            </button>
-          ))}
+          <button
+            onClick={() => { setActiveTab('queue'); setFocusIndex(0); }}
+            className={`px-4 py-2.5 text-sm font-medium border-b-2 -mb-px transition-colors ${
+              activeTab === 'queue'
+                ? 'border-gray-900 text-gray-900'
+                : 'border-transparent text-gray-400 hover:text-gray-600'
+            }`}
+          >
+            Review Queue
+            {unreadCount > 0 && (
+              <span className="ml-1.5 text-xs bg-blue-100 text-blue-700 px-1.5 py-0.5 rounded-full">{unreadCount}</span>
+            )}
+          </button>
+          <button
+            onClick={() => { setActiveTab('shortlist'); setFocusIndex(0); }}
+            className={`px-4 py-2.5 text-sm font-medium border-b-2 -mb-px transition-colors ${
+              activeTab === 'shortlist'
+                ? 'border-gray-900 text-gray-900'
+                : 'border-transparent text-gray-400 hover:text-gray-600'
+            }`}
+          >
+            My Shortlist
+            {shortlist.length > 0 && (
+              <span className="ml-1.5 text-xs bg-amber-100 text-amber-700 px-1.5 py-0.5 rounded-full">{shortlist.length}</span>
+            )}
+          </button>
+          <button
+            onClick={() => { setActiveTab('org-shortlist'); setFocusIndex(0); }}
+            className={`px-4 py-2.5 text-sm font-medium border-b-2 -mb-px transition-colors ${
+              activeTab === 'org-shortlist'
+                ? 'border-gray-900 text-gray-900'
+                : 'border-transparent text-gray-400 hover:text-gray-600'
+            }`}
+          >
+            Org Shortlist
+            {orgShortlistCount > 0 && (
+              <span className="ml-1.5 text-xs bg-purple-100 text-purple-700 px-1.5 py-0.5 rounded-full">{orgShortlistCount}</span>
+            )}
+          </button>
         </div>
         <div className="flex items-center gap-2 pb-2">
           {activeTab === 'queue' && (

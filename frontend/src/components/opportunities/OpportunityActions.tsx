@@ -7,11 +7,12 @@ export interface OpportunityActionHandlers {
   onToggleBookmark?: (id: string, isBookmarked: boolean) => void | Promise<void>;
   onStartGrant?: (id: string) => void | Promise<void>;
   onToggleRead?: (id: string, isRead: boolean) => void | Promise<void>;
+  onPromoteToOrg?: (id: string, isOnOrg: boolean) => void | Promise<void>;
 }
 
 interface OpportunityActionsProps extends OpportunityActionHandlers {
   opp: Opportunity;
-  mode?: 'queue' | 'shortlist' | 'compact' | 'focus';
+  mode?: 'queue' | 'shortlist' | 'org-shortlist' | 'compact' | 'focus';
   className?: string;
 }
 
@@ -22,9 +23,18 @@ export default function OpportunityActions({
   onToggleBookmark,
   onStartGrant,
   onToggleRead,
+  onPromoteToOrg,
 }: OpportunityActionsProps) {
   const [busy, setBusy] = useState<string | null>(null);
-  const isBookmarked = opp.status === 'potential_fit';
+
+  // In personal shortlist mode all items are by definition bookmarked.
+  // In queue/focus mode use the is_personal_shortlisted flag (with status fallback).
+  const isBookmarked =
+    mode === 'shortlist'
+      ? true
+      : (opp.is_personal_shortlisted ?? opp.status === 'potential_fit');
+
+  const isOnOrg = !!opp.is_on_org_shortlist;
 
   async function run(action: string, fn?: () => void | Promise<void>) {
     if (!fn || busy) return;
@@ -45,7 +55,7 @@ export default function OpportunityActions({
     : null;
 
   const isRead = !!opp.is_read;
-  const isTable = mode === 'queue' || mode === 'shortlist';
+  const isTable = mode === 'queue' || mode === 'shortlist' || mode === 'org-shortlist';
 
   const readToggle = onToggleRead ? (
     <button
@@ -94,9 +104,58 @@ export default function OpportunityActions({
     </a>
   ) : null;
 
+  const startGrantBtn = onStartGrant ? (
+    <button
+      onClick={e => { e.stopPropagation(); run('grant', () => onStartGrant(opp.id)); }}
+      disabled={!!busy}
+      title="Start grant workspace"
+      className={`${btnBase} text-white bg-blue-600 border-blue-600 hover:bg-blue-700 font-medium`}
+    >
+      {busy === 'grant' ? '…' : mode === 'focus' ? 'Start Grant' : '+ Grant'}
+    </button>
+  ) : null;
+
+  // Promote-to-org button shown in personal shortlist mode
+  const promoteBtn = onPromoteToOrg && mode === 'shortlist' ? (
+    <button
+      onClick={e => { e.stopPropagation(); run('promote', () => onPromoteToOrg(opp.id, isOnOrg)); }}
+      disabled={!!busy}
+      title={isOnOrg ? 'Remove from org shortlist' : 'Add to org shortlist'}
+      className={`${btnBase} flex items-center gap-1 ${
+        isOnOrg
+          ? 'text-purple-700 border-purple-300 bg-purple-50 hover:bg-purple-100'
+          : 'text-gray-500 border-gray-200 hover:border-purple-300 hover:text-purple-600'
+      }`}
+    >
+      {busy === 'promote' ? (
+        <span className="w-2 h-2 rounded-full bg-current animate-pulse inline-block" />
+      ) : (
+        <>
+          <svg className="w-3 h-3" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth={2}>
+            <rect x="2" y="8" width="12" height="6" rx="1" />
+            <path d="M8 2v6M5 5l3-3 3 3" strokeLinecap="round" strokeLinejoin="round" />
+          </svg>
+          {isOnOrg ? 'In Org' : 'Share'}
+        </>
+      )}
+    </button>
+  ) : null;
+
+  // Remove-from-org button shown in org-shortlist mode
+  const removeFromOrgBtn = onPromoteToOrg && mode === 'org-shortlist' ? (
+    <button
+      onClick={e => { e.stopPropagation(); run('promote', () => onPromoteToOrg(opp.id, true)); }}
+      disabled={!!busy}
+      title="Remove from org shortlist"
+      className={`${btnBase} text-purple-700 border-purple-200 bg-purple-50 hover:bg-red-50 hover:text-red-600 hover:border-red-200`}
+    >
+      {busy === 'promote' ? '…' : 'Remove'}
+    </button>
+  ) : null;
+
   return (
     <div className={`flex items-center gap-1.5 ${isTable ? 'w-full' : 'flex-wrap'} ${className}`}>
-      {isTable ? (
+      {mode === 'queue' && (
         <>
           {viewLink}
           <div className="ml-auto flex items-center gap-1 shrink-0">
@@ -104,20 +163,35 @@ export default function OpportunityActions({
             {bookmark}
           </div>
         </>
-      ) : (
+      )}
+
+      {mode === 'shortlist' && (
+        <>
+          {viewLink}
+          <div className="ml-auto flex items-center gap-1 shrink-0">
+            {promoteBtn}
+            {startGrantBtn}
+            {bookmark}
+          </div>
+        </>
+      )}
+
+      {mode === 'org-shortlist' && (
+        <>
+          {viewLink}
+          <div className="ml-auto flex items-center gap-1 shrink-0">
+            {removeFromOrgBtn}
+            {startGrantBtn}
+          </div>
+        </>
+      )}
+
+      {(mode === 'focus' || mode === 'compact') && (
         <>
           {bookmark}
           {readToggle}
           {viewLink}
-          {onStartGrant && mode === 'focus' && (
-            <button
-              onClick={e => { e.stopPropagation(); run('grant', () => onStartGrant(opp.id)); }}
-              disabled={!!busy}
-              className={`${btnBase} text-white bg-blue-600 border-blue-600 hover:bg-blue-700 font-medium`}
-            >
-              {busy === 'grant' ? '…' : 'Start Grant'}
-            </button>
-          )}
+          {mode === 'focus' && startGrantBtn}
         </>
       )}
     </div>

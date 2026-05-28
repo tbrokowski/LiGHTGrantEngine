@@ -47,6 +47,8 @@ interface OpportunityDetail {
   funder_logo_url?: string;
   guidance_doc_link?: string;
   documents?: OpportunityDocument[];
+  is_personal_shortlisted?: boolean;
+  is_on_org_shortlist?: boolean;
 }
 
 interface OpportunityDocument {
@@ -249,6 +251,8 @@ export default function OpportunityDetailPage() {
     try {
       const res = await opportunities.convertToGrant(id);
       router.push(`/grants/${res.data.grant_id}`);
+    } catch {
+      alert('Failed to start grant workspace. Please try again.');
     } finally {
       setConverting(false);
     }
@@ -256,22 +260,22 @@ export default function OpportunityDetailPage() {
 
   async function handleToggleBookmark() {
     if (!opp) return;
-    const isBookmarked = opp.status === 'potential_fit';
+    const isBookmarked = !!(opp.is_personal_shortlisted ?? opp.status === 'potential_fit');
     setActionBusy(true);
     try {
       if (isBookmarked) {
         await opportunities.removeFromShortlist(id);
-        setOpp(prev => prev ? { ...prev, status: 'in_review' } : prev);
+        setOpp(prev => prev ? { ...prev, is_personal_shortlisted: false } : prev);
       } else {
-        await opportunities.update(id, { status: 'potential_fit' });
-        setOpp(prev => prev ? { ...prev, status: 'potential_fit', is_read: true } : prev);
+        await opportunities.addToShortlist(id);
+        setOpp(prev => prev ? { ...prev, is_personal_shortlisted: true, is_read: true } : prev);
       }
     } finally {
       setActionBusy(false);
     }
   }
 
-  const isShortlisted = opp?.status === 'potential_fit';
+  const isShortlisted = !!(opp?.is_personal_shortlisted ?? opp?.status === 'potential_fit');
 
   if (loading) {
     return <div className="flex justify-center py-24 text-sm text-gray-400">Loading...</div>;
