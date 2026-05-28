@@ -163,25 +163,39 @@ async def create_opportunity(
 @router.get("/queue")
 async def review_queue(
     unread_only: bool = False,
+    limit: int = Query(25, ge=1, le=200),
+    offset: int = Query(0, ge=0),
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ):
-    """Returns opportunities needing human review, sorted by fit score desc."""
+    """Returns opportunities needing human review, sorted by fit score desc.
+
+    Supports pagination via ``limit`` and ``offset``. The response always
+    includes a ``total`` field with the full (unsliced) count so the UI can
+    show "X of Y" and decide whether to render a Load More button.
+    """
     items, read_map, io_map = await _fetch_institution_feed(
         db, current_user, statuses=QUEUE_STATUSES
     )
     if unread_only:
         items = [o for o in items if not read_map.get(o.id)]
-    personal_map = await _load_personal_shortlist_map(db, current_user.id, [o.id for o in items])
-    return [
-        _opp_summary(
-            o,
-            is_read=read_map.get(o.id, False),
-            io=io_map.get(o.id),
-            is_personal_shortlisted=personal_map.get(o.id, False),
-        )
-        for o in items
-    ]
+    total = len(items)
+    paged_items = items[offset: offset + limit]
+    personal_map = await _load_personal_shortlist_map(db, current_user.id, [o.id for o in paged_items])
+    return {
+        "total": total,
+        "limit": limit,
+        "offset": offset,
+        "items": [
+            _opp_summary(
+                o,
+                is_read=read_map.get(o.id, False),
+                io=io_map.get(o.id),
+                is_personal_shortlisted=personal_map.get(o.id, False),
+            )
+            for o in paged_items
+        ],
+    }
 
 
 @router.get("/queue/counts")

@@ -1,13 +1,15 @@
 'use client';
 
-import { useState } from 'react';
+import { useRef, useState } from 'react';
 import {
-  Paperclip, FolderOpen, Link, LayoutTemplate, Users, Sparkles, File, FolderPlus,
+  Paperclip, FolderOpen, Link, LayoutTemplate, Users, Sparkles, File, FolderPlus, Upload,
   type LucideIcon,
 } from 'lucide-react';
 import { WorkspaceFile } from './types';
-import { grants } from '@/lib/api';
+import { grants, documents } from '@/lib/api';
 import { openDocumentContent } from '@/lib/documents';
+
+const API_URL = process.env.NEXT_PUBLIC_API_URL ?? '';
 
 /** Extract document ID if url is our internal content endpoint, else null. */
 function extractDocId(url: string): string | null {
@@ -109,10 +111,13 @@ function FileCard({ file, onDelete }: { file: WorkspaceFile; onDelete: () => voi
 
 export default function FileLibrary({ grantId, files, onRefresh }: Props) {
   const [showForm, setShowForm] = useState(false);
+  const [mode, setMode] = useState<'upload' | 'link'>('link');
   const [saving, setSaving] = useState(false);
   const [activeCategory, setActiveCategory] = useState<string | null>(null);
   const [creatingFolder, setCreatingFolder] = useState(false);
   const [driveFolderUrl, setDriveFolderUrl] = useState<string | null>(null);
+  const [selectedFile, setSelectedFile] = useState<File | null>(null);
+  const fileInputRef = useRef<HTMLInputElement>(null);
   const [form, setForm] = useState({
     file_name: '',
     file_url: '',
@@ -123,15 +128,43 @@ export default function FileLibrary({ grantId, files, onRefresh }: Props) {
     tags: '',
   });
 
+  const resetForm = () => {
+    setForm({ file_name: '', file_url: '', file_category: 'other', source_type: 'external_url', version: '1', description: '', tags: '' });
+    setSelectedFile(null);
+    if (fileInputRef.current) fileInputRef.current.value = '';
+  };
+
+  const handleFileSelect = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0] ?? null;
+    setSelectedFile(file);
+    if (file && !form.file_name) {
+      setForm((f) => ({ ...f, file_name: file.name.replace(/\.[^.]+$/, '') }));
+    }
+  };
+
   const handleCreate = async (e: React.FormEvent) => {
     e.preventDefault();
     setSaving(true);
     try {
-      await grants.addFile(grantId, {
-        ...form,
-        tags: form.tags ? form.tags.split(',').map((t) => t.trim()).filter(Boolean) : [],
-      });
-      setForm({ file_name: '', file_url: '', file_category: 'other', source_type: 'external_url', version: '1', description: '', tags: '' });
+      if (mode === 'upload') {
+        if (!selectedFile) return;
+        const uploadRes = await documents.upload(selectedFile, grantId);
+        const docId: string = uploadRes.data.id;
+        const fileUrl = `${API_URL}/api/v1/documents/${docId}/content`;
+        await grants.addFile(grantId, {
+          ...form,
+          file_url: fileUrl,
+          source_type: 'uploaded',
+          file_type: selectedFile.name.split('.').pop() ?? '',
+          tags: form.tags ? form.tags.split(',').map((t) => t.trim()).filter(Boolean) : [],
+        });
+      } else {
+        await grants.addFile(grantId, {
+          ...form,
+          tags: form.tags ? form.tags.split(',').map((t) => t.trim()).filter(Boolean) : [],
+        });
+      }
+      resetForm();
       setShowForm(false);
       onRefresh();
     } finally {
@@ -189,8 +222,8 @@ export default function FileLibrary({ grantId, files, onRefresh }: Props) {
             </button>
           )}
           <button
-            onClick={() => setShowForm(true)}
-            className="text-xs px-3 py-1.5 bg-indigo-600 text-white rounded-lg hover:bg-indigo-700"
+            onClick={() => { setShowForm(true); setMode('link'); }}
+            className="text-xs px-3 py-1.5 bg-indigo-600 text-white rounded-lg hover:bg-indigo-700 flex items-center gap-1.5"
           >
             + Add File / Link
           </button>
@@ -199,35 +232,80 @@ export default function FileLibrary({ grantId, files, onRefresh }: Props) {
 
       {showForm && (
         <form onSubmit={handleCreate} className="bg-indigo-50 rounded-xl border border-indigo-100 p-4 space-y-3">
+          {/* Mode toggle */}
+          <div className="flex rounded-lg border border-gray-200 overflow-hidden w-fit text-xs">
+            <button
+              type="button"
+              onClick={() => { setMode('upload'); setForm((f) => ({ ...f, source_type: 'uploaded' })); }}
+              className={`flex items-center gap-1.5 px-3 py-1.5 transition-colors ${mode === 'upload' ? 'bg-indigo-600 text-white' : 'bg-white text-gray-600 hover:bg-gray-50'}`}
+            >
+              <Upload className="w-3.5 h-3.5" />
+              Upload File
+            </button>
+            <button
+              type="button"
+              onClick={() => { setMode('link'); setForm((f) => ({ ...f, source_type: 'external_url' })); setSelectedFile(null); }}
+              className={`flex items-center gap-1.5 px-3 py-1.5 transition-colors ${mode === 'link' ? 'bg-indigo-600 text-white' : 'bg-white text-gray-600 hover:bg-gray-50'}`}
+            >
+              <Link className="w-3.5 h-3.5" />
+              Add Link
+            </button>
+          </div>
+
           <div className="grid grid-cols-2 gap-3">
             <input
               required
               placeholder="File / link name"
-              className="border border-gray-200 rounded-lg px-3 py-2 text-sm"
+              className="border border-gray-200 rounded-lg px-3 py-2 text-sm bg-white"
               value={form.file_name}
               onChange={(e) => setForm((f) => ({ ...f, file_name: e.target.value }))}
             />
-            <select
-              className="border border-gray-200 rounded-lg px-3 py-2 text-sm"
-              value={form.source_type}
-              onChange={(e) => setForm((f) => ({ ...f, source_type: e.target.value }))}
-            >
-              {SOURCE_TYPES.map((t) => (
-                <option key={t} value={t}>{SOURCE_LABELS[t] ?? t.replace(/_/g, ' ')}</option>
-              ))}
-            </select>
+            {mode === 'link' && (
+              <select
+                className="border border-gray-200 rounded-lg px-3 py-2 text-sm bg-white"
+                value={form.source_type}
+                onChange={(e) => setForm((f) => ({ ...f, source_type: e.target.value }))}
+              >
+                {SOURCE_TYPES.filter((t) => t !== 'uploaded').map((t) => (
+                  <option key={t} value={t}>{SOURCE_LABELS[t] ?? t.replace(/_/g, ' ')}</option>
+                ))}
+              </select>
+            )}
           </div>
-          <input
-            required
-            type="url"
-            placeholder="URL / link"
-            className="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm"
-            value={form.file_url}
-            onChange={(e) => setForm((f) => ({ ...f, file_url: e.target.value }))}
-          />
+
+          {mode === 'upload' ? (
+            <div
+              className="w-full border-2 border-dashed border-indigo-200 rounded-lg px-3 py-4 text-sm text-center cursor-pointer hover:border-indigo-400 transition-colors bg-white"
+              onClick={() => fileInputRef.current?.click()}
+            >
+              {selectedFile ? (
+                <span className="text-indigo-700 font-medium">{selectedFile.name}</span>
+              ) : (
+                <span className="text-gray-400">Click to select a PDF, Word doc, or text file</span>
+              )}
+              <input
+                ref={fileInputRef}
+                type="file"
+                accept=".pdf,.doc,.docx,.txt"
+                className="hidden"
+                onChange={handleFileSelect}
+                required={mode === 'upload'}
+              />
+            </div>
+          ) : (
+            <input
+              required
+              type="url"
+              placeholder="URL / link"
+              className="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm bg-white"
+              value={form.file_url}
+              onChange={(e) => setForm((f) => ({ ...f, file_url: e.target.value }))}
+            />
+          )}
+
           <div className="grid grid-cols-2 gap-3">
             <select
-              className="border border-gray-200 rounded-lg px-3 py-2 text-sm"
+              className="border border-gray-200 rounded-lg px-3 py-2 text-sm bg-white"
               value={form.file_category}
               onChange={(e) => setForm((f) => ({ ...f, file_category: e.target.value }))}
             >
@@ -237,27 +315,31 @@ export default function FileLibrary({ grantId, files, onRefresh }: Props) {
             </select>
             <input
               placeholder="Version (e.g. v2)"
-              className="border border-gray-200 rounded-lg px-3 py-2 text-sm"
+              className="border border-gray-200 rounded-lg px-3 py-2 text-sm bg-white"
               value={form.version}
               onChange={(e) => setForm((f) => ({ ...f, version: e.target.value }))}
             />
           </div>
           <input
             placeholder="Description (optional)"
-            className="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm"
+            className="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm bg-white"
             value={form.description}
             onChange={(e) => setForm((f) => ({ ...f, description: e.target.value }))}
           />
           <input
             placeholder="Tags (comma separated)"
-            className="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm"
+            className="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm bg-white"
             value={form.tags}
             onChange={(e) => setForm((f) => ({ ...f, tags: e.target.value }))}
           />
           <div className="flex gap-2">
-            <button type="button" onClick={() => setShowForm(false)} className="text-xs text-gray-500">Cancel</button>
-            <button type="submit" disabled={saving} className="text-xs px-3 py-1.5 bg-indigo-600 text-white rounded-lg disabled:opacity-50">
-              {saving ? 'Saving...' : 'Add'}
+            <button type="button" onClick={() => { setShowForm(false); resetForm(); }} className="text-xs text-gray-500">Cancel</button>
+            <button
+              type="submit"
+              disabled={saving || (mode === 'upload' && !selectedFile)}
+              className="text-xs px-3 py-1.5 bg-indigo-600 text-white rounded-lg disabled:opacity-50"
+            >
+              {saving ? (mode === 'upload' ? 'Uploading...' : 'Saving...') : 'Add'}
             </button>
           </div>
         </form>
@@ -286,7 +368,7 @@ export default function FileLibrary({ grantId, files, onRefresh }: Props) {
 
       {files.length === 0 ? (
         <div className="text-center py-12 text-gray-400 text-sm">
-          No files linked yet. Add Google Drive links, external URLs, or upload references.
+          No files linked yet. Add Google Drive links, external URLs, or upload PDFs directly.
         </div>
       ) : (
         <div className="space-y-4">

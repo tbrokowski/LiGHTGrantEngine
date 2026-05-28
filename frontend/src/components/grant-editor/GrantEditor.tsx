@@ -11,16 +11,17 @@ import {
   setWatching,
   isBeingWatched,
 } from '@/lib/skeletonGenerationStore';
-import IdeaPhase from './phases/IdeaPhase';
-import SkeletonPhase from './phases/SkeletonPhase';
-import DraftPhase from './phases/DraftPhase';
+import UnifiedWorkspace from './UnifiedWorkspace';
+import AIChatPanel from './AIChatPanel';
+import CommentsPanel from './CommentsPanel';
+import WorkspaceContext, { type SyncState, type WorkspaceCitation } from './WorkspaceContext';
 import type { SkeletonSection } from './SkeletonEditor';
 import {
   CloudUpload, CloudDownload, Check, Loader2,
-  AlertCircle, FileText, Lightbulb, LayoutList, PenLine,
+  AlertCircle, FileText, Sparkles, MessageCircle,
 } from 'lucide-react';
-
-type WritingPhase = 'idea' | 'skeleton' | 'draft';
+import type { PanelTabType } from './split-view/types';
+import { grantComments } from '@/lib/api';
 
 interface GrantDetail {
   id: string;
@@ -46,16 +47,15 @@ interface GrantEditorProps {
   onHeadingsChange?: (headings: string[]) => void;
 }
 
-type SyncState = 'idle' | 'pushing' | 'pulling' | 'creating' | 'success' | 'error';
-
-const PHASE_TABS: { id: WritingPhase; label: string; icon: React.ReactNode }[] = [
-  { id: 'idea', label: 'Idea', icon: <Lightbulb className="w-3.5 h-3.5" /> },
-  { id: 'skeleton', label: 'Skeleton', icon: <LayoutList className="w-3.5 h-3.5" /> },
-  { id: 'draft', label: 'Draft & Review', icon: <PenLine className="w-3.5 h-3.5" /> },
-];
+// Returns the best default panel type for the grant's current phase
+function defaultPanelType(writingPhase?: string): PanelTabType {
+  if (writingPhase === 'skeleton') return 'skeleton';
+  if (writingPhase === 'draft') return 'editor';
+  return 'idea';
+}
 
 export default function GrantEditor({ grant, onGrantUpdate, onHeadingsChange }: GrantEditorProps) {
-  const [phase, setPhase] = useState<WritingPhase>((grant.writing_phase as WritingPhase) || 'idea');
+  // ── Core content state ──────────────────────────────────────────────────────
   const [grantIdea, setGrantIdea] = useState(grant.grant_idea || '');
   const [callAnalysis, setCallAnalysis] = useState<Record<string, unknown>>(grant.call_analysis || {});
   const [skeleton, setSkeleton] = useState<Record<string, unknown>>(grant.proposal_skeleton || {});
@@ -64,49 +64,50 @@ export default function GrantEditor({ grant, onGrantUpdate, onHeadingsChange }: 
   const [selectedText, setSelectedText] = useState('');
   const [activeSection, setActiveSection] = useState('');
   const [wordCount, setWordCount] = useState(0);
-  const [headings, setHeadings] = useState<string[]>([]);
 
+  // ── Generation state ─────────────────────────────────────────────────────────
   const [generatingSkeleton, setGeneratingSkeleton] = useState(false);
-  const pollingIntervalRef = useRef<ReturnType<typeof setInterval> | null>(null);
-  // isMountedRef: true only while this specific component instance is mounted.
-  const isMountedRef = useRef(false);
-  // Stable ref to always call the latest onGrantUpdate without stale closure issues.
-  const onGrantUpdateRef = useRef(onGrantUpdate);
-  useEffect(() => { onGrantUpdateRef.current = onGrantUpdate; });
-
   const [generatingDraft, setGeneratingDraft] = useState(false);
   const [draftProgress, setDraftProgress] = useState<{ section: string; index: number; total: number } | null>(null);
 
+  // ── Review / citations ───────────────────────────────────────────────────────
   const [reviewReport, setReviewReport] = useState<Record<string, unknown> | null>(grant.last_review || null);
   const [reviewLoading, setReviewLoading] = useState(false);
-  const [citations, setCitations] = useState<Array<{ id?: string; formatted_citation?: string; source_type?: string; url?: string; claim_text?: string }>>([]);
-  const [showReview, setShowReview] = useState(false);
-  const [showCitations, setShowCitations] = useState(false);
-  const [contextChips, setContextChips] = useState<string[]>([]);
+  const [citations, setCitations] = useState<WorkspaceCitation[]>([]);
 
+  // ── Google Docs sync ─────────────────────────────────────────────────────────
   const [syncState, setSyncState] = useState<SyncState>('idle');
   const [syncError, setSyncError] = useState('');
   const [docLinked, setDocLinked] = useState(!!grant.google_doc_id);
   const [docUrl, setDocUrl] = useState(grant.google_doc_url || '');
   const [lastSynced, setLastSynced] = useState(grant.google_doc_last_synced || '');
-  // Keep ref in sync with state for use inside timer callbacks
-  useEffect(() => { docLinkedRef.current = docLinked; }, [docLinked]);
 
+  // ── AI sidebar + Comments panel ───────────────────────────────────────────────
+  const [aiOpen, setAiOpen] = useState(true);
+  const [commentsOpen, setCommentsOpen] = useState(false);
+  const [aiWidth, setAiWidth] = useState<number>(() => {
+    if (typeof window === 'undefined') return 340;
+    return parseInt(localStorage.getItem(`aiSidebarWidth:${grant.id}`) || '340');
+  });
+  const aiDragRef = useRef<{ startX: number; startWidth: number } | null>(null);
+
+  // ── Refs ─────────────────────────────────────────────────────────────────────
   const saveTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const ideaTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
-  // 30-second debounced push to Google Doc after editor changes
   const googlePushTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
-  // True while an auto-sync operation is in progress (prevents concurrent runs)
   const autoSyncInProgress = useRef(false);
-  // Track whether document content has changed since the last Google Doc push
   const docChangedSinceLastPush = useRef(false);
-  // Stable ref to docLinked so timer callbacks always see the latest value
   const docLinkedRef = useRef(!!grant.google_doc_id);
+  const isMountedRef = useRef(false);
+  const onGrantUpdateRef = useRef(onGrantUpdate);
+  const pollingIntervalRef = useRef<ReturnType<typeof setInterval> | null>(null);
+  // Exposed to UnifiedWorkspace so skeleton/draft generation can open the right panel
+  const openPanelRef = useRef<((type: PanelTabType) => void) | null>(null);
 
-  /**
-   * Apply a resolved skeleton result to this component instance.
-   * Clears generation tracking and switches the editor to the skeleton tab.
-   */
+  useEffect(() => { onGrantUpdateRef.current = onGrantUpdate; });
+  useEffect(() => { docLinkedRef.current = docLinked; }, [docLinked]);
+
+  // ── Skeleton generation helpers ──────────────────────────────────────────────
   const applySkeletonResult = useCallback((skeletonData: Record<string, unknown>) => {
     completeGeneration(grant.id);
     if (pollingIntervalRef.current) {
@@ -114,16 +115,12 @@ export default function GrantEditor({ grant, onGrantUpdate, onHeadingsChange }: 
       pollingIntervalRef.current = null;
     }
     setSkeleton(skeletonData);
-    setPhase('skeleton');
     setGeneratingSkeleton(false);
     onGrantUpdateRef.current();
+    // Auto-open the skeleton panel
+    openPanelRef.current?.('skeleton');
   }, [grant.id]);
 
-  /**
-   * Poll /writing/status every 3 s until writing_phase === 'skeleton'.
-   * Used as a fallback when the page was refreshed mid-generation (original
-   * HTTP request was killed) or when the component remounted while in-flight.
-   */
   const startPollingStatus = useCallback(() => {
     if (pollingIntervalRef.current) return;
     pollingIntervalRef.current = setInterval(async () => {
@@ -133,34 +130,27 @@ export default function GrantEditor({ grant, onGrantUpdate, onHeadingsChange }: 
         if (d.writing_phase === 'skeleton' && d.proposal_skeleton && Object.keys(d.proposal_skeleton).length) {
           applySkeletonResult(d.proposal_skeleton as Record<string, unknown>);
         }
-      } catch {
-        // Keep polling through transient errors
-      }
+      } catch { /* keep polling */ }
     }, 3000);
   }, [grant.id, applySkeletonResult]);
 
+  // ── Mount effect ─────────────────────────────────────────────────────────────
   useEffect(() => {
     isMountedRef.current = true;
     setWatching(grant.id, true);
 
     const inFlight = getInFlight(grant.id);
     if (inFlight) {
-      // A generation is still in-flight from a previous visit during this session.
-      // Show the spinner and attach a handler so we update state when it resolves.
       setGeneratingSkeleton(true);
       inFlight.then((skeletonData) => {
-        if (isMountedRef.current) {
-          applySkeletonResult(skeletonData);
-        }
+        if (isMountedRef.current) applySkeletonResult(skeletonData);
       }).catch(() => {
         if (isMountedRef.current) setGeneratingSkeleton(false);
       });
     } else if (isMarkedGenerating(grant.id)) {
-      // The page was refreshed while generation was in-progress — fall back to polling.
       setGeneratingSkeleton(true);
       startPollingStatus();
     } else {
-      // Normal mount: sync from server to pick up collaborator changes.
       grantWriting.status(grant.id).then((res) => {
         const d = res.data;
         if (d.grant_idea) setGrantIdea(d.grant_idea);
@@ -168,7 +158,6 @@ export default function GrantEditor({ grant, onGrantUpdate, onHeadingsChange }: 
         if (d.call_requirements) setCallRequirements(d.call_requirements);
         if (d.proposal_skeleton && Object.keys(d.proposal_skeleton).length) setSkeleton(d.proposal_skeleton);
         if (d.last_review && Object.keys(d.last_review).length) setReviewReport(d.last_review);
-        if (d.writing_phase) setPhase(d.writing_phase as WritingPhase);
       }).catch(() => {});
     }
 
@@ -177,64 +166,64 @@ export default function GrantEditor({ grant, onGrantUpdate, onHeadingsChange }: 
     return () => {
       isMountedRef.current = false;
       setWatching(grant.id, false);
-      if (pollingIntervalRef.current) {
-        clearInterval(pollingIntervalRef.current);
-        pollingIntervalRef.current = null;
-      }
-      if (googlePushTimer.current) {
-        clearTimeout(googlePushTimer.current);
-        googlePushTimer.current = null;
-      }
+      if (pollingIntervalRef.current) { clearInterval(pollingIntervalRef.current); pollingIntervalRef.current = null; }
+      if (googlePushTimer.current) { clearTimeout(googlePushTimer.current); googlePushTimer.current = null; }
     };
   }, [grant.id, applySkeletonResult, startPollingStatus]);
 
-  // Auto-pull interval: every 8s, check if the Google Doc has been modified
-  // externally and pull it into the editor (Google Doc is the source of truth).
+  // ── Auto-pull document changes from Google Doc every 8s ──────────────────────
   useEffect(() => {
     if (!docLinked) return;
     const interval = setInterval(async () => {
       if (document.visibilityState !== 'visible') return;
       if (autoSyncInProgress.current) return;
-      // Skip if the user just edited (push timer is pending — our version is newer)
       if (docChangedSinceLastPush.current) return;
       try {
         const statusRes = await grants.getDocsRemoteStatus(grant.id);
         if (!statusRes.data.has_remote_changes) return;
         autoSyncInProgress.current = true;
+        setSyncState('pulling');
         const pullRes = await grants.pullFromGoogleDoc(grant.id);
         setDocumentHtml(pullRes.data.content_html || '');
         setLastSynced(pullRes.data.last_synced);
         setSyncState('success');
         setTimeout(() => setSyncState((s) => s === 'success' ? 'idle' : s), 3000);
-      } catch {
-        // Silent fail — manual pull always available
-      } finally {
+      } catch { /* silent fail */ } finally {
         autoSyncInProgress.current = false;
       }
     }, 8000);
     return () => clearInterval(interval);
   }, [docLinked, grant.id]);
 
-  const getDocumentContext = useCallback(() => documentHtml.replace(/<[^>]+>/g, ' ').trim(), [documentHtml]);
+  // ── Auto-sync Google Doc comments every 30s (separate interval) ───────────────
+  // Comments change far less often than document content, so a longer interval
+  // keeps Google Drive API call volume low while still feeling live.
+  useEffect(() => {
+    if (!docLinked) return;
+    const interval = setInterval(() => {
+      if (document.visibilityState !== 'visible') return;
+      grantComments.sync(grant.id).catch(() => {});
+    }, 30000);
+    return () => clearInterval(interval);
+  }, [docLinked, grant.id]);
+
+  // ── Callbacks ─────────────────────────────────────────────────────────────────
+  const getDocumentContext = useCallback(
+    () => documentHtml.replace(/<[^>]+>/g, ' ').trim(),
+    [documentHtml]
+  );
 
   const handleDocumentChange = useCallback((html: string, words: number, heads: string[]) => {
     setDocumentHtml(html);
     setWordCount(words);
-    setHeadings(heads);
     onHeadingsChange?.(heads);
 
-    // Auto-save to DB (1.5s debounce)
     if (saveTimer.current) clearTimeout(saveTimer.current);
     saveTimer.current = setTimeout(async () => {
-      try {
-        await grants.saveDocument(grant.id, html, true);
-      } catch (e) {
-        console.error('Auto-save failed', e);
-      }
+      try { await grants.saveDocument(grant.id, html, true); }
+      catch (e) { console.error('Auto-save failed', e); }
     }, 1500);
 
-    // Mark that content has changed since last push, then schedule a push
-    // to Google Doc 5s after the last keystroke (only if a doc is linked).
     docChangedSinceLastPush.current = true;
     if (googlePushTimer.current) clearTimeout(googlePushTimer.current);
     googlePushTimer.current = setTimeout(async () => {
@@ -245,35 +234,25 @@ export default function GrantEditor({ grant, onGrantUpdate, onHeadingsChange }: 
       docChangedSinceLastPush.current = false;
       setSyncState('pushing');
       try {
-        // Save first so the push uses the latest content
         await grants.saveDocument(grant.id, html, false);
         const res = await grants.pushToGoogleDoc(grant.id);
         setLastSynced(res.data.last_synced);
         setSyncState('success');
         setTimeout(() => setSyncState((s) => s === 'success' ? 'idle' : s), 3000);
       } catch {
-        // Silent fail for auto-push — user can always push manually
         setSyncState('idle');
       } finally {
         autoSyncInProgress.current = false;
       }
-    }, 5000);
+    }, 3000);
   }, [grant.id, onHeadingsChange]);
-
-  const handlePhaseChange = (newPhase: WritingPhase) => {
-    setPhase(newPhase);
-    // Persist the active phase so all collaborators land on the same tab on reload
-    grantWriting.saveIdea(grant.id, { grant_idea: grantIdea, writing_phase: newPhase })
-      .catch(() => {});
-  };
 
   const handleIdeaChange = (idea: string) => {
     setGrantIdea(idea);
     if (ideaTimer.current) clearTimeout(ideaTimer.current);
     ideaTimer.current = setTimeout(async () => {
-      try {
-        await grantWriting.saveIdea(grant.id, { grant_idea: idea, writing_phase: phase });
-      } catch { /* ignore */ }
+      try { await grantWriting.saveIdea(grant.id, { grant_idea: idea }); }
+      catch { /* ignore */ }
     }, 1000);
   };
 
@@ -286,8 +265,6 @@ export default function GrantEditor({ grant, onGrantUpdate, onHeadingsChange }: 
       return;
     }
 
-    // Fire the generation request. Do NOT await — the user can navigate away freely.
-    // The axios request continues running in the background; the result is persisted to the DB.
     const grantId = grant.id;
     const generationPromise = grantWriting.generateSkeleton(grantId)
       .then((res) => (res.data.proposal_skeleton || {}) as Record<string, unknown>);
@@ -297,29 +274,20 @@ export default function GrantEditor({ grant, onGrantUpdate, onHeadingsChange }: 
     generationPromise.then((skeletonData) => {
       completeGeneration(grantId);
       if (isMountedRef.current) {
-        // The user stayed on the page — update state directly.
         setSkeleton(skeletonData);
-        setPhase('skeleton');
         setGeneratingSkeleton(false);
         onGrantUpdateRef.current();
+        openPanelRef.current?.('skeleton');
       } else if (!isBeingWatched(grantId)) {
-        // The user navigated away and hasn't returned — show a persistent toast.
         toast.success('Skeleton ready!', {
           description: 'Your grant proposal skeleton has been generated.',
-          action: {
-            label: 'View it',
-            onClick: () => { window.location.href = `/grants/${grantId}/write`; },
-          },
+          action: { label: 'View it', onClick: () => { window.location.href = `/grants/${grantId}/write`; } },
           duration: Infinity,
         });
       }
-      // else: user navigated away and returned — the init useEffect's inFlight handler
-      // will apply the result when it detects the resolved promise.
     }).catch((err) => {
       failGeneration(grantId);
-      if (isMountedRef.current) {
-        setGeneratingSkeleton(false);
-      }
+      if (isMountedRef.current) setGeneratingSkeleton(false);
       console.error('Skeleton generation failed', err);
       toast.error('Skeleton generation failed. Please try again.');
     });
@@ -338,23 +306,12 @@ export default function GrantEditor({ grant, onGrantUpdate, onHeadingsChange }: 
     streamDraftGeneration(
       grant.id,
       (event) => {
-        if (event.event === 'section_start') {
-          setDraftProgress({
-            section: String(event.section),
-            index: Number(event.index),
-            total: Number(event.total),
-          });
-        }
-        if (event.event === 'section_complete') {
-          setDraftProgress({
-            section: String(event.section),
-            index: Number(event.index),
-            total: Number(event.total),
-          });
+        if (event.event === 'section_start' || event.event === 'section_complete') {
+          setDraftProgress({ section: String(event.section), index: Number(event.index), total: Number(event.total) });
         }
         if (event.event === 'draft_complete' && event.document_html) {
           setDocumentHtml(String(event.document_html));
-          setPhase('draft');
+          openPanelRef.current?.('editor');
         }
       },
       () => {
@@ -375,7 +332,6 @@ export default function GrantEditor({ grant, onGrantUpdate, onHeadingsChange }: 
     try {
       const res = await grantWriting.runReview(grant.id);
       setReviewReport(res.data);
-      setShowReview(true);
     } finally {
       setReviewLoading(false);
     }
@@ -386,11 +342,11 @@ export default function GrantEditor({ grant, onGrantUpdate, onHeadingsChange }: 
       setDocumentHtml((prev) => prev + `<p>${text}</p>`);
       return;
     }
-    const regex = new RegExp(`(<h2[^>]*>${activeSection.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}</h2>)([\\s\\S]*?)(?=<h2|$)`, 'i');
-    const match = documentHtml.match(regex);
-    if (match) {
-      const updated = documentHtml.replace(regex, `$1\n<p>${text}</p>$2`);
-      setDocumentHtml(updated);
+    const regex = new RegExp(
+      `(<h2[^>]*>${activeSection.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}</h2>)([\\s\\S]*?)(?=<h2|$)`, 'i'
+    );
+    if (documentHtml.match(regex)) {
+      setDocumentHtml(documentHtml.replace(regex, `$1\n<p>${text}</p>$2`));
     } else {
       setDocumentHtml((prev) => prev + `<p>${text}</p>`);
     }
@@ -401,7 +357,7 @@ export default function GrantEditor({ grant, onGrantUpdate, onHeadingsChange }: 
     return detail || (e as { message?: string }).message || 'An unexpected error occurred';
   };
 
-  const handlePush = async () => {
+  const handlePushToDoc = async () => {
     setSyncState('pushing');
     setSyncError('');
     try {
@@ -416,7 +372,7 @@ export default function GrantEditor({ grant, onGrantUpdate, onHeadingsChange }: 
     }
   };
 
-  const handlePull = async () => {
+  const handlePullFromDoc = async () => {
     setSyncState('pulling');
     setSyncError('');
     try {
@@ -431,151 +387,207 @@ export default function GrantEditor({ grant, onGrantUpdate, onHeadingsChange }: 
     }
   };
 
+  // ── AI sidebar resize ─────────────────────────────────────────────────────────
+  const handleAiResizeMouseDown = (e: React.MouseEvent) => {
+    e.preventDefault();
+    aiDragRef.current = { startX: e.clientX, startWidth: aiWidth };
+    const onMove = (ev: MouseEvent) => {
+      if (!aiDragRef.current) return;
+      const dx = aiDragRef.current.startX - ev.clientX;
+      const next = Math.max(260, Math.min(600, aiDragRef.current.startWidth + dx));
+      setAiWidth(next);
+      localStorage.setItem(`aiSidebarWidth:${grant.id}`, String(next));
+    };
+    const onUp = () => {
+      aiDragRef.current = null;
+      document.removeEventListener('mousemove', onMove);
+      document.removeEventListener('mouseup', onUp);
+    };
+    document.addEventListener('mousemove', onMove);
+    document.addEventListener('mouseup', onUp);
+  };
+
   const syncBusy = syncState === 'pushing' || syncState === 'pulling';
 
-  useEffect(() => {
-    const chips: string[] = [];
-    if (callAnalysis && Object.keys(callAnalysis).length) chips.push('Call req');
-    if (activeSection) chips.push(activeSection);
-    if (grant.style_profile && Object.keys(grant.style_profile).length) chips.push('Style profile');
-    setContextChips(chips);
-  }, [callAnalysis, activeSection, grant.style_profile]);
+  // ── Workspace context value ───────────────────────────────────────────────────
+  const contextValue = {
+    grantId: grant.id,
+    grantTitle: grant.title,
+    grantIdea,
+    callAnalysis,
+    skeleton,
+    documentHtml,
+    callRequirements,
+    selectedText,
+    activeSection,
+    generatingSkeleton,
+    generatingDraft,
+    draftProgress,
+    reviewReport,
+    reviewLoading,
+    citations,
+    syncState,
+    syncError,
+    docLinked,
+    docUrl,
+    lastSynced,
+    googleDocId: grant.google_doc_id ?? null,
+    wordCount,
+    onIdeaChange: handleIdeaChange,
+    onCallAnalysis: (analysis: Record<string, unknown>, requirements?: string) => {
+      setCallAnalysis(analysis);
+      if (requirements) setCallRequirements(requirements);
+    },
+    onGenerateSkeleton: handleGenerateSkeleton,
+    onSkeletonChange: handleSkeletonChange,
+    onGenerateDraft: handleGenerateDraft,
+    onDocumentChange: handleDocumentChange,
+    onSelectionChange: setSelectedText,
+    onActiveSectionChange: setActiveSection,
+    onInsertText: insertIntoSection,
+    onDocLinked: (docId: string, url: string) => { setDocLinked(true); setDocUrl(url); onGrantUpdate(); },
+    onDocPulled: (html: string) => { setDocumentHtml(html); openPanelRef.current?.('editor'); onGrantUpdate(); },
+    onRunReview: handleRunReview,
+    onCitationsUpdate: setCitations,
+    onPushToDoc: handlePushToDoc,
+    onPullFromDoc: handlePullFromDoc,
+    getDocumentContext,
+  };
 
   return (
-    <div className="flex flex-col h-full overflow-hidden">
-      {/* Phase navigation + toolbar */}
-      <div className="flex-shrink-0 flex items-center justify-between px-4 py-2 bg-white border-b border-gray-200">
-        <div className="flex items-center gap-1">
-          {PHASE_TABS.map((tab) => (
+    <WorkspaceContext.Provider value={contextValue}>
+      <div className="flex flex-col h-full overflow-hidden">
+        {/* ── Top toolbar ───────────────────────────────────────────────────── */}
+        <div className="flex-shrink-0 flex items-center justify-between px-4 py-2 bg-white border-b border-gray-200">
+          {/* Left: grant title */}
+          <div className="flex items-center gap-3 min-w-0">
+            <h1 className="text-sm font-semibold text-gray-800 truncate max-w-[260px]" title={grant.title}>
+              {grant.title}
+            </h1>
+            {grant.funder && (
+              <span className="text-xs text-gray-400 truncate max-w-[160px]">{grant.funder}</span>
+            )}
+          </div>
+
+          {/* Right: status + controls */}
+          <div className="flex items-center gap-2 flex-shrink-0">
+            {/* Word / char count */}
+            <span className="text-xs text-gray-400">
+              {wordCount.toLocaleString()} words · {documentHtml.replace(/<[^>]+>/g, '').length.toLocaleString()} chars
+            </span>
+
+            {/* Google Docs chip */}
+            {docLinked && (
+              <div className="flex items-center gap-1.5 border border-gray-200 rounded-lg px-2 py-1">
+                <FileText className="w-3.5 h-3.5 text-blue-500" />
+                <a href={docUrl} target="_blank" rel="noopener noreferrer" className="text-xs text-blue-600 hover:underline">
+                  Google Doc
+                </a>
+                {syncState === 'pushing' && (
+                  <span className="flex items-center gap-1 text-xs text-gray-400">
+                    <Loader2 className="w-3 h-3 animate-spin" /> Syncing…
+                  </span>
+                )}
+                {syncState === 'pulling' && (
+                  <span className="flex items-center gap-1 text-xs text-gray-400">
+                    <Loader2 className="w-3 h-3 animate-spin" /> Pulling…
+                  </span>
+                )}
+                {syncState === 'success' && (
+                  <span className="flex items-center gap-1 text-xs text-green-600">
+                    <Check className="w-3 h-3" /> Synced
+                  </span>
+                )}
+                <button onClick={handlePushToDoc} disabled={syncBusy} title="Push to Google Doc" className="text-xs text-gray-400 hover:text-gray-700 disabled:opacity-40 ml-1">
+                  <CloudUpload className="w-3.5 h-3.5" />
+                </button>
+                <button onClick={handlePullFromDoc} disabled={syncBusy} title="Pull from Google Doc" className="text-xs text-gray-400 hover:text-gray-700 disabled:opacity-40">
+                  <CloudDownload className="w-3.5 h-3.5" />
+                </button>
+              </div>
+            )}
+
+            {/* Comments toggle */}
             <button
-              key={tab.id}
-              onClick={() => handlePhaseChange(tab.id)}
-              className={`flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium rounded-lg transition-colors ${
-                phase === tab.id
-                  ? 'bg-indigo-600 text-white'
-                  : 'text-gray-500 hover:bg-gray-100 hover:text-gray-700'
+              onClick={() => setCommentsOpen((v) => !v)}
+              title={commentsOpen ? 'Hide Comments' : 'Show Comments'}
+              className={`p-1.5 rounded-lg transition-colors ${
+                commentsOpen
+                  ? 'bg-indigo-100 text-indigo-600'
+                  : 'text-gray-400 hover:bg-gray-100 hover:text-indigo-600'
               }`}
             >
-              {tab.icon}
-              {tab.label}
+              <MessageCircle className="w-4 h-4" />
             </button>
-          ))}
+
+            {/* AI sidebar toggle */}
+            <button
+              onClick={() => setAiOpen((v) => !v)}
+              title={aiOpen ? 'Hide AI Assistant' : 'Show AI Assistant'}
+              className={`p-1.5 rounded-lg transition-colors ${
+                aiOpen
+                  ? 'bg-indigo-100 text-indigo-600'
+                  : 'text-gray-400 hover:bg-gray-100 hover:text-indigo-600'
+              }`}
+            >
+              <Sparkles className="w-4 h-4" />
+            </button>
+          </div>
         </div>
-        <div className="flex items-center gap-2">
-          <span className="text-xs text-gray-400">
-            {wordCount.toLocaleString()} words · {documentHtml.replace(/<[^>]+>/g, '').length.toLocaleString()} chars
-          </span>
-          {phase === 'draft' && docLinked && (
-            <div className="flex items-center gap-1.5 border border-gray-200 rounded-lg px-2 py-1">
-              <FileText className="w-3.5 h-3.5 text-blue-500" />
-              <a href={docUrl} target="_blank" rel="noopener noreferrer" className="text-xs text-blue-600 hover:underline">
-                Google Doc
-              </a>
-              {syncState === 'pushing' && (
-                <span className="flex items-center gap-1 text-xs text-gray-400">
-                  <Loader2 className="w-3 h-3 animate-spin" />
-                  Syncing…
-                </span>
-              )}
-              {syncState === 'pulling' && (
-                <span className="flex items-center gap-1 text-xs text-gray-400">
-                  <Loader2 className="w-3 h-3 animate-spin" />
-                  Pulling…
-                </span>
-              )}
-              {syncState === 'success' && (
-                <span className="flex items-center gap-1 text-xs text-green-600">
-                  <Check className="w-3 h-3" />
-                  Synced
-                </span>
-              )}
-              <button onClick={handlePush} disabled={syncBusy} title="Push to Google Doc" className="text-xs text-gray-400 hover:text-gray-700 disabled:opacity-40 ml-1">
-                <CloudUpload className="w-3.5 h-3.5" />
-              </button>
-              <button onClick={handlePull} disabled={syncBusy} title="Pull from Google Doc" className="text-xs text-gray-400 hover:text-gray-700 disabled:opacity-40">
-                <CloudDownload className="w-3.5 h-3.5" />
-              </button>
+
+        {/* Sync error banner */}
+        {syncState === 'error' && syncError && (
+          <div className="flex-shrink-0 flex items-center gap-2 bg-red-50 border-b border-red-200 px-4 py-2 text-xs text-red-600">
+            <AlertCircle className="w-4 h-4 shrink-0" />
+            {syncError}
+            <button onClick={() => { setSyncState('idle'); setSyncError(''); }} className="ml-auto">×</button>
+          </div>
+        )}
+
+        {/* ── Main content: workspace + AI sidebar ─────────────────────────── */}
+        <div className="flex flex-1 overflow-hidden">
+          {/* Unified split-panel workspace */}
+          <div className="flex flex-1 min-w-0 overflow-hidden">
+            <UnifiedWorkspace
+              grantId={grant.id}
+              defaultPanelType={defaultPanelType(grant.writing_phase)}
+              openPanelRef={openPanelRef}
+            />
+          </div>
+
+          {/* Comments panel */}
+          {commentsOpen && (
+            <div className="flex flex-shrink-0 overflow-hidden w-72 border-l border-gray-200">
+              <CommentsPanel grantId={grant.id} />
+            </div>
+          )}
+
+          {/* AI sidebar */}
+          {aiOpen && (
+            <div className="flex flex-shrink-0 overflow-hidden" style={{ width: aiWidth }}>
+              {/* Drag handle */}
+              <div
+                onMouseDown={handleAiResizeMouseDown}
+                className="w-1 flex-shrink-0 bg-gray-200 hover:bg-indigo-400 active:bg-indigo-500 cursor-col-resize transition-colors select-none"
+                title="Drag to resize"
+              />
+              <div className="flex flex-1 min-w-0 overflow-hidden">
+                <AIChatPanel
+                  grantId={grant.id}
+                  selectedText={selectedText}
+                  activeSection={activeSection}
+                  writingPhase="draft"
+                  getDocumentContext={getDocumentContext}
+                  onInsertText={insertIntoSection}
+                  callRequirements={callRequirements}
+                  useWritingStudio
+                  googleDocUrl={docLinked ? docUrl : null}
+                />
+              </div>
             </div>
           )}
         </div>
       </div>
-
-      {syncState === 'error' && syncError && (
-        <div className="flex-shrink-0 flex items-center gap-2 bg-red-50 border-b border-red-200 px-4 py-2 text-xs text-red-600">
-          <AlertCircle className="w-4 h-4 shrink-0" />
-          {syncError}
-          <button onClick={() => { setSyncState('idle'); setSyncError(''); }} className="ml-auto">×</button>
-        </div>
-      )}
-
-      {/* Phase content */}
-      <div className="flex-1 overflow-hidden flex">
-        {phase === 'idea' && (
-          <IdeaPhase
-            grantId={grant.id}
-            grantIdea={grantIdea}
-            callAnalysis={callAnalysis}
-            onIdeaChange={handleIdeaChange}
-            onCallAnalysis={(analysis, requirements) => {
-              setCallAnalysis(analysis);
-              if (requirements) setCallRequirements(requirements);
-            }}
-            onGenerateSkeleton={handleGenerateSkeleton}
-            generating={generatingSkeleton}
-            googleDocId={grant.google_doc_id}
-            googleDocUrl={docUrl || grant.google_doc_url}
-            googleDocLastSynced={lastSynced || grant.google_doc_last_synced}
-            onDocLinked={(id, url) => {
-              setDocLinked(true);
-              setDocUrl(url);
-              onGrantUpdate();
-            }}
-            onDocPulled={(html) => {
-              setDocumentHtml(html);
-              handlePhaseChange('draft');
-              onGrantUpdate();
-            }}
-          />
-        )}
-
-        {phase === 'skeleton' && (
-          <SkeletonPhase
-            skeleton={skeleton as { sections?: SkeletonSection[]; title_suggestion?: string; narrative_arc?: string; key_messages?: string[] }}
-            onSkeletonChange={handleSkeletonChange}
-            onGenerateDraft={handleGenerateDraft}
-            generating={generatingDraft}
-            draftProgress={draftProgress}
-          />
-        )}
-
-        {phase === 'draft' && (
-          <DraftPhase
-            grantId={grant.id}
-            documentHtml={documentHtml}
-            callRequirements={callRequirements}
-            grantIdea={grantIdea}
-            skeleton={skeleton}
-            selectedText={selectedText}
-            activeSection={activeSection}
-            contextChips={contextChips}
-            reviewReport={reviewReport}
-            reviewLoading={reviewLoading}
-            citations={citations}
-            showReview={showReview}
-            showCitations={showCitations}
-            googleDocUrl={grant.google_doc_url}
-            onDocumentChange={handleDocumentChange}
-            onSelectionChange={setSelectedText}
-            onActiveSectionChange={setActiveSection}
-            onRunReview={handleRunReview}
-            onCitationsUpdate={setCitations}
-            onInsertText={insertIntoSection}
-            getDocumentContext={getDocumentContext}
-            onToggleReview={() => setShowReview(!showReview)}
-            onToggleCitations={() => setShowCitations(!showCitations)}
-          />
-        )}
-      </div>
-    </div>
+    </WorkspaceContext.Provider>
   );
 }

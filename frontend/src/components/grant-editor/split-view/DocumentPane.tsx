@@ -3,12 +3,15 @@
 import { useState, useRef, useEffect } from 'react';
 import {
   X, Plus, FileText, Lightbulb, LayoutList, Globe,
-  FilePlus, FileSearch, ChevronDown,
+  FilePlus, FileSearch, ChevronDown, Columns2,
 } from 'lucide-react';
 import SingleDocEditor from '../SingleDocEditor';
 import SkeletonEditor from '../SkeletonEditor';
+import IdeaPhase from '../phases/IdeaPhase';
+import SkeletonPhase from '../phases/SkeletonPhase';
 import WebBrowserPane from './WebBrowserPane';
 import NewDocumentPane from './NewDocumentPane';
+import { useWorkspace } from '../WorkspaceContext';
 import type { PanelConfig, PanelTab, PanelTabType } from './types';
 import type { SkeletonSection } from '../SkeletonEditor';
 
@@ -18,15 +21,8 @@ interface DocumentPaneProps {
   canClose: boolean;
   onClose: () => void;
   grantId: string;
-  documentHtml: string;
-  onDocumentChange: (html: string, words: number, headings: string[]) => void;
-  onSelectionChange: (text: string) => void;
-  onActiveSectionChange: (section: string) => void;
-  grantIdea: string;
-  skeletonSections: SkeletonSection[];
-  callRequirements: string;
-  onInsertText: (text: string) => void;
   hasEditorPanel: boolean;
+  onAddPanel: () => void;
 }
 
 const TAB_META: Record<PanelTabType, { icon: React.ReactNode; label: string }> = {
@@ -45,63 +41,69 @@ export default function DocumentPane({
   canClose,
   onClose,
   grantId,
-  documentHtml,
-  onDocumentChange,
-  onSelectionChange,
-  onActiveSectionChange,
-  grantIdea,
-  skeletonSections,
-  callRequirements,
-  onInsertText,
   hasEditorPanel,
+  onAddPanel,
 }: DocumentPaneProps) {
+  const workspace = useWorkspace();
   const [showTabPicker, setShowTabPicker] = useState(false);
+  // Fixed position for the dropdown (escapes overflow-x-auto clip)
+  const [pickerPos, setPickerPos] = useState<{ top: number; left: number } | null>(null);
+  const triggerRef = useRef<HTMLButtonElement>(null);
   const pickerRef = useRef<HTMLDivElement>(null);
 
   const activeTab = panel.tabs.find((t) => t.id === panel.activeTabId) ?? panel.tabs[0];
 
-  // Close picker on outside click
+  // Open picker at fixed viewport position to escape overflow clipping
+  const openPicker = () => {
+    if (!triggerRef.current) return;
+    const rect = triggerRef.current.getBoundingClientRect();
+    setPickerPos({ top: rect.bottom + 2, left: rect.left });
+    setShowTabPicker(true);
+  };
+
+  // Close picker on outside click or Escape
   useEffect(() => {
     if (!showTabPicker) return;
-    const handler = (e: MouseEvent) => {
-      if (pickerRef.current && !pickerRef.current.contains(e.target as Node)) {
+    const handler = (e: MouseEvent | KeyboardEvent) => {
+      if (e instanceof KeyboardEvent) {
+        if (e.key === 'Escape') { setShowTabPicker(false); setPickerPos(null); }
+        return;
+      }
+      if (
+        pickerRef.current && !pickerRef.current.contains(e.target as Node) &&
+        triggerRef.current && !triggerRef.current.contains(e.target as Node)
+      ) {
         setShowTabPicker(false);
+        setPickerPos(null);
       }
     };
     document.addEventListener('mousedown', handler);
-    return () => document.removeEventListener('mousedown', handler);
+    document.addEventListener('keydown', handler);
+    return () => {
+      document.removeEventListener('mousedown', handler);
+      document.removeEventListener('keydown', handler);
+    };
   }, [showTabPicker]);
 
-  const setActiveTab = (tabId: string) =>
-    onPanelChange({ ...panel, activeTabId: tabId });
+  const setActiveTab = (tabId: string) => onPanelChange({ ...panel, activeTabId: tabId });
 
   const closeTab = (tabId: string) => {
-    if (panel.tabs.length === 1) {
-      onClose();
-      return;
-    }
+    if (panel.tabs.length === 1) { onClose(); return; }
     const remaining = panel.tabs.filter((t) => t.id !== tabId);
     onPanelChange({
       ...panel,
       tabs: remaining,
-      activeTabId:
-        panel.activeTabId === tabId
-          ? remaining[remaining.length - 1].id
-          : panel.activeTabId,
+      activeTabId: panel.activeTabId === tabId ? remaining[remaining.length - 1].id : panel.activeTabId,
     });
   };
 
   const addTab = (type: PanelTabType, label: string, meta?: PanelTab['meta']) => {
     const newTab: PanelTab = { id: `tab-${Date.now()}`, type, label, meta };
-    onPanelChange({
-      ...panel,
-      tabs: [...panel.tabs, newTab],
-      activeTabId: newTab.id,
-    });
+    onPanelChange({ ...panel, tabs: [...panel.tabs, newTab], activeTabId: newTab.id });
     setShowTabPicker(false);
+    setPickerPos(null);
   };
 
-  // Tab types the user can add (editor only allowed if no panel already has one)
   const addableTypes: Array<{ type: PanelTabType; label: string }> = [
     ...(hasEditorPanel ? [] : [{ type: 'editor' as PanelTabType, label: 'Draft Editor' }]),
     { type: 'idea', label: 'Idea' },
@@ -118,51 +120,59 @@ export default function DocumentPane({
       case 'editor':
         return (
           <SingleDocEditor
-            documentHtml={documentHtml}
-            onDocumentChange={onDocumentChange}
-            onSelectionChange={onSelectionChange}
-            onActiveSectionChange={onActiveSectionChange}
+            documentHtml={workspace.documentHtml}
+            onDocumentChange={workspace.onDocumentChange}
+            onSelectionChange={workspace.onSelectionChange}
+            onActiveSectionChange={workspace.onActiveSectionChange}
           />
         );
 
       case 'idea':
         return (
-          <div className="flex-1 overflow-auto p-5">
-            {grantIdea ? (
-              <p className="text-sm text-gray-700 leading-relaxed whitespace-pre-wrap">
-                {grantIdea}
-              </p>
-            ) : (
-              <p className="text-sm text-gray-400 italic">
-                No idea content yet. Switch to the Idea phase to add your grant idea.
-              </p>
-            )}
-          </div>
+          <IdeaPhase
+            grantId={grantId}
+            grantIdea={workspace.grantIdea}
+            callAnalysis={workspace.callAnalysis}
+            onIdeaChange={workspace.onIdeaChange}
+            onCallAnalysis={workspace.onCallAnalysis}
+            onGenerateSkeleton={workspace.onGenerateSkeleton}
+            generating={workspace.generatingSkeleton}
+            googleDocId={workspace.googleDocId}
+            googleDocUrl={workspace.docUrl || null}
+            googleDocLastSynced={workspace.lastSynced || null}
+            onDocLinked={workspace.onDocLinked}
+            onDocPulled={workspace.onDocPulled}
+          />
         );
 
-      case 'skeleton':
+      case 'skeleton': {
+        const skeletonData = workspace.skeleton as {
+          sections?: SkeletonSection[];
+          title_suggestion?: string;
+          narrative_arc?: string;
+          key_messages?: string[];
+        };
         return (
-          <div className="flex-1 overflow-auto">
-            {skeletonSections.length ? (
-              <SkeletonEditor sections={skeletonSections} onChange={() => {}} />
-            ) : (
-              <div className="p-5 text-sm text-gray-400 italic">
-                No skeleton generated yet. Switch to the Skeleton phase first.
-              </div>
-            )}
-          </div>
+          <SkeletonPhase
+            skeleton={skeletonData}
+            onSkeletonChange={workspace.onSkeletonChange}
+            onGenerateDraft={workspace.onGenerateDraft}
+            generating={workspace.generatingDraft}
+            draftProgress={workspace.draftProgress}
+          />
         );
+      }
 
       case 'call-doc':
         return (
           <div className="flex-1 overflow-auto p-5">
-            {callRequirements ? (
+            {workspace.callRequirements ? (
               <pre className="text-sm text-gray-700 leading-relaxed whitespace-pre-wrap font-sans">
-                {callRequirements}
+                {workspace.callRequirements}
               </pre>
             ) : (
               <p className="text-sm text-gray-400 italic">
-                No call requirements uploaded yet. Upload a call document in the Idea phase.
+                No call requirements uploaded yet. Open the Idea panel to upload a call document.
               </p>
             )}
           </div>
@@ -177,7 +187,6 @@ export default function DocumentPane({
             </div>
           );
         }
-        // Google Docs: use embed URL
         const embedSrc = src.includes('docs.google.com')
           ? src.replace('/edit', '/preview').replace('/view', '/preview')
           : src;
@@ -201,7 +210,7 @@ export default function DocumentPane({
         );
 
       case 'browser':
-        return <WebBrowserPane onInsertText={onInsertText} />;
+        return <WebBrowserPane onInsertText={workspace.onInsertText} />;
 
       default:
         return null;
@@ -225,10 +234,7 @@ export default function DocumentPane({
             <span className="flex-shrink-0">{TAB_META[tab.type].icon}</span>
             <span className="max-w-[110px] truncate">{tab.label}</span>
             <button
-              onClick={(e) => {
-                e.stopPropagation();
-                closeTab(tab.id);
-              }}
+              onClick={(e) => { e.stopPropagation(); closeTab(tab.id); }}
               className="opacity-0 group-hover:opacity-60 hover:!opacity-100 -mr-0.5 hover:text-red-500 transition-opacity"
               title="Close tab"
             >
@@ -237,45 +243,31 @@ export default function DocumentPane({
           </div>
         ))}
 
-        {/* Add tab */}
-        <div ref={pickerRef} className="relative flex-shrink-0">
-          <button
-            onClick={() => setShowTabPicker((v) => !v)}
-            className="flex items-center gap-0.5 px-2 py-1.5 text-gray-400 hover:text-gray-600 hover:bg-gray-100 transition-colors"
-            title="Add tab"
-          >
-            <Plus className="w-3.5 h-3.5" />
-            <ChevronDown className="w-2.5 h-2.5" />
-          </button>
+        {/* Add tab button — fixed-position dropdown escapes overflow-x-auto */}
+        <button
+          ref={triggerRef}
+          onClick={openPicker}
+          className="flex items-center gap-0.5 px-2 py-1.5 text-gray-400 hover:text-gray-600 hover:bg-gray-100 transition-colors flex-shrink-0"
+          title="Add tab"
+        >
+          <Plus className="w-3.5 h-3.5" />
+          <ChevronDown className="w-2.5 h-2.5" />
+        </button>
 
-          {showTabPicker && (
-            <div className="absolute top-full left-0 z-50 mt-0.5 w-48 rounded-lg border border-gray-200 bg-white shadow-lg py-1">
-              {addableTypes.map(({ type, label }) => (
-                <button
-                  key={type}
-                  onClick={() => addTab(type, label)}
-                  className="w-full flex items-center gap-2 px-3 py-2 text-xs text-gray-700 hover:bg-gray-50 transition-colors"
-                >
-                  <span className="flex-shrink-0 text-gray-400">
-                    {TAB_META[type].icon}
-                  </span>
-                  {label}
-                </button>
-              ))}
-              {addableTypes.length === 0 && (
-                <p className="px-3 py-2 text-xs text-gray-400 italic">
-                  All tab types are already open.
-                </p>
-              )}
-            </div>
-          )}
-        </div>
+        {/* Add panel (split view) */}
+        <button
+          onClick={onAddPanel}
+          className="flex items-center px-2 py-1.5 text-gray-400 hover:text-indigo-600 hover:bg-gray-100 transition-colors flex-shrink-0 ml-auto"
+          title="Add panel"
+        >
+          <Columns2 className="w-3.5 h-3.5" />
+        </button>
 
         {/* Close panel */}
         {canClose && (
           <button
             onClick={onClose}
-            className="ml-auto flex-shrink-0 px-2 py-1.5 text-gray-400 hover:text-red-500 transition-colors"
+            className="flex-shrink-0 px-2 py-1.5 text-gray-400 hover:text-red-500 transition-colors"
             title="Close panel"
           >
             <X className="w-3.5 h-3.5" />
@@ -283,6 +275,30 @@ export default function DocumentPane({
         )}
       </div>
 
+      {/* Tab picker — fixed to viewport so it escapes overflow clipping */}
+      {showTabPicker && pickerPos && (
+        <div
+          ref={pickerRef}
+          className="fixed z-[9999] w-48 rounded-lg border border-gray-200 bg-white shadow-lg py-1"
+          style={{ top: pickerPos.top, left: pickerPos.left }}
+        >
+          {addableTypes.map(({ type, label }) => (
+            <button
+              key={type}
+              onClick={() => addTab(type, label)}
+              className="w-full flex items-center gap-2 px-3 py-2 text-xs text-gray-700 hover:bg-gray-50 transition-colors"
+            >
+              <span className="flex-shrink-0 text-gray-400">{TAB_META[type].icon}</span>
+              {label}
+            </button>
+          ))}
+          {addableTypes.length === 0 && (
+            <p className="px-3 py-2 text-xs text-gray-400 italic">All tab types are already open.</p>
+          )}
+        </div>
+      )}
+
+      {/* Removed old skeleton content — used useWorkspace() */}
       {/* Content area */}
       <div className="flex flex-1 overflow-hidden">
         {renderContent()}

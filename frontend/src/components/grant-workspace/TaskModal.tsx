@@ -11,11 +11,23 @@ interface GrantMemberOption {
   email: string;
 }
 
-const TASK_TYPES = [
+interface MilestoneOption {
+  id: string;
+  title: string;
+  target_date: string | null;
+}
+
+const PROPOSAL_TASK_TYPES = [
   'eligibility_check', 'call_analysis', 'concept_note', 'narrative_writing', 'specific_aims',
   'background', 'methods', 'implementation_plan', 'mel_evaluation', 'ethics', 'data_management',
   'budget', 'budget_justification', 'partner_letter', 'cv_biosketch', 'institutional_approval',
   'compliance_check', 'formatting', 'submission_portal', 'final_upload', 'post_submission_archive', 'other',
+];
+
+const PM_TASK_TYPES = [
+  'deliverable', 'milestone_task', 'reporting', 'data_collection', 'field_work',
+  'meeting', 'partner_coordination', 'review', 'approval', 'admin',
+  'budget', 'procurement', 'training', 'communication', 'other',
 ];
 
 interface Props {
@@ -25,6 +37,10 @@ interface Props {
   defaultStatus?: string;
   grantId: string;
   documentHeadings?: string[];
+  /** When true, shows PM task types and milestone picker instead of proposal writing types */
+  isActiveGrant?: boolean;
+  /** Pre-select a milestone when creating from milestone tracker */
+  defaultMilestoneId?: string | null;
   onClose: () => void;
   onSave: (data: Partial<Task>) => Promise<void>;
 }
@@ -33,16 +49,26 @@ function memberLabel(m: GrantMemberOption): string {
   return m.name ? `${m.name} (${m.email})` : m.email;
 }
 
-export default function TaskModal({ open, task, parentTaskId, defaultStatus = 'not_started', grantId, documentHeadings = [], onClose, onSave }: Props) {
+function fmtDate(d: string | null): string {
+  if (!d) return '';
+  try { return new Date(d).toLocaleDateString('en-US', { month: 'short', day: 'numeric' }); }
+  catch { return d; }
+}
+
+export default function TaskModal({ open, task, parentTaskId, defaultStatus = 'not_started', grantId, documentHeadings = [], isActiveGrant = false, defaultMilestoneId = null, onClose, onSave }: Props) {
   const [form, setForm] = useState<Partial<Task>>({});
   const [saving, setSaving] = useState(false);
   const [memberList, setMemberList] = useState<GrantMemberOption[]>([]);
+  const [milestones, setMilestones] = useState<MilestoneOption[]>([]);
 
   useEffect(() => {
     if (open) {
       grants.listMembers(grantId)
         .then((r) => setMemberList(r.data))
         .catch(() => setMemberList([]));
+      grants.listMilestones(grantId)
+        .then((r) => setMilestones(r.data ?? []))
+        .catch(() => setMilestones([]));
     }
   }, [open, grantId]);
 
@@ -55,8 +81,9 @@ export default function TaskModal({ open, task, parentTaskId, defaultStatus = 'n
         description: '',
         status: defaultStatus,
         priority: 'medium',
-        task_type: 'other',
+        task_type: isActiveGrant ? 'deliverable' : 'other',
         parent_task_id: parentTaskId ?? null,
+        linked_milestone_id: defaultMilestoneId ?? null,
         due_date: null,
         start_date: null,
         estimated_effort: null,
@@ -64,7 +91,7 @@ export default function TaskModal({ open, task, parentTaskId, defaultStatus = 'n
         dependencies: [],
       });
     }
-  }, [task, parentTaskId, defaultStatus, open]);
+  }, [task, parentTaskId, defaultStatus, defaultMilestoneId, isActiveGrant, open]);
 
   if (!open) return null;
 
@@ -161,11 +188,30 @@ export default function TaskModal({ open, task, parentTaskId, defaultStatus = 'n
               value={form.task_type ?? 'other'}
               onChange={(e) => set('task_type', e.target.value)}
             >
-              {TASK_TYPES.map((t) => (
+              {(isActiveGrant ? PM_TASK_TYPES : PROPOSAL_TASK_TYPES).map((t) => (
                 <option key={t} value={t}>{t.replace(/_/g, ' ')}</option>
               ))}
             </select>
           </div>
+
+          {/* Link to Milestone */}
+          {milestones.length > 0 && (
+            <div>
+              <label className="block text-xs font-medium text-gray-700 mb-1">Link to Milestone</label>
+              <select
+                className="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500"
+                value={form.linked_milestone_id ?? ''}
+                onChange={(e) => set('linked_milestone_id', e.target.value || null)}
+              >
+                <option value="">— None —</option>
+                {milestones.map((m) => (
+                  <option key={m.id} value={m.id}>
+                    {m.title}{m.target_date ? ` (${fmtDate(m.target_date)})` : ''}
+                  </option>
+                ))}
+              </select>
+            </div>
+          )}
 
           {/* Dates */}
           <div className="grid grid-cols-2 gap-3">
@@ -244,8 +290,8 @@ export default function TaskModal({ open, task, parentTaskId, defaultStatus = 'n
             />
           </div>
 
-          {/* Link to document section */}
-          {documentHeadings.length > 0 && (
+          {/* Link to document section — proposal only */}
+          {!isActiveGrant && documentHeadings.length > 0 && (
             <div>
               <label className="block text-xs font-medium text-gray-700 mb-1">
                 Link to Document Section

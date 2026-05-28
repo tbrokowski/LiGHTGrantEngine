@@ -16,6 +16,7 @@ from app.routers import (
 from app.routers import grant_workspace
 from app.routers import grant_writing
 from app.routers import proxy
+from app.routers import grant_comments
 
 settings = get_settings()
 logger = structlog.get_logger()
@@ -87,6 +88,7 @@ app.include_router(grant_writing.status_router,    prefix=f"{API}/grants",  tags
 app.include_router(grant_writing.router,           prefix=f"{API}/grants",  tags=["grant-writing"])
 app.include_router(organizations.router,     prefix=f"{API}/organizations",  tags=["organizations"])
 app.include_router(proxy.router,             prefix=f"{API}/proxy",           tags=["proxy"])
+app.include_router(grant_comments.router,    prefix=f"{API}",                 tags=["grant-comments"])
 
 
 @app.get("/health")

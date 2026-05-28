@@ -176,6 +176,38 @@ interface GrantTimelineProps {
   starredIds?: Set<string>;
 }
 
+const PROPOSAL_STAGES = new Set(['proposal', 'pending']);
+const ACTIVE_STAGES = new Set(['active']);
+
+function sortByDeadline(list: GrantItem[], today: Date): GrantItem[] {
+  return [...list].sort((a, b) => {
+    const da = daysFrom(today, a.external_deadline);
+    const db = daysFrom(today, b.external_deadline);
+    if (da === null && db === null) return 0;
+    if (da === null) return 1;
+    if (db === null) return -1;
+    return da - db;
+  });
+}
+
+interface SectionHeaderRowProps {
+  label: string;
+  count: number;
+  labelW: number;
+}
+
+function SectionHeaderRow({ label, count, labelW }: SectionHeaderRowProps) {
+  return (
+    <div className="flex items-center gap-2 py-1.5" style={{ paddingLeft: 0 }}>
+      <div style={{ width: labelW }} className="shrink-0">
+        <span className="text-[10px] font-semibold uppercase tracking-widest text-gray-400">{label}</span>
+        <span className="ml-1.5 text-[10px] text-gray-300">({count})</span>
+      </div>
+      <div className="flex-1 h-px bg-gray-100" />
+    </div>
+  );
+}
+
 export default function GrantTimeline({ grants, loading, starredIds = new Set() }: GrantTimelineProps) {
   const [window, setWindow] = useState<Window>(60);
   const containerRef = useRef<HTMLDivElement>(null);
@@ -194,17 +226,21 @@ export default function GrantTimeline({ grants, loading, starredIds = new Set() 
   today.setHours(0, 0, 0, 0);
 
   const gridW = containerW - LABEL_W;
-  const dayPx = gridW / window;
 
-  // Sort: overdue first, then by days until deadline asc, then no deadline at bottom
-  const sorted = [...grants].sort((a, b) => {
-    const da = daysFrom(today, a.external_deadline);
-    const db = daysFrom(today, b.external_deadline);
-    if (da === null && db === null) return 0;
-    if (da === null) return 1;
-    if (db === null) return -1;
-    return da - db;
-  });
+  const proposals = sortByDeadline(
+    grants.filter(g => PROPOSAL_STAGES.has(g.grant_stage)),
+    today,
+  );
+  const activeGrants = sortByDeadline(
+    grants.filter(g => ACTIVE_STAGES.has(g.grant_stage)),
+    today,
+  );
+  const otherGrants = sortByDeadline(
+    grants.filter(g => !PROPOSAL_STAGES.has(g.grant_stage) && !ACTIVE_STAGES.has(g.grant_stage)),
+    today,
+  );
+
+  const hasAny = grants.length > 0;
 
   // Build axis ticks
   const ticks = AXIS_TICKS[window];
@@ -213,6 +249,20 @@ export default function GrantTimeline({ grants, loading, starredIds = new Set() 
     const d = new Date(today);
     d.setDate(d.getDate() + Math.round((window / ticks) * i));
     tickDates.push(d);
+  }
+
+  function renderRows(list: GrantItem[], isFirstSection: boolean) {
+    return list.map((g, idx) => (
+      <div key={g.id} className={`relative ${idx > 0 || !isFirstSection ? 'border-t border-gray-50' : ''}`}>
+        <GrantBar
+          grant={g}
+          windowDays={window}
+          containerW={containerW}
+          today={today}
+          starred={starredIds.has(g.id)}
+        />
+      </div>
+    ));
   }
 
   return (
@@ -244,7 +294,7 @@ export default function GrantTimeline({ grants, loading, starredIds = new Set() 
               <div key={i} className="h-9 bg-gray-50 rounded-xl animate-pulse" />
             ))}
           </div>
-        ) : sorted.length === 0 ? (
+        ) : !hasAny ? (
           <div className="py-10 text-center">
             <p className="text-sm text-gray-400">No grants in your pipeline</p>
             <p className="text-xs text-gray-300 mt-1">Add a grant from an opportunity to see it here</p>
@@ -269,7 +319,7 @@ export default function GrantTimeline({ grants, loading, starredIds = new Set() 
 
             {/* Today line + rows */}
             <div className="relative">
-              {/* Axis baseline */}
+              {/* Grid lines */}
               <div className="absolute top-0 bottom-0 flex" style={{ left: LABEL_W, right: 0 }}>
                 {tickDates.map((_, i) => (
                   <div key={i} className="absolute top-0 bottom-0 w-px bg-gray-50" style={{ left: (i / ticks) * gridW }} />
@@ -289,18 +339,29 @@ export default function GrantTimeline({ grants, loading, starredIds = new Set() 
                 today
               </div>
 
-              {/* Grant rows */}
-              {sorted.map((g, idx) => (
-                <div key={g.id} className={`relative ${idx > 0 ? 'border-t border-gray-50' : ''}`}>
-                  <GrantBar
-                    grant={g}
-                    windowDays={window}
-                    containerW={containerW}
-                    today={today}
-                    starred={starredIds.has(g.id)}
-                  />
-                </div>
-              ))}
+              {/* ── Active Grants section ── */}
+              {activeGrants.length > 0 && (
+                <>
+                  <SectionHeaderRow label="Active Grants" count={activeGrants.length} labelW={LABEL_W} />
+                  {renderRows(activeGrants, true)}
+                </>
+              )}
+
+              {/* ── Proposals section ── */}
+              {proposals.length > 0 && (
+                <>
+                  <SectionHeaderRow label="Proposals" count={proposals.length} labelW={LABEL_W} />
+                  {renderRows(proposals, activeGrants.length === 0)}
+                </>
+              )}
+
+              {/* ── Other (rejected, archived, etc.) ── */}
+              {otherGrants.length > 0 && (
+                <>
+                  <SectionHeaderRow label="Other" count={otherGrants.length} labelW={LABEL_W} />
+                  {renderRows(otherGrants, activeGrants.length === 0 && proposals.length === 0)}
+                </>
+              )}
             </div>
 
             {/* Legend */}

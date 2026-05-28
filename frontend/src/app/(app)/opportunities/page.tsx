@@ -90,6 +90,8 @@ export default function OpportunitiesPage() {
   const [shortlist, setShortlist] = useState<Opportunity[]>([]);
   const [orgShortlist, setOrgShortlist] = useState<Opportunity[]>([]);
   const [loading, setLoading] = useState(true);
+  const [loadingMore, setLoadingMore] = useState(false);
+  const [queueTotal, setQueueTotal] = useState(0);
   const [filters, setFilters] = useState<OpportunityFilters>(EMPTY_FILTERS);
   const [showFilters, setShowFilters] = useState(false);
   const [pastExpanded, setPastExpanded] = useState(false);
@@ -108,11 +110,25 @@ export default function OpportunitiesPage() {
 
   const loadQueue = useCallback(() => {
     setLoading(true);
-    opportunities.queue({ unread_only: unreadOnly })
-      .then(r => setQueue(r.data))
+    opportunities.queue({ unread_only: unreadOnly, limit: 25, offset: 0 })
+      .then(r => {
+        setQueue(r.data.items ?? []);
+        setQueueTotal(r.data.total ?? 0);
+      })
       .catch(console.error)
       .finally(() => setLoading(false));
   }, [unreadOnly]);
+
+  const loadMoreQueue = useCallback(() => {
+    setLoadingMore(true);
+    opportunities.queue({ unread_only: unreadOnly, limit: 25, offset: queue.length })
+      .then(r => {
+        setQueue(prev => [...prev, ...(r.data.items ?? [])]);
+        setQueueTotal(r.data.total ?? 0);
+      })
+      .catch(console.error)
+      .finally(() => setLoadingMore(false));
+  }, [unreadOnly, queue.length]);
 
   const loadShortlist = useCallback(() => {
     setLoading(true);
@@ -322,7 +338,7 @@ export default function OpportunitiesPage() {
           <h1 className="text-xl font-semibold text-gray-900 tracking-tight">Opportunities</h1>
           <p className="text-sm text-gray-400 mt-0.5">
             {loading ? 'Loading…' : activeTab === 'queue'
-              ? `${queue.length} in queue · ${unreadCount} unread · ${upcoming.length} upcoming`
+              ? `${queueTotal > queue.length ? `${queue.length} of ${queueTotal}` : queue.length} in queue · ${unreadCount} unread · ${upcoming.length} upcoming${hasFilters && queue.length < queueTotal ? ' · filters apply to loaded items only' : ''}`
               : activeTab === 'shortlist'
               ? `${shortlist.length} bookmarked`
               : `${orgShortlist.length} on org shortlist`}
@@ -526,6 +542,18 @@ export default function OpportunitiesPage() {
               )}
             </div>
           )}
+        </div>
+      )}
+
+      {!loading && activeTab === 'queue' && (viewMode as string) !== 'graph' && queue.length < queueTotal && (
+        <div className="mt-4 flex items-center justify-center gap-3">
+          <button
+            onClick={loadMoreQueue}
+            disabled={loadingMore}
+            className="px-4 py-2 text-sm font-medium text-gray-600 bg-white border border-gray-200 rounded-lg hover:border-gray-400 hover:text-gray-900 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
+          >
+            {loadingMore ? 'Loading…' : `Load more (${queueTotal - queue.length} remaining)`}
+          </button>
         </div>
       )}
     </div>

@@ -134,7 +134,7 @@ export const users = {
 // ── Opportunities ────────────────────────────────────────────────────────────
 export const opportunities = {
   list: (params?: Record<string, unknown>) => api.get('/opportunities/', { params }),
-  queue: (params?: { unread_only?: boolean }) => api.get('/opportunities/queue', { params }),
+  queue: (params?: { unread_only?: boolean; limit?: number; offset?: number }) => api.get('/opportunities/queue', { params }),
   queueCounts: () => api.get('/opportunities/queue/counts'),
   shortlist: () => api.get('/opportunities/shortlist'),
   orgShortlist: () => api.get('/opportunities/org-shortlist'),
@@ -313,6 +313,18 @@ export const grantWriting = {
 // ── Documents ────────────────────────────────────────────────────────────────
 export { openDocumentContent } from './documents';
 
+export const documents = {
+  upload: (file: File, grantId?: string) => {
+    const form = new FormData();
+    form.append('file', file);
+    if (grantId) form.append('grant_id', grantId);
+    form.append('document_type', 'other');
+    return api.post('/documents/upload', form, {
+      headers: { 'Content-Type': 'multipart/form-data' },
+    });
+  },
+};
+
 // ── Archive ──────────────────────────────────────────────────────────────────
 export const archive = {
   list: (params?: Record<string, unknown>) => api.get('/archive/', { params }),
@@ -417,6 +429,34 @@ export const ai = {
 export const proxy = {
   fetchPage: (url: string) =>
     api.get<{ title: string; html: string; url: string }>('/proxy/web', { params: { url } }),
+};
+
+// ── Grant editor comments ─────────────────────────────────────────────────────
+export interface GrantComment {
+  id: string;
+  entity_type: string;
+  entity_id: string;
+  author_id: string;
+  text: string;
+  anchor_text?: string | null;
+  parent_id?: string | null;
+  resolved: boolean;
+  google_doc_comment_id?: string | null;
+  created_at: string;
+  updated_at: string;
+}
+
+export const grantComments = {
+  list: (grantId: string) =>
+    api.get<GrantComment[]>(`/grants/${grantId}/comments`),
+  add: (grantId: string, data: { text: string; anchor_text?: string; parent_id?: string }) =>
+    api.post<GrantComment>(`/grants/${grantId}/comments`, data),
+  update: (grantId: string, commentId: string, data: { text?: string; resolved?: boolean }) =>
+    api.patch<GrantComment>(`/grants/${grantId}/comments/${commentId}`, data),
+  delete: (grantId: string, commentId: string) =>
+    api.delete(`/grants/${grantId}/comments/${commentId}`),
+  sync: (grantId: string) =>
+    api.post<GrantComment[]>(`/grants/${grantId}/comments/sync`),
 };
 
 // ── Streaming AI chat (uses native fetch for SSE) ─────────────────────────────

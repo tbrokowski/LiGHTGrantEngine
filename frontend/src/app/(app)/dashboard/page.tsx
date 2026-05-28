@@ -97,12 +97,12 @@ export default function DashboardPage() {
   useEffect(() => {
     Promise.all([
       analytics.dashboard().catch(() => ({ data: null })),
-      opportunities.queue().catch(() => ({ data: [] })),
+      opportunities.queue({ limit: 10 }).catch(() => ({ data: { items: [] } })),
       grants.list({ limit: 50 }).catch(() => ({ data: [] })),
       tasksApi.myTasks().catch(() => ({ data: [] })),
     ]).then(([statsRes, queueRes, grantsRes, tasksRes]) => {
       setStats(statsRes.data);
-      setQueue((queueRes.data as QueueItem[]).slice(0, 10));
+      setQueue((queueRes.data?.items ?? []) as QueueItem[]);
       setGrantList(grantsRes.data as GrantItem[]);
       setTaskList(tasksRes.data as TaskItem[]);
     }).finally(() => setLoading(false));

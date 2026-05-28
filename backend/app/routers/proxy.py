@@ -3,7 +3,7 @@ Web proxy endpoint — fetches external URLs server-side (bypasses browser CORS)
 strips executable content, and returns sanitized HTML for the in-editor browser pane.
 """
 import contextlib
-from urllib.parse import urljoin
+from urllib.parse import urljoin, urlparse, parse_qs, unquote
 import httpx
 from bs4 import BeautifulSoup, Tag
 from fastapi import APIRouter, Depends, HTTPException, Query
@@ -35,6 +35,20 @@ _CHROME_TAGS = {
 }
 
 
+def _unwrap_ddg_href(href: str) -> str:
+    """
+    DuckDuckGo Lite wraps all outbound links in a tracking redirect:
+      https://duckduckgo.com/l/?uddg=<URL-encoded-target>&rut=...
+    Extract and return the actual target URL so our proxy fetches it directly.
+    """
+    parsed = urlparse(href)
+    if parsed.netloc in ("duckduckgo.com", "www.duckduckgo.com") and parsed.path == "/l/":
+        qs = parse_qs(parsed.query)
+        if targets := qs.get("uddg", []):
+            return unquote(targets[0])
+    return href
+
+
 def _extract_content(soup: BeautifulSoup) -> Tag:
     """Return the best content container, falling back to <body>."""
     candidates = [
@@ -50,7 +64,6 @@ def _extract_content(soup: BeautifulSoup) -> Tag:
     for c in candidates:
         if c and isinstance(c, Tag):
             return c
-    # Ultimate fallback
     return soup  # type: ignore[return-value]
 
 
@@ -62,6 +75,7 @@ async def fetch_web_page(
     """
     Fetch an external URL and return sanitised HTML + page title.
     Scripts, styles, and iframes are stripped before returning.
+    DuckDuckGo tracking redirect links are unwrapped to their real targets.
     """
     if not url.startswith(("http://", "https://")):
         raise HTTPException(400, "URL must start with http:// or https://")
@@ -82,7 +96,10 @@ async def fetch_web_page(
         raise HTTPException(502, f"Could not reach {url}: {exc}")
 
     content_type = resp.headers.get("content-type", "")
-    if "text/html" not in content_type and "application/xhtml" not in content_type:
+    html_types = ("text/html", "application/xhtml", "text/plain")
+    # Soft check: accept anything that looks like HTML; don't 415 on missing charset etc.
+    looks_like_html = any(ct in content_type for ct in html_types)
+    if not looks_like_html and resp.status_code != 200:
         raise HTTPException(415, "URL does not return an HTML page")
 
     soup = BeautifulSoup(resp.text, "html.parser")
@@ -98,15 +115,17 @@ async def fetch_web_page(
 
     content = _extract_content(soup)
 
-    # Make relative links absolute so the frontend can re-navigate
+    # Make relative links absolute and unwrap DuckDuckGo tracking redirects
     base_url = str(resp.url)
     for a in content.find_all("a", href=True):
         href = a["href"]
         if href.startswith(("#", "javascript:", "mailto:")):
             continue
         with contextlib.suppress(Exception):
-            a["href"] = urljoin(base_url, href)
-        a["target"] = "_self"  # frontend intercepts clicks
+            absolute = urljoin(base_url, href)
+            # Unwrap DDG /l/?uddg= tracking links
+            a["href"] = _unwrap_ddg_href(absolute)
+        a["target"] = "_self"
 
     # Convert relative image src to absolute
     for img in content.find_all("img", src=True):
