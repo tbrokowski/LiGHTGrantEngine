@@ -16,7 +16,6 @@ import CommentsPanel from '../CommentsPanel';
 import { useWorkspace } from '../WorkspaceContext';
 import { grants, api } from '@/lib/api';
 import type { PanelConfig, PanelTab, PanelTabType } from './types';
-import type { SkeletonSection } from '../SkeletonEditor';
 
 interface DocumentPaneProps {
   panel: PanelConfig;
@@ -272,12 +271,11 @@ export default function DocumentPane({
 
       case 'skeleton': {
         const skeletonData = workspace.skeleton as {
-          sections?: SkeletonSection[];
+          raw_text?: string;
           flagged_sections?: string[];
           title_suggestion?: string;
           narrative_arc?: string;
           key_messages?: string[];
-          raw_text?: string;
         };
         return (
           <SkeletonPhase

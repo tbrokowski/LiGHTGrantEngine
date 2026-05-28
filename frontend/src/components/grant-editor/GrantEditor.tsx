@@ -15,7 +15,6 @@ import {
 import UnifiedWorkspace from './UnifiedWorkspace';
 import AIChatPanel from './AIChatPanel';
 import WorkspaceContext, { type SyncState, type WorkspaceCitation, type CoherenceResult } from './WorkspaceContext';
-import type { SkeletonSection } from './SkeletonEditor';
 import type { MetaAgentEvent, AgentQuestion } from './MetaAgentPanel';
 import { AlertCircle, Sparkles } from 'lucide-react';
 import type { PanelTabType } from './split-view/types';

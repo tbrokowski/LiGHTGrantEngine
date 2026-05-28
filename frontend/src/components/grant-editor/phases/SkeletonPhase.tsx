@@ -1,9 +1,8 @@
 'use client';
 
-import { useState, useEffect } from 'react';
+import { useState } from 'react';
 import { Loader2, Sparkles, Star, BookOpen, RefreshCw } from 'lucide-react';
 import SkeletonEditor from '../SkeletonEditor';
-import type { SkeletonSection } from '../SkeletonEditor';
 import MetaAgentPanel from '../MetaAgentPanel';
 import type { MetaAgentEvent, AgentQuestion } from '../MetaAgentPanel';
 import type { CoherenceResult } from '../WorkspaceContext';
@@ -19,12 +18,11 @@ export interface DraftProgress {
 
 interface SkeletonPhaseProps {
   skeleton: {
-    sections?: SkeletonSection[];
+    raw_text?: string;
     flagged_sections?: string[];
     title_suggestion?: string;
     narrative_arc?: string;
     key_messages?: string[];
-    raw_text?: string;
   };
   onSkeletonChange: (skeleton: Record<string, unknown>) => void;
   onGenerateDraft: (flaggedSections: string[]) => void;
@@ -48,52 +46,13 @@ const PHASE_LABELS: Record<DraftProgress['phase'], string> = {
   complete: 'Draft complete',
 };
 
-function parseSectionsFromRawText(rawText: string): SkeletonSection[] {
-  const sections: SkeletonSection[] = [];
-  const lines = rawText.split('\n');
-  let currentName: string | null = null;
-  let currentLines: string[] = [];
-
-  for (const line of lines) {
-    if (line.startsWith('## ')) {
-      if (currentName !== null) {
-        sections.push({
-          name: currentName,
-          type: 'other',
-          content: currentLines.join('\n').trim(),
-          requirements: '',
-          word_limit: null,
-          priority: 'medium',
-          order: sections.length,
-        });
-      }
-      currentName = line.slice(3).trim();
-      currentLines = [];
-    } else if (currentName !== null) {
-      currentLines.push(line);
-    }
-  }
-  if (currentName !== null) {
-    sections.push({
-      name: currentName,
-      type: 'other',
-      content: currentLines.join('\n').trim(),
-      requirements: '',
-      word_limit: null,
-      priority: 'medium',
-      order: sections.length,
-    });
-  }
-  return sections;
-}
-
 export default function SkeletonPhase({
   skeleton,
   onSkeletonChange,
   onGenerateDraft,
   generating,
   draftProgress,
-  onSelectionChange,
+  onSelectionChange: _onSelectionChange,
   metaAgentEvents = [],
   agentQuestions = [],
   coherenceResult,
@@ -105,32 +64,18 @@ export default function SkeletonPhase({
   const [editingTitle, setEditingTitle] = useState(false);
   const [titleDraft, setTitleDraft] = useState(skeleton.title_suggestion || '');
 
-  // Derive sections: prefer skeleton.sections; fall back to parsing raw_text
-  const sections: SkeletonSection[] = (() => {
-    if (skeleton.sections && skeleton.sections.length > 0) return skeleton.sections;
-    if (skeleton.raw_text) return parseSectionsFromRawText(skeleton.raw_text);
-    return [];
-  })();
-
+  const rawText = skeleton.raw_text || '';
   const flaggedSections: string[] = (skeleton.flagged_sections as string[]) || [];
-  const hasSections = sections.length > 0;
+  const hasContent = rawText.trim().length > 0;
   const flagCount = flaggedSections.length;
-
-  // Migrate raw_text-only skeleton to sections on first load
-  useEffect(() => {
-    if (!skeleton.sections?.length && skeleton.raw_text && sections.length > 0) {
-      onSkeletonChange({ ...skeleton, sections, raw_text: undefined });
-    }
-  // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []);
 
   const commitTitle = () => {
     setEditingTitle(false);
     onSkeletonChange({ ...skeleton, title_suggestion: titleDraft });
   };
 
-  const handleSectionsChange = (updated: SkeletonSection[]) => {
-    onSkeletonChange({ ...skeleton, sections: updated });
+  const handleRawTextChange = (text: string) => {
+    onSkeletonChange({ ...skeleton, raw_text: text });
   };
 
   const handleFlaggedChange = (names: string[]) => {
@@ -209,7 +154,7 @@ export default function SkeletonPhase({
           )}
 
           {/* Flag hint */}
-          {hasSections && !generating && (
+          {hasContent && !generating && (
             <div className="flex items-center gap-1.5 text-xs text-amber-600 bg-amber-50 border border-amber-100 rounded-md px-3 py-2">
               <Star className="w-3 h-3 fill-amber-400 text-amber-400 shrink-0" />
               <span>
@@ -221,18 +166,18 @@ export default function SkeletonPhase({
           {/* Section divider */}
           <div className="border-t border-gray-200 pt-2" />
 
-          {/* Structured skeleton editor */}
-          {hasSections ? (
+          {/* Single document editor */}
+          {hasContent ? (
             <SkeletonEditor
-              sections={sections}
-              onChange={handleSectionsChange}
+              rawText={rawText}
+              onChange={handleRawTextChange}
               flaggedSections={flaggedSections}
               onFlaggedChange={handleFlaggedChange}
             />
           ) : (
             <div className="flex flex-col items-center justify-center py-16 text-center text-gray-400 space-y-3">
               <BookOpen className="w-8 h-8 text-gray-200" />
-              <p className="text-sm">No skeleton sections yet. Generate a skeleton from the Idea tab to get started.</p>
+              <p className="text-sm">No skeleton yet. Generate a skeleton from the Idea tab to get started.</p>
             </div>
           )}
 
@@ -264,7 +209,7 @@ export default function SkeletonPhase({
             </div>
           )}
 
-          {/* Meta-agent activity panel — shown during and after generation */}
+          {/* Meta-agent activity panel */}
           {(metaAgentEvents.length > 0 || agentQuestions.length > 0 || coherenceResult) && (
             <div className="pt-4">
               <MetaAgentPanel
@@ -302,7 +247,7 @@ export default function SkeletonPhase({
           )}
           <button
             onClick={handleGenerateDraft}
-            disabled={!hasSections || generating}
+            disabled={!hasContent || generating}
             className="flex items-center gap-2 bg-indigo-600 text-white text-sm px-5 py-2.5 rounded-lg hover:bg-indigo-700 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
           >
             {generating ? <Loader2 className="w-4 h-4 animate-spin" /> : <Sparkles className="w-4 h-4" />}

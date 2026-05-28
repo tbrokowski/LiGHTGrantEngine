@@ -19,13 +19,11 @@ from app.ai.agents.research_agent import gather_section_evidence
 from app.ai.agents.section_drafter import draft_section
 from app.ai.agents.style_profiler import build_style_profile
 from app.ai.agents.style_reviewer import review_style
-from app.ai.agents.citation_agent import find_citations_for_claims
 from app.ai.context.grant_context import (
     GrantContextManager,
     insert_section_content,
     parse_document_sections,
     skeleton_to_html,
-    summarize_sections,
 )
 from app.ai.rag.retriever import (
     retrieve_archive_style_fingerprints,
