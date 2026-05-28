@@ -442,21 +442,23 @@ export interface GrantComment {
   parent_id?: string | null;
   resolved: boolean;
   google_doc_comment_id?: string | null;
+  document_id: string;
   created_at: string;
   updated_at: string;
 }
 
 export const grantComments = {
-  list: (grantId: string) =>
-    api.get<GrantComment[]>(`/grants/${grantId}/comments`),
-  add: (grantId: string, data: { text: string; anchor_text?: string; parent_id?: string }) =>
-    api.post<GrantComment>(`/grants/${grantId}/comments`, data),
+  /** document_id defaults to "draft" — the main editor. Pass a tab id for new documents. */
+  list: (grantId: string, documentId = 'draft') =>
+    api.get<GrantComment[]>(`/grants/${grantId}/comments`, { params: { document_id: documentId } }),
+  add: (grantId: string, data: { text: string; anchor_text?: string; parent_id?: string; document_id?: string }) =>
+    api.post<GrantComment>(`/grants/${grantId}/comments`, { ...data, document_id: data.document_id ?? 'draft' }),
   update: (grantId: string, commentId: string, data: { text?: string; resolved?: boolean }) =>
     api.patch<GrantComment>(`/grants/${grantId}/comments/${commentId}`, data),
   delete: (grantId: string, commentId: string) =>
     api.delete(`/grants/${grantId}/comments/${commentId}`),
-  sync: (grantId: string) =>
-    api.post<GrantComment[]>(`/grants/${grantId}/comments/sync`),
+  sync: (grantId: string, documentId = 'draft') =>
+    api.post<GrantComment[]>(`/grants/${grantId}/comments/sync`, null, { params: { document_id: documentId } }),
 };
 
 // ── Streaming AI chat (uses native fetch for SSE) ─────────────────────────────

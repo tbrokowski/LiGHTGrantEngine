@@ -22,3 +22,5 @@ class Comment(Base):
     anchor_text: Mapped[str | None] = mapped_column(Text, nullable=True)  # highlighted text the comment is anchored to
     resolved: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False)
     google_doc_comment_id: Mapped[str | None] = mapped_column(String, nullable=True, index=True)
+    # Which document within the grant these comments belong to ("draft" for main editor, tab id for new documents)
+    document_id: Mapped[str] = mapped_column(String(255), nullable=False, server_default="draft", index=True)

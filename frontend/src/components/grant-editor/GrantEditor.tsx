@@ -2,6 +2,7 @@
 import { useState, useCallback, useRef, useEffect } from 'react';
 import { toast } from 'sonner';
 import { grants, grantWriting, streamDraftGeneration } from '@/lib/api';
+
 import {
   startGeneration,
   getInFlight,
@@ -13,14 +14,10 @@ import {
 } from '@/lib/skeletonGenerationStore';
 import UnifiedWorkspace from './UnifiedWorkspace';
 import AIChatPanel from './AIChatPanel';
-import CommentsPanel from './CommentsPanel';
 import WorkspaceContext, { type SyncState, type WorkspaceCitation } from './WorkspaceContext';
 import type { SkeletonSection } from './SkeletonEditor';
-import {
-  AlertCircle, Sparkles, MessageCircle,
-} from 'lucide-react';
+import { AlertCircle, Sparkles } from 'lucide-react';
 import type { PanelTabType } from './split-view/types';
-import { grantComments } from '@/lib/api';
 
 interface GrantDetail {
   id: string;
@@ -83,7 +80,6 @@ export default function GrantEditor({ grant, onGrantUpdate, onHeadingsChange }: 
 
   // ── AI sidebar + Comments panel ───────────────────────────────────────────────
   const [aiOpen, setAiOpen] = useState(false);
-  const [commentsOpen, setCommentsOpen] = useState(false);
   const [aiWidth, setAiWidth] = useState<number>(() => {
     if (typeof window === 'undefined') return 340;
     return parseInt(localStorage.getItem(`aiSidebarWidth:${grant.id}`) || '340');
@@ -191,18 +187,6 @@ export default function GrantEditor({ grant, onGrantUpdate, onHeadingsChange }: 
         autoSyncInProgress.current = false;
       }
     }, 8000);
-    return () => clearInterval(interval);
-  }, [docLinked, grant.id]);
-
-  // ── Auto-sync Google Doc comments every 30s (separate interval) ───────────────
-  // Comments change far less often than document content, so a longer interval
-  // keeps Google Drive API call volume low while still feeling live.
-  useEffect(() => {
-    if (!docLinked) return;
-    const interval = setInterval(() => {
-      if (document.visibilityState !== 'visible') return;
-      grantComments.sync(grant.id).catch(() => {});
-    }, 30000);
     return () => clearInterval(interval);
   }, [docLinked, grant.id]);
 
@@ -468,19 +452,6 @@ export default function GrantEditor({ grant, onGrantUpdate, onHeadingsChange }: 
 
           {/* Right: status + controls */}
           <div className="flex items-center gap-2 flex-shrink-0">
-            {/* Comments toggle */}
-            <button
-              onClick={() => setCommentsOpen((v) => !v)}
-              title={commentsOpen ? 'Hide Comments' : 'Show Comments'}
-              className={`p-1.5 rounded-lg transition-colors ${
-                commentsOpen
-                  ? 'bg-indigo-100 text-indigo-600'
-                  : 'text-gray-400 hover:bg-gray-100 hover:text-indigo-600'
-              }`}
-            >
-              <MessageCircle className="w-4 h-4" />
-            </button>
-
             {/* AI sidebar toggle */}
             <button
               onClick={() => setAiOpen((v) => !v)}
@@ -515,13 +486,6 @@ export default function GrantEditor({ grant, onGrantUpdate, onHeadingsChange }: 
               openPanelRef={openPanelRef}
             />
           </div>
-
-          {/* Comments panel */}
-          {commentsOpen && (
-            <div className="flex flex-shrink-0 overflow-hidden w-72 border-l border-gray-200">
-              <CommentsPanel grantId={grant.id} />
-            </div>
-          )}
 
           {/* AI sidebar */}
           {aiOpen && (

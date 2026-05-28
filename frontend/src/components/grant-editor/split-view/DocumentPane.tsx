@@ -5,6 +5,7 @@ import {
   X, Plus, FileText, Lightbulb, LayoutList, Globe,
   FilePlus, FileSearch, ChevronDown, Columns2,
   CloudUpload, CloudDownload, Check, Loader2, Link2, ExternalLink,
+  MessageCircle,
 } from 'lucide-react';
 import SingleDocEditor from '../SingleDocEditor';
 import SkeletonEditor from '../SkeletonEditor';
@@ -12,6 +13,7 @@ import IdeaPhase from '../phases/IdeaPhase';
 import SkeletonPhase from '../phases/SkeletonPhase';
 import WebBrowserPane from './WebBrowserPane';
 import NewDocumentPane from './NewDocumentPane';
+import CommentsPanel from '../CommentsPanel';
 import { useWorkspace } from '../WorkspaceContext';
 import { grants } from '@/lib/api';
 import type { PanelConfig, PanelTab, PanelTabType } from './types';
@@ -61,6 +63,7 @@ export default function DocumentPane({
   const [filesLoading, setFilesLoading] = useState(false);
   const [renamingTabId, setRenamingTabId] = useState<string | null>(null);
   const [renameValue, setRenameValue] = useState('');
+  const [commentsOpen, setCommentsOpen] = useState(false);
   const renameInputRef = useRef<HTMLInputElement>(null);
   const triggerRef = useRef<HTMLButtonElement>(null);
   const pickerRef = useRef<HTMLDivElement>(null);
@@ -388,7 +391,7 @@ export default function DocumentPane({
         </div>
       )}
 
-      {/* Google Docs sub-toolbar — only for draft editor tab */}
+      {/* Google Docs + Comments sub-toolbar — editor tab */}
       {activeTab?.type === 'editor' && (
         <GoogleDocsSubToolbar
           grantId={grantId}
@@ -401,12 +404,41 @@ export default function DocumentPane({
           onDocLinked={workspace.onDocLinked}
           onPushToDoc={workspace.onPushToDoc}
           onPullFromDoc={workspace.onPullFromDoc}
+          commentsOpen={commentsOpen}
+          onToggleComments={() => setCommentsOpen((v) => !v)}
         />
       )}
 
-      {/* Content area */}
+      {/* Comments sub-toolbar for new-document tabs */}
+      {activeTab?.type === 'new-document' && (
+        <div className="flex-shrink-0 flex items-center justify-end gap-2 px-3 py-1 border-b border-gray-100 bg-gray-50">
+          <button
+            onClick={() => setCommentsOpen((v) => !v)}
+            title={commentsOpen ? 'Hide Comments' : 'Show Comments'}
+            className={`flex items-center gap-1 text-xs px-2 py-0.5 rounded transition-colors ${
+              commentsOpen ? 'bg-indigo-100 text-indigo-600' : 'text-gray-400 hover:text-indigo-600 hover:bg-gray-100'
+            }`}
+          >
+            <MessageCircle className="w-3 h-3" />
+            Comments
+          </button>
+        </div>
+      )}
+
+      {/* Content area + inline comments sidebar */}
       <div className="flex flex-1 overflow-hidden">
-        {renderContent()}
+        <div className="flex flex-col flex-1 overflow-hidden">
+          {renderContent()}
+        </div>
+        {commentsOpen && (activeTab?.type === 'editor' || activeTab?.type === 'new-document') && (
+          <div className="w-64 flex-shrink-0 border-l border-gray-200 overflow-hidden">
+            <CommentsPanel
+              grantId={grantId}
+              documentId={activeTab.type === 'editor' ? 'draft' : activeTab.id}
+              onClose={() => setCommentsOpen(false)}
+            />
+          </div>
+        )}
       </div>
     </div>
   );
@@ -424,11 +456,13 @@ interface GoogleDocsSubToolbarProps {
   onDocLinked: (docId: string, url: string) => void;
   onPushToDoc: () => void;
   onPullFromDoc: () => void;
+  commentsOpen: boolean;
+  onToggleComments: () => void;
 }
 
 function GoogleDocsSubToolbar({
   grantId, docLinked, docUrl, syncState, wordCount, charCount,
-  onDocLinked, onPushToDoc, onPullFromDoc,
+  onDocLinked, onPushToDoc, onPullFromDoc, commentsOpen, onToggleComments,
 }: GoogleDocsSubToolbarProps) {
   const [linkMode, setLinkMode] = useState<'none' | 'link-input'>('none');
   const [linkUrl, setLinkUrl] = useState('');
@@ -548,10 +582,21 @@ function GoogleDocsSubToolbar({
         )}
       </div>
 
-      {/* Right: word/char count */}
-      <span className="text-gray-400 flex-shrink-0">
-        {wordCount.toLocaleString()} words · {charCount.toLocaleString()} chars
-      </span>
+      {/* Right: word/char count + comments toggle */}
+      <div className="flex items-center gap-2 flex-shrink-0">
+        <span className="text-gray-400">
+          {wordCount.toLocaleString()} words · {charCount.toLocaleString()} chars
+        </span>
+        <button
+          onClick={onToggleComments}
+          title={commentsOpen ? 'Hide Comments' : 'Show Comments'}
+          className={`flex items-center gap-1 px-1.5 py-0.5 rounded transition-colors ${
+            commentsOpen ? 'bg-indigo-100 text-indigo-600' : 'text-gray-400 hover:text-indigo-600 hover:bg-gray-100'
+          }`}
+        >
+          <MessageCircle className="w-3 h-3" />
+        </button>
+      </div>
     </div>
   );
 }

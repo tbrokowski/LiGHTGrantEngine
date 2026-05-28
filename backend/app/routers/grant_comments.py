@@ -5,7 +5,7 @@ import uuid
 from datetime import datetime
 from typing import Optional
 
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Depends, HTTPException, Query
 from pydantic import BaseModel
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -31,6 +31,7 @@ class CommentOut(BaseModel):
     parent_id: Optional[str] = None
     resolved: bool
     google_doc_comment_id: Optional[str] = None
+    document_id: str = "draft"
     created_at: datetime
     updated_at: datetime
 
@@ -42,6 +43,7 @@ class CommentCreate(BaseModel):
     text: str
     anchor_text: Optional[str] = None
     parent_id: Optional[str] = None
+    document_id: str = "draft"
 
 
 class CommentUpdate(BaseModel):
@@ -76,13 +78,18 @@ async def _get_user_google_token(user: User, db: AsyncSession) -> str:
 @router.get("/{grant_id}/comments", response_model=list[CommentOut])
 async def list_comments(
     grant_id: str,
+    document_id: str = Query(default="draft"),
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ):
-    """List all grant-editor comments for a grant."""
+    """List grant-editor comments for a specific document within a grant."""
     result = await db.execute(
         select(Comment)
-        .where(Comment.entity_type == "grant", Comment.entity_id == grant_id)
+        .where(
+            Comment.entity_type == "grant",
+            Comment.entity_id == grant_id,
+            Comment.document_id == document_id,
+        )
         .order_by(Comment.created_at)
     )
     return result.scalars().all()
@@ -107,6 +114,7 @@ async def create_comment(
         anchor_text=body.anchor_text,
         parent_id=body.parent_id,
         resolved=False,
+        document_id=body.document_id,
     )
 
     # Optionally mirror to Google Doc if one is linked
@@ -187,20 +195,25 @@ async def delete_comment(
 @router.post("/{grant_id}/comments/sync", response_model=list[CommentOut])
 async def sync_comments(
     grant_id: str,
+    document_id: str = Query(default="draft"),
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ):
     """
     Pull comments from the linked Google Doc, upsert locally, and return the
-    merged list.  Creates new local comments for Google-originated comments;
-    ignores already-synced ones.
+    merged list for the given document.  Only the "draft" document syncs with
+    Google Docs; other documents return local comments only.
     """
     grant = await _get_grant(grant_id, db)
-    if not grant.google_doc_id:
-        # No doc linked — just return existing local comments
-        result = await db.execute(
-            select(Comment).where(Comment.entity_type == "grant", Comment.entity_id == grant_id)
-        )
+
+    base_filter = (
+        Comment.entity_type == "grant",
+        Comment.entity_id == grant_id,
+        Comment.document_id == document_id,
+    )
+
+    if not grant.google_doc_id or document_id != "draft":
+        result = await db.execute(select(Comment).where(*base_filter))
         return result.scalars().all()
 
     try:
@@ -208,10 +221,7 @@ async def sync_comments(
         from app.services.google_comments import list_doc_comments
         remote_comments = list_doc_comments(grant.google_doc_id, access_token)
     except Exception:
-        # If Drive fails, return existing comments silently
-        result = await db.execute(
-            select(Comment).where(Comment.entity_type == "grant", Comment.entity_id == grant_id)
-        )
+        result = await db.execute(select(Comment).where(*base_filter))
         return result.scalars().all()
 
     for rc in remote_comments:
@@ -219,35 +229,31 @@ async def sync_comments(
         if not gdoc_id:
             continue
 
-        # Check if we already have this comment
         existing = await db.execute(
             select(Comment).where(Comment.google_doc_comment_id == gdoc_id)
         )
 
         if local := existing.scalar_one_or_none():
-            # Update resolved status if Google resolved it
             if rc.get("resolved") and not local.resolved:
                 local.resolved = True
         else:
-            # Import new comment from Google Doc
             author_name = (rc.get("author") or {}).get("displayName", "Google Doc")
             new_comment = Comment(
                 id=str(uuid.uuid4()),
                 entity_type="grant",
                 entity_id=grant_id,
-                author_id=current_user.id,  # attribute to current user as importer
+                author_id=current_user.id,
                 text=f"[{author_name}]: {rc.get('content', '')}",
                 anchor_text=rc.get("anchor"),
                 resolved=rc.get("resolved", False),
                 google_doc_comment_id=gdoc_id,
+                document_id="draft",
             )
             db.add(new_comment)
 
     await db.commit()
 
     result = await db.execute(
-        select(Comment)
-        .where(Comment.entity_type == "grant", Comment.entity_id == grant_id)
-        .order_by(Comment.created_at)
+        select(Comment).where(*base_filter).order_by(Comment.created_at)
     )
     return result.scalars().all()

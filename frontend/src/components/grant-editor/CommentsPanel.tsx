@@ -1,15 +1,18 @@
 'use client';
 
 import { useState, useEffect, useRef } from 'react';
-import { MessageCircle, Check, Trash2, Send, ChevronDown, ChevronRight } from 'lucide-react';
+import { MessageCircle, Check, Trash2, Send, ChevronDown, ChevronRight, X } from 'lucide-react';
 import { grantComments, type GrantComment } from '@/lib/api';
 import { useWorkspace } from './WorkspaceContext';
 
 interface CommentsPanelProps {
   grantId: string;
+  /** "draft" for main editor, or the tab id for new-document panels */
+  documentId?: string;
+  onClose?: () => void;
 }
 
-export default function CommentsPanel({ grantId }: CommentsPanelProps) {
+export default function CommentsPanel({ grantId, documentId = 'draft', onClose }: CommentsPanelProps) {
   const { selectedText } = useWorkspace();
   const [comments, setComments] = useState<GrantComment[]>([]);
   const [newText, setNewText] = useState('');
@@ -20,12 +23,22 @@ export default function CommentsPanel({ grantId }: CommentsPanelProps) {
 
   const load = async () => {
     try {
-      const res = await grantComments.list(grantId);
+      const res = await grantComments.list(grantId, documentId);
       setComments(res.data);
     } catch { /* ignore */ }
   };
 
-  useEffect(() => { void load(); }, [grantId]);
+  useEffect(() => { void load(); }, [grantId, documentId]);
+
+  // Auto-sync every 30s
+  useEffect(() => {
+    const interval = setInterval(() => {
+      if (document.visibilityState === 'visible') {
+        grantComments.sync(grantId, documentId).then((res) => setComments(res.data)).catch(() => {});
+      }
+    }, 30000);
+    return () => clearInterval(interval);
+  }, [grantId, documentId]);
 
   // When selected text changes, pre-fill the anchor in the textarea placeholder
   useEffect(() => {
@@ -41,6 +54,7 @@ export default function CommentsPanel({ grantId }: CommentsPanelProps) {
       const res = await grantComments.add(grantId, {
         text: newText.trim(),
         anchor_text: selectedText || undefined,
+        document_id: documentId,
       });
       setComments((prev) => [...prev, res.data]);
       setNewText('');
@@ -67,7 +81,7 @@ export default function CommentsPanel({ grantId }: CommentsPanelProps) {
     const text = (replyTexts[parentId] || '').trim();
     if (!text) return;
     try {
-      const res = await grantComments.add(grantId, { text, parent_id: parentId });
+      const res = await grantComments.add(grantId, { text, parent_id: parentId, document_id: documentId });
       setComments((prev) => [...prev, res.data]);
       setReplyTexts((prev) => ({ ...prev, [parentId]: '' }));
     } catch { /* ignore */ }
@@ -93,7 +107,12 @@ export default function CommentsPanel({ grantId }: CommentsPanelProps) {
           <MessageCircle className="w-4 h-4 text-indigo-500" />
           <span className="text-xs font-semibold text-gray-800">Comments</span>
           {topLevel.length > 0 && (
-            <span className="ml-auto text-[10px] text-gray-400">{topLevel.filter((c) => !c.resolved).length} open</span>
+            <span className="text-[10px] text-gray-400">{topLevel.filter((c) => !c.resolved).length} open</span>
+          )}
+          {onClose && (
+            <button onClick={onClose} className="ml-auto text-gray-400 hover:text-gray-600 transition-colors" title="Close comments">
+              <X className="w-3.5 h-3.5" />
+            </button>
           )}
         </div>
       </div>
