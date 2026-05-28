@@ -430,14 +430,10 @@ export const ai = {
   }) => api.post('/ai/improve-selection', data),
 };
 
-// ── Steel Browser sessions (in-editor live browser pane) ─────────────────────
-export const browserSession = {
-  create: () =>
-    api.post<{ session_id: string; debug_url: string }>('/browser/session'),
-  release: (sessionId: string) =>
-    api.delete(`/browser/session/${sessionId}`),
-  navigate: (sessionId: string, url: string) =>
-    api.post(`/browser/session/${sessionId}/navigate`, { url }),
+// ── Web proxy (in-editor browser pane) ───────────────────────────────────────
+export const proxy = {
+  fetchPage: (url: string) =>
+    api.get<{ html: string; title: string; url: string }>('/proxy/web', { params: { url } }),
 };
 
 // ── Grant editor comments ─────────────────────────────────────────────────────
@@ -467,7 +463,9 @@ export const grantComments = {
   delete: (grantId: string, commentId: string) =>
     api.delete(`/grants/${grantId}/comments/${commentId}`),
   sync: (grantId: string, documentId = 'draft') =>
-    api.post<GrantComment[]>(`/grants/${grantId}/comments/sync`, null, { params: { document_id: documentId } }),
+    api.post<{ comments: GrantComment[]; sync_error?: string | null; drive_scope_error?: boolean }>(
+      `/grants/${grantId}/comments/sync`, null, { params: { document_id: documentId } }
+    ),
 };
 
 // ── Streaming AI chat (uses native fetch for SSE) ─────────────────────────────

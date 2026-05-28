@@ -294,118 +294,70 @@ function GrantDetailContent() {
       )}
 
       {/* ── Header ─────────────────────────────────────────────────────────── */}
-      <div className="px-6 pt-5 pb-0 border-b border-gray-200 bg-white shrink-0">
+      <div className="px-6 pt-3 pb-0 border-b border-gray-200 bg-white shrink-0">
         <div className="max-w-7xl mx-auto">
 
-          {/* Row 1: breadcrumb + action links */}
-          <div className="flex items-center justify-between mb-3">
-            <div className="flex items-center gap-2 text-sm text-gray-400">
-              <Link href="/grants" className="hover:text-gray-700 transition-colors">Grants</Link>
-              <span className="text-gray-300">/</span>
-              <span className="text-gray-600 truncate max-w-xs">{grant.title}</span>
-            </div>
-            <div className="flex items-center gap-3 shrink-0">
-              {grant.call_url && (
-                <a href={grant.call_url} target="_blank" rel="noopener noreferrer"
-                  className="text-xs text-gray-500 hover:text-indigo-600 flex items-center gap-1 transition-colors">
-                  <svg className="w-3.5 h-3.5" fill="none" viewBox="0 0 16 16" stroke="currentColor" strokeWidth={1.5}>
-                    <path strokeLinecap="round" strokeLinejoin="round" d="M10 3h3v3m0-3L7 9M4 4H3a1 1 0 00-1 1v8a1 1 0 001 1h8a1 1 0 001-1v-1" />
-                  </svg>
-                  Call
-                </a>
-              )}
-              {grant.drive_folder_url && (
-                <a href={grant.drive_folder_url} target="_blank" rel="noopener noreferrer"
-                  className="text-xs text-gray-500 hover:text-indigo-600 flex items-center gap-1 transition-colors">
-                  <svg className="w-3.5 h-3.5" fill="none" viewBox="0 0 16 16" stroke="currentColor" strokeWidth={1.5}>
-                    <path strokeLinecap="round" strokeLinejoin="round" d="M2 4a1 1 0 011-1h4l2 2h4a1 1 0 011 1v6a1 1 0 01-1 1H3a1 1 0 01-1-1V4z" />
-                  </svg>
-                  Drive
-                </a>
-              )}
-              {grant.submission_portal_url && (
-                <a href={grant.submission_portal_url} target="_blank" rel="noopener noreferrer"
-                  className="text-xs text-gray-500 hover:text-indigo-600 transition-colors">
-                  Portal
-                </a>
-              )}
-            </div>
-          </div>
-
-          {/* Row 2: title + status + metadata */}
-          <div className="flex items-start justify-between gap-4 mb-3">
-            <div className="min-w-0 flex items-start gap-2.5">
-              {/* Color swatch / picker */}
-              <div className="relative shrink-0 mt-1">
-                <button
-                  type="button"
-                  title="Grant color"
-                  onClick={() => setShowColorPicker((v) => !v)}
-                  className="w-4 h-4 rounded-full border-2 border-white shadow ring-1 ring-gray-200 hover:ring-gray-400 transition-all mt-0.5"
-                  style={{ backgroundColor: grant.color ?? '#e5e7eb' }}
-                />
-                {showColorPicker && (
-                  <div className="absolute left-0 top-7 z-30 bg-white border border-gray-200 rounded-xl shadow-lg p-3 w-max">
-                    <GrantColorPicker value={grant.color} onChange={handleColorChange} label="" />
-                  </div>
-                )}
-              </div>
-              <div className="min-w-0">
-                <h1 className="text-lg font-semibold text-gray-900 leading-tight truncate">{grant.title}</h1>
-                <div className="flex items-center gap-2 flex-wrap mt-1">
-                  {grant.funder && <span className="text-sm text-gray-500">{grant.funder}</span>}
-                  {grant.program && (
-                    <>
-                      <span className="text-gray-300 text-sm">·</span>
-                      <span className="text-sm text-gray-400">{grant.program}</span>
-                    </>
-                  )}
+          {/* Single row: color swatch + title + funder + metadata + status + tab nav */}
+          <div className="flex items-center gap-3 min-w-0">
+            {/* Color swatch / picker */}
+            <div className="relative shrink-0">
+              <button
+                type="button"
+                title="Grant color"
+                onClick={() => setShowColorPicker((v) => !v)}
+                className="w-3.5 h-3.5 rounded-full border-2 border-white shadow ring-1 ring-gray-200 hover:ring-gray-400 transition-all"
+                style={{ backgroundColor: grant.color ?? '#e5e7eb' }}
+              />
+              {showColorPicker && (
+                <div className="absolute left-0 top-6 z-30 bg-white border border-gray-200 rounded-xl shadow-lg p-3 w-max">
+                  <GrantColorPicker value={grant.color} onChange={handleColorChange} label="" />
                 </div>
-              </div>
+              )}
             </div>
-            <div className="shrink-0 pt-0.5">
+
+            {/* Title + funder */}
+            <div className="min-w-0 flex items-baseline gap-2 shrink-0 max-w-[260px]">
+              <h1 className="text-sm font-semibold text-gray-900 truncate leading-none">{grant.title}</h1>
+              {grant.funder && (
+                <span className="text-xs text-gray-400 truncate shrink-0">{grant.funder}</span>
+              )}
+            </div>
+
+            {/* Metadata chips */}
+            <div className="hidden md:flex items-center gap-x-3 text-xs shrink-0">
+              {grant.external_deadline && (
+                <DeadlineChip label="Deadline" date={grant.external_deadline} />
+              )}
+              {grant.requested_amount != null && (
+                <span className="text-gray-400">
+                  {grant.currency ?? 'USD'} {grant.requested_amount.toLocaleString()}
+                </span>
+              )}
+            </div>
+
+            {/* Status + external links */}
+            <div className="hidden md:flex items-center gap-2 shrink-0">
               <StatusDropdown
                 grantId={id}
                 status={grant.status}
                 onStatusChange={handleStatusChange}
                 readOnly={!isGrantEditor}
               />
+              {grant.call_url && (
+                <a href={grant.call_url} target="_blank" rel="noopener noreferrer"
+                  className="text-xs text-gray-400 hover:text-indigo-600 transition-colors">Call</a>
+              )}
+              {grant.drive_folder_url && (
+                <a href={grant.drive_folder_url} target="_blank" rel="noopener noreferrer"
+                  className="text-xs text-gray-400 hover:text-indigo-600 transition-colors">Drive</a>
+              )}
+            </div>
+
+            {/* Tab nav — inline, right side */}
+            <div className="ml-auto flex-shrink-0">
+              <WorkspaceNav activeTab={activeTab} onChange={handleTabChange} compact />
             </div>
           </div>
-
-          {/* Row 3: metadata strip */}
-          <div className="flex flex-wrap items-center gap-x-4 gap-y-1 mb-3 text-xs">
-            {grant.pi_name && (
-              <span className="text-gray-500">
-                <span className="text-gray-400">PI </span>
-                <span className="font-medium text-gray-700">{grant.pi_name}</span>
-              </span>
-            )}
-            {grant.internal_deadline && (
-              <DeadlineChip label="Internal" date={grant.internal_deadline} />
-            )}
-            {grant.external_deadline && (
-              <DeadlineChip label="Deadline" date={grant.external_deadline} />
-            )}
-            {grant.requested_amount != null && (
-              <span className="text-gray-500">
-                <span className="text-gray-400">Amount </span>
-                <span className="font-medium text-gray-700">
-                  {grant.currency ?? 'USD'} {grant.requested_amount.toLocaleString()}
-                </span>
-              </span>
-            )}
-            {grant.priority && grant.priority !== 'medium' && (
-              <span className={`font-medium capitalize ${PRIORITY_COLORS[grant.priority] ?? 'text-gray-500'}`}>
-                {grant.priority}
-              </span>
-            )}
-          </div>
-        </div>
-
-        {/* Tab nav */}
-        <div className="max-w-7xl mx-auto">
-          <WorkspaceNav activeTab={activeTab} onChange={handleTabChange} />
         </div>
       </div>
 

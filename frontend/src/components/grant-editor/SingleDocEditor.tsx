@@ -18,10 +18,17 @@ import CharacterCount from '@tiptap/extension-character-count';
 import Typography from '@tiptap/extension-typography';
 import Underline from '@tiptap/extension-underline';
 import TextAlign from '@tiptap/extension-text-align';
+import Image from '@tiptap/extension-image';
+import Table from '@tiptap/extension-table';
+import TableRow from '@tiptap/extension-table-row';
+import TableHeader from '@tiptap/extension-table-header';
+import TableCell from '@tiptap/extension-table-cell';
 import {
   Bold, Italic, UnderlineIcon, Highlighter, List, ListOrdered,
   AlignLeft, AlignCenter, Heading2, Heading3, Quote, Scissors,
+  TableIcon, ImageIcon,
 } from 'lucide-react';
+import { api } from '@/lib/api';
 
 // ── Page Break node ────────────────────────────────────────────────────────────
 // Renders as a dashed divider with a label. atom:true means it is selected and
@@ -43,17 +50,23 @@ const PageBreak = Node.create({
         'data-type': 'page-break',
         contenteditable: 'false',
         style: [
-          'border-top: 2px dashed #d1d5db',
-          'margin: 20px 0 16px',
-          'text-align: center',
+          'position: relative',
+          'margin: 32px -56px',
+          'border-top: 1px solid #e5e7eb',
+          'border-bottom: 1px solid #e5e7eb',
+          'height: 32px',
+          'background: #f9fafb',
+          'display: flex',
+          'align-items: center',
+          'justify-content: center',
+          'font-size: 10px',
           'color: #9ca3af',
-          'font-size: 11px',
-          'letter-spacing: 0.05em',
+          'letter-spacing: 0.1em',
           'user-select: none',
           'pointer-events: none',
         ].join('; '),
       },
-      '— Page Break —',
+      '— page break —',
     ];
   },
 
@@ -73,6 +86,8 @@ interface SingleDocEditorProps {
   onDocumentChange: (html: string, wordCount: number, headings: string[]) => void;
   onSelectionChange: (text: string) => void;
   onActiveSectionChange?: (sectionTitle: string) => void;
+  /** Grant ID — needed for image upload. If omitted, images are embedded as base64. */
+  grantId?: string;
 }
 
 const DEBOUNCE_MS = 600;
@@ -110,10 +125,13 @@ export default function SingleDocEditor({
   onDocumentChange,
   onSelectionChange,
   onActiveSectionChange,
+  grantId,
 }: SingleDocEditorProps) {
   const changeTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const lastHtml = useRef(documentHtml);
   const [selectionStats, setSelectionStats] = useState<{ words: number; chars: number } | null>(null);
+  const grantIdRef = useRef(grantId);
+  useEffect(() => { grantIdRef.current = grantId; }, [grantId]);
 
   const editor = useEditor({
     extensions: [
@@ -131,6 +149,11 @@ export default function SingleDocEditor({
       Typography,
       Underline,
       TextAlign.configure({ types: ['heading', 'paragraph'] }),
+      Image.configure({ inline: false, allowBase64: true }),
+      Table.configure({ resizable: true }),
+      TableRow,
+      TableHeader,
+      TableCell,
     ],
     content: documentHtml || '',
     editorProps: {
@@ -140,8 +163,57 @@ export default function SingleDocEditor({
           'prose-headings:font-semibold prose-h2:text-base prose-h2:mt-8 prose-h2:mb-2',
           'prose-h2:border-b prose-h2:border-gray-200 prose-h2:pb-1',
           'prose-p:my-1',
+          'prose-table:border-collapse prose-td:border prose-td:border-gray-300 prose-td:p-1',
+          'prose-th:border prose-th:border-gray-300 prose-th:p-1 prose-th:bg-gray-50',
           'text-gray-800',
         ].join(' '),
+      },
+      handlePaste(view, event) {
+        const items = event.clipboardData?.items;
+        if (!items) return false;
+        for (const item of Array.from(items)) {
+          if (!item.type.startsWith('image/')) continue;
+          event.preventDefault();
+          const file = item.getAsFile();
+          if (!file) continue;
+          const currentGrantId = grantIdRef.current;
+          if (currentGrantId) {
+            const formData = new FormData();
+            formData.append('file', file);
+            api.post<{ url: string }>(`/grants/${currentGrantId}/docs/upload-image`, formData, {
+              headers: { 'Content-Type': 'multipart/form-data' },
+            }).then((res) => {
+              view.dispatch(view.state.tr.replaceSelectionWith(
+                view.state.schema.nodes.image.create({ src: res.data.url })
+              ));
+            }).catch(() => {
+              // Fallback: embed as base64 data URL
+              const reader = new FileReader();
+              reader.onload = (e) => {
+                const src = e.target?.result as string;
+                if (src) {
+                  view.dispatch(view.state.tr.replaceSelectionWith(
+                    view.state.schema.nodes.image.create({ src })
+                  ));
+                }
+              };
+              reader.readAsDataURL(file as Blob);
+            });
+          } else {
+            const reader = new FileReader();
+            reader.onload = (e) => {
+              const src = e.target?.result as string;
+              if (src) {
+                view.dispatch(view.state.tr.replaceSelectionWith(
+                  view.state.schema.nodes.image.create({ src })
+                ));
+              }
+            };
+            reader.readAsDataURL(file as Blob);
+          }
+          return true;
+        }
+        return false;
       },
     },
     onUpdate: ({ editor: ed }) => {
@@ -212,7 +284,7 @@ export default function SingleDocEditor({
   const wordCount = editor.storage.characterCount?.words() ?? 0;
 
   return (
-    <div className="flex flex-col h-full overflow-hidden bg-gray-100">
+    <div className="flex flex-col flex-1 min-h-0 overflow-hidden bg-gray-100">
       {/* Persistent formatting toolbar */}
       <div className="flex-shrink-0 flex items-center gap-0.5 px-3 py-1.5 border-b border-gray-200 flex-wrap bg-white shadow-sm">
         <ToolbarButton
@@ -303,6 +375,24 @@ export default function SingleDocEditor({
         >
           <Scissors className="w-3.5 h-3.5" />
         </ToolbarButton>
+        <div className="w-px h-4 bg-gray-200 mx-0.5" />
+        <ToolbarButton
+          onClick={() => editor.chain().focus().insertTable({ rows: 3, cols: 3, withHeaderRow: true }).run()}
+          active={editor.isActive('table')}
+          title="Insert table"
+        >
+          <TableIcon className="w-3.5 h-3.5" />
+        </ToolbarButton>
+        <ToolbarButton
+          onClick={() => {
+            const url = window.prompt('Image URL:');
+            if (url) editor.chain().focus().setImage({ src: url }).run();
+          }}
+          active={false}
+          title="Insert image"
+        >
+          <ImageIcon className="w-3.5 h-3.5" />
+        </ToolbarButton>
         <div className="flex-1" />
         {/* Stats: show selection counts when text is highlighted, doc totals otherwise */}
         <div className="flex items-center gap-1.5 text-xs pr-1">
@@ -323,7 +413,7 @@ export default function SingleDocEditor({
 
       {/* Document content area — centered paper card on gray background */}
       <div className="flex-1 overflow-y-auto bg-gray-100 py-8">
-        <div className="max-w-[800px] mx-auto bg-white shadow-sm rounded-sm px-14 py-12 min-h-[calc(100vh-12rem)]">
+        <div className="w-full max-w-[800px] mx-auto bg-white shadow-sm rounded-sm px-14 py-12 min-h-[calc(100vh-12rem)]">
           <EditorContent editor={editor} />
         </div>
       </div>

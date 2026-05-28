@@ -297,8 +297,8 @@ export default function NewDocumentPane({ grantId, docId, label }: NewDocumentPa
         </button>
       </div>
 
-      {/* Full-featured editor */}
-      <div className="flex flex-1 overflow-hidden">
+      {/* Full-featured editor — flex-col + min-h-0 gives SingleDocEditor a proper height context */}
+      <div className="flex flex-col flex-1 min-h-0">
         <SingleDocEditor
           documentHtml={documentHtml}
           onDocumentChange={handleDocumentChange}

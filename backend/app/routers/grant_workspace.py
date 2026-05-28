@@ -1945,3 +1945,32 @@ async def pull_content_from_doc(
         raise HTTPException(502, f"Google Docs API error: {exc}") from exc
 
     return {"ok": True, "content_html": html}
+
+
+@router.post("/{grant_id}/docs/upload-image")
+async def upload_editor_image(
+    grant_id: str,
+    file: UploadFile = File(...),
+    current_user: User = Depends(get_current_user),
+    _edit: None = Depends(grant_access(require_editor=True)),
+):
+    """Upload an image pasted into the editor and return a presigned URL."""
+    from app.services import storage
+
+    if not file.content_type or not file.content_type.startswith("image/"):
+        raise HTTPException(400, "Only image files are accepted")
+
+    ext = (file.filename or "image.png").rsplit(".", 1)[-1].lower()
+    allowed = {"png", "jpg", "jpeg", "gif", "webp", "svg"}
+    if ext not in allowed:
+        ext = "png"
+
+    key = f"grants/{grant_id}/editor-images/{uuid.uuid4()}.{ext}"
+    data = await file.read()
+    try:
+        storage.upload_file(key, data, content_type=file.content_type or "image/png")
+        url = storage.get_presigned_url(key, expires_in=86400 * 7)  # 7 days
+    except Exception as exc:
+        raise HTTPException(502, f"Storage error: {exc}") from exc
+
+    return {"url": url, "key": key}

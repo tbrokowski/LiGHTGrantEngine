@@ -196,7 +196,13 @@ async def delete_comment(
     return {"ok": True}
 
 
-@router.post("/{grant_id}/comments/sync", response_model=list[CommentOut])
+class SyncResult(BaseModel):
+    comments: list[CommentOut]
+    sync_error: Optional[str] = None
+    drive_scope_error: bool = False
+
+
+@router.post("/{grant_id}/comments/sync", response_model=SyncResult)
 async def sync_comments(
     grant_id: str,
     document_id: str = Query(default="draft"),
@@ -208,6 +214,9 @@ async def sync_comments(
     merged list for the given document.  Only the "draft" document syncs with
     Google Docs; other documents return local comments only.
     """
+    import logging
+    log = logging.getLogger(__name__)
+
     grant = await _get_grant(grant_id, db)
 
     base_filter = (
@@ -216,17 +225,35 @@ async def sync_comments(
         Comment.document_id == document_id,
     )
 
+    async def _local_comments() -> list[Comment]:
+        res = await db.execute(select(Comment).where(*base_filter).order_by(Comment.created_at))
+        return list(res.scalars().all())
+
     if not grant.google_doc_id or document_id != "draft":
-        result = await db.execute(select(Comment).where(*base_filter))
-        return result.scalars().all()
+        return SyncResult(comments=await _local_comments())
 
     try:
         access_token = await _get_user_google_token(current_user, db)
         from app.services.google_comments import list_doc_comments
         remote_comments = list_doc_comments(grant.google_doc_id, access_token)
-    except Exception:
-        result = await db.execute(select(Comment).where(*base_filter))
-        return result.scalars().all()
+    except HTTPException as exc:
+        # Token/scope error — surface it to the frontend
+        log.warning("Google token error syncing comments (grant=%s): %s", grant_id, exc.detail)
+        is_scope = "scope" in str(exc.detail).lower() or "permission" in str(exc.detail).lower()
+        return SyncResult(
+            comments=await _local_comments(),
+            sync_error=str(exc.detail),
+            drive_scope_error=is_scope,
+        )
+    except Exception as exc:
+        log.warning("Failed to sync Google Doc comments (grant=%s): %s", grant_id, exc, exc_info=True)
+        err = str(exc)
+        is_scope = any(k in err.lower() for k in ("403", "permission", "scope", "forbidden", "insufficient"))
+        return SyncResult(
+            comments=await _local_comments(),
+            sync_error=err,
+            drive_scope_error=is_scope,
+        )
 
     for rc in remote_comments:
         gdoc_id = rc.get("id")
@@ -257,7 +284,4 @@ async def sync_comments(
 
     await db.commit()
 
-    result = await db.execute(
-        select(Comment).where(*base_filter).order_by(Comment.created_at)
-    )
-    return result.scalars().all()
+    return SyncResult(comments=await _local_comments())

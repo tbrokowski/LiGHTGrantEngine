@@ -256,6 +256,56 @@ def push_to_doc(
     logger.info("Pushed content to Google Doc %s", doc_id)
 
 
+def _paragraph_elements_to_html(paragraph: dict, inline_objects: dict) -> str:
+    """Convert a Google Docs paragraph's elements list to an HTML string."""
+    inline_html = ""
+    for pe in paragraph.get("elements", []):
+        # Inline images
+        if "inlineObjectElement" in pe:
+            obj_id = pe["inlineObjectElement"].get("inlineObjectId")
+            obj = inline_objects.get(obj_id or "", {})
+            props = (
+                obj.get("inlineObjectProperties", {})
+                   .get("embeddedObject", {})
+            )
+            content_uri = props.get("imageProperties", {}).get("contentUri", "")
+            if content_uri:
+                inline_html += f'<img src="{content_uri}" style="max-width:100%;" />'
+            continue
+
+        text_run = pe.get("textRun")
+        if not text_run:
+            continue
+        text = text_run.get("content", "")
+        ts = text_run.get("textStyle", {})
+        if ts.get("bold"):
+            text = f"<strong>{text}</strong>"
+        if ts.get("italic"):
+            text = f"<em>{text}</em>"
+        if ts.get("underline"):
+            text = f"<u>{text}</u>"
+        inline_html += text
+    return inline_html.rstrip("\n")
+
+
+def _table_to_html(table: dict, inline_objects: dict) -> str:
+    """Convert a Google Docs table element to an HTML table string."""
+    rows_html = ""
+    for row in table.get("tableRows", []):
+        cells_html = ""
+        is_header = row.get("tableRowStyle", {}).get("minRowHeight") is None and rows_html == ""
+        for cell in row.get("tableCells", []):
+            cell_content = ""
+            for el in cell.get("content", []):
+                para = el.get("paragraph")
+                if para:
+                    cell_content += _paragraph_elements_to_html(para, inline_objects)
+            tag = "th" if is_header else "td"
+            cells_html += f"<{tag} style='border:1px solid #d1d5db;padding:4px 8px;'>{cell_content}</{tag}>"
+        rows_html += f"<tr>{cells_html}</tr>"
+    return f"<table style='border-collapse:collapse;width:100%;'>{rows_html}</table>"
+
+
 def pull_from_doc(
     doc_id: str,
     access_token: str,
@@ -270,10 +320,16 @@ def pull_from_doc(
     doc = docs_svc.documents().get(documentId=doc_id).execute()
     body = doc.get("body", {})
     content = body.get("content", [])
+    inline_objects = doc.get("inlineObjects", {})
 
     html_parts: list[str] = []
 
     for element in content:
+        # Tables
+        if "table" in element:
+            html_parts.append(_table_to_html(element["table"], inline_objects))
+            continue
+
         paragraph = element.get("paragraph")
         if not paragraph:
             continue
@@ -281,24 +337,9 @@ def pull_from_doc(
         style = paragraph.get("paragraphStyle", {}).get("namedStyleType", "NORMAL_TEXT")
         tag = _style_to_tag(style)
 
-        inline_text = ""
-        for pe in paragraph.get("elements", []):
-            text_run = pe.get("textRun")
-            if not text_run:
-                continue
-            text = text_run.get("content", "")
-            ts = text_run.get("textStyle", {})
-            if ts.get("bold"):
-                text = f"<strong>{text}</strong>"
-            if ts.get("italic"):
-                text = f"<em>{text}</em>"
-            if ts.get("underline"):
-                text = f"<u>{text}</u>"
-            inline_text += text
-
-        inline_text = inline_text.rstrip("\n")
-        if inline_text:
-            html_parts.append(f"<{tag}>{inline_text}</{tag}>")
+        inline_html = _paragraph_elements_to_html(paragraph, inline_objects)
+        if inline_html:
+            html_parts.append(f"<{tag}>{inline_html}</{tag}>")
 
     return "\n".join(html_parts)
 

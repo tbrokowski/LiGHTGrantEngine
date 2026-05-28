@@ -1,7 +1,10 @@
 'use client';
 
 import { useState, useEffect, useRef, useCallback } from 'react';
-import { MessageCircle, Check, Trash2, Send, ChevronDown, ChevronRight, X, RotateCw, Loader2 } from 'lucide-react';
+import {
+  MessageCircle, Check, Trash2, Send, ChevronDown, ChevronRight,
+  X, RotateCw, Loader2, AlertTriangle, WifiOff,
+} from 'lucide-react';
 import { grantComments, type GrantComment } from '@/lib/api';
 import { useWorkspace } from './WorkspaceContext';
 
@@ -13,29 +16,45 @@ interface CommentsPanelProps {
 }
 
 export default function CommentsPanel({ grantId, documentId = 'draft', onClose }: CommentsPanelProps) {
-  const { selectedText } = useWorkspace();
+  const { selectedText, onSelectionChange } = useWorkspace();
   const [comments, setComments] = useState<GrantComment[]>([]);
   const [newText, setNewText] = useState('');
   const [submitting, setSubmitting] = useState(false);
+  const [submissionError, setSubmissionError] = useState('');
   const [syncing, setSyncing] = useState(false);
+  const [syncError, setSyncError] = useState('');
+  const [driveScopeError, setDriveScopeError] = useState(false);
   const [lastSynced, setLastSynced] = useState<Date | null>(null);
   const [expandedIds, setExpandedIds] = useState<Set<string>>(new Set());
   const [replyTexts, setReplyTexts] = useState<Record<string, string>>({});
+  const [replyErrors, setReplyErrors] = useState<Record<string, string>>({});
   const textareaRef = useRef<HTMLTextAreaElement>(null);
 
   const doSync = useCallback(async () => {
     if (syncing) return;
     setSyncing(true);
+    setSyncError('');
+    setDriveScopeError(false);
     try {
       const res = await grantComments.sync(grantId, documentId);
-      setComments(res.data);
+      setComments(res.data.comments);
       setLastSynced(new Date());
-    } catch { /* ignore */ } finally {
+      if (res.data.sync_error) {
+        setSyncError(res.data.sync_error);
+        setDriveScopeError(res.data.drive_scope_error ?? false);
+      }
+    } catch (e: unknown) {
+      const msg =
+        (e as { response?: { data?: { detail?: string } } }).response?.data?.detail ||
+        (e as { message?: string }).message ||
+        'Sync failed';
+      setSyncError(msg);
+    } finally {
       setSyncing(false);
     }
   }, [grantId, documentId, syncing]);
 
-  // Initial load via sync (gets Google Doc comments too, not just local)
+  // Initial load
   useEffect(() => { void doSync(); }, [grantId, documentId]); // eslint-disable-line react-hooks/exhaustive-deps
 
   // Auto-sync every 30s
@@ -46,16 +65,15 @@ export default function CommentsPanel({ grantId, documentId = 'draft', onClose }
     return () => clearInterval(interval);
   }, [doSync]);
 
-  // When selected text changes, pre-fill the anchor in the textarea placeholder
+  // Focus textarea when text is selected
   useEffect(() => {
-    if (selectedText && textareaRef.current) {
-      textareaRef.current.focus();
-    }
+    if (selectedText && textareaRef.current) textareaRef.current.focus();
   }, [selectedText]);
 
   const handleAdd = async () => {
     if (!newText.trim()) return;
     setSubmitting(true);
+    setSubmissionError('');
     try {
       const res = await grantComments.add(grantId, {
         text: newText.trim(),
@@ -64,7 +82,14 @@ export default function CommentsPanel({ grantId, documentId = 'draft', onClose }
       });
       setComments((prev) => [...prev, res.data]);
       setNewText('');
-    } catch { /* ignore */ } finally {
+      if (selectedText) onSelectionChange('');
+    } catch (e: unknown) {
+      const msg =
+        (e as { response?: { data?: { detail?: string } } }).response?.data?.detail ||
+        (e as { message?: string }).message ||
+        'Failed to submit comment';
+      setSubmissionError(msg);
+    } finally {
       setSubmitting(false);
     }
   };
@@ -72,36 +97,55 @@ export default function CommentsPanel({ grantId, documentId = 'draft', onClose }
   const handleResolve = async (commentId: string) => {
     try {
       const res = await grantComments.update(grantId, commentId, { resolved: true });
-      setComments((prev) => prev.map((c) => c.id === commentId ? res.data : c));
-    } catch { /* ignore */ }
+      setComments((prev) => prev.map((c) => (c.id === commentId ? res.data : c)));
+    } catch (e: unknown) {
+      const msg =
+        (e as { response?: { data?: { detail?: string } } }).response?.data?.detail ||
+        'Failed to resolve';
+      setSubmissionError(msg);
+    }
   };
 
   const handleDelete = async (commentId: string) => {
     try {
       await grantComments.delete(grantId, commentId);
       setComments((prev) => prev.filter((c) => c.id !== commentId));
-    } catch { /* ignore */ }
+    } catch (e: unknown) {
+      const msg =
+        (e as { response?: { data?: { detail?: string } } }).response?.data?.detail ||
+        'Failed to delete';
+      setSubmissionError(msg);
+    }
   };
 
   const handleReply = async (parentId: string) => {
     const text = (replyTexts[parentId] || '').trim();
     if (!text) return;
+    setReplyErrors((prev) => ({ ...prev, [parentId]: '' }));
     try {
-      const res = await grantComments.add(grantId, { text, parent_id: parentId, document_id: documentId });
+      const res = await grantComments.add(grantId, {
+        text,
+        parent_id: parentId,
+        document_id: documentId,
+      });
       setComments((prev) => [...prev, res.data]);
       setReplyTexts((prev) => ({ ...prev, [parentId]: '' }));
-    } catch { /* ignore */ }
+    } catch (e: unknown) {
+      const msg =
+        (e as { response?: { data?: { detail?: string } } }).response?.data?.detail ||
+        'Failed to post reply';
+      setReplyErrors((prev) => ({ ...prev, [parentId]: msg }));
+    }
   };
 
   const toggleExpand = (id: string) => {
     setExpandedIds((prev) => {
       const next = new Set(prev);
-      if (next.has(id)) { next.delete(id); } else { next.add(id); }
+      if (next.has(id)) next.delete(id); else next.add(id);
       return next;
     });
   };
 
-  // Separate top-level from replies
   const topLevel = comments.filter((c) => !c.parent_id);
   const replies = (parentId: string) => comments.filter((c) => c.parent_id === parentId);
 
@@ -113,11 +157,16 @@ export default function CommentsPanel({ grantId, documentId = 'draft', onClose }
           <MessageCircle className="w-4 h-4 text-indigo-500" />
           <span className="text-xs font-semibold text-gray-800">Comments</span>
           {topLevel.length > 0 && (
-            <span className="text-[10px] text-gray-400">{topLevel.filter((c) => !c.resolved).length} open</span>
+            <span className="text-[10px] text-gray-400">
+              {topLevel.filter((c) => !c.resolved).length} open
+            </span>
           )}
           <div className="ml-auto flex items-center gap-1.5">
             {lastSynced && (
-              <span className="text-[9px] text-gray-400 hidden sm:block" title={`Last synced: ${lastSynced.toLocaleTimeString()}`}>
+              <span
+                className="text-[9px] text-gray-400 hidden sm:block"
+                title={`Last synced: ${lastSynced.toLocaleTimeString()}`}
+              >
                 {lastSynced.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
               </span>
             )}
@@ -127,15 +176,33 @@ export default function CommentsPanel({ grantId, documentId = 'draft', onClose }
               title="Sync from Google Doc"
               className="text-gray-400 hover:text-indigo-600 disabled:opacity-40 transition-colors"
             >
-              {syncing ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <RotateCw className="w-3.5 h-3.5" />}
+              {syncing
+                ? <Loader2 className="w-3.5 h-3.5 animate-spin" />
+                : <RotateCw className="w-3.5 h-3.5" />}
             </button>
             {onClose && (
-              <button onClick={onClose} className="text-gray-400 hover:text-gray-600 transition-colors" title="Close comments">
+              <button
+                onClick={onClose}
+                className="text-gray-400 hover:text-gray-600 transition-colors"
+                title="Close comments"
+              >
                 <X className="w-3.5 h-3.5" />
               </button>
             )}
           </div>
         </div>
+
+        {/* Sync error banner */}
+        {syncError && (
+          <div className="mt-2 flex items-start gap-1.5 text-[10px] text-amber-800 bg-amber-50 border border-amber-200 rounded px-2 py-1.5">
+            <WifiOff className="w-3 h-3 mt-0.5 flex-shrink-0 text-amber-500" />
+            <span>
+              {driveScopeError
+                ? 'Google Docs comment sync failed — your Google account may need to be re-authorized with comment permissions.'
+                : `Google Docs sync failed: ${syncError}`}
+            </span>
+          </div>
+        )}
       </div>
 
       {/* Thread list */}
@@ -160,25 +227,25 @@ export default function CommentsPanel({ grantId, documentId = 'draft', onClose }
                   : 'border-indigo-100 bg-indigo-50/30'
               }`}
             >
-              {/* Comment header */}
               <div className="flex items-start gap-2 px-3 py-2">
                 <div className="flex-1 min-w-0">
                   {comment.anchor_text && (
                     <p className="text-[10px] text-indigo-600 italic border-l-2 border-indigo-300 pl-1.5 mb-1 truncate">
-                      "{comment.anchor_text.slice(0, 60)}{comment.anchor_text.length > 60 ? '…' : ''}"
+                      &ldquo;{comment.anchor_text.slice(0, 60)}{comment.anchor_text.length > 60 ? '…' : ''}&rdquo;
                     </p>
                   )}
                   <p className="text-gray-700 leading-relaxed whitespace-pre-wrap">{comment.text}</p>
                   <p className="text-[10px] text-gray-400 mt-1">
-                    {new Date(comment.created_at).toLocaleString(undefined, { month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' })}
+                    {new Date(comment.created_at).toLocaleString(undefined, {
+                      month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit',
+                    })}
                   </p>
                 </div>
 
-                {/* Actions */}
                 <div className="flex flex-col gap-1 flex-shrink-0">
                   {!comment.resolved && (
                     <button
-                      onClick={() => handleResolve(comment.id)}
+                      onClick={() => void handleResolve(comment.id)}
                       title="Resolve"
                       className="p-0.5 text-gray-300 hover:text-green-500 transition-colors"
                     >
@@ -186,7 +253,7 @@ export default function CommentsPanel({ grantId, documentId = 'draft', onClose }
                     </button>
                   )}
                   <button
-                    onClick={() => handleDelete(comment.id)}
+                    onClick={() => void handleDelete(comment.id)}
                     title="Delete"
                     className="p-0.5 text-gray-300 hover:text-red-400 transition-colors"
                   >
@@ -195,7 +262,6 @@ export default function CommentsPanel({ grantId, documentId = 'draft', onClose }
                 </div>
               </div>
 
-              {/* Replies toggle */}
               {(threadReplies.length > 0 || !comment.resolved) && (
                 <div className="border-t border-gray-100 px-3 py-1.5">
                   {threadReplies.length > 0 && (
@@ -203,7 +269,9 @@ export default function CommentsPanel({ grantId, documentId = 'draft', onClose }
                       onClick={() => toggleExpand(comment.id)}
                       className="flex items-center gap-1 text-[10px] text-gray-400 hover:text-gray-600 mb-1"
                     >
-                      {isExpanded ? <ChevronDown className="w-3 h-3" /> : <ChevronRight className="w-3 h-3" />}
+                      {isExpanded
+                        ? <ChevronDown className="w-3 h-3" />
+                        : <ChevronRight className="w-3 h-3" />}
                       {threadReplies.length} {threadReplies.length === 1 ? 'reply' : 'replies'}
                     </button>
                   )}
@@ -212,29 +280,39 @@ export default function CommentsPanel({ grantId, documentId = 'draft', onClose }
                     <div key={reply.id} className="ml-3 border-l-2 border-gray-200 pl-2 mb-2">
                       <p className="text-[10px] text-gray-600 leading-relaxed">{reply.text}</p>
                       <p className="text-[10px] text-gray-300 mt-0.5">
-                        {new Date(reply.created_at).toLocaleString(undefined, { month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' })}
+                        {new Date(reply.created_at).toLocaleString(undefined, {
+                          month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit',
+                        })}
                       </p>
                     </div>
                   ))}
 
-                  {/* Reply box */}
                   {!comment.resolved && (
-                    <div className="flex gap-1.5 mt-1">
-                      <input
-                        type="text"
-                        value={replyTexts[comment.id] || ''}
-                        onChange={(e) => setReplyTexts((prev) => ({ ...prev, [comment.id]: e.target.value }))}
-                        onKeyDown={(e) => { if (e.key === 'Enter') void handleReply(comment.id); }}
-                        placeholder="Reply…"
-                        className="flex-1 text-[11px] border border-gray-200 rounded px-2 py-1 focus:outline-none focus:ring-1 focus:ring-indigo-300"
-                      />
-                      <button
-                        onClick={() => handleReply(comment.id)}
-                        disabled={!(replyTexts[comment.id] || '').trim()}
-                        className="p-1 bg-indigo-500 text-white rounded hover:bg-indigo-600 disabled:opacity-40 transition-colors"
-                      >
-                        <Send className="w-3 h-3" />
-                      </button>
+                    <div className="flex flex-col gap-1">
+                      <div className="flex gap-1.5">
+                        <input
+                          type="text"
+                          value={replyTexts[comment.id] || ''}
+                          onChange={(e) =>
+                            setReplyTexts((prev) => ({ ...prev, [comment.id]: e.target.value }))
+                          }
+                          onKeyDown={(e) => {
+                            if (e.key === 'Enter') void handleReply(comment.id);
+                          }}
+                          placeholder="Reply…"
+                          className="flex-1 text-[11px] border border-gray-200 rounded px-2 py-1 focus:outline-none focus:ring-1 focus:ring-indigo-300"
+                        />
+                        <button
+                          onClick={() => void handleReply(comment.id)}
+                          disabled={!(replyTexts[comment.id] || '').trim()}
+                          className="p-1 bg-indigo-500 text-white rounded hover:bg-indigo-600 disabled:opacity-40 transition-colors"
+                        >
+                          <Send className="w-3 h-3" />
+                        </button>
+                      </div>
+                      {replyErrors[comment.id] && (
+                        <p className="text-[10px] text-red-500">{replyErrors[comment.id]}</p>
+                      )}
                     </div>
                   )}
                 </div>
@@ -247,8 +325,17 @@ export default function CommentsPanel({ grantId, documentId = 'draft', onClose }
       {/* New comment input */}
       <div className="flex-shrink-0 p-3 border-t border-gray-100">
         {selectedText && (
-          <div className="mb-2 text-[10px] text-indigo-600 italic border-l-2 border-indigo-300 pl-2 truncate">
-            Anchoring to: "{selectedText.slice(0, 60)}{selectedText.length > 60 ? '…' : ''}"
+          <div className="mb-2 flex items-start gap-1.5">
+            <div className="flex-1 text-[10px] text-indigo-600 italic border-l-2 border-indigo-300 pl-2 truncate">
+              Commenting on: &ldquo;{selectedText.slice(0, 80)}{selectedText.length > 80 ? '…' : ''}&rdquo;
+            </div>
+            <button
+              onClick={() => onSelectionChange('')}
+              className="text-gray-400 hover:text-gray-600 transition-colors flex-shrink-0 mt-0.5"
+              title="Clear selection"
+            >
+              <X className="w-3 h-3" />
+            </button>
           </div>
         )}
         <div className="flex gap-2 rounded-lg border border-gray-200 focus-within:border-indigo-300 bg-white">
@@ -256,7 +343,9 @@ export default function CommentsPanel({ grantId, documentId = 'draft', onClose }
             ref={textareaRef}
             value={newText}
             onChange={(e) => setNewText(e.target.value)}
-            onKeyDown={(e) => { if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); void handleAdd(); } }}
+            onKeyDown={(e) => {
+              if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); void handleAdd(); }
+            }}
             placeholder={selectedText ? 'Comment on selected text…' : 'Add a comment…'}
             rows={2}
             className="flex-1 text-xs resize-none border-0 bg-transparent p-2 focus:outline-none placeholder-gray-400"
@@ -266,9 +355,21 @@ export default function CommentsPanel({ grantId, documentId = 'draft', onClose }
             disabled={!newText.trim() || submitting}
             className="self-end m-1.5 p-1.5 bg-indigo-600 text-white rounded-md hover:bg-indigo-700 disabled:opacity-40 transition-colors"
           >
-            <Send className="w-3 h-3" />
+            {submitting ? <Loader2 className="w-3 h-3 animate-spin" /> : <Send className="w-3 h-3" />}
           </button>
         </div>
+        {submissionError && (
+          <div className="mt-1.5 flex items-center gap-1 text-[10px] text-red-600 bg-red-50 border border-red-200 rounded px-2 py-1">
+            <AlertTriangle className="w-3 h-3 flex-shrink-0" />
+            <span>{submissionError}</span>
+            <button
+              onClick={() => setSubmissionError('')}
+              className="ml-auto text-red-400 hover:text-red-600"
+            >
+              <X className="w-3 h-3" />
+            </button>
+          </div>
+        )}
         <p className="text-[10px] text-gray-300 mt-1">Enter to send · Shift+Enter for new line</p>
       </div>
     </div>

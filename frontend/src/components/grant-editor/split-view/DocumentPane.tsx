@@ -343,7 +343,7 @@ export default function DocumentPane({
 
       case 'new-document':
         return (
-          <NewDocumentPane grantId={grantId} docId={activeTab.id} label={activeTab.label} />
+          <NewDocumentPane key={activeTab.id} grantId={grantId} docId={activeTab.id} label={activeTab.label} />
         );
 
       case 'browser':
