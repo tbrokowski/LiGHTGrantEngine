@@ -103,8 +103,8 @@ export default function Sidebar() {
 
   return (
     <>
-      {/* Reserve 12px so page content doesn't sit hard against the left edge */}
-      <div className="w-3 shrink-0" />
+      {/* Reserve 112px to clear the always-visible logo strip */}
+      <div className="w-28 shrink-0" />
 
       {/* Fixed hover zone covering the left edge */}
       <div
@@ -112,19 +112,16 @@ export default function Sidebar() {
         onMouseEnter={handleMouseEnter}
         onMouseLeave={handleMouseLeave}
       >
-        {/* Always-visible collapsed strip — shows logo mark so users know to hover */}
+        {/* Always-visible collapsed strip — full logo + "Grant Engine" at proper size */}
         <div
-          className={`absolute left-0 top-0 h-full w-12 flex flex-col items-center pt-4 gap-1 bg-white border-r border-gray-200 transition-opacity duration-150 ${
+          className={`absolute left-0 top-0 h-full w-28 flex flex-col bg-white border-r border-gray-200 transition-opacity duration-150 ${
             isOpen ? 'opacity-0 pointer-events-none' : 'opacity-100'
           }`}
         >
-          <Link href="/dashboard" title="LiGHT Grant Engine — hover to expand navigation">
-            <Image src="/logo.png" alt="LiGHT" width={28} height={28} className="object-contain" priority />
-          </Link>
-          <p className="text-[7px] font-bold tracking-widest text-gray-300 uppercase rotate-0 mt-0.5">GE</p>
+          {logoBlock}
         </div>
 
-        {/* Sidebar panel — slides in on hover */}
+        {/* Full sidebar panel — slides in on hover (overlays the collapsed strip) */}
         <aside
           className={`absolute left-0 top-0 h-full w-52 flex flex-col bg-white border-r border-gray-100 shadow-xl transition-transform duration-200 ease-in-out ${
             isOpen ? 'translate-x-0' : '-translate-x-full'

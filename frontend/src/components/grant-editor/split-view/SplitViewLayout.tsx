@@ -88,6 +88,47 @@ export default function SplitViewLayout({
     onPanelsChange(panels.map((p) => (p.id === panelId ? updated : p)));
   };
 
+  // Move a tab from one panel to another (drag-and-drop across panels)
+  const handleMoveTabToPanel = useCallback((tabId: string, sourcePanelId: string, targetPanelId: string) => {
+    if (sourcePanelId === targetPanelId) return;
+    const sourcePanel = panels.find((p) => p.id === sourcePanelId);
+    const targetPanel = panels.find((p) => p.id === targetPanelId);
+    if (!sourcePanel || !targetPanel) return;
+
+    const tab = sourcePanel.tabs.find((t) => t.id === tabId);
+    if (!tab) return;
+
+    const updatedSource = {
+      ...sourcePanel,
+      tabs: sourcePanel.tabs.filter((t) => t.id !== tabId),
+      activeTabId:
+        sourcePanel.activeTabId === tabId
+          ? (sourcePanel.tabs.find((t) => t.id !== tabId)?.id ?? '')
+          : sourcePanel.activeTabId,
+    };
+    const updatedTarget = {
+      ...targetPanel,
+      tabs: [...targetPanel.tabs, tab],
+      activeTabId: tab.id,
+    };
+
+    let next = panels.map((p) => {
+      if (p.id === sourcePanelId) return updatedSource;
+      if (p.id === targetPanelId) return updatedTarget;
+      return p;
+    });
+
+    // Remove panel if it became empty
+    if (updatedSource.tabs.length === 0) {
+      next = next.filter((p) => p.id !== sourcePanelId);
+      const nextWidths = { ...widths };
+      delete nextWidths[sourcePanelId];
+      onWidthsChange(nextWidths);
+    }
+
+    onPanelsChange(next);
+  }, [panels, widths, onPanelsChange, onWidthsChange]);
+
   const hasEditorPanel = panels.some((p) => p.tabs.some((t) => t.type === 'editor'));
 
   return (
@@ -107,6 +148,7 @@ export default function SplitViewLayout({
               grantId={grantId}
               hasEditorPanel={hasEditorPanel}
               onAddPanel={handleAddPanel}
+              onMoveTabToPanel={handleMoveTabToPanel}
             />
           </div>
 

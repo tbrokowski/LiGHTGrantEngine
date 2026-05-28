@@ -77,6 +77,7 @@ export default function GrantEditor({ grant, onGrantUpdate, onHeadingsChange }: 
   const [docLinked, setDocLinked] = useState(!!grant.google_doc_id);
   const [docUrl, setDocUrl] = useState(grant.google_doc_url || '');
   const [lastSynced, setLastSynced] = useState(grant.google_doc_last_synced || '');
+  const [remoteChangePending, setRemoteChangePending] = useState(false);
 
   // ── AI sidebar + Comments panel ───────────────────────────────────────────────
   const [aiOpen, setAiOpen] = useState(false);
@@ -166,27 +167,36 @@ export default function GrantEditor({ grant, onGrantUpdate, onHeadingsChange }: 
     };
   }, [grant.id, applySkeletonResult, startPollingStatus]);
 
-  // ── Auto-pull document changes from Google Doc every 8s ──────────────────────
+  // ── Bidirectional Google Docs sync: poll every 15s ───────────────────────────
+  // If remote changed AND local is clean → auto-pull silently.
+  // If remote changed AND local is dirty → show conflict banner.
   useEffect(() => {
     if (!docLinked) return;
     const interval = setInterval(async () => {
       if (document.visibilityState !== 'visible') return;
       if (autoSyncInProgress.current) return;
-      if (docChangedSinceLastPush.current) return;
       try {
         const statusRes = await grants.getDocsRemoteStatus(grant.id);
         if (!statusRes.data.has_remote_changes) return;
-        autoSyncInProgress.current = true;
-        setSyncState('pulling');
-        const pullRes = await grants.pullFromGoogleDoc(grant.id);
-        setDocumentHtml(pullRes.data.content_html || '');
-        setLastSynced(pullRes.data.last_synced);
-        setSyncState('success');
-        setTimeout(() => setSyncState((s) => s === 'success' ? 'idle' : s), 3000);
+
+        if (!docChangedSinceLastPush.current) {
+          // Local is clean — auto-pull silently
+          autoSyncInProgress.current = true;
+          setSyncState('pulling');
+          const pullRes = await grants.pullFromGoogleDoc(grant.id);
+          setDocumentHtml(pullRes.data.content_html || '');
+          setLastSynced(pullRes.data.last_synced);
+          setRemoteChangePending(false);
+          setSyncState('success');
+          setTimeout(() => setSyncState((s) => s === 'success' ? 'idle' : s), 3000);
+        } else {
+          // Both sides changed — surface conflict banner
+          setRemoteChangePending(true);
+        }
       } catch { /* silent fail */ } finally {
         autoSyncInProgress.current = false;
       }
-    }, 8000);
+    }, 15_000);
     return () => clearInterval(interval);
   }, [docLinked, grant.id]);
 
@@ -226,6 +236,7 @@ export default function GrantEditor({ grant, onGrantUpdate, onHeadingsChange }: 
         setSyncState('idle');
       } finally {
         autoSyncInProgress.current = false;
+        setRemoteChangePending(false); // local is now the authority
       }
     }, 3000);
   }, [grant.id, onHeadingsChange]);
@@ -413,6 +424,7 @@ export default function GrantEditor({ grant, onGrantUpdate, onHeadingsChange }: 
     docUrl,
     lastSynced,
     googleDocId: grant.google_doc_id ?? null,
+    remoteChangePending,
     wordCount,
     onIdeaChange: handleIdeaChange,
     onCallAnalysis: (analysis: Record<string, unknown>, requirements?: string) => {
@@ -432,6 +444,7 @@ export default function GrantEditor({ grant, onGrantUpdate, onHeadingsChange }: 
     onCitationsUpdate: setCitations,
     onPushToDoc: handlePushToDoc,
     onPullFromDoc: handlePullFromDoc,
+    onDismissRemoteChange: () => setRemoteChangePending(false),
     getDocumentContext,
   };
 

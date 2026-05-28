@@ -45,6 +45,7 @@ export interface WorkspaceContextType {
   docUrl: string;
   lastSynced: string;
   googleDocId: string | null;
+  remoteChangePending: boolean;
 
   // Word / char counts
   wordCount: number;
@@ -65,6 +66,7 @@ export interface WorkspaceContextType {
   onCitationsUpdate: (citations: WorkspaceCitation[]) => void;
   onPushToDoc: () => void;
   onPullFromDoc: () => void;
+  onDismissRemoteChange: () => void;
   getDocumentContext: () => string;
 }
 

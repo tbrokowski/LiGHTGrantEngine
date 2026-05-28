@@ -1,7 +1,7 @@
 'use client';
 
-import { useState, useEffect, useRef } from 'react';
-import { MessageCircle, Check, Trash2, Send, ChevronDown, ChevronRight, X } from 'lucide-react';
+import { useState, useEffect, useRef, useCallback } from 'react';
+import { MessageCircle, Check, Trash2, Send, ChevronDown, ChevronRight, X, RotateCw, Loader2 } from 'lucide-react';
 import { grantComments, type GrantComment } from '@/lib/api';
 import { useWorkspace } from './WorkspaceContext';
 
@@ -17,28 +17,34 @@ export default function CommentsPanel({ grantId, documentId = 'draft', onClose }
   const [comments, setComments] = useState<GrantComment[]>([]);
   const [newText, setNewText] = useState('');
   const [submitting, setSubmitting] = useState(false);
+  const [syncing, setSyncing] = useState(false);
+  const [lastSynced, setLastSynced] = useState<Date | null>(null);
   const [expandedIds, setExpandedIds] = useState<Set<string>>(new Set());
   const [replyTexts, setReplyTexts] = useState<Record<string, string>>({});
   const textareaRef = useRef<HTMLTextAreaElement>(null);
 
-  const load = async () => {
+  const doSync = useCallback(async () => {
+    if (syncing) return;
+    setSyncing(true);
     try {
-      const res = await grantComments.list(grantId, documentId);
+      const res = await grantComments.sync(grantId, documentId);
       setComments(res.data);
-    } catch { /* ignore */ }
-  };
+      setLastSynced(new Date());
+    } catch { /* ignore */ } finally {
+      setSyncing(false);
+    }
+  }, [grantId, documentId, syncing]);
 
-  useEffect(() => { void load(); }, [grantId, documentId]);
+  // Initial load via sync (gets Google Doc comments too, not just local)
+  useEffect(() => { void doSync(); }, [grantId, documentId]); // eslint-disable-line react-hooks/exhaustive-deps
 
   // Auto-sync every 30s
   useEffect(() => {
     const interval = setInterval(() => {
-      if (document.visibilityState === 'visible') {
-        grantComments.sync(grantId, documentId).then((res) => setComments(res.data)).catch(() => {});
-      }
+      if (document.visibilityState === 'visible') void doSync();
     }, 30000);
     return () => clearInterval(interval);
-  }, [grantId, documentId]);
+  }, [doSync]);
 
   // When selected text changes, pre-fill the anchor in the textarea placeholder
   useEffect(() => {
@@ -109,11 +115,26 @@ export default function CommentsPanel({ grantId, documentId = 'draft', onClose }
           {topLevel.length > 0 && (
             <span className="text-[10px] text-gray-400">{topLevel.filter((c) => !c.resolved).length} open</span>
           )}
-          {onClose && (
-            <button onClick={onClose} className="ml-auto text-gray-400 hover:text-gray-600 transition-colors" title="Close comments">
-              <X className="w-3.5 h-3.5" />
+          <div className="ml-auto flex items-center gap-1.5">
+            {lastSynced && (
+              <span className="text-[9px] text-gray-400 hidden sm:block" title={`Last synced: ${lastSynced.toLocaleTimeString()}`}>
+                {lastSynced.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
+              </span>
+            )}
+            <button
+              onClick={() => void doSync()}
+              disabled={syncing}
+              title="Sync from Google Doc"
+              className="text-gray-400 hover:text-indigo-600 disabled:opacity-40 transition-colors"
+            >
+              {syncing ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <RotateCw className="w-3.5 h-3.5" />}
             </button>
-          )}
+            {onClose && (
+              <button onClick={onClose} className="text-gray-400 hover:text-gray-600 transition-colors" title="Close comments">
+                <X className="w-3.5 h-3.5" />
+              </button>
+            )}
+          </div>
         </div>
       </div>
 
