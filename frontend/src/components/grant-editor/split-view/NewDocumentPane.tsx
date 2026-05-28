@@ -12,6 +12,8 @@ interface NewDocumentPaneProps {
   grantId: string;
   docId: string;
   label: string;
+  onSelectionChange?: (text: string) => void;
+  onActiveDocChange?: (html: string, label: string) => void;
 }
 
 interface PerDocLink {
@@ -30,7 +32,7 @@ function saveDocLink(docId: string, link: PerDocLink) {
   localStorage.setItem(`new-doc-gdoc-${docId}`, JSON.stringify(link));
 }
 
-export default function NewDocumentPane({ grantId, docId, label }: NewDocumentPaneProps) {
+export default function NewDocumentPane({ grantId, docId, label, onSelectionChange, onActiveDocChange }: NewDocumentPaneProps) {
   const localKey = `new-doc-${docId}`;
   const [documentHtml, setDocumentHtml] = useState<string>(() => {
     if (typeof window === 'undefined') return '';
@@ -55,6 +57,7 @@ export default function NewDocumentPane({ grantId, docId, label }: NewDocumentPa
   const handleDocumentChange = useCallback((html: string, _words: number, _headings: string[]) => {
     setDocumentHtml(html);
     localStorage.setItem(localKey, html);
+    onActiveDocChange?.(html, label);
     docChangedRef.current = true;
     // Auto-push to Google Doc after 3s if linked
     if (autoPushTimer.current) clearTimeout(autoPushTimer.current);
@@ -77,6 +80,13 @@ export default function NewDocumentPane({ grantId, docId, label }: NewDocumentPa
 
   useEffect(() => {
     return () => { if (autoPushTimer.current) clearTimeout(autoPushTimer.current); };
+  }, []);
+
+  // Seed AI context with this document's content when the tab is first mounted
+  useEffect(() => {
+    onActiveDocChange?.(documentHtml, label);
+  // Run only on mount — documentHtml/label changes are handled by handleDocumentChange
+  // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
   // ── Google Doc linking ───────────────────────────────────────────────────────
@@ -314,7 +324,7 @@ export default function NewDocumentPane({ grantId, docId, label }: NewDocumentPa
         <SingleDocEditor
           documentHtml={documentHtml}
           onDocumentChange={handleDocumentChange}
-          onSelectionChange={() => {}}
+          onSelectionChange={onSelectionChange ?? (() => {})}
           onActiveSectionChange={() => {}}
         />
       </div>

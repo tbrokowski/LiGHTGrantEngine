@@ -50,6 +50,10 @@ export interface WorkspaceContextType {
   // Word / char counts
   wordCount: number;
 
+  // Active document context for AI
+  activeDocLabel: string;
+  onActiveDocChange: (html: string, label: string) => void;
+
   // Actions
   onIdeaChange: (idea: string) => void;
   onCallAnalysis: (analysis: Record<string, unknown>, requirements?: string) => void;

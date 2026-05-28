@@ -85,14 +85,20 @@ export default function DocumentPane({
 
   const activeTab = panel.tabs.find((t) => t.id === panel.activeTabId) ?? panel.tabs[0];
 
-  // Notify GrantEditor which phase is currently visible so AI context stays in sync
+  // Notify GrantEditor which phase/document is currently visible so AI context stays in sync
   useEffect(() => {
     if (!activeTab) return;
-    if (activeTab.type === 'idea' || activeTab.type === 'skeleton' || activeTab.type === 'editor') {
+    if (activeTab.type === 'idea' || activeTab.type === 'skeleton') {
       workspace.onPhaseContextChange(activeTab.type);
+    } else if (activeTab.type === 'editor') {
+      workspace.onPhaseContextChange('editor');
+      workspace.onActiveDocChange(workspace.documentHtml, 'Draft');
+    } else if (activeTab.type === 'new-document') {
+      workspace.onPhaseContextChange('editor'); // falls through to activeDocHtml in getDocumentContext
+      // actual content seeded by NewDocumentPane on mount via onActiveDocChange
     }
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [activeTab?.type]);
+  }, [activeTab?.type, activeTab?.id]);
 
   // Resolve presigned URL when a workspace-file tab is active
   useEffect(() => {
@@ -384,7 +390,14 @@ export default function DocumentPane({
 
       case 'new-document':
         return (
-          <NewDocumentPane key={activeTab.id} grantId={grantId} docId={activeTab.id} label={activeTab.label} />
+          <NewDocumentPane
+            key={activeTab.id}
+            grantId={grantId}
+            docId={activeTab.id}
+            label={activeTab.label}
+            onSelectionChange={workspace.onSelectionChange}
+            onActiveDocChange={workspace.onActiveDocChange}
+          />
         );
 
       case 'browser':

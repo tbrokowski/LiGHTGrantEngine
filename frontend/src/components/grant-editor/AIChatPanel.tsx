@@ -23,6 +23,7 @@ interface AIChatPanelProps {
   writingPhase?: string;
   useWritingStudio?: boolean;
   googleDocUrl?: string | null;
+  activeDocLabel?: string;
 }
 
 const QUICK_PROMPTS = [
@@ -81,6 +82,7 @@ export default function AIChatPanel({
   writingPhase,
   useWritingStudio = false,
   googleDocUrl,
+  activeDocLabel = 'Draft',
 }: AIChatPanelProps) {
   const [messages, setMessages] = useState<ChatMessage[]>([
     {
@@ -288,6 +290,14 @@ export default function AIChatPanel({
             <FileText className="w-2.5 h-2.5" />
             Full Doc
           </button>
+
+          <span
+            className="flex items-center gap-1 text-[10px] px-2 py-0.5 rounded-full bg-indigo-50 text-indigo-600 border border-indigo-100"
+            title={`AI is reading: ${activeDocLabel}`}
+          >
+            <FileText className="w-2.5 h-2.5" />
+            {activeDocLabel}
+          </span>
 
           {selectedText && (
             <button

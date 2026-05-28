@@ -61,6 +61,8 @@ export default function GrantEditor({ grant, onGrantUpdate, onHeadingsChange }: 
   const [activeSection, setActiveSection] = useState('');
   const [wordCount, setWordCount] = useState(0);
   const [activePhaseContext, setActivePhaseContext] = useState(grant.writing_phase || 'idea');
+  const [activeDocHtml, setActiveDocHtml] = useState(grant.editor_document || '');
+  const [activeDocLabel, setActiveDocLabel] = useState('Draft');
 
   // ── Generation state ─────────────────────────────────────────────────────────
   const [generatingSkeleton, setGeneratingSkeleton] = useState(false);
@@ -97,6 +99,7 @@ export default function GrantEditor({ grant, onGrantUpdate, onHeadingsChange }: 
   const docLinkedRef = useRef(!!grant.google_doc_id);
   const isMountedRef = useRef(false);
   const onGrantUpdateRef = useRef(onGrantUpdate);
+  const activeDocLabelRef = useRef('Draft');
   const pollingIntervalRef = useRef<ReturnType<typeof setInterval> | null>(null);
   // Exposed to UnifiedWorkspace so skeleton/draft generation can open the right panel
   const openPanelRef = useRef<((type: PanelTabType) => void) | null>(null);
@@ -205,13 +208,15 @@ export default function GrantEditor({ grant, onGrantUpdate, onHeadingsChange }: 
   const getDocumentContext = useCallback(() => {
     if (activePhaseContext === 'idea') return grantIdea;
     if (activePhaseContext === 'skeleton') return (skeleton.raw_text as string) || '';
-    return documentHtml.replace(/<[^>]+>/g, ' ').trim();
-  }, [activePhaseContext, grantIdea, skeleton, documentHtml]);
+    return activeDocHtml.replace(/<[^>]+>/g, ' ').trim();
+  }, [activePhaseContext, grantIdea, skeleton, activeDocHtml]);
 
   const handleDocumentChange = useCallback((html: string, words: number, heads: string[]) => {
     setDocumentHtml(html);
     setWordCount(words);
     onHeadingsChange?.(heads);
+    // Keep active doc in sync when the main draft is the focused document
+    if (activeDocLabelRef.current === 'Draft') setActiveDocHtml(html);
 
     if (saveTimer.current) clearTimeout(saveTimer.current);
     saveTimer.current = setTimeout(async () => {
@@ -428,6 +433,12 @@ export default function GrantEditor({ grant, onGrantUpdate, onHeadingsChange }: 
     googleDocId: grant.google_doc_id ?? null,
     remoteChangePending,
     wordCount,
+    activeDocLabel,
+    onActiveDocChange: (html: string, label: string) => {
+      setActiveDocHtml(html);
+      setActiveDocLabel(label);
+      activeDocLabelRef.current = label;
+    },
     onIdeaChange: handleIdeaChange,
     onCallAnalysis: (analysis: Record<string, unknown>, requirements?: string) => {
       setCallAnalysis(analysis);
@@ -524,6 +535,7 @@ export default function GrantEditor({ grant, onGrantUpdate, onHeadingsChange }: 
                   callRequirements={callRequirements}
                   useWritingStudio
                   googleDocUrl={docLinked ? docUrl : null}
+                  activeDocLabel={activeDocLabel}
                 />
               </div>
             </div>
