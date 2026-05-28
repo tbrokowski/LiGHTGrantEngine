@@ -83,13 +83,18 @@ export default function NewDocumentPane({ grantId, docId, label }: NewDocumentPa
   const handleCreateDoc = async () => {
     setLinking(true);
     try {
-      const res = await grants.createGoogleDoc(grantId);
+      const res = await grants.createStandaloneDoc(grantId, label || 'Untitled Document');
       const link: PerDocLink = { googleDocId: res.data.doc_id, googleDocUrl: res.data.doc_url };
       setDocLink(link);
       saveDocLink(docId, link);
     } finally {
       setLinking(false);
     }
+  };
+
+  const handleUnlinkDoc = () => {
+    localStorage.removeItem(`new-doc-gdoc-${docId}`);
+    setDocLink(null);
   };
 
   const handleLinkDoc = async () => {
@@ -161,7 +166,7 @@ export default function NewDocumentPane({ grantId, docId, label }: NewDocumentPa
         const fileRes = await grants.addFile(grantId, {
           file_name: label,
           file_url: uploadRes.data.id
-            ? `${window.location.origin}/api/v1/documents/${uploadRes.data.id}/content`
+            ? `/api/v1/documents/${uploadRes.data.id}/content`
             : '',
           file_category: 'other',
           source_type: 'internal',
@@ -229,6 +234,13 @@ export default function NewDocumentPane({ grantId, docId, label }: NewDocumentPa
                 className="text-gray-400 hover:text-gray-700 disabled:opacity-40"
               >
                 <CloudDownload className="w-3.5 h-3.5" />
+              </button>
+              <button
+                onClick={handleUnlinkDoc}
+                title="Unlink Google Doc"
+                className="text-gray-300 hover:text-red-400 transition-colors"
+              >
+                <X className="w-3 h-3" />
               </button>
             </>
           ) : linkMode === 'link-input' ? (

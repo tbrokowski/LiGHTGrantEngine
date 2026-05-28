@@ -62,6 +62,7 @@ export interface WorkspaceContextType {
   onPhaseContextChange: (phase: string) => void;
   onInsertText: (text: string) => void;
   onDocLinked: (docId: string, docUrl: string) => void;
+  onUnlinkDoc: () => void;
   onDocPulled: (html: string) => void;
   onRunReview: () => void;
   onCitationsUpdate: (citations: WorkspaceCitation[]) => void;

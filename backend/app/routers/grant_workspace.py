@@ -1643,6 +1643,40 @@ async def create_google_doc(
     }
 
 
+class StandaloneDocBody(BaseModel):
+    title: str = "Untitled Document"
+
+
+@router.post("/{grant_id}/docs/create-standalone")
+async def create_standalone_google_doc(
+    grant_id: str,
+    body: StandaloneDocBody,
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+    _edit: None = Depends(grant_access(require_editor=True)),
+):
+    """Always create a brand-new Google Doc without touching grant.google_doc_id."""
+    grant = await _get_grant_or_404(grant_id, db)
+    access_token = await _get_user_google_token(current_user, db)
+    from app.services.google_docs import create_grant_doc
+
+    parent_folder_id: str | None = None
+    if grant.drive_folder_url and "folders/" in grant.drive_folder_url:
+        parent_folder_id = grant.drive_folder_url.split("folders/")[-1].split("?")[0]
+
+    try:
+        result = create_grant_doc(
+            title=body.title,
+            content_html="",
+            access_token=access_token,
+            parent_folder_id=parent_folder_id,
+        )
+    except Exception as exc:
+        raise HTTPException(502, f"Google Docs API error: {exc}") from exc
+
+    return {"doc_id": result["doc_id"], "doc_url": result["doc_url"]}
+
+
 @router.post("/{grant_id}/docs/link")
 async def link_google_doc(
     grant_id: str,

@@ -265,6 +265,8 @@ export const grants = {
     api.get(`/grants/${grantId}/docs/status`),
   createGoogleDoc: (grantId: string) =>
     api.post(`/grants/${grantId}/docs/create`),
+  createStandaloneDoc: (grantId: string, title: string) =>
+    api.post<{ doc_id: string; doc_url: string }>(`/grants/${grantId}/docs/create-standalone`, { title }),
   linkGoogleDoc: (grantId: string, docUrl: string) =>
     api.post(`/grants/${grantId}/docs/link`, { doc_url: docUrl }),
   unlinkGoogleDoc: (grantId: string) =>

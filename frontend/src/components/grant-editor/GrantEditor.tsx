@@ -442,6 +442,7 @@ export default function GrantEditor({ grant, onGrantUpdate, onHeadingsChange }: 
     onPhaseContextChange: setActivePhaseContext,
     onInsertText: insertIntoSection,
     onDocLinked: (docId: string, url: string) => { setDocLinked(true); setDocUrl(url); onGrantUpdate(); },
+    onUnlinkDoc: () => { setDocLinked(false); setDocUrl(''); onGrantUpdate(); },
     onDocPulled: (html: string) => { setDocumentHtml(html); openPanelRef.current?.('editor'); onGrantUpdate(); },
     onRunReview: handleRunReview,
     onCitationsUpdate: setCitations,

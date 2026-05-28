@@ -5,7 +5,7 @@ import {
   X, Plus, FileText, Lightbulb, LayoutList, Globe,
   FilePlus, FileSearch, ChevronDown, Columns2,
   CloudUpload, CloudDownload, Check, Loader2, Link2, ExternalLink,
-  MessageCircle, AlertTriangle,
+  MessageCircle, AlertTriangle, AlertCircle,
 } from 'lucide-react';
 import SingleDocEditor from '../SingleDocEditor';
 import IdeaPhase from '../phases/IdeaPhase';
@@ -78,6 +78,7 @@ export default function DocumentPane({
   const [dragOverPanel, setDragOverPanel] = useState(false);
   // Resolved presigned URL for workspace-file tabs (the stored URL returns JSON)
   const [resolvedFileUrl, setResolvedFileUrl] = useState<string | null>(null);
+  const [fileError, setFileError] = useState('');
   const renameInputRef = useRef<HTMLInputElement>(null);
   const triggerRef = useRef<HTMLButtonElement>(null);
   const pickerRef = useRef<HTMLDivElement>(null);
@@ -95,14 +96,23 @@ export default function DocumentPane({
 
   // Resolve presigned URL when a workspace-file tab is active
   useEffect(() => {
-    if (activeTab?.type !== 'workspace-file') { setResolvedFileUrl(null); return; }
+    if (activeTab?.type !== 'workspace-file') { setResolvedFileUrl(null); setFileError(''); return; }
     const raw = activeTab.meta?.fileUrl ?? '';
     if (!raw) { setResolvedFileUrl(null); return; }
-    // Internal /content endpoints return JSON {"url": presigned} — resolve it
+    // Internal /content endpoints return JSON {"url": presigned} — resolve it.
+    // Normalise to a path (strip host) so axios always routes to the FastAPI base.
     if (raw.includes('/content')) {
-      api.get<{ url?: string; text?: string }>(raw)
-        .then((res) => setResolvedFileUrl(res.data.url ?? raw))
-        .catch(() => setResolvedFileUrl(raw));
+      let apiPath = raw;
+      try {
+        apiPath = new URL(raw).pathname; // strips host, keeps /api/v1/documents/{id}/content
+      } catch { /* already a relative path */ }
+      setFileError('');
+      api.get<{ url?: string; text?: string }>(apiPath)
+        .then((res) => {
+          if (res.data.url) setResolvedFileUrl(res.data.url);
+          else setFileError('File binary not available. The document may only contain parsed text.');
+        })
+        .catch(() => setFileError('Could not load file — it may have been deleted or moved.'));
     } else {
       setResolvedFileUrl(raw);
     }
@@ -290,13 +300,32 @@ export default function DocumentPane({
       case 'workspace-file': {
         const rawSrc = activeTab.meta?.fileUrl;
         const src = resolvedFileUrl ?? rawSrc;
-        if (!src) {
+
+        if (!src && !fileError) {
           return (
             <div className="flex-1 flex items-center justify-center text-sm text-gray-400 italic">
               No file URL available.
             </div>
           );
         }
+
+        // Error state (resolution failed)
+        if (fileError) {
+          return (
+            <div className="flex flex-col items-center justify-center h-full gap-4 text-center px-6">
+              <AlertCircle className="w-10 h-10 text-red-300" />
+              <p className="text-sm text-gray-500">{fileError}</p>
+              {rawSrc && (
+                <a href={rawSrc} target="_blank" rel="noopener noreferrer"
+                  className="text-xs px-3 py-1.5 rounded-md bg-indigo-600 text-white hover:bg-indigo-700">
+                  Try opening directly
+                </a>
+              )}
+            </div>
+          );
+        }
+
+        // Still resolving presigned URL
         if (!resolvedFileUrl && rawSrc?.includes('/content')) {
           return (
             <div className="flex-1 flex items-center justify-center text-sm text-gray-400 gap-2">
@@ -304,14 +333,14 @@ export default function DocumentPane({
             </div>
           );
         }
-        const lowerSrc = src.toLowerCase();
-        const isPdf = lowerSrc.includes('.pdf') || lowerSrc.includes('application%2Fpdf');
-        const isGoogleDoc = src.includes('docs.google.com') || src.includes('drive.google.com');
-        const embedSrc = isGoogleDoc
-          ? src.replace('/edit', '/preview').replace('/view', '/preview')
-          : src;
 
-        if (isPdf) {
+        const lowerSrc = (src ?? '').toLowerCase();
+        const isPdf = lowerSrc.includes('.pdf') || lowerSrc.includes('application%2Fpdf') || lowerSrc.includes('content-type=pdf');
+        const isGoogleDoc = (src ?? '').includes('docs.google.com') || (src ?? '').includes('drive.google.com');
+
+        if (isPdf && src) {
+          // Google Docs Viewer renders PDFs reliably across browsers (including presigned R2 URLs)
+          const viewerUrl = `https://docs.google.com/viewer?url=${encodeURIComponent(src)}&embedded=true`;
           return (
             <div className="flex flex-col flex-1 overflow-hidden">
               <div className="flex-shrink-0 flex items-center justify-between px-3 py-1 bg-gray-50 border-b border-gray-100 text-xs text-gray-500">
@@ -322,25 +351,25 @@ export default function DocumentPane({
                   Open / Download
                 </a>
               </div>
-              <object data={src} type="application/pdf" className="flex-1 w-full h-full border-0">
-                <div className="flex flex-col items-center justify-center h-full gap-4 text-center px-6">
-                  <FileText className="w-10 h-10 text-gray-300" />
-                  <p className="text-sm text-gray-500">Your browser cannot display this PDF inline.</p>
-                  <a href={src} target="_blank" rel="noopener noreferrer"
-                    className="text-xs px-3 py-1.5 rounded-md bg-indigo-600 text-white hover:bg-indigo-700">
-                    Open PDF in new tab
-                  </a>
-                </div>
-              </object>
+              <iframe
+                src={viewerUrl}
+                className="flex-1 w-full h-full border-0"
+                title={activeTab.label}
+                allow="autoplay"
+              />
             </div>
           );
         }
+
+        const embedSrc = isGoogleDoc && src
+          ? src.replace('/edit', '/preview').replace('/view', '/preview')
+          : (src ?? '');
 
         return (
           <div className="flex flex-col flex-1 overflow-hidden">
             <div className="flex-shrink-0 flex items-center justify-between px-3 py-1 bg-gray-50 border-b border-gray-100 text-xs text-gray-500">
               <span className="truncate max-w-[300px]">{activeTab.label}</span>
-              <a href={rawSrc ?? src} target="_blank" rel="noopener noreferrer"
+              <a href={rawSrc ?? src ?? ''} target="_blank" rel="noopener noreferrer"
                 className="flex items-center gap-1 text-indigo-600 hover:underline flex-shrink-0">
                 <ExternalLink className="w-3 h-3" />
                 Open
@@ -525,6 +554,7 @@ export default function DocumentPane({
           charCount={workspace.documentHtml.replace(/<[^>]+>/g, '').length}
           remoteChangePending={workspace.remoteChangePending}
           onDocLinked={workspace.onDocLinked}
+          onUnlink={workspace.onUnlinkDoc}
           onPushToDoc={workspace.onPushToDoc}
           onPullFromDoc={workspace.onPullFromDoc}
           onDismissRemoteChange={workspace.onDismissRemoteChange}
@@ -579,6 +609,7 @@ interface GoogleDocsSubToolbarProps {
   charCount: number;
   remoteChangePending: boolean;
   onDocLinked: (docId: string, url: string) => void;
+  onUnlink: () => void;
   onPushToDoc: () => void;
   onPullFromDoc: () => void;
   onDismissRemoteChange: () => void;
@@ -588,7 +619,7 @@ interface GoogleDocsSubToolbarProps {
 
 function GoogleDocsSubToolbar({
   grantId, docLinked, docUrl, syncState, wordCount, charCount,
-  remoteChangePending, onDocLinked, onPushToDoc, onPullFromDoc,
+  remoteChangePending, onDocLinked, onUnlink, onPushToDoc, onPullFromDoc,
   onDismissRemoteChange, commentsOpen, onToggleComments,
 }: GoogleDocsSubToolbarProps) {
   const [linkMode, setLinkMode] = useState<'none' | 'link-input'>('none');
@@ -683,6 +714,13 @@ function GoogleDocsSubToolbar({
               <button onClick={onPullFromDoc} disabled={syncBusy} title="Pull from Google Doc"
                 className="text-gray-400 hover:text-gray-700 disabled:opacity-40">
                 <CloudDownload className="w-3.5 h-3.5" />
+              </button>
+              <button
+                onClick={async () => { await grants.unlinkGoogleDoc(grantId); onUnlink(); }}
+                title="Unlink Google Doc"
+                className="text-gray-300 hover:text-red-400 transition-colors"
+              >
+                <X className="w-3 h-3" />
               </button>
             </>
           ) : linkMode === 'link-input' ? (
