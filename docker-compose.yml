@@ -98,6 +98,16 @@ services:
       - worker
     command: celery -A app.workers.celery_app beat --loglevel=info
 
+  # ── Steel Browser ─────────────────────────────────────────
+  steel-browser:
+    image: ghcr.io/steel-dev/steel-browser:latest
+    container_name: light_steel
+    ports:
+      - "3001:3000"   # Steel REST API (backend calls this internally)
+      - "5173:5173"   # Steel session viewer / WebRTC stream (browser accesses this)
+    shm_size: "2gb"
+    restart: unless-stopped
+
   # ── Frontend ──────────────────────────────────────────────
   frontend:
     build:

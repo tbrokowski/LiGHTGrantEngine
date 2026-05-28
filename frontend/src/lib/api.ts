@@ -430,10 +430,14 @@ export const ai = {
   }) => api.post('/ai/improve-selection', data),
 };
 
-// ── Web proxy (in-editor browser pane) ───────────────────────────────────────
-export const proxy = {
-  fetchPage: (url: string) =>
-    api.get<{ title: string; html: string; url: string }>('/proxy/web', { params: { url } }),
+// ── Steel Browser sessions (in-editor live browser pane) ─────────────────────
+export const browserSession = {
+  create: () =>
+    api.post<{ session_id: string; debug_url: string }>('/browser/session'),
+  release: (sessionId: string) =>
+    api.delete(`/browser/session/${sessionId}`),
+  navigate: (sessionId: string, url: string) =>
+    api.post(`/browser/session/${sessionId}/navigate`, { url }),
 };
 
 // ── Grant editor comments ─────────────────────────────────────────────────────
