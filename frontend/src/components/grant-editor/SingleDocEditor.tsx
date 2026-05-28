@@ -1,6 +1,16 @@
 'use client';
-import { useEffect, useCallback, useRef } from 'react';
+import { useEffect, useCallback, useRef, useState } from 'react';
 import { useEditor, EditorContent } from '@tiptap/react';
+import { Node, type CommandProps, type RawCommands } from '@tiptap/core';
+
+// Augment TipTap command types so insertPageBreak is type-safe on editor.chain()
+declare module '@tiptap/core' {
+  interface Commands<ReturnType> {
+    pageBreak: {
+      insertPageBreak: () => ReturnType;
+    };
+  }
+}
 import StarterKit from '@tiptap/starter-kit';
 import Highlight from '@tiptap/extension-highlight';
 import Placeholder from '@tiptap/extension-placeholder';
@@ -10,8 +20,52 @@ import Underline from '@tiptap/extension-underline';
 import TextAlign from '@tiptap/extension-text-align';
 import {
   Bold, Italic, UnderlineIcon, Highlighter, List, ListOrdered,
-  AlignLeft, AlignCenter, Heading2, Heading3, Quote,
+  AlignLeft, AlignCenter, Heading2, Heading3, Quote, Scissors,
 } from 'lucide-react';
+
+// ── Page Break node ────────────────────────────────────────────────────────────
+// Renders as a dashed divider with a label. atom:true means it is selected and
+// deleted as a single unit (Backspace/Delete removes it).
+const PageBreak = Node.create({
+  name: 'pageBreak',
+  group: 'block',
+  atom: true,
+  draggable: true,
+
+  parseHTML() {
+    return [{ tag: 'div[data-type="page-break"]' }];
+  },
+
+  renderHTML() {
+    return [
+      'div',
+      {
+        'data-type': 'page-break',
+        contenteditable: 'false',
+        style: [
+          'border-top: 2px dashed #d1d5db',
+          'margin: 20px 0 16px',
+          'text-align: center',
+          'color: #9ca3af',
+          'font-size: 11px',
+          'letter-spacing: 0.05em',
+          'user-select: none',
+          'pointer-events: none',
+        ].join('; '),
+      },
+      '— Page Break —',
+    ];
+  },
+
+  addCommands() {
+    return {
+      insertPageBreak:
+        () =>
+        ({ commands }: CommandProps) =>
+          commands.insertContent({ type: this.name }),
+    } as unknown as Partial<RawCommands>;
+  },
+});
 
 interface SingleDocEditorProps {
   /** The canonical document HTML. Pass `initialHtml` on first render; update this prop to inject external content (AI insert, Docs pull). */
@@ -59,10 +113,12 @@ export default function SingleDocEditor({
 }: SingleDocEditorProps) {
   const changeTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const lastHtml = useRef(documentHtml);
+  const [selectionStats, setSelectionStats] = useState<{ words: number; chars: number } | null>(null);
 
   const editor = useEditor({
     extensions: [
       StarterKit.configure({ heading: { levels: [2, 3, 4] } }),
+      PageBreak,
       Highlight.configure({ multicolor: false }),
       Placeholder.configure({
         placeholder: ({ node }) => {
@@ -104,9 +160,13 @@ export default function SingleDocEditor({
     onSelectionUpdate: ({ editor: ed }) => {
       const { from, to } = ed.state.selection;
       if (from !== to) {
-        onSelectionChange(ed.state.doc.textBetween(from, to, ' '));
+        const selected = ed.state.doc.textBetween(from, to, ' ');
+        onSelectionChange(selected);
+        const selWords = selected.trim() ? selected.trim().split(/\s+/).filter(Boolean).length : 0;
+        setSelectionStats({ words: selWords, chars: selected.length });
       } else {
         onSelectionChange('');
+        setSelectionStats(null);
       }
       onActiveSectionChange?.(detectActiveSection(ed));
     },
@@ -235,8 +295,30 @@ export default function SingleDocEditor({
         >
           <AlignCenter className="w-3.5 h-3.5" />
         </ToolbarButton>
+        <div className="w-px h-4 bg-gray-200 mx-0.5" />
+        <ToolbarButton
+          onClick={() => editor.chain().focus().insertPageBreak().run()}
+          active={false}
+          title="Insert page break"
+        >
+          <Scissors className="w-3.5 h-3.5" />
+        </ToolbarButton>
         <div className="flex-1" />
-        <span className="text-xs text-gray-400 pr-1">{wordCount.toLocaleString()} words</span>
+        {/* Stats: show selection counts when text is highlighted, doc totals otherwise */}
+        <div className="flex items-center gap-1.5 text-xs pr-1">
+          {selectionStats ? (
+            <>
+              <span className="text-indigo-500 font-medium">
+                {selectionStats.words.toLocaleString()} words · {selectionStats.chars.toLocaleString()} chars
+              </span>
+              <span className="text-gray-300">selected</span>
+            </>
+          ) : (
+            <span className="text-gray-400">
+              {wordCount.toLocaleString()} words · {(editor.storage.characterCount?.characters() ?? 0).toLocaleString()} chars
+            </span>
+          )}
+        </div>
       </div>
 
       {/* Document content area */}

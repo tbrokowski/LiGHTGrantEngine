@@ -70,6 +70,13 @@ class _HtmlToParagraphs(HTMLParser):
 
     def handle_starttag(self, tag: str, attrs: list) -> None:
         tag = tag.lower()
+        attr_dict = dict(attrs)
+        # TipTap page-break node → emit a sentinel that becomes \x0C on push
+        if tag == "div" and attr_dict.get("data-type") == "page-break":
+            self.paragraphs.append(
+                {"style": "PAGE_BREAK", "text": "\x0c", "bold": False, "italic": False}
+            )
+            return
         if tag in _TAG_TO_STYLE:
             self._current_style = _TAG_TO_STYLE[tag]
             self._current_text = ""
@@ -125,6 +132,20 @@ def _build_insert_requests(paragraphs: list[dict[str, Any]]) -> list[dict]:
     index = 1  # Start at beginning of body
 
     for para in paragraphs:
+        # Page-break sentinel: insert form-feed character (\x0C).
+        # Google Docs interprets \x0C as a page break.
+        if para["style"] == "PAGE_BREAK":
+            requests.append(
+                {
+                    "insertText": {
+                        "location": {"index": index},
+                        "text": "\x0c",
+                    }
+                }
+            )
+            index += 1
+            continue
+
         text = para["text"] + "\n"
         requests.append(
             {

@@ -85,14 +85,15 @@ export default function SplitViewLayout({
   );
 
   const handleAddPanel = () => {
-    const newId = `panel-${Date.now()}`;
+    const newPanelId = `panel-${Date.now()}`;
+    const newTabId = `browser-${Date.now()}`;
     const newPanel: PanelConfig = {
-      id: newId,
-      tabs: [{ id: `browser-${Date.now()}`, type: 'browser', label: 'Browser' }],
-      activeTabId: `browser-${Date.now()}`,
+      id: newPanelId,
+      tabs: [{ id: newTabId, type: 'browser', label: 'Browser' }],
+      activeTabId: newTabId,
     };
     onPanelsChange([...panels, newPanel]);
-    setWidths((w) => ({ ...w, [newId]: 1 }));
+    setWidths((w) => ({ ...w, [newPanelId]: 1 }));
   };
 
   const handleClosePanel = (panelId: string) => {

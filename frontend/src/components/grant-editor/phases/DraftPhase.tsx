@@ -1,12 +1,14 @@
 'use client';
 
 import { useState } from 'react';
+import { Columns2 } from 'lucide-react';
+import SingleDocEditor from '../SingleDocEditor';
 import AIChatPanel from '../AIChatPanel';
 import ReviewPanel from '../ReviewPanel';
 import CitationsPanel from '../CitationsPanel';
 import ContextChips from '../ContextChips';
 import SplitViewLayout from '../split-view/SplitViewLayout';
-import type { PanelConfig } from '../split-view/types';
+import type { PanelConfig, PanelTabType } from '../split-view/types';
 
 interface Citation {
   id?: string;
@@ -45,7 +47,7 @@ interface DraftPhaseProps {
 const DEFAULT_PANELS: PanelConfig[] = [
   {
     id: 'main',
-    tabs: [{ id: 'editor-main', type: 'editor', label: 'Draft' }],
+    tabs: [{ id: 'editor-main', type: 'editor' as PanelTabType, label: 'Draft' }],
     activeTabId: 'editor-main',
   },
 ];
@@ -77,11 +79,30 @@ export default function DraftPhase({
 }: DraftPhaseProps) {
   const [panels, setPanels] = useState<PanelConfig[]>(DEFAULT_PANELS);
 
+  // True when in the default state: single panel, single editor tab — no chrome needed
+  const isSingleEditorPane =
+    panels.length === 1 &&
+    panels[0].tabs.length === 1 &&
+    panels[0].tabs[0].type === 'editor';
+
+  // Opens a second panel (browser by default) and exits full-screen mode
+  const handleAddSecondPanel = () => {
+    const tabId = `browser-${Date.now()}`;
+    setPanels((prev) => [
+      ...prev,
+      {
+        id: `panel-${Date.now()}`,
+        tabs: [{ id: tabId, type: 'browser' as PanelTabType, label: 'Browser' }],
+        activeTabId: tabId,
+      },
+    ]);
+  };
+
   return (
     <div className="flex flex-1 overflow-hidden">
-      {/* Main content area — split view */}
+      {/* Main content area */}
       <div className="flex flex-col flex-1 min-w-0 overflow-hidden">
-        {/* Sub-toolbar: Review / Citations toggles */}
+        {/* Sub-toolbar: Review / Citations toggles + split-panel trigger */}
         <div className="flex-shrink-0 flex items-center gap-2 px-4 py-1.5 border-b border-gray-200 bg-white">
           <button
             onClick={onToggleReview}
@@ -103,28 +124,58 @@ export default function DraftPhase({
           >
             Citations
           </button>
-          {activeSection && (
+
+          {/* Active section label — pushes to right when no split button shown */}
+          {activeSection && isSingleEditorPane && (
             <span className="text-[10px] text-gray-400 ml-auto">
+              Active: {activeSection}
+            </span>
+          )}
+
+          {/* Split-view trigger — always visible, opens a second panel */}
+          <button
+            onClick={handleAddSecondPanel}
+            title="Open side panel"
+            className={`p-1 rounded hover:bg-gray-100 text-gray-400 hover:text-indigo-600 transition-colors ${
+              isSingleEditorPane ? 'ml-auto' : ''
+            }`}
+          >
+            <Columns2 className="w-4 h-4" />
+          </button>
+
+          {activeSection && !isSingleEditorPane && (
+            <span className="text-[10px] text-gray-400">
               Active: {activeSection}
             </span>
           )}
         </div>
 
-        {/* Split view panels */}
+        {/* Content area — full-screen editor or split view */}
         <div className="flex flex-1 overflow-hidden">
-          <SplitViewLayout
-            grantId={grantId}
-            panels={panels}
-            onPanelsChange={setPanels}
-            documentHtml={documentHtml}
-            onDocumentChange={onDocumentChange}
-            onSelectionChange={onSelectionChange}
-            onActiveSectionChange={onActiveSectionChange}
-            grantIdea={grantIdea}
-            skeleton={skeleton}
-            callRequirements={callRequirements}
-            onInsertText={onInsertText}
-          />
+          {isSingleEditorPane ? (
+            // Default: pure full-screen editor with no split-view chrome
+            <SingleDocEditor
+              documentHtml={documentHtml}
+              onDocumentChange={onDocumentChange}
+              onSelectionChange={onSelectionChange}
+              onActiveSectionChange={onActiveSectionChange}
+            />
+          ) : (
+            // Split view: two or more panels with tab bars and resize handles
+            <SplitViewLayout
+              grantId={grantId}
+              panels={panels}
+              onPanelsChange={setPanels}
+              documentHtml={documentHtml}
+              onDocumentChange={onDocumentChange}
+              onSelectionChange={onSelectionChange}
+              onActiveSectionChange={onActiveSectionChange}
+              grantIdea={grantIdea}
+              skeleton={skeleton}
+              callRequirements={callRequirements}
+              onInsertText={onInsertText}
+            />
+          )}
         </div>
       </div>
 

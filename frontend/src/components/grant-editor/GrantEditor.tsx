@@ -462,7 +462,9 @@ export default function GrantEditor({ grant, onGrantUpdate, onHeadingsChange }: 
           ))}
         </div>
         <div className="flex items-center gap-2">
-          <span className="text-xs text-gray-400">{wordCount.toLocaleString()} words</span>
+          <span className="text-xs text-gray-400">
+            {wordCount.toLocaleString()} words · {documentHtml.replace(/<[^>]+>/g, '').length.toLocaleString()} chars
+          </span>
           {phase === 'draft' && docLinked && (
             <div className="flex items-center gap-1.5 border border-gray-200 rounded-lg px-2 py-1">
               <FileText className="w-3.5 h-3.5 text-blue-500" />

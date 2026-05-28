@@ -42,9 +42,9 @@ export default function WebBrowserPane({ onInsertText }: WebBrowserPaneProps) {
     if (!url) return;
     // Auto-prepend https if no scheme
     if (!/^https?:\/\//i.test(url)) {
-      // If it looks like a search query, use Google search
+      // If it looks like a search query, use DuckDuckGo Lite (static HTML, no JS required)
       if (!url.includes('.') || url.includes(' ')) {
-        url = `https://www.google.com/search?q=${encodeURIComponent(url)}`;
+        url = `https://html.duckduckgo.com/html/?q=${encodeURIComponent(url)}`;
       } else {
         url = `https://${url}`;
       }
@@ -209,7 +209,7 @@ export default function WebBrowserPane({ onInsertText }: WebBrowserPaneProps) {
             value={urlInput}
             onChange={(e) => setUrlInput(e.target.value)}
             onKeyDown={handleKeyDown}
-            placeholder="Enter URL or search…"
+            placeholder="Search (DuckDuckGo) or enter URL…"
             className="flex-1 text-xs outline-none bg-transparent text-gray-700 placeholder-gray-400"
             spellCheck={false}
           />
