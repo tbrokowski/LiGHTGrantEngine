@@ -103,8 +103,8 @@ export default function Sidebar() {
 
   return (
     <>
-      {/* Zero-width spacer: sidebar takes no space in the flex layout */}
-      <div className="w-0 shrink-0" />
+      {/* Reserve 12px so page content doesn't sit hard against the left edge */}
+      <div className="w-3 shrink-0" />
 
       {/* Fixed hover zone covering the left edge */}
       <div
@@ -112,8 +112,17 @@ export default function Sidebar() {
         onMouseEnter={handleMouseEnter}
         onMouseLeave={handleMouseLeave}
       >
-        {/* Thin always-visible strip */}
-        <div className="absolute left-0 top-0 h-full w-3 bg-white border-r border-gray-200" />
+        {/* Always-visible collapsed strip — shows logo mark so users know to hover */}
+        <div
+          className={`absolute left-0 top-0 h-full w-12 flex flex-col items-center pt-4 gap-1 bg-white border-r border-gray-200 transition-opacity duration-150 ${
+            isOpen ? 'opacity-0 pointer-events-none' : 'opacity-100'
+          }`}
+        >
+          <Link href="/dashboard" title="LiGHT Grant Engine — hover to expand navigation">
+            <Image src="/logo.png" alt="LiGHT" width={28} height={28} className="object-contain" priority />
+          </Link>
+          <p className="text-[7px] font-bold tracking-widest text-gray-300 uppercase rotate-0 mt-0.5">GE</p>
+        </div>
 
         {/* Sidebar panel — slides in on hover */}
         <aside

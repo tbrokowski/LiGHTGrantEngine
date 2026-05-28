@@ -139,7 +139,7 @@ export default function SingleDocEditor({
           'prose prose-sm max-w-none focus:outline-none',
           'prose-headings:font-semibold prose-h2:text-base prose-h2:mt-8 prose-h2:mb-2',
           'prose-h2:border-b prose-h2:border-gray-200 prose-h2:pb-1',
-          'prose-p:my-1 min-h-screen',
+          'prose-p:my-1',
           'text-gray-800',
         ].join(' '),
       },
@@ -212,9 +212,9 @@ export default function SingleDocEditor({
   const wordCount = editor.storage.characterCount?.words() ?? 0;
 
   return (
-    <div className="flex flex-col h-full overflow-hidden bg-white">
+    <div className="flex flex-col h-full overflow-hidden bg-gray-100">
       {/* Persistent formatting toolbar */}
-      <div className="flex-shrink-0 flex items-center gap-0.5 px-3 py-1.5 border-b border-gray-100 flex-wrap bg-gray-50">
+      <div className="flex-shrink-0 flex items-center gap-0.5 px-3 py-1.5 border-b border-gray-200 flex-wrap bg-white shadow-sm">
         <ToolbarButton
           onClick={() => editor.chain().focus().toggleHeading({ level: 2 }).run()}
           active={editor.isActive('heading', { level: 2 })}
@@ -321,9 +321,9 @@ export default function SingleDocEditor({
         </div>
       </div>
 
-      {/* Document content area */}
-      <div className="flex-1 overflow-y-auto">
-        <div className="max-w-3xl mx-auto px-8 py-6">
+      {/* Document content area — centered paper card on gray background */}
+      <div className="flex-1 overflow-y-auto bg-gray-100 py-8">
+        <div className="max-w-[800px] mx-auto bg-white shadow-sm rounded-sm px-14 py-12 min-h-[calc(100vh-12rem)]">
           <EditorContent editor={editor} />
         </div>
       </div>

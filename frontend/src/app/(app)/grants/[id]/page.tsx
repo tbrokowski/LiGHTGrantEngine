@@ -314,15 +314,6 @@ function GrantDetailContent() {
                   Call
                 </a>
               )}
-              {grant.google_doc_url && (
-                <a href={grant.google_doc_url} target="_blank" rel="noopener noreferrer"
-                  className="text-xs text-gray-500 hover:text-indigo-600 flex items-center gap-1 transition-colors">
-                  <svg className="w-3.5 h-3.5" fill="none" viewBox="0 0 16 16" stroke="currentColor" strokeWidth={1.5}>
-                    <path strokeLinecap="round" strokeLinejoin="round" d="M5 3h6l2 2v8a1 1 0 01-1 1H4a1 1 0 01-1-1V4a1 1 0 011-1z" />
-                  </svg>
-                  Google Doc
-                </a>
-              )}
               {grant.drive_folder_url && (
                 <a href={grant.drive_folder_url} target="_blank" rel="noopener noreferrer"
                   className="text-xs text-gray-500 hover:text-indigo-600 flex items-center gap-1 transition-colors">

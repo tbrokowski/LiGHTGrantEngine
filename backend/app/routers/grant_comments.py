@@ -117,10 +117,9 @@ async def create_comment(
         document_id=body.document_id,
     )
 
-    # Optionally mirror to Google Doc if one is linked
-    if grant.google_doc_id:
-        import contextlib
-        with contextlib.suppress(Exception):
+    # Optionally mirror to Google Doc if one is linked and this is the draft document
+    if grant.google_doc_id and body.document_id == "draft":
+        try:
             access_token = await _get_user_google_token(current_user, db)
             from app.services.google_comments import create_doc_comment
             doc_comment = create_doc_comment(
@@ -130,6 +129,11 @@ async def create_comment(
                 access_token=access_token,
             )
             comment.google_doc_comment_id = doc_comment.get("id")
+        except Exception:
+            import logging
+            logging.getLogger(__name__).warning(
+                "Could not mirror comment to Google Doc (grant=%s)", grant_id, exc_info=True
+            )
 
     db.add(comment)
     await db.commit()

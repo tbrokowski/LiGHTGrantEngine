@@ -230,16 +230,71 @@ export default function DocumentPane({
             </div>
           );
         }
-        const embedSrc = src.includes('docs.google.com')
+        const lowerSrc = src.toLowerCase();
+        const isPdf = lowerSrc.includes('.pdf') || lowerSrc.includes('/pdf');
+        const isGoogleDoc = src.includes('docs.google.com') || src.includes('drive.google.com');
+        const embedSrc = isGoogleDoc
           ? src.replace('/edit', '/preview').replace('/view', '/preview')
           : src;
+
+        if (isPdf) {
+          return (
+            <div className="flex flex-col flex-1 overflow-hidden">
+              <div className="flex-shrink-0 flex items-center justify-between px-3 py-1 bg-gray-50 border-b border-gray-100 text-xs text-gray-500">
+                <span className="truncate max-w-[300px]">{activeTab.label}</span>
+                <a
+                  href={src}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="flex items-center gap-1 text-indigo-600 hover:underline flex-shrink-0"
+                >
+                  <ExternalLink className="w-3 h-3" />
+                  Open / Download
+                </a>
+              </div>
+              <object
+                data={src}
+                type="application/pdf"
+                className="flex-1 w-full h-full border-0"
+              >
+                <div className="flex flex-col items-center justify-center h-full gap-4 text-center px-6">
+                  <FileText className="w-10 h-10 text-gray-300" />
+                  <p className="text-sm text-gray-500">Your browser cannot display this PDF inline.</p>
+                  <a
+                    href={src}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="text-xs px-3 py-1.5 rounded-md bg-indigo-600 text-white hover:bg-indigo-700"
+                  >
+                    Open PDF in new tab
+                  </a>
+                </div>
+              </object>
+            </div>
+          );
+        }
+
         return (
-          <iframe
-            src={embedSrc}
-            className="flex-1 w-full h-full border-0"
-            sandbox="allow-scripts allow-same-origin allow-popups allow-forms"
-            title={activeTab.label}
-          />
+          <div className="flex flex-col flex-1 overflow-hidden">
+            <div className="flex-shrink-0 flex items-center justify-between px-3 py-1 bg-gray-50 border-b border-gray-100 text-xs text-gray-500">
+              <span className="truncate max-w-[300px]">{activeTab.label}</span>
+              <a
+                href={src}
+                target="_blank"
+                rel="noopener noreferrer"
+                className="flex items-center gap-1 text-indigo-600 hover:underline flex-shrink-0"
+              >
+                <ExternalLink className="w-3 h-3" />
+                Open
+              </a>
+            </div>
+            <iframe
+              src={embedSrc}
+              className="flex-1 w-full h-full border-0"
+              sandbox="allow-scripts allow-same-origin allow-popups allow-forms"
+              title={activeTab.label}
+            />
+          </div>
         );
       }
 

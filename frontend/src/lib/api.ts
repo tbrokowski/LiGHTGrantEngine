@@ -277,6 +277,11 @@ export const grants = {
     api.get(`/grants/${grantId}/docs/content`),
   getDocsRemoteStatus: (grantId: string) =>
     api.get(`/grants/${grantId}/docs/remote-status`),
+  // Generic per-document push/pull (for new-document panels with their own Google Doc)
+  pushContentToDoc: (grantId: string, docId: string, contentHtml: string) =>
+    api.post(`/grants/${grantId}/docs/push-content`, { doc_id: docId, content_html: contentHtml }),
+  pullContentFromDoc: (grantId: string, docId: string) =>
+    api.post(`/grants/${grantId}/docs/pull-content`, { doc_id: docId }),
   // Activity log
   getActivity: (grantId: string, limit?: number) =>
     api.get(`/grants/${grantId}/activity`, { params: { limit } }),

@@ -1889,3 +1889,59 @@ async def get_workspace_summary(
         "upcoming_milestones": upcoming_milestones[:3],
         "budget_status": budget.status if budget else BudgetStatus.NOT_STARTED,
     }
+
+
+# ── Generic Google Doc push/pull (for per-document linking in new-document panels) ────
+
+
+class GenericDocPushBody(BaseModel):
+    doc_id: str
+    content_html: str
+
+
+class GenericDocPullBody(BaseModel):
+    doc_id: str
+
+
+@router.post("/{grant_id}/docs/push-content")
+async def push_content_to_doc(
+    grant_id: str,
+    body: GenericDocPushBody,
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+    _edit: None = Depends(grant_access(require_editor=True)),
+):
+    """Push arbitrary HTML content to a specific Google Doc (not necessarily the grant's primary doc)."""
+    access_token = await _get_user_google_token(current_user, db)
+    from app.services.google_docs import push_to_doc
+
+    try:
+        push_to_doc(
+            doc_id=body.doc_id,
+            content_html=body.content_html,
+            access_token=access_token,
+        )
+    except Exception as exc:
+        raise HTTPException(502, f"Google Docs API error: {exc}") from exc
+
+    return {"ok": True}
+
+
+@router.post("/{grant_id}/docs/pull-content")
+async def pull_content_from_doc(
+    grant_id: str,
+    body: GenericDocPullBody,
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+    _edit: None = Depends(grant_access(require_editor=True)),
+):
+    """Pull content from a specific Google Doc and return it as HTML."""
+    access_token = await _get_user_google_token(current_user, db)
+    from app.services.google_docs import pull_from_doc
+
+    try:
+        html = pull_from_doc(doc_id=body.doc_id, access_token=access_token)
+    except Exception as exc:
+        raise HTTPException(502, f"Google Docs API error: {exc}") from exc
+
+    return {"ok": True, "content_html": html}

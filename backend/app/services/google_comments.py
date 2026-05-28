@@ -55,21 +55,29 @@ def list_doc_comments(doc_id: str, access_token: str) -> list[dict]:
 
 def create_doc_comment(doc_id: str, content: str, anchor_text: str | None, access_token: str) -> dict:
     """
-    Create a new comment on a Google Doc.
-    anchor_text is the quoted text the comment is attached to (optional).
-    Returns the created comment dict.
+    Create a new comment on a Google Doc (document-level, not anchored to specific text).
+
+    NOTE: The Drive API v3 `anchor` field requires a structured JSON format that is
+    document-specific and complex to construct from plain text selections. We omit it
+    here so comments are posted as document-level comments, which always succeeds.
+    The anchor_text is stored locally in the app for display purposes only.
     """
     svc = _build_drive_service(access_token)
     body: dict[str, Any] = {"content": content}
-    if anchor_text:
-        # Drive API anchor format for document text selection
-        body["anchor"] = anchor_text
+    # anchor_text intentionally not sent — Drive anchor format requires specific
+    # document byte offsets that cannot be derived from plain-text selections.
 
-    return svc.comments().create(
-        fileId=doc_id,
-        fields="id,content,anchor,resolved,createdTime,author(displayName,emailAddress)",
-        body=body,
-    ).execute()
+    try:
+        result = svc.comments().create(
+            fileId=doc_id,
+            fields="id,content,anchor,resolved,createdTime,author(displayName,emailAddress)",
+            body=body,
+        ).execute()
+    except Exception:
+        logger.warning("Failed to create Google Doc comment on doc_id=%s", doc_id, exc_info=True)
+        raise
+
+    return result
 
 
 def reply_to_doc_comment(doc_id: str, comment_id: str, content: str, access_token: str) -> dict:
