@@ -154,7 +154,6 @@ export default function OpportunityDetailPage() {
   const [deepReview, setDeepReview] = useState<DeepReviewResult | null>(null);
   const [converting, setConverting] = useState(false);
   const [refetching, setRefetching] = useState(false);
-  const [generatingSummary, setGeneratingSummary] = useState(false);
   const [actionBusy, setActionBusy] = useState(false);
   const [enriching, setEnriching] = useState(false);
   const [enrichMessage, setEnrichMessage] = useState('');
@@ -214,14 +213,23 @@ export default function OpportunityDetailPage() {
     }
   }
 
-  async function handleRefetchDescription() {
+  async function handleRefresh() {
+    setRefetching(true);
+    try {
+      await fetchOpp();
+    } finally {
+      setRefetching(false);
+    }
+  }
+
+  async function handleReEnrich() {
     setRefetching(true);
     try {
       await api.post(`/opportunities/${id}/re-enrich`);
       setEnriching(true);
-      setEnrichMessage('Fetching content — this usually takes 20–60 seconds…');
+      setEnrichMessage('Re-enrichment queued — this usually takes 20–60 seconds…');
     } catch {
-      setEnrichMessage('Failed to queue re-fetch. Please try again.');
+      setEnrichMessage('Failed to queue re-enrichment. Please try again.');
     } finally {
       setRefetching(false);
     }
@@ -230,19 +238,6 @@ export default function OpportunityDetailPage() {
   async function handleDownloadDocument(docId: string, fileName?: string) {
     const ok = await openDocumentContent(docId, fileName);
     if (!ok) alert(`Failed to open ${fileName || 'document'}.`);
-  }
-
-  async function handleGenerateSummary() {
-    setGeneratingSummary(true);
-    try {
-      await api.post(`/opportunities/${id}/re-enrich`);
-      setEnriching(true);
-      setEnrichMessage('Generating AI summary — this usually takes 20–60 seconds…');
-    } catch {
-      setEnrichMessage('Failed to queue summary generation. Please try again.');
-    } finally {
-      setGeneratingSummary(false);
-    }
   }
 
   async function handleConvert() {
@@ -401,13 +396,20 @@ export default function OpportunityDetailPage() {
             <span className="flex items-center gap-1.5"><Sparkles className="w-3.5 h-3.5" />Deep Review</span>
           )}
           </button>
+          <button
+            onClick={handleRefresh}
+            disabled={refetching || enriching}
+            className="text-sm text-gray-700 border border-gray-300 px-3 py-1.5 rounded-md hover:bg-gray-50 transition-colors disabled:opacity-50"
+          >
+            {refetching ? <span className="flex items-center gap-1.5"><Loader2 className="w-3.5 h-3.5 animate-spin" />Refreshing…</span> : 'Refresh'}
+          </button>
           {opp.opportunity_url && (
             <button
-              onClick={handleRefetchDescription}
-              disabled={refetching}
-              className="text-sm text-gray-700 border border-gray-300 px-3 py-1.5 rounded-md hover:bg-gray-50 transition-colors disabled:opacity-50"
+              onClick={handleReEnrich}
+              disabled={refetching || enriching}
+              className="text-sm text-amber-700 border border-amber-200 bg-amber-50 px-3 py-1.5 rounded-md hover:bg-amber-100 transition-colors disabled:opacity-50"
             >
-              {refetching ? 'Queuing…' : 'Refresh description'}
+              {enriching ? <span className="flex items-center gap-1.5"><Loader2 className="w-3.5 h-3.5 animate-spin" />Re-enriching…</span> : 'Re-enrich'}
             </button>
           )}
           <button
@@ -461,11 +463,11 @@ export default function OpportunityDetailPage() {
               <h3 className="text-xs font-semibold text-gray-500 uppercase tracking-wide">Description</h3>
               {!opp.description && opp.opportunity_url && (
                 <button
-                  onClick={handleRefetchDescription}
-                  disabled={refetching}
+                  onClick={handleReEnrich}
+                  disabled={refetching || enriching}
                   className="text-xs text-blue-600 hover:text-blue-800 disabled:opacity-50"
                 >
-                  <span className="flex items-center gap-0.5">{refetching ? 'Queuing...' : <>Fetch from source <ChevronRight className="w-3 h-3" /></>}</span>
+                  <span className="flex items-center gap-0.5">{enriching ? 'Queuing...' : <>Fetch from source <ChevronRight className="w-3 h-3" /></>}</span>
                 </button>
               )}
             </div>

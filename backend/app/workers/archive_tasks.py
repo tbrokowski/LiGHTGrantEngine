@@ -3,12 +3,14 @@ import asyncio
 import logging
 
 from celery.exceptions import MaxRetriesExceededError as MaxRetriesExceeded, SoftTimeLimitExceeded
+from celery.signals import worker_ready
 
 from app.workers.celery_app import celery_app
 
 logger = logging.getLogger(__name__)
 
 LOCK_TTL = 600  # seconds — covers the slowest expected indexing run
+STALE_THRESHOLD_MINUTES = 20  # archives stuck in processing longer than this are re-queued
 
 
 def _mark_failed(archive_id: str, error_msg: str) -> None:
@@ -34,6 +36,87 @@ def _mark_failed(archive_id: str, error_msg: str) -> None:
         logger.error("_mark_failed could not update archive %s: %s", archive_id, e)
     finally:
         engine.dispose()
+
+
+def _recover_stale_archives() -> list[str]:
+    """
+    Find archives stuck in 'processing' for longer than STALE_THRESHOLD_MINUTES,
+    reset them to 'pending', and re-queue indexing. Returns list of archive IDs recovered.
+    """
+    from sqlalchemy import create_engine, text
+    from datetime import datetime, timezone, timedelta
+
+    from app.config import get_settings
+
+    settings = get_settings()
+    engine = create_engine(settings.database_url, pool_pre_ping=True)
+    recovered: list[str] = []
+    try:
+        cutoff = datetime.now(timezone.utc) - timedelta(minutes=STALE_THRESHOLD_MINUTES)
+        with engine.connect() as conn:
+            # Find archives stuck in processing longer than the stale threshold.
+            # Use COALESCE so archives without an updated_at timestamp are always caught.
+            rows = conn.execute(
+                text(
+                    "SELECT id FROM grant_archives "
+                    "WHERE indexing_status = 'processing' "
+                    "AND COALESCE(updated_at, created_at, NOW() - INTERVAL '1 hour') < :cutoff"
+                ),
+                {"cutoff": cutoff},
+            ).fetchall()
+
+            stale_ids = [str(row[0]) for row in rows]
+            if stale_ids:
+                for archive_id in stale_ids:
+                    conn.execute(
+                        text(
+                            "UPDATE grant_archives SET indexing_status = 'pending', "
+                            "indexing_error = 'Requeued after worker restart' "
+                            "WHERE id = :id"
+                        ),
+                        {"id": archive_id},
+                    )
+                conn.commit()
+                for archive_id in stale_ids:
+                    celery_app.send_task(
+                        "app.workers.archive_tasks.index_archive",
+                        args=[archive_id],
+                    )
+                    recovered.append(archive_id)
+                    logger.info("Recovered stale archive %s — re-queued indexing", archive_id)
+    except Exception as e:
+        logger.error("Error recovering stale archives: %s", e)
+    finally:
+        engine.dispose()
+    return recovered
+
+
+@worker_ready.connect
+def recover_stale_on_startup(sender, **kwargs):
+    """Re-queue any archives stuck in 'processing' when the worker starts up."""
+    try:
+        recovered = _recover_stale_archives()
+        if recovered:
+            logger.info(
+                "worker_ready: recovered %d stale archive(s): %s",
+                len(recovered),
+                recovered,
+            )
+        else:
+            logger.info("worker_ready: no stale archives found")
+    except Exception as e:
+        logger.error("worker_ready recovery failed: %s", e)
+
+
+@celery_app.task(
+    name="app.workers.archive_tasks.recover_stale_archive_tasks",
+    bind=False,
+    max_retries=0,
+)
+def recover_stale_archive_tasks() -> dict:
+    """Periodic watchdog: re-queue archives stuck in 'processing' for too long."""
+    recovered = _recover_stale_archives()
+    return {"recovered": recovered, "count": len(recovered)}
 
 
 @celery_app.task(

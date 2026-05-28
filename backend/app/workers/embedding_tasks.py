@@ -146,6 +146,39 @@ def embed_section(section_id: str):
             db.commit()
 
 
+@celery_app.task(name="app.workers.embedding_tasks.embed_style_profile")
+def embed_style_profile(archive_id: str):
+    """Generate and persist the style fingerprint for an archive."""
+    from sqlalchemy import create_engine, select
+    from sqlalchemy.orm import Session
+    from app.config import get_settings
+    from app.models.archive import GrantArchive
+    from app.models.section import ProposalSection
+
+    settings = get_settings()
+    engine = create_engine(settings.database_url)
+
+    with Session(engine) as db:
+        archive = db.get(GrantArchive, archive_id)
+        if not archive:
+            return
+
+        sections = db.execute(
+            select(ProposalSection).where(ProposalSection.archive_id == archive_id)
+        ).scalars().all()
+
+        if not sections:
+            return
+
+        async def _build():
+            from app.services.archive_ingestion import build_archive_style_fingerprint
+            return await build_archive_style_fingerprint(archive, list(sections))
+
+        profile = _run_async(_build())
+        if profile:
+            db.commit()
+
+
 @celery_app.task(name="app.workers.embedding_tasks.reindex_all")
 def reindex_all():
     """Reindex all documents and sections that have no embedding."""

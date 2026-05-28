@@ -56,6 +56,15 @@ const PRIORITY_LABEL: Record<string, string> = {
   low:      'Low',
 };
 
+const PRIORITY_ORDER: Record<string, number> = {
+  critical: 0,
+  high:     1,
+  medium:   2,
+  low:      3,
+};
+
+const FOCUS_LIMIT = 5;
+
 interface TaskRowProps {
   task: TaskItem;
   days: number | null;
@@ -129,9 +138,13 @@ export default function FocusPanel({ tasks, loading, currentUserId }: FocusPanel
     .filter(t => t.due_date != null)
     .sort((a, b) => new Date(a.due_date!).getTime() - new Date(b.due_date!).getTime());
 
-  const withoutDate = visibleTasks.filter(t => t.due_date == null);
+  const withoutDate = visibleTasks
+    .filter(t => t.due_date == null)
+    .sort((a, b) => (PRIORITY_ORDER[a.priority] ?? 99) - (PRIORITY_ORDER[b.priority] ?? 99));
 
   const sorted = [...withDate, ...withoutDate];
+  const displayed = sorted.slice(0, FOCUS_LIMIT);
+  const hiddenCount = sorted.length - displayed.length;
 
   const overdueCount = withDate.filter(t => (daysUntil(t.due_date) ?? 0) < 0).length;
   const dueSoonCount = withDate.filter(t => {
@@ -182,10 +195,19 @@ export default function FocusPanel({ tasks, loading, currentUserId }: FocusPanel
           <p className="text-xs text-gray-300 mt-1">Tasks from your grants will appear here</p>
         </div>
       ) : (
-        <div className="flex-1 overflow-y-auto divide-y divide-gray-50">
-          {sorted.map(task => (
-            <TaskRow key={task.id} task={task} days={daysUntil(task.due_date)} />
-          ))}
+        <div className="flex-1 flex flex-col overflow-hidden">
+          <div className="overflow-y-auto divide-y divide-gray-50">
+            {displayed.map(task => (
+              <TaskRow key={task.id} task={task} days={daysUntil(task.due_date)} />
+            ))}
+          </div>
+          {hiddenCount > 0 && (
+            <div className="px-4 py-2.5 border-t border-gray-50 mt-auto">
+              <p className="text-[11px] text-gray-400 font-medium text-center">
+                +{hiddenCount} more task{hiddenCount !== 1 ? 's' : ''} — open a grant to see all
+              </p>
+            </div>
+          )}
         </div>
       )}
     </div>

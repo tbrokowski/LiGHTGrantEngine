@@ -34,12 +34,13 @@ export default function SkeletonPhase({
 
   return (
     <div className="flex-1 flex flex-col overflow-hidden">
-      {/* Scrollable body */}
+      {/* Scrollable document body */}
       <div className="flex-1 overflow-y-auto">
-        <div className="max-w-3xl mx-auto w-full px-6 pt-6 pb-4 space-y-4">
-          {/* Title suggestion — editable plain text */}
+        <div className="max-w-3xl mx-auto w-full px-8 pt-8 pb-6 space-y-3">
+
+          {/* Proposal title — editable, large */}
           {skeleton.title_suggestion !== undefined && (
-            <div>
+            <div className="mb-1">
               {editingTitle ? (
                 <input
                   autoFocus
@@ -47,53 +48,49 @@ export default function SkeletonPhase({
                   onChange={(e) => setTitleDraft(e.target.value)}
                   onBlur={commitTitle}
                   onKeyDown={(e) => { if (e.key === 'Enter') commitTitle(); }}
-                  className="w-full text-sm font-medium text-gray-900 border-b border-gray-300 focus:outline-none bg-transparent pb-0.5"
+                  className="w-full text-xl font-bold text-gray-900 border-b border-indigo-300 focus:outline-none bg-transparent pb-1"
                 />
               ) : (
                 <button
                   type="button"
                   onClick={() => { setEditingTitle(true); setTitleDraft(skeleton.title_suggestion || ''); }}
-                  className="text-sm font-medium text-gray-900 text-left hover:text-indigo-700 transition-colors w-full"
+                  className="text-xl font-bold text-gray-900 text-left hover:text-indigo-700 transition-colors w-full"
                 >
-                  &ldquo;{skeleton.title_suggestion}&rdquo;
+                  {skeleton.title_suggestion}
                 </button>
               )}
-              <p className="text-xs text-gray-400 mt-0.5">Suggested title — click to edit</p>
+              <p className="text-xs text-gray-400 mt-0.5">Click title to edit</p>
             </div>
           )}
 
-          {/* Narrative arc */}
+          {/* Narrative arc — document subtitle */}
           {skeleton.narrative_arc && (
-            <p className="text-sm italic text-gray-500">{skeleton.narrative_arc}</p>
+            <p className="text-sm italic text-gray-500 border-l-2 border-indigo-200 pl-3">
+              {skeleton.narrative_arc}
+            </p>
           )}
 
-          {/* Key messages — dot-separated inline */}
+          {/* Key messages — inline strip */}
           {skeleton.key_messages && skeleton.key_messages.length > 0 && (
-            <p className="text-sm text-gray-400">
+            <p className="text-xs text-gray-400">
               {skeleton.key_messages.map((m, i) => (
                 <span key={i}>
-                  {i > 0 && <span className="mx-1.5">·</span>}
+                  {i > 0 && <span className="mx-1.5 text-gray-300">·</span>}
                   {m}
                 </span>
               ))}
             </p>
           )}
 
-          {/* Divider */}
-          <div className="border-t border-gray-100" />
+          {/* Document divider */}
+          <div className="border-t border-gray-200 pt-2" />
 
-          {/* Outline header */}
-          <div className="flex items-center justify-between">
-            <span className="text-xs font-semibold text-gray-500 uppercase tracking-wide">Outline</span>
-            <span className="text-xs text-gray-400">{sections.length} sections</span>
-          </div>
-
-          {/* Section list */}
+          {/* Sections — rendered as a flowing document */}
           <SkeletonEditor sections={sections} onChange={updateSections} />
 
           {/* Draft progress */}
           {draftProgress && (
-            <div className="space-y-2">
+            <div className="space-y-2 pt-2">
               <div className="flex items-center gap-2 text-xs text-gray-600">
                 <Loader2 className="w-3.5 h-3.5 animate-spin text-indigo-500" />
                 Drafting {draftProgress.section}… ({draftProgress.index + 1}/{draftProgress.total})
@@ -111,7 +108,7 @@ export default function SkeletonPhase({
 
       {/* Sticky footer */}
       <div className="flex-shrink-0 border-t border-gray-200 px-6 py-3 flex items-center justify-between">
-          <p className="text-sm text-gray-400">Sections drafted one at a time with archive style matching</p>
+        <p className="text-sm text-gray-400">Edit the skeleton, then generate the full draft</p>
         <button
           onClick={onGenerateDraft}
           disabled={sections.length === 0 || generating}

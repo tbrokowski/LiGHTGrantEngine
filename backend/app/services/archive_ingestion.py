@@ -1,6 +1,7 @@
 """Archive ingestion — split documents into ProposalSection rows for RAG."""
 from __future__ import annotations
 
+import asyncio
 import re
 import uuid
 from datetime import datetime, timezone
@@ -119,10 +120,11 @@ def _sections_for_style_profile(sections: list[ProposalSection]) -> list[dict]:
     ]
 
 
-async def _build_archive_style_fingerprint(
+async def build_archive_style_fingerprint(
     archive: GrantArchive,
     sections: list[ProposalSection],
 ) -> dict:
+    """Build and persist the style fingerprint inline (used by backfill script)."""
     exemplars = _sections_for_style_profile(sections)
     if not exemplars:
         return {}
@@ -135,6 +137,15 @@ async def _build_archive_style_fingerprint(
     archive.style_fingerprint = profile
     archive.style_indexed_at = datetime.now(timezone.utc)
     return profile
+
+
+def _queue_style_profile_job(archive_id: str) -> None:
+    """Queue the style fingerprint LLM call as a background task."""
+    from app.workers.celery_app import celery_app
+    celery_app.send_task(
+        "app.workers.embedding_tasks.embed_style_profile",
+        args=[archive_id],
+    )
 
 
 async def _delete_sections_for_document(db: AsyncSession, document_id: str) -> None:
@@ -231,12 +242,11 @@ async def ingest_archive_document(
             db.add(block)
             language_block_ids.append(block_id)
 
-    if created_sections:
-        await _build_archive_style_fingerprint(archive, created_sections)
-
     if commit:
         await db.commit()
         _queue_embedding_jobs(section_ids, language_block_ids)
+        if created_sections:
+            _queue_style_profile_job(archive.id)
 
     return section_ids, language_block_ids, split_warnings
 
@@ -279,7 +289,7 @@ async def reindex_archive_style(
         "style_fingerprint": archive.style_fingerprint,
         "style_indexed_at": str(archive.style_indexed_at) if archive.style_indexed_at else None,
         "warnings": split_warnings + ingest_warnings,
-        "message": "Archive re-indexed with structure and style fingerprint",
+        "message": "Archive re-indexed. Style fingerprint is generating in the background.",
     }
 
 
@@ -458,20 +468,22 @@ async def run_archive_indexing(db: AsyncSession, archive_id: str) -> dict:
                 )
 
         parsed_text = proposal_doc.parsed_text or ""
-        split_sections, split_warnings = await split_proposal_into_sections(
-            parsed_text, archive.funder or ""
+
+        # Run section splitting and memory extraction concurrently — they are independent
+        # and both make LLM calls, so parallelizing cuts wall-clock time roughly in half.
+        (split_sections, split_warnings), memory = await asyncio.gather(
+            split_proposal_into_sections(parsed_text, archive.funder or ""),
+            process_completed_grant(
+                grant_title=archive.title,
+                funder=archive.funder or "",
+                outcome=archive.outcome or "unknown",
+                submitted_text=parsed_text,
+                reviewer_feedback=archive.reviewer_feedback or "",
+                internal_notes=archive.internal_debrief or "",
+                split_sections=None,
+            ),
         )
         warnings.extend(split_warnings)
-
-        memory = await process_completed_grant(
-            grant_title=archive.title,
-            funder=archive.funder or "",
-            outcome=archive.outcome or "unknown",
-            submitted_text=parsed_text,
-            reviewer_feedback=archive.reviewer_feedback or "",
-            internal_notes=archive.internal_debrief or "",
-            split_sections=split_sections,
-        )
 
         if memory.get("archive_summary") and not archive.notes:
             archive.notes = memory["archive_summary"]
@@ -507,6 +519,8 @@ async def run_archive_indexing(db: AsyncSession, archive_id: str) -> dict:
         archive.indexing_error = None
         await db.commit()
         _queue_embedding_jobs(section_ids, language_block_ids)
+        if section_ids:
+            _queue_style_profile_job(archive_id)
 
         return {
             "id": archive_id,

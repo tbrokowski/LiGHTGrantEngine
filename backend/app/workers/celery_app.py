@@ -70,4 +70,9 @@ celery_app.conf.beat_schedule = {
         # Run every 6 hours, offset by 15 minutes from opportunity clustering
         "schedule": crontab(hour="*/6", minute=45),
     },
+    "recover-stale-archive-tasks": {
+        "task": "app.workers.archive_tasks.recover_stale_archive_tasks",
+        # Check every 15 minutes for archives stuck in processing after a crash/restart
+        "schedule": crontab(minute="*/15"),
+    },
 }

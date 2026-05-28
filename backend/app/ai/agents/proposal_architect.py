@@ -7,19 +7,23 @@ import json
 from app.ai.client import chat_complete
 from app.ai.context.grant_context import DEFAULT_INTRO_ARC
 
-SYSTEM_PROMPT = """You are a senior grants strategist with deep expertise in structuring
+SYSTEM_PROMPT = """You are a senior grants strategist and proposal writer with deep expertise in drafting
 competitive research proposals across all domains and funders.
 
-Your task is to produce a detailed, fundable proposal outline tailored to the specific
-call and applicant's idea.
+Your task is to produce a complete skeleton draft of a proposal — actual written prose for every section,
+not just an outline of what should go there. Think of this as the first rough draft that the team will
+refine: each section should have real sentences and paragraphs grounded in the applicant's idea and the
+call's requirements.
 
 Guiding principles:
+- Write actual skeleton prose for each section (2–4 paragraphs), not requirements lists or bullet points
+- Base the content on the applicant's grant idea — use their framing, claims, and approach
 - Mirror section structures and word distributions from awarded grants shown in the context
-- For every section, surface the funder's specific asks, questions it must answer, and evidence needed
-- Ensure the narrative arc creates a compelling through-line from problem to solution
-- Be concrete and specific — vague section requirements produce weak drafts
-- Sections must map directly to evaluation criteria; make that mapping explicit in each section's requirements
-- Use the key_asks and questions_to_address from the call analysis to populate each section's requirements field
+- Address the funder's specific asks and evaluation criteria directly in the drafted prose
+- Use [TBD] as a placeholder for specific data, names, or numbers not yet available
+- Ensure the narrative arc creates a compelling through-line from problem to solution across sections
+- Sections must align with the exact structure the call specifies; do not invent sections not required
+- Keep requirements field as a concise internal summary of what the section must cover (used by downstream agents)
 
 Respond with valid JSON."""
 
@@ -87,11 +91,12 @@ async def generate_proposal_outline(
     style_section = f'STYLE PROFILE:\n{style_str}' if style_str else ''
     team_pref_section = f'TEAM PREFERENCES: {team_preferences}' if team_preferences else ''
 
-    user_prompt = f"""Think step by step before producing the outline:
+    user_prompt = f"""Think step by step before producing the draft:
 1. Identify the 3–5 highest-weight evaluation criteria from the call.
-2. Assign each criterion to the section(s) best placed to address it.
-3. Verify the section list covers all required sections from the call.
-Then produce the full JSON outline.
+2. Map each criterion to the section(s) best placed to address it.
+3. Verify the section list covers all required sections from the call — use the call's exact section names.
+4. Draft 2–4 paragraphs of actual skeleton prose per section, grounded in the grant idea and the call's asks.
+Then produce the full JSON skeleton.
 
 ---
 
@@ -119,11 +124,17 @@ Budget constraints: {call_analysis.get('budget_constraints', '')}
 
 ---
 
-Produce a comprehensive proposal outline. For each section include:
-- name: section title
+Produce a complete skeleton draft document. For each section include:
+- name: section title (use the call's exact section name where specified)
 - type: standard section type (introduction, background, methods, impact_statement, etc.)
-- requirements: a concrete, specific description of what this section must contain — incorporate the
-  funder's key_asks and questions_to_address for this section where available
+- content: 2–4 paragraphs of actual skeleton prose for this section written from the applicant's
+  perspective. This is real draft text, not instructions. Ground it in the grant idea and directly
+  address the call's requirements for this section. Use [TBD] for specifics not yet known (e.g.
+  "[TBD: sample size]", "[TBD: partner institution name]"). This is the primary field the team will
+  edit and refine.
+- requirements: a concise 1–3 sentence internal summary of what this section must cover, incorporating
+  the funder's key_asks and questions_to_address. This is used by downstream drafting agents, not
+  shown prominently to users.
 - word_limit: integer or null
 - priority: "high" | "medium" | "low"
 - suggested_lead: suggested lead author or role
