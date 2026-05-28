@@ -269,18 +269,30 @@ async def update_skeleton(
     return {"writing_phase": grant.writing_phase}
 
 
+class GenerateDraftRequest(BaseModel):
+    flagged_sections: Optional[list[str]] = None
+
+
 @router.post("/{grant_id}/writing/generate-draft")
 async def generate_draft(
     grant_id: str,
+    data: Optional[GenerateDraftRequest] = None,
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ):
     grant = await _get_grant(grant_id, db)
-    if not grant.proposal_skeleton or not grant.proposal_skeleton.get("sections"):
+    skeleton = grant.proposal_skeleton or {}
+    has_sections = bool(skeleton.get("sections"))
+    has_raw_text = bool(skeleton.get("raw_text"))
+    if not has_sections and not has_raw_text:
         raise HTTPException(400, "Proposal skeleton is required. Generate or edit skeleton first.")
 
+    flagged_sections = (data.flagged_sections if data else None) or skeleton.get("flagged_sections") or None
+
     async def stream():
-        async for chunk in orchestrator.generate_draft_stream(grant, db):
+        async for chunk in orchestrator.generate_draft_stream(
+            grant, db, flagged_sections=flagged_sections
+        ):
             yield chunk
         yield "data: [DONE]\n\n"
 
@@ -289,6 +301,109 @@ async def generate_draft(
         media_type="text/event-stream",
         headers={"Cache-Control": "no-cache", "X-Accel-Buffering": "no"},
     )
+
+
+class RefineDraftAnswer(BaseModel):
+    question_id: str
+    section_name: str
+    answer: str
+
+
+class RefineDraftRequest(BaseModel):
+    answers: list[RefineDraftAnswer]
+
+
+@router.post("/{grant_id}/writing/refine-draft")
+async def refine_draft(
+    grant_id: str,
+    data: RefineDraftRequest,
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    """
+    Re-draft each section that the meta-agent asked a question about,
+    incorporating the user's answer as additional instructions.
+    Returns the updated document_html.
+    """
+    from app.ai.agents.section_drafter import draft_section
+    from app.ai.agents.intro_architect import draft_introduction
+    from app.ai.context.grant_context import insert_section_content, parse_document_sections
+
+    grant = await _get_grant(grant_id, db)
+    if not grant.editor_document:
+        raise HTTPException(400, "No draft document to refine")
+
+    answered = [a for a in data.answers if a.answer.strip()]
+    if not answered:
+        return {"document_html": grant.editor_document, "refined": 0}
+
+    call_req = grant.call_requirements or ""
+    html = grant.editor_document
+
+    INTRO_KEYWORDS = ("intro", "background", "problem", "executive", "rationale")
+
+    for ans in answered:
+        section_name = ans.section_name
+        user_instruction = ans.answer.strip()
+
+        # Pull existing section HTML as skeleton content
+        doc_sections = parse_document_sections(html)
+        existing_content = ""
+        for s in doc_sections:
+            if s.heading.lower() == section_name.lower():
+                existing_content = s.plain_text
+                break
+
+        is_intro = any(kw in section_name.lower() for kw in INTRO_KEYWORDS)
+        try:
+            if is_intro:
+                result = await draft_introduction(
+                    grant_idea=grant.grant_idea or "",
+                    call_requirements=call_req,
+                    funder=grant.funder or "",
+                    style_profile=grant.style_profile or {},
+                    skeleton_content=existing_content,
+                    compliance_guidance=call_req[:500],
+                    evidence_summary="",
+                    narrative_context={},
+                    user_instructions=user_instruction,
+                )
+            else:
+                result = await draft_section(
+                    section_name=section_name,
+                    grant_idea=grant.grant_idea or "",
+                    call_requirements=call_req,
+                    funder=grant.funder or "",
+                    style_profile=grant.style_profile or {},
+                    skeleton_content=existing_content,
+                    compliance_guidance=call_req[:500],
+                    evidence_summary="",
+                    narrative_context={},
+                    user_instructions=user_instruction,
+                )
+            draft_text = result.get("draft", "")
+            if draft_text and not draft_text.strip().startswith("<"):
+                draft_html = "".join(f"<p>{p.strip()}</p>" for p in draft_text.split("\n\n") if p.strip())
+            else:
+                draft_html = draft_text
+            html = insert_section_content(html, section_name, draft_html)
+        except Exception:
+            continue
+
+    grant.editor_document = html
+    # Clear the answered questions from stored skeleton state
+    skeleton = dict(grant.proposal_skeleton or {})
+    pending_qs: list[dict] = skeleton.get("_meta_agent_questions", [])
+    answered_ids = {a.question_id for a in answered}
+    remaining = [q for q in pending_qs if q.get("question_id") not in answered_ids]
+    if remaining:
+        skeleton["_meta_agent_questions"] = remaining
+    else:
+        skeleton.pop("_meta_agent_questions", None)
+    grant.proposal_skeleton = skeleton
+    await db.commit()
+
+    return {"document_html": html, "refined": len(answered)}
 
 
 @router.post("/{grant_id}/writing/review")

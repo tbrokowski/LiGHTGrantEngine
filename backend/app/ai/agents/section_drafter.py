@@ -1,24 +1,31 @@
 """
 Agent 5: Section Drafting Assistant
-Drafts individual proposal sections using retrieved prior material, call requirements,
-and per-section compliance constraints from the call analysis.
+Expands user-authored skeleton content into a full, polished draft section.
+The skeleton content is the primary structural and tonal foundation; call requirements
+serve as compliance guidance to verify coverage, not as the section's driver.
 """
 import json
 from app.ai.client import chat_complete
 
 SYSTEM_PROMPT = """You are an expert scientific proposal writer for global health AI research at EPFL (LiGHT group).
-You draft proposal sections by combining call requirements with institutional experience.
+You expand user-authored skeleton content into full, compelling proposal sections.
+
+YOUR PRIMARY JOB:
+Take the skeleton content the team has written and expand it into a complete, polished section.
+Preserve the team's voice, framing, and structure — your job is to make it fuller and stronger,
+not to rewrite it from scratch according to the call requirements.
 
 WRITING STANDARDS:
+- Expand and enrich the skeleton prose; do not discard or overwrite the team's content and framing
 - Write comprehensive, substantive prose — full paragraphs with evidence and reasoning, not bullet points
 - Be specific and concrete: name methodologies, data sources, geographies, and outcomes
 - Aim for the upper end of any word limit; reviewers reward completeness
-- Every claim should be supported by evidence, a citation, or a [VERIFY: item] flag
-- Connect this section to the grant's overall theory of change and the funder's goals
+- Incorporate research evidence and citations naturally into the expanded prose
+- Connect to the grant's overall theory of change and the funder's goals
 
-COMPLIANCE RULES:
-1. Strictly respect any per-section word/page limits from the call
-2. Address every evaluation criterion relevant to this section
+COMPLIANCE GUIDANCE (verify coverage, do not restructure around these):
+1. Check the compliance notes and ensure the key call coverage areas are addressed somewhere in the section
+2. Strictly respect any per-section word/page limits from the call
 3. Mark text that must be customized for this specific call with [CUSTOMIZE: reason]
 4. Do not directly reproduce restricted text — paraphrase or note permission status
 5. Never claim facts you don't know; use [VERIFY: item] for uncertain claims
@@ -44,6 +51,10 @@ async def draft_section(
     grant_idea: str = "",
     section_specific_requirements: dict | None = None,
     call_narrative_brief: str = "",
+    skeleton_content: str = "",
+    compliance_guidance: str = "",
+    evidence_summary: str = "",
+    narrative_context: dict | None = None,
 ) -> dict:
     prior_str = ""
     if retrieved_sections:
@@ -92,7 +103,28 @@ async def draft_section(
         limit_parts.append(f"PAGE LIMIT: {effective_page_limit}")
     limit_str = "\n".join(limit_parts)
 
-    user_prompt = f"""Draft a comprehensive, detailed {section_name} section for a grant proposal.
+    narrative_ctx = narrative_context or {}
+    theory_of_change = narrative_ctx.get("theory_of_change", "")
+    cross_themes = ", ".join(narrative_ctx.get("cross_section_themes", []))
+    funder_priorities = "\n".join(
+        f"- {p}" for p in narrative_ctx.get("funder_priorities_to_emphasize", [])
+    )
+
+    skeleton_block = (
+        f"\nSKELETON CONTENT (team-authored — EXPAND THIS, do not replace it):\n{skeleton_content}\n"
+        if skeleton_content else ""
+    )
+    evidence_block = (
+        f"\nRESEARCH EVIDENCE SUMMARY (incorporate naturally where relevant):\n{evidence_summary}\n"
+        if evidence_summary else ""
+    )
+    compliance_block = (
+        f"\nCOMPLIANCE COVERAGE NOTES (verify these themes are addressed; do not restructure around them):\n{compliance_guidance}\n"
+        if compliance_guidance else ""
+    )
+
+    user_prompt = f"""Expand the skeleton content below into a comprehensive, detailed {section_name} section for a grant proposal.
+Your job is to take the team's draft and make it fuller, stronger, and more compelling — preserve their framing and voice.
 
 FUNDER: {funder}
 SECTION TYPE: {section_type}
@@ -100,19 +132,24 @@ SECTION PRIORITY: {sec_priority.upper()}
 {limit_str}
 
 GRANT IDEA:
-{grant_idea[:8000] if grant_idea else 'See call requirements'}
+{grant_idea[:4000] if grant_idea else 'See skeleton content'}
 
-CALL BRIEF (overall funder goals and what a strong proposal must include):
-{call_narrative_brief[:12000] if call_narrative_brief else call_requirements[:8000]}
+OVERALL NARRATIVE CONTEXT:
+Theory of change: {theory_of_change or 'See grant idea'}
+Cross-section themes to maintain: {cross_themes or 'Coherence and impact'}
+{f'Funder priorities to emphasise:{chr(10)}{funder_priorities}' if funder_priorities else ''}
+{skeleton_block}
+{evidence_block}
+{compliance_block}
 
-CALL REQUIREMENTS FOR THIS SPECIFIC SECTION:
-{sec_specific_reqs or call_requirements[:8000]}
+CALL NARRATIVE BRIEF (overall funder goals — treat as guidance):
+{call_narrative_brief[:6000] if call_narrative_brief else call_requirements[:4000]}
 
-EVALUATION CRITERIA TO ADDRESS (address each one explicitly):
+EVALUATION CRITERIA (ensure these are addressed somewhere in the expanded section):
 {chr(10).join(f'- {c}' for c in (evaluation_criteria or []))}
 
 PRIOR SECTIONS SUMMARY (maintain narrative continuity and avoid repetition):
-{prior_sections_summary[:6000] if prior_sections_summary else 'This may be the first section.'}
+{prior_sections_summary[:4000] if prior_sections_summary else 'This may be the first section.'}
 
 {f'ADDITIONAL INSTRUCTIONS: {user_instructions}' if user_instructions else ''}
 {style_str}
@@ -120,11 +157,12 @@ PRIOR SECTIONS SUMMARY (maintain narrative continuity and avoid repetition):
 {lang_str}
 {cite_str}
 
-Write this section now. Be thorough and detailed — write in full paragraphs, not bullet points.
-Every key claim should be supported or flagged. Connect to the funder's goals.
+Expand the skeleton content into a complete section now. Write in full paragraphs, not bullet points.
+Preserve the team's voice and structure; enrich with evidence and specificity.
+Every key claim should be supported or flagged with [VERIFY:].
 
 Return JSON with:
-- draft: the full section text (HTML paragraphs preferred)
+- draft: the full expanded section text (HTML paragraphs preferred)
 - word_count: approximate word count
 - sources_used: list of archive/exemplar sources referenced
 - assumptions: list of assumptions made

@@ -14,8 +14,9 @@ import {
 } from '@/lib/skeletonGenerationStore';
 import UnifiedWorkspace from './UnifiedWorkspace';
 import AIChatPanel from './AIChatPanel';
-import WorkspaceContext, { type SyncState, type WorkspaceCitation } from './WorkspaceContext';
+import WorkspaceContext, { type SyncState, type WorkspaceCitation, type CoherenceResult } from './WorkspaceContext';
 import type { SkeletonSection } from './SkeletonEditor';
+import type { MetaAgentEvent, AgentQuestion } from './MetaAgentPanel';
 import { AlertCircle, Sparkles } from 'lucide-react';
 import type { PanelTabType } from './split-view/types';
 
@@ -67,7 +68,13 @@ export default function GrantEditor({ grant, onGrantUpdate, onHeadingsChange }: 
   // ── Generation state ─────────────────────────────────────────────────────────
   const [generatingSkeleton, setGeneratingSkeleton] = useState(false);
   const [generatingDraft, setGeneratingDraft] = useState(false);
-  const [draftProgress, setDraftProgress] = useState<{ section: string; index: number; total: number } | null>(null);
+  const [draftProgress, setDraftProgress] = useState<import('./phases/SkeletonPhase').DraftProgress | null>(null);
+
+  // ── Meta-agent state ──────────────────────────────────────────────────────────
+  const [metaAgentEvents, setMetaAgentEvents] = useState<MetaAgentEvent[]>([]);
+  const [agentQuestions, setAgentQuestions] = useState<AgentQuestion[]>([]);
+  const [coherenceResult, setCoherenceResult] = useState<CoherenceResult | null>(null);
+  const [refiningDraft, setRefiningDraft] = useState(false);
 
   // ── Review / citations ───────────────────────────────────────────────────────
   const [reviewReport, setReviewReport] = useState<Record<string, unknown> | null>(grant.last_review || null);
@@ -301,17 +308,72 @@ export default function GrantEditor({ grant, onGrantUpdate, onHeadingsChange }: 
     } catch { /* ignore */ }
   };
 
-  const handleGenerateDraft = () => {
+  const handleGenerateDraft = (flaggedSections?: string[]) => {
     setGeneratingDraft(true);
-    setDraftProgress(null);
+    setDraftProgress({ phase: 'planning' });
+    // Reset meta-agent state for new generation
+    setMetaAgentEvents([]);
+    setAgentQuestions([]);
+    setCoherenceResult(null);
+
     streamDraftGeneration(
       grant.id,
       (event) => {
-        if (event.event === 'section_start' || event.event === 'section_complete') {
-          setDraftProgress({ section: String(event.section), index: Number(event.index), total: Number(event.total) });
-        }
-        if (event.event === 'draft_complete' && event.document_html) {
+        const ev = event.event as string;
+
+        // ── Phase progress events ──────────────────────────────────────────────
+        if (ev === 'planning_start') {
+          setDraftProgress({ phase: 'planning', total: Number(event.total) });
+        } else if (ev === 'planning_complete') {
+          setDraftProgress({ phase: 'researching', total: Number(event.total), researchDone: 0, researchTotal: Number(event.total) });
+        } else if (ev === 'research_start') {
+          setDraftProgress((p) => ({ ...(p ?? { phase: 'researching' }), phase: 'researching', researchTotal: Number(event.total) }));
+        } else if (ev === 'research_complete') {
+          setDraftProgress((p) => ({ ...(p ?? { phase: 'drafting' }), phase: 'drafting', total: Number(event.total), index: 0 }));
+        } else if (ev === 'section_start') {
+          setDraftProgress({ phase: 'drafting', section: String(event.section), index: Number(event.index), total: Number(event.total) });
+        } else if (ev === 'section_complete') {
+          setDraftProgress({ phase: 'drafting', section: String(event.section), index: Number(event.index), total: Number(event.total) });
+        } else if (ev === 'compliance_pass') {
+          setDraftProgress({ phase: 'assembling' });
+
+        // ── Meta-agent events ──────────────────────────────────────────────────
+        } else if (ev === 'meta_agent_start') {
+          setDraftProgress({ phase: 'assembling' });
+        } else if (
+          ev === 'meta_agent_thinking' ||
+          ev === 'meta_agent_action' ||
+          ev === 'meta_agent_revision' ||
+          ev === 'meta_agent_accepted'
+        ) {
+          setMetaAgentEvents((prev) => [...prev, event as MetaAgentEvent]);
+        } else if (ev === 'meta_agent_question') {
+          const q: AgentQuestion = {
+            question_id: String(event.question_id ?? ''),
+            section: String(event.section ?? ''),
+            question: String(event.question ?? ''),
+            why: String(event.why ?? ''),
+            section_context: event.section_context ? String(event.section_context) : undefined,
+          };
+          setAgentQuestions((prev) => [...prev, q]);
+          setMetaAgentEvents((prev) => [...prev, event as MetaAgentEvent]);
+
+        // ── Coherence check ────────────────────────────────────────────────────
+        } else if (ev === 'coherence_check') {
+          setCoherenceResult({
+            overall: String(event.overall ?? 'adequate'),
+            issues: (event.issues as CoherenceResult['issues']) || [],
+            strengths: (event.strengths as string[]) || [],
+          });
+
+        // ── Draft complete ─────────────────────────────────────────────────────
+        } else if (ev === 'draft_complete' && event.document_html) {
           setDocumentHtml(String(event.document_html));
+          setDraftProgress({ phase: 'complete' });
+          // Populate questions from the event if any were bundled
+          if (Array.isArray(event.agent_questions) && event.agent_questions.length > 0) {
+            setAgentQuestions(event.agent_questions as AgentQuestion[]);
+          }
           openPanelRef.current?.('editor');
         }
       },
@@ -325,7 +387,40 @@ export default function GrantEditor({ grant, onGrantUpdate, onHeadingsChange }: 
         setGeneratingDraft(false);
         setDraftProgress(null);
       },
+      flaggedSections,
     );
+  };
+
+  const handleAnswerAgentQuestion = (questionId: string, answer: string) => {
+    setAgentQuestions((prev) =>
+      prev.map((q) => q.question_id === questionId ? { ...q, answer } : q)
+    );
+  };
+
+  const handleSkipAgentQuestion = (questionId: string) => {
+    setAgentQuestions((prev) =>
+      prev.map((q) => q.question_id === questionId ? { ...q, skipped: true } : q)
+    );
+  };
+
+  const handleRefineDraft = async () => {
+    const answers = agentQuestions
+      .filter((q) => q.answer && !q.skipped)
+      .map((q) => ({ question_id: q.question_id, section_name: q.section, answer: q.answer! }));
+    if (!answers.length) return;
+    setRefiningDraft(true);
+    try {
+      const res = await grantWriting.refineDraft(grant.id, answers);
+      if (res.data?.document_html) {
+        setDocumentHtml(res.data.document_html);
+        openPanelRef.current?.('editor');
+      }
+    } catch (err) {
+      console.error('Refine draft failed', err);
+    } finally {
+      setRefiningDraft(false);
+      onGrantUpdate();
+    }
   };
 
   const handleRunReview = async () => {
@@ -461,6 +556,13 @@ export default function GrantEditor({ grant, onGrantUpdate, onHeadingsChange }: 
     onPullFromDoc: handlePullFromDoc,
     onDismissRemoteChange: () => setRemoteChangePending(false),
     getDocumentContext,
+    // Meta-agent
+    metaAgentEvents,
+    agentQuestions,
+    coherenceResult,
+    onAnswerAgentQuestion: handleAnswerAgentQuestion,
+    onSkipAgentQuestion: handleSkipAgentQuestion,
+    onRefineDraft: handleRefineDraft,
   };
 
   return (

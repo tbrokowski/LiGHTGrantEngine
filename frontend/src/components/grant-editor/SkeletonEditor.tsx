@@ -1,7 +1,7 @@
 'use client';
 
 import { useState, useRef, useEffect } from 'react';
-import { ChevronDown, Trash2, Plus, GripVertical, Settings2 } from 'lucide-react';
+import { ChevronDown, Trash2, Plus, GripVertical, Settings2, Star } from 'lucide-react';
 import IntroArcEditor, { DEFAULT_INTRO_ARC } from './IntroArcEditor';
 
 export interface SkeletonSection {
@@ -19,6 +19,8 @@ export interface SkeletonSection {
 interface SkeletonEditorProps {
   sections: SkeletonSection[];
   onChange: (sections: SkeletonSection[]) => void;
+  flaggedSections?: string[];
+  onFlaggedChange?: (names: string[]) => void;
 }
 
 const INTRO_TYPES = new Set(['introduction', 'background', 'problem_statement', 'executive_summary', 'justification']);
@@ -66,9 +68,21 @@ function AutoResizeTextarea({
   );
 }
 
-export default function SkeletonEditor({ sections, onChange }: SkeletonEditorProps) {
+export default function SkeletonEditor({ sections, onChange, flaggedSections = [], onFlaggedChange }: SkeletonEditorProps) {
   const [settingsOpenIdx, setSettingsOpenIdx] = useState<number | null>(null);
   const [expandedIntroArc, setExpandedIntroArc] = useState<number | null>(null);
+
+  const flaggedSet = new Set(flaggedSections);
+
+  const toggleFlag = (name: string) => {
+    const next = new Set(flaggedSet);
+    if (next.has(name)) {
+      next.delete(name);
+    } else {
+      next.add(name);
+    }
+    onFlaggedChange?.(Array.from(next));
+  };
 
   const updateSection = (index: number, patch: Partial<SkeletonSection>) => {
     onChange(sections.map((s, i) => (i === index ? { ...s, ...patch } : s)));
@@ -98,11 +112,15 @@ export default function SkeletonEditor({ sections, onChange }: SkeletonEditorPro
       {sections.map((sec, i) => {
         const settingsOpen = settingsOpenIdx === i;
         const introSection = isIntroSection(sec);
+        const isFlagged = flaggedSet.has(sec.name);
 
         return (
-          <div key={i} className="group relative">
+          <div
+            key={i}
+            className={`group relative rounded-lg transition-colors ${isFlagged ? 'bg-amber-50/60 ring-1 ring-amber-200' : ''}`}
+          >
             {/* Section heading row */}
-            <div className="flex items-start gap-2 mb-2">
+            <div className="flex items-start gap-2 mb-2 pt-1 px-1">
               <GripVertical className="mt-1 w-4 h-4 text-gray-300 opacity-0 group-hover:opacity-100 cursor-grab select-none shrink-0" />
               <span className="text-xs text-gray-400 mt-1.5 w-5 shrink-0 select-none tabular-nums">{i + 1}.</span>
               <input
@@ -116,6 +134,15 @@ export default function SkeletonEditor({ sections, onChange }: SkeletonEditorPro
                   ~{sec.word_limit.toLocaleString()} words
                 </span>
               ) : null}
+              {/* Flag/star toggle */}
+              <button
+                type="button"
+                onClick={() => toggleFlag(sec.name)}
+                title={isFlagged ? 'Remove priority flag' : 'Flag as priority section for draft generation'}
+                className={`mt-0.5 shrink-0 transition-colors ${isFlagged ? 'text-amber-400' : 'text-gray-200 hover:text-amber-300'}`}
+              >
+                <Star className={`w-3.5 h-3.5 ${isFlagged ? 'fill-amber-400' : ''}`} />
+              </button>
               {/* Settings toggle */}
               <button
                 type="button"
@@ -140,7 +167,7 @@ export default function SkeletonEditor({ sections, onChange }: SkeletonEditorPro
             </div>
 
             {/* Content — primary editable draft text */}
-            <div className="pl-11">
+            <div className="pl-11 px-1">
               <AutoResizeTextarea
                 value={sec.content ?? ''}
                 onChange={(v) => updateSection(i, { content: v })}

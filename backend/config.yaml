@@ -20,6 +20,7 @@ ai:
       temperature: 0.2
       max_tokens: 1500
     section_drafter:
+      model: gpt-4o
       temperature: 0.5
       max_tokens: 8000
     section_splitter:
@@ -45,8 +46,21 @@ ai:
       temperature: 0.2
       max_tokens: 6000
     intro_architect:
+      model: gpt-4o
       temperature: 0.5
       max_tokens: 8000
+    planning_agent:
+      model: gpt-4o-mini
+      temperature: 0.3
+      max_tokens: 2048
+    research_agent:
+      model: gpt-4o-mini
+      temperature: 0.1
+      max_tokens: 2048
+    meta_agent:
+      model: gpt-4o
+      temperature: 0.2
+      max_tokens: 4096
     citation_agent:
       temperature: 0.1
       max_tokens: 2048
@@ -163,6 +177,10 @@ rag:
   vector_weight: 0.7
   min_similarity: 0.6
   enforce_ai_permissions: true
+web_search:
+  enabled: true
+  tavily_max_results: 5
+  cache_ttl_hours: 24
 citations:
   openalex_base_url: https://api.openalex.org
   pubmed_email: team@light.epfl.ch

@@ -1,6 +1,7 @@
 'use client';
 
 import { createContext, useContext } from 'react';
+import type { MetaAgentEvent, AgentQuestion } from './MetaAgentPanel';
 
 export type SyncState = 'idle' | 'pushing' | 'pulling' | 'creating' | 'success' | 'error';
 
@@ -10,6 +11,12 @@ export interface WorkspaceCitation {
   source_type?: string;
   url?: string;
   claim_text?: string;
+}
+
+export interface CoherenceResult {
+  overall: string;
+  issues: Array<{ section: string; issue: string; severity: string }>;
+  strengths: string[];
 }
 
 export interface WorkspaceContextType {
@@ -31,7 +38,12 @@ export interface WorkspaceContextType {
   // Generation state
   generatingSkeleton: boolean;
   generatingDraft: boolean;
-  draftProgress: { section: string; index: number; total: number } | null;
+  draftProgress: import('./phases/SkeletonPhase').DraftProgress | null;
+
+  // Meta-agent state
+  metaAgentEvents: MetaAgentEvent[];
+  agentQuestions: AgentQuestion[];
+  coherenceResult: CoherenceResult | null;
 
   // Review
   reviewReport: Record<string, unknown> | null;
@@ -59,7 +71,7 @@ export interface WorkspaceContextType {
   onCallAnalysis: (analysis: Record<string, unknown>, requirements?: string) => void;
   onGenerateSkeleton: () => void;
   onSkeletonChange: (skeleton: Record<string, unknown>) => void;
-  onGenerateDraft: () => void;
+  onGenerateDraft: (flaggedSections?: string[]) => void;
   onDocumentChange: (html: string, words: number, headings: string[]) => void;
   onSelectionChange: (text: string) => void;
   onActiveSectionChange: (section: string) => void;
@@ -74,6 +86,9 @@ export interface WorkspaceContextType {
   onPullFromDoc: () => void;
   onDismissRemoteChange: () => void;
   getDocumentContext: () => string;
+  onAnswerAgentQuestion: (questionId: string, answer: string) => void;
+  onSkipAgentQuestion: (questionId: string) => void;
+  onRefineDraft: () => void;
 }
 
 const WorkspaceContext = createContext<WorkspaceContextType | null>(null);

@@ -189,6 +189,101 @@ async def chat_complete_tracked(
     return content, pt, ct, cost
 
 
+async def chat_complete_with_tools(
+    messages: list[dict],
+    tools: list[dict],
+    tool_executor: Any,
+    agent_name: Optional[str] = None,
+    max_rounds: int = 6,
+) -> tuple[Optional[str], list[dict]]:
+    """
+    Run an OpenAI function-calling loop until the model stops calling tools
+    or `max_rounds` is exhausted.
+
+    Args:
+        messages:       Initial message list (modified in place with assistant/tool turns).
+        tools:          OpenAI tool definitions (list of {"type": "function", "function": {...}}).
+        tool_executor:  Async callable(tool_name: str, arguments: dict) -> dict.
+                        Called for every tool invocation the model makes.
+        agent_name:     Config-override key (same as chat_complete).
+        max_rounds:     Hard cap on tool-call iterations to prevent infinite loops.
+
+    Returns:
+        (final_text, tool_call_log)
+        final_text is the last assistant text message (may be None if the model
+        ends on a tool call without a follow-up text response).
+        tool_call_log is a list of {"tool": name, "arguments": dict, "result": dict} records.
+    """
+    ai_cfg = settings.ai
+    gen = ai_cfg.generation
+    agent_overrides = ai_cfg.agent_overrides.get(agent_name or "", {})
+    temp = agent_overrides.get("temperature", gen.temperature)
+    tokens = agent_overrides.get("max_tokens", gen.max_tokens)
+    model = agent_overrides.get("model", ai_cfg.model)
+
+    tool_call_log: list[dict] = []
+    current_messages = list(messages)
+    final_text: Optional[str] = None
+
+    for _ in range(max_rounds):
+        async with _get_client() as client:
+            response = await client.chat.completions.create(
+                model=model,
+                messages=current_messages,
+                tools=tools,
+                tool_choice="auto",
+                temperature=temp,
+                max_tokens=tokens,
+                top_p=gen.top_p,
+            )
+
+        choice = response.choices[0]
+        message = choice.message
+
+        # If no tool calls, the model is done
+        if not message.tool_calls:
+            final_text = message.content or ""
+            break
+
+        # Append the assistant's tool-call message to history
+        current_messages.append({
+            "role": "assistant",
+            "content": message.content,
+            "tool_calls": [
+                {
+                    "id": tc.id,
+                    "type": "function",
+                    "function": {"name": tc.function.name, "arguments": tc.function.arguments},
+                }
+                for tc in message.tool_calls
+            ],
+        })
+
+        # Dispatch each tool call and append results
+        import json as _json
+        for tc in message.tool_calls:
+            tool_name = tc.function.name
+            try:
+                arguments = _json.loads(tc.function.arguments)
+            except (_json.JSONDecodeError, TypeError):
+                arguments = {}
+
+            try:
+                result = await tool_executor(tool_name, arguments)
+            except Exception as exc:
+                result = {"error": str(exc)}
+
+            tool_call_log.append({"tool": tool_name, "arguments": arguments, "result": result})
+
+            current_messages.append({
+                "role": "tool",
+                "tool_call_id": tc.id,
+                "content": _json.dumps(result) if not isinstance(result, str) else result,
+            })
+
+    return final_text, tool_call_log
+
+
 async def get_embedding(text: str) -> list[float]:
     """
     Get a text embedding from the configured embeddings endpoint.

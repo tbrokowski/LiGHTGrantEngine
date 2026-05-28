@@ -103,6 +103,12 @@ class CitationsConfig(BaseModel):
     cache_ttl_hours: int = 24
 
 
+class WebSearchConfig(BaseModel):
+    enabled: bool = True
+    tavily_max_results: int = 5
+    cache_ttl_hours: int = 24
+
+
 class Settings(BaseSettings):
     """
     Main settings object. Values come from:
@@ -156,6 +162,9 @@ class Settings(BaseSettings):
     # Slack
     slack_webhook_url: Optional[str] = None
 
+    # Tavily web search
+    tavily_api_key: Optional[str] = None
+
     class Config:
         env_file = ".env"
         case_sensitive = False
@@ -186,6 +195,10 @@ class Settings(BaseSettings):
     @property
     def citations(self) -> CitationsConfig:
         return CitationsConfig(**(_raw.get("citations") or {}))
+
+    @property
+    def web_search(self) -> "WebSearchConfig":
+        return WebSearchConfig(**(_raw.get("web_search") or {}))
 
     @property
     def discovery(self) -> dict:

@@ -1,22 +1,90 @@
 'use client';
 
-import { useState, useEffect, useRef } from 'react';
-import { Loader2, Sparkles } from 'lucide-react';
+import { useState, useEffect } from 'react';
+import { Loader2, Sparkles, Star, BookOpen, RefreshCw } from 'lucide-react';
+import SkeletonEditor from '../SkeletonEditor';
 import type { SkeletonSection } from '../SkeletonEditor';
+import MetaAgentPanel from '../MetaAgentPanel';
+import type { MetaAgentEvent, AgentQuestion } from '../MetaAgentPanel';
+import type { CoherenceResult } from '../WorkspaceContext';
 
-interface SkeletonPhaseProps {
-  skeleton: { sections?: SkeletonSection[]; title_suggestion?: string; narrative_arc?: string; key_messages?: string[]; raw_text?: string };
-  onSkeletonChange: (skeleton: Record<string, unknown>) => void;
-  onGenerateDraft: () => void;
-  generating: boolean;
-  draftProgress?: { section: string; index: number; total: number } | null;
-  onSelectionChange?: (text: string) => void;
+export interface DraftProgress {
+  phase: 'planning' | 'researching' | 'drafting' | 'assembling' | 'complete';
+  section?: string;
+  index?: number;
+  total?: number;
+  researchTotal?: number;
+  researchDone?: number;
 }
 
-function flattenSections(sections: SkeletonSection[]): string {
-  return sections
-    .map((s) => `## ${s.name}\n\n${s.content ?? ''}`)
-    .join('\n\n');
+interface SkeletonPhaseProps {
+  skeleton: {
+    sections?: SkeletonSection[];
+    flagged_sections?: string[];
+    title_suggestion?: string;
+    narrative_arc?: string;
+    key_messages?: string[];
+    raw_text?: string;
+  };
+  onSkeletonChange: (skeleton: Record<string, unknown>) => void;
+  onGenerateDraft: (flaggedSections: string[]) => void;
+  generating: boolean;
+  draftProgress?: DraftProgress | null;
+  onSelectionChange?: (text: string) => void;
+  metaAgentEvents?: MetaAgentEvent[];
+  agentQuestions?: AgentQuestion[];
+  coherenceResult?: CoherenceResult | null;
+  onAnswerAgentQuestion?: (questionId: string, answer: string) => void;
+  onSkipAgentQuestion?: (questionId: string) => void;
+  onRefineDraft?: () => void;
+  refining?: boolean;
+}
+
+const PHASE_LABELS: Record<DraftProgress['phase'], string> = {
+  planning: 'Planning research strategy…',
+  researching: 'Researching sections in parallel…',
+  drafting: 'Drafting sections…',
+  assembling: 'Assembling & compliance check…',
+  complete: 'Draft complete',
+};
+
+function parseSectionsFromRawText(rawText: string): SkeletonSection[] {
+  const sections: SkeletonSection[] = [];
+  const lines = rawText.split('\n');
+  let currentName: string | null = null;
+  let currentLines: string[] = [];
+
+  for (const line of lines) {
+    if (line.startsWith('## ')) {
+      if (currentName !== null) {
+        sections.push({
+          name: currentName,
+          type: 'other',
+          content: currentLines.join('\n').trim(),
+          requirements: '',
+          word_limit: null,
+          priority: 'medium',
+          order: sections.length,
+        });
+      }
+      currentName = line.slice(3).trim();
+      currentLines = [];
+    } else if (currentName !== null) {
+      currentLines.push(line);
+    }
+  }
+  if (currentName !== null) {
+    sections.push({
+      name: currentName,
+      type: 'other',
+      content: currentLines.join('\n').trim(),
+      requirements: '',
+      word_limit: null,
+      priority: 'medium',
+      order: sections.length,
+    });
+  }
+  return sections;
 }
 
 export default function SkeletonPhase({
@@ -26,34 +94,69 @@ export default function SkeletonPhase({
   generating,
   draftProgress,
   onSelectionChange,
+  metaAgentEvents = [],
+  agentQuestions = [],
+  coherenceResult,
+  onAnswerAgentQuestion,
+  onSkipAgentQuestion,
+  onRefineDraft,
+  refining = false,
 }: SkeletonPhaseProps) {
   const [editingTitle, setEditingTitle] = useState(false);
   const [titleDraft, setTitleDraft] = useState(skeleton.title_suggestion || '');
-  const textareaRef = useRef<HTMLTextAreaElement>(null);
 
-  // Auto-flatten sections → raw_text on first load if raw_text is missing
+  // Derive sections: prefer skeleton.sections; fall back to parsing raw_text
+  const sections: SkeletonSection[] = (() => {
+    if (skeleton.sections && skeleton.sections.length > 0) return skeleton.sections;
+    if (skeleton.raw_text) return parseSectionsFromRawText(skeleton.raw_text);
+    return [];
+  })();
+
+  const flaggedSections: string[] = (skeleton.flagged_sections as string[]) || [];
+  const hasSections = sections.length > 0;
+  const flagCount = flaggedSections.length;
+
+  // Migrate raw_text-only skeleton to sections on first load
   useEffect(() => {
-    if (!skeleton.raw_text && skeleton.sections && skeleton.sections.length > 0) {
-      onSkeletonChange({ ...skeleton, raw_text: flattenSections(skeleton.sections) });
+    if (!skeleton.sections?.length && skeleton.raw_text && sections.length > 0) {
+      onSkeletonChange({ ...skeleton, sections, raw_text: undefined });
     }
-  // Only run once on mount
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
-
-  // Auto-resize textarea
-  useEffect(() => {
-    const el = textareaRef.current;
-    if (!el) return;
-    el.style.height = 'auto';
-    el.style.height = `${el.scrollHeight}px`;
-  }, [skeleton.raw_text]);
-
-  const rawText = (skeleton.raw_text as string) ?? '';
 
   const commitTitle = () => {
     setEditingTitle(false);
     onSkeletonChange({ ...skeleton, title_suggestion: titleDraft });
   };
+
+  const handleSectionsChange = (updated: SkeletonSection[]) => {
+    onSkeletonChange({ ...skeleton, sections: updated });
+  };
+
+  const handleFlaggedChange = (names: string[]) => {
+    onSkeletonChange({ ...skeleton, flagged_sections: names });
+  };
+
+  const handleGenerateDraft = () => {
+    onGenerateDraft(flaggedSections);
+  };
+
+  const progressPct = (() => {
+    if (!draftProgress) return 0;
+    if (draftProgress.phase === 'planning') return 5;
+    if (draftProgress.phase === 'researching') {
+      const done = draftProgress.researchDone ?? 0;
+      const total = draftProgress.researchTotal ?? 1;
+      return 10 + Math.round((done / total) * 30);
+    }
+    if (draftProgress.phase === 'drafting') {
+      const idx = draftProgress.index ?? 0;
+      const total = draftProgress.total ?? 1;
+      return 40 + Math.round((idx / total) * 50);
+    }
+    if (draftProgress.phase === 'assembling') return 92;
+    return 100;
+  })();
 
   return (
     <div className="flex-1 flex flex-col overflow-hidden">
@@ -61,7 +164,7 @@ export default function SkeletonPhase({
       <div className="flex-1 overflow-y-auto">
         <div className="max-w-3xl mx-auto w-full px-8 pt-8 pb-6 space-y-3">
 
-          {/* Proposal title — editable, large */}
+          {/* Proposal title */}
           {skeleton.title_suggestion !== undefined && (
             <div className="mb-1">
               {editingTitle ? (
@@ -105,54 +208,107 @@ export default function SkeletonPhase({
             </p>
           )}
 
-          {/* Document divider */}
+          {/* Flag hint */}
+          {hasSections && !generating && (
+            <div className="flex items-center gap-1.5 text-xs text-amber-600 bg-amber-50 border border-amber-100 rounded-md px-3 py-2">
+              <Star className="w-3 h-3 fill-amber-400 text-amber-400 shrink-0" />
+              <span>
+                Star sections to prioritise them in draft generation. If none are starred, all sections will be drafted.
+              </span>
+            </div>
+          )}
+
+          {/* Section divider */}
           <div className="border-t border-gray-200 pt-2" />
 
-          {/* Raw text editor */}
-          <textarea
-            ref={textareaRef}
-            value={rawText}
-            onChange={(e) => onSkeletonChange({ ...skeleton, raw_text: e.target.value })}
-            onSelect={(e) => {
-              const t = e.currentTarget;
-              const sel = t.value.substring(t.selectionStart, t.selectionEnd);
-              onSelectionChange?.(sel);
-            }}
-            onBlur={() => onSelectionChange?.('')}
-            placeholder="Your proposal skeleton will appear here. Edit freely…"
-            className="w-full text-sm text-gray-800 leading-relaxed bg-white border border-gray-200 rounded-lg px-4 py-3 focus:outline-none focus:ring-1 focus:ring-indigo-400 focus:border-indigo-400 placeholder:text-gray-300"
-            style={{ resize: 'none', overflow: 'hidden', minHeight: '24rem' }}
-          />
+          {/* Structured skeleton editor */}
+          {hasSections ? (
+            <SkeletonEditor
+              sections={sections}
+              onChange={handleSectionsChange}
+              flaggedSections={flaggedSections}
+              onFlaggedChange={handleFlaggedChange}
+            />
+          ) : (
+            <div className="flex flex-col items-center justify-center py-16 text-center text-gray-400 space-y-3">
+              <BookOpen className="w-8 h-8 text-gray-200" />
+              <p className="text-sm">No skeleton sections yet. Generate a skeleton from the Idea tab to get started.</p>
+            </div>
+          )}
 
           {/* Draft progress */}
-          {draftProgress && (
-            <div className="space-y-2 pt-2">
+          {generating && draftProgress && (
+            <div className="space-y-2 pt-4">
               <div className="flex items-center gap-2 text-xs text-gray-600">
-                <Loader2 className="w-3.5 h-3.5 animate-spin text-indigo-500" />
-                Drafting {draftProgress.section}… ({draftProgress.index + 1}/{draftProgress.total})
+                <Loader2 className="w-3.5 h-3.5 animate-spin text-indigo-500 shrink-0" />
+                <span>{PHASE_LABELS[draftProgress.phase] ?? 'Generating draft…'}</span>
+                {draftProgress.phase === 'drafting' && draftProgress.total && (
+                  <span className="text-gray-400">({(draftProgress.index ?? 0) + 1}/{draftProgress.total})</span>
+                )}
               </div>
-              <div className="h-1 bg-gray-100 rounded-full overflow-hidden">
+              <div className="h-1.5 bg-gray-100 rounded-full overflow-hidden">
                 <div
-                  className="h-full bg-indigo-400 transition-all duration-500"
-                  style={{ width: `${((draftProgress.index + 1) / draftProgress.total) * 100}%` }}
+                  className="h-full bg-indigo-400 transition-all duration-700"
+                  style={{ width: `${progressPct}%` }}
                 />
               </div>
+              {draftProgress.section && (
+                <p className="text-xs text-gray-400 truncate">{draftProgress.section}</p>
+              )}
+            </div>
+          )}
+          {generating && !draftProgress && (
+            <div className="flex items-center gap-2 text-xs text-gray-500 pt-4">
+              <Loader2 className="w-3.5 h-3.5 animate-spin text-indigo-500" />
+              Starting…
+            </div>
+          )}
+
+          {/* Meta-agent activity panel — shown during and after generation */}
+          {(metaAgentEvents.length > 0 || agentQuestions.length > 0 || coherenceResult) && (
+            <div className="pt-4">
+              <MetaAgentPanel
+                events={metaAgentEvents}
+                questions={agentQuestions}
+                onAnswerQuestion={onAnswerAgentQuestion ?? (() => {})}
+                onSkipQuestion={onSkipAgentQuestion ?? (() => {})}
+                coherenceResult={coherenceResult ?? null}
+                visible
+              />
             </div>
           )}
         </div>
       </div>
 
       {/* Sticky footer */}
-      <div className="flex-shrink-0 border-t border-gray-200 px-6 py-3 flex items-center justify-between">
-        <p className="text-sm text-gray-400">Edit the skeleton, then generate the full draft</p>
-        <button
-          onClick={onGenerateDraft}
-          disabled={!rawText.trim() || generating}
-          className="flex items-center gap-2 bg-indigo-600 text-white text-sm px-5 py-2.5 rounded-lg hover:bg-indigo-700 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
-        >
-          {generating ? <Loader2 className="w-4 h-4 animate-spin" /> : <Sparkles className="w-4 h-4" />}
-          Generate Full Draft
-        </button>
+      <div className="flex-shrink-0 border-t border-gray-200 px-6 py-3 flex items-center justify-between gap-4">
+        <p className="text-sm text-gray-400 flex-1 min-w-0">
+          {flagCount > 0
+            ? <span className="flex items-center gap-1"><Star className="w-3 h-3 fill-amber-400 text-amber-400" /> <span className="font-medium text-amber-600">{flagCount} section{flagCount > 1 ? 's' : ''} flagged</span> — will be drafted first</span>
+            : 'Edit your skeleton, then generate the full draft'
+          }
+        </p>
+        <div className="flex items-center gap-2 shrink-0">
+          {/* Refine Draft button — shown after draft with pending questions */}
+          {agentQuestions.some((q) => q.answer && !q.skipped) && !generating && onRefineDraft && (
+            <button
+              onClick={onRefineDraft}
+              disabled={refining}
+              className="flex items-center gap-2 bg-amber-500 text-white text-sm px-4 py-2.5 rounded-lg hover:bg-amber-600 disabled:opacity-50 transition-colors"
+            >
+              {refining ? <Loader2 className="w-4 h-4 animate-spin" /> : <RefreshCw className="w-4 h-4" />}
+              {refining ? 'Refining…' : 'Refine Draft'}
+            </button>
+          )}
+          <button
+            onClick={handleGenerateDraft}
+            disabled={!hasSections || generating}
+            className="flex items-center gap-2 bg-indigo-600 text-white text-sm px-5 py-2.5 rounded-lg hover:bg-indigo-700 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
+          >
+            {generating ? <Loader2 className="w-4 h-4 animate-spin" /> : <Sparkles className="w-4 h-4" />}
+            {generating ? 'Generating…' : 'Generate Full Draft'}
+          </button>
+        </div>
       </div>
     </div>
   );

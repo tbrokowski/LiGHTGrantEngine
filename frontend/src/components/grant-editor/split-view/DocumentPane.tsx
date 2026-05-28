@@ -273,6 +273,7 @@ export default function DocumentPane({
       case 'skeleton': {
         const skeletonData = workspace.skeleton as {
           sections?: SkeletonSection[];
+          flagged_sections?: string[];
           title_suggestion?: string;
           narrative_arc?: string;
           key_messages?: string[];
@@ -286,6 +287,12 @@ export default function DocumentPane({
             generating={workspace.generatingDraft}
             draftProgress={workspace.draftProgress}
             onSelectionChange={workspace.onSelectionChange}
+            metaAgentEvents={workspace.metaAgentEvents}
+            agentQuestions={workspace.agentQuestions}
+            coherenceResult={workspace.coherenceResult}
+            onAnswerAgentQuestion={workspace.onAnswerAgentQuestion}
+            onSkipAgentQuestion={workspace.onSkipAgentQuestion}
+            onRefineDraft={workspace.onRefineDraft}
           />
         );
       }

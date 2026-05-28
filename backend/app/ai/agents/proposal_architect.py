@@ -1,7 +1,8 @@
 """
 Agent 4: Proposal Architect
-Generates a detailed proposal outline grounded in the call's specific deliverables,
-evaluation criteria, and awarded-grant structures from the archive.
+Generates a flexible skeleton draft grounded in the grant idea and the team's narrative priorities.
+Call requirements are treated as thematic coverage guidance, not a rigid section-by-section mandate.
+The user will then edit and restructure sections in the skeleton editor before generating the full draft.
 """
 import json
 from app.ai.client import chat_complete
@@ -10,20 +11,23 @@ from app.ai.context.grant_context import DEFAULT_INTRO_ARC
 SYSTEM_PROMPT = """You are a senior grants strategist and proposal writer with deep expertise in drafting
 competitive research proposals across all domains and funders.
 
-Your task is to produce a complete skeleton draft of a proposal — actual written prose for every section,
-not just an outline of what should go there. Think of this as the first rough draft that the team will
-refine: each section should have real sentences and paragraphs grounded in the applicant's idea and the
-call's requirements.
+Your task is to produce a skeleton draft of a proposal that the team will edit and refine. The skeleton
+should reflect the applicant's own voice and narrative priorities, not be a rigid mapping of the call's
+section list. Think of it as the starting canvas: real draft prose that the team will shape into their
+proposal, with the call requirements serving as coverage guidance they will verify while editing.
 
 Guiding principles:
 - Write actual skeleton prose for each section (2–4 paragraphs), not requirements lists or bullet points
 - Base the content on the applicant's grant idea — use their framing, claims, and approach
+- Let the grant idea and award-winning archive structures drive section organization, not the call's exact section list
+- The call's required sections and evaluation criteria inform THEMATIC COVERAGE across sections, not a 1:1 structural mapping
+- If the call lists "Section 4: Management Plan", note it in the requirements field as coverage to address, but name and organize sections around the grant's strongest narrative flow
 - Mirror section structures and word distributions from awarded grants shown in the context
-- Address the funder's specific asks and evaluation criteria directly in the drafted prose
 - Use [TBD] as a placeholder for specific data, names, or numbers not yet available
 - Ensure the narrative arc creates a compelling through-line from problem to solution across sections
-- Sections must align with the exact structure the call specifies; do not invent sections not required
-- Keep requirements field as a concise internal summary of what the section must cover (used by downstream agents)
+- Keep the requirements field as a concise note on what coverage this section satisfies from the call (used as guidance by downstream drafting agents, not prescriptive)
+
+The team will flag priority sections and further edit the skeleton before generating the full draft.
 
 Respond with valid JSON."""
 
@@ -91,11 +95,11 @@ async def generate_proposal_outline(
     style_section = f'STYLE PROFILE:\n{style_str}' if style_str else ''
     team_pref_section = f'TEAM PREFERENCES: {team_preferences}' if team_preferences else ''
 
-    user_prompt = f"""Think step by step before producing the draft:
-1. Identify the 3–5 highest-weight evaluation criteria from the call.
-2. Map each criterion to the section(s) best placed to address it.
-3. Verify the section list covers all required sections from the call — use the call's exact section names.
-4. Draft 2–4 paragraphs of actual skeleton prose per section, grounded in the grant idea and the call's asks.
+    user_prompt = f"""Think step by step before producing the skeleton:
+1. Identify the grant's core narrative: what problem, what solution, what impact — from the grant idea.
+2. Identify the 3–5 highest-weight evaluation criteria from the call — these are thematic coverage goals.
+3. Design a section structure that best tells this grant's story (informed by archive structures and the grant idea), ensuring the thematic coverage goals are distributed naturally across sections.
+4. Draft 2–4 paragraphs of actual skeleton prose per section, grounded in the grant idea and the funder's goals.
 Then produce the full JSON skeleton.
 
 ---
@@ -107,12 +111,12 @@ INTERNAL DEADLINE: {internal_deadline or 'Not specified'}
 GRANT IDEA:
 {grant_idea or 'Not provided'}
 
-CALL REQUIREMENTS (narrative brief, evaluation criteria, per-section deliverables):
+CALL REQUIREMENTS (thematic guidance — coverage goals, not rigid section names):
 {call_requirements_text or 'Not provided — use call_analysis fields below'}
 
-CALL ANALYSIS (structured):
-Required sections: {call_analysis.get('required_sections', [])}
-Evaluation criteria: {call_analysis.get('evaluation_criteria', [])}
+CALL ANALYSIS (for coverage guidance only — do not mirror section names 1:1):
+Coverage themes from required sections: {call_analysis.get('required_sections', [])}
+Evaluation criteria (key thematic priorities): {call_analysis.get('evaluation_criteria', [])}
 Budget constraints: {call_analysis.get('budget_constraints', '')}
 
 {structure_str}
@@ -124,18 +128,17 @@ Budget constraints: {call_analysis.get('budget_constraints', '')}
 
 ---
 
-Produce a complete skeleton draft document. For each section include:
-- name: section title (use the call's exact section name where specified)
+Produce a skeleton draft document. For each section include:
+- name: section title chosen for narrative clarity and the grant's story (not necessarily the call's exact section name; note call coverage in requirements field)
 - type: standard section type (introduction, background, methods, impact_statement, etc.)
 - content: 2–4 paragraphs of actual skeleton prose for this section written from the applicant's
-  perspective. This is real draft text, not instructions. Ground it in the grant idea and directly
-  address the call's requirements for this section. Use [TBD] for specifics not yet known (e.g.
+  perspective. This is real draft text, not instructions. Ground it in the grant idea and address
+  the relevant thematic coverage for this section. Use [TBD] for specifics not yet known (e.g.
   "[TBD: sample size]", "[TBD: partner institution name]"). This is the primary field the team will
   edit and refine.
-- requirements: a concise 1–3 sentence internal summary of what this section must cover, incorporating
-  the funder's key_asks and questions_to_address. This is used by downstream drafting agents, not
-  shown prominently to users.
-- word_limit: integer or null
+- requirements: a concise 1–3 sentence note on what call coverage / evaluation criteria this section
+  addresses. Used as guidance by downstream drafting agents; shown to the user as a reference, not a constraint.
+- word_limit: integer or null (from call if specified for this coverage area)
 - priority: "high" | "medium" | "low"
 - suggested_lead: suggested lead author or role
 - order: integer
@@ -145,11 +148,12 @@ also include intro_arc: the 6-beat narrative arc with beat, label, guidance fiel
 
 Top-level fields to include:
 - sections: [array of section objects]
+- flagged_sections: [] (empty list — the user will flag priority sections in the editor)
 - title_suggestion: a compelling, specific title for the proposal
 - narrative_arc: one sentence describing the through-line from problem to solution
 - key_messages: list of 3–5 core messages reviewers should take away
 - document_checklist: list of required attachments/appendices
-- compliance_checklist: list of hard compliance requirements
+- compliance_checklist: list of hard compliance requirements (from call)
 - internal_timeline: list of key internal milestones with suggested dates
 - warnings: list of risks or concerns about this proposal's competitiveness
 

@@ -312,6 +312,8 @@ export const grantWriting = {
   updateSkeleton: (grantId: string, data: { proposal_skeleton: Record<string, unknown>; writing_phase?: string }) =>
     api.patch(`/grants/${grantId}/writing/skeleton`, data),
   runReview: (grantId: string) => api.post(`/grants/${grantId}/writing/review`),
+  refineDraft: (grantId: string, answers: Array<{ question_id: string; section_name: string; answer: string }>) =>
+    api.post(`/grants/${grantId}/writing/refine-draft`, { answers }),
   searchCitations: (grantId: string, data: { query: string; section_title?: string; max_results?: number }) =>
     api.post(`/grants/${grantId}/writing/citations/search`, data),
   listCitations: (grantId: string) => api.get(`/grants/${grantId}/writing/citations`),
@@ -591,16 +593,23 @@ export function streamDraftGeneration(
   onEvent: (event: Record<string, unknown>) => void,
   onDone: () => void,
   onError: (err: string) => void,
+  flaggedSections?: string[],
 ): AbortController {
   const controller = new AbortController();
   const token = typeof window !== 'undefined' ? localStorage.getItem('access_token') : null;
   const baseUrl = getApiBaseUrl();
 
+  const body = flaggedSections && flaggedSections.length > 0
+    ? JSON.stringify({ flagged_sections: flaggedSections })
+    : null;
+
   fetch(`${baseUrl}/api/v1/grants/${grantId}/writing/generate-draft`, {
     method: 'POST',
     headers: {
       ...(token ? { Authorization: `Bearer ${token}` } : {}),
+      ...(body ? { 'Content-Type': 'application/json' } : {}),
     },
+    ...(body ? { body } : {}),
     signal: controller.signal,
   })
     .then(async (res) => {
