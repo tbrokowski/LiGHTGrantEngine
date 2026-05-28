@@ -127,6 +127,16 @@ class GrantWritingOrchestrator:
         """SSE stream: draft sections one at a time."""
         skeleton = grant.proposal_skeleton or {}
         sections = skeleton.get("sections") or []
+        if not sections and skeleton.get("raw_text"):
+            sections = [
+                {
+                    "name": "Full Proposal",
+                    "content": skeleton["raw_text"],
+                    "requirements": "",
+                    "word_limit": None,
+                    "priority": "high",
+                }
+            ]
         if not sections:
             yield _sse({"error": "No skeleton sections found. Generate skeleton first."})
             return

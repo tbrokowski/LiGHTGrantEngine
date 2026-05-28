@@ -1,15 +1,22 @@
 'use client';
 
-import { useState } from 'react';
+import { useState, useEffect, useRef } from 'react';
 import { Loader2, Sparkles } from 'lucide-react';
-import SkeletonEditor, { SkeletonSection } from '../SkeletonEditor';
+import type { SkeletonSection } from '../SkeletonEditor';
 
 interface SkeletonPhaseProps {
-  skeleton: { sections?: SkeletonSection[]; title_suggestion?: string; narrative_arc?: string; key_messages?: string[] };
+  skeleton: { sections?: SkeletonSection[]; title_suggestion?: string; narrative_arc?: string; key_messages?: string[]; raw_text?: string };
   onSkeletonChange: (skeleton: Record<string, unknown>) => void;
   onGenerateDraft: () => void;
   generating: boolean;
   draftProgress?: { section: string; index: number; total: number } | null;
+  onSelectionChange?: (text: string) => void;
+}
+
+function flattenSections(sections: SkeletonSection[]): string {
+  return sections
+    .map((s) => `## ${s.name}\n\n${s.content ?? ''}`)
+    .join('\n\n');
 }
 
 export default function SkeletonPhase({
@@ -18,14 +25,30 @@ export default function SkeletonPhase({
   onGenerateDraft,
   generating,
   draftProgress,
+  onSelectionChange,
 }: SkeletonPhaseProps) {
-  const sections = skeleton.sections || [];
   const [editingTitle, setEditingTitle] = useState(false);
   const [titleDraft, setTitleDraft] = useState(skeleton.title_suggestion || '');
+  const textareaRef = useRef<HTMLTextAreaElement>(null);
 
-  const updateSections = (updated: SkeletonSection[]) => {
-    onSkeletonChange({ ...skeleton, sections: updated });
-  };
+  // Auto-flatten sections → raw_text on first load if raw_text is missing
+  useEffect(() => {
+    if (!skeleton.raw_text && skeleton.sections && skeleton.sections.length > 0) {
+      onSkeletonChange({ ...skeleton, raw_text: flattenSections(skeleton.sections) });
+    }
+  // Only run once on mount
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
+  // Auto-resize textarea
+  useEffect(() => {
+    const el = textareaRef.current;
+    if (!el) return;
+    el.style.height = 'auto';
+    el.style.height = `${el.scrollHeight}px`;
+  }, [skeleton.raw_text]);
+
+  const rawText = (skeleton.raw_text as string) ?? '';
 
   const commitTitle = () => {
     setEditingTitle(false);
@@ -63,14 +86,14 @@ export default function SkeletonPhase({
             </div>
           )}
 
-          {/* Narrative arc — document subtitle */}
+          {/* Narrative arc */}
           {skeleton.narrative_arc && (
             <p className="text-sm italic text-gray-500 border-l-2 border-indigo-200 pl-3">
               {skeleton.narrative_arc}
             </p>
           )}
 
-          {/* Key messages — inline strip */}
+          {/* Key messages */}
           {skeleton.key_messages && skeleton.key_messages.length > 0 && (
             <p className="text-xs text-gray-400">
               {skeleton.key_messages.map((m, i) => (
@@ -85,8 +108,21 @@ export default function SkeletonPhase({
           {/* Document divider */}
           <div className="border-t border-gray-200 pt-2" />
 
-          {/* Sections — rendered as a flowing document */}
-          <SkeletonEditor sections={sections} onChange={updateSections} />
+          {/* Raw text editor */}
+          <textarea
+            ref={textareaRef}
+            value={rawText}
+            onChange={(e) => onSkeletonChange({ ...skeleton, raw_text: e.target.value })}
+            onSelect={(e) => {
+              const t = e.currentTarget;
+              const sel = t.value.substring(t.selectionStart, t.selectionEnd);
+              onSelectionChange?.(sel);
+            }}
+            onBlur={() => onSelectionChange?.('')}
+            placeholder="Your proposal skeleton will appear here. Edit freely…"
+            className="w-full text-sm text-gray-800 leading-relaxed bg-white border border-gray-200 rounded-lg px-4 py-3 focus:outline-none focus:ring-1 focus:ring-indigo-400 focus:border-indigo-400 placeholder:text-gray-300"
+            style={{ resize: 'none', overflow: 'hidden', minHeight: '24rem' }}
+          />
 
           {/* Draft progress */}
           {draftProgress && (
@@ -111,7 +147,7 @@ export default function SkeletonPhase({
         <p className="text-sm text-gray-400">Edit the skeleton, then generate the full draft</p>
         <button
           onClick={onGenerateDraft}
-          disabled={sections.length === 0 || generating}
+          disabled={!rawText.trim() || generating}
           className="flex items-center gap-2 bg-indigo-600 text-white text-sm px-5 py-2.5 rounded-lg hover:bg-indigo-700 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
         >
           {generating ? <Loader2 className="w-4 h-4 animate-spin" /> : <Sparkles className="w-4 h-4" />}

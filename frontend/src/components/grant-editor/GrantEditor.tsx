@@ -60,6 +60,7 @@ export default function GrantEditor({ grant, onGrantUpdate, onHeadingsChange }: 
   const [selectedText, setSelectedText] = useState('');
   const [activeSection, setActiveSection] = useState('');
   const [wordCount, setWordCount] = useState(0);
+  const [activePhaseContext, setActivePhaseContext] = useState(grant.writing_phase || 'idea');
 
   // ── Generation state ─────────────────────────────────────────────────────────
   const [generatingSkeleton, setGeneratingSkeleton] = useState(false);
@@ -201,10 +202,11 @@ export default function GrantEditor({ grant, onGrantUpdate, onHeadingsChange }: 
   }, [docLinked, grant.id]);
 
   // ── Callbacks ─────────────────────────────────────────────────────────────────
-  const getDocumentContext = useCallback(
-    () => documentHtml.replace(/<[^>]+>/g, ' ').trim(),
-    [documentHtml]
-  );
+  const getDocumentContext = useCallback(() => {
+    if (activePhaseContext === 'idea') return grantIdea;
+    if (activePhaseContext === 'skeleton') return (skeleton.raw_text as string) || '';
+    return documentHtml.replace(/<[^>]+>/g, ' ').trim();
+  }, [activePhaseContext, grantIdea, skeleton, documentHtml]);
 
   const handleDocumentChange = useCallback((html: string, words: number, heads: string[]) => {
     setDocumentHtml(html);
@@ -437,6 +439,7 @@ export default function GrantEditor({ grant, onGrantUpdate, onHeadingsChange }: 
     onDocumentChange: handleDocumentChange,
     onSelectionChange: setSelectedText,
     onActiveSectionChange: setActiveSection,
+    onPhaseContextChange: setActivePhaseContext,
     onInsertText: insertIntoSection,
     onDocLinked: (docId: string, url: string) => { setDocLinked(true); setDocUrl(url); onGrantUpdate(); },
     onDocPulled: (html: string) => { setDocumentHtml(html); openPanelRef.current?.('editor'); onGrantUpdate(); },
@@ -514,7 +517,7 @@ export default function GrantEditor({ grant, onGrantUpdate, onHeadingsChange }: 
                   grantId={grant.id}
                   selectedText={selectedText}
                   activeSection={activeSection}
-                  writingPhase="draft"
+                  writingPhase={activePhaseContext}
                   getDocumentContext={getDocumentContext}
                   onInsertText={insertIntoSection}
                   callRequirements={callRequirements}

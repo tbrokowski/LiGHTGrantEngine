@@ -84,6 +84,15 @@ export default function DocumentPane({
 
   const activeTab = panel.tabs.find((t) => t.id === panel.activeTabId) ?? panel.tabs[0];
 
+  // Notify GrantEditor which phase is currently visible so AI context stays in sync
+  useEffect(() => {
+    if (!activeTab) return;
+    if (activeTab.type === 'idea' || activeTab.type === 'skeleton' || activeTab.type === 'editor') {
+      workspace.onPhaseContextChange(activeTab.type);
+    }
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [activeTab?.type]);
+
   // Resolve presigned URL when a workspace-file tab is active
   useEffect(() => {
     if (activeTab?.type !== 'workspace-file') { setResolvedFileUrl(null); return; }
@@ -239,6 +248,7 @@ export default function DocumentPane({
             googleDocLastSynced={workspace.lastSynced || null}
             onDocLinked={workspace.onDocLinked}
             onDocPulled={workspace.onDocPulled}
+            onSelectionChange={workspace.onSelectionChange}
           />
         );
 
@@ -248,6 +258,7 @@ export default function DocumentPane({
           title_suggestion?: string;
           narrative_arc?: string;
           key_messages?: string[];
+          raw_text?: string;
         };
         return (
           <SkeletonPhase
@@ -256,6 +267,7 @@ export default function DocumentPane({
             onGenerateDraft={workspace.onGenerateDraft}
             generating={workspace.generatingDraft}
             draftProgress={workspace.draftProgress}
+            onSelectionChange={workspace.onSelectionChange}
           />
         );
       }

@@ -44,6 +44,7 @@ interface IdeaPhaseProps {
   googleDocLastSynced?: string | null;
   onDocLinked?: (docId: string, docUrl: string) => void;
   onDocPulled?: (html: string) => void;
+  onSelectionChange?: (text: string) => void;
 }
 
 // Collapsible section wrapper
@@ -93,6 +94,7 @@ export default function IdeaPhase({
   googleDocLastSynced,
   onDocLinked,
   onDocPulled,
+  onSelectionChange,
 }: IdeaPhaseProps) {
   // Panel expand state
   const [ideaExpanded, setIdeaExpanded] = useState(true);
@@ -270,6 +272,12 @@ export default function IdeaPhase({
               <textarea
                 value={grantIdea}
                 onChange={(e) => onIdeaChange(e.target.value)}
+                onSelect={(e) => {
+                  const t = e.currentTarget;
+                  const sel = t.value.substring(t.selectionStart, t.selectionEnd);
+                  onSelectionChange?.(sel);
+                }}
+                onBlur={() => onSelectionChange?.('')}
                 rows={8}
                 placeholder="Describe your concept — the problem, approach, and impact…"
                 className="w-full text-sm border border-gray-200 rounded-lg px-3 py-2.5 focus:outline-none focus:ring-2 focus:ring-indigo-400 resize-none"
@@ -327,6 +335,13 @@ export default function IdeaPhase({
                 >
                   <RefreshCw className={`w-3.5 h-3.5 ${reanalyzing ? 'animate-spin' : ''}`} />
                   Re-analyze
+                </button>
+                <button
+                  onClick={() => fileRef.current?.click()}
+                  className="flex items-center gap-1 text-sm text-gray-400 hover:text-indigo-600 transition-colors"
+                >
+                  <Upload className="w-3.5 h-3.5" />
+                  Upload new
                 </button>
               </div>
             ) : (

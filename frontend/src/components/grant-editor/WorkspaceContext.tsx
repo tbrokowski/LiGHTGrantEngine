@@ -59,6 +59,7 @@ export interface WorkspaceContextType {
   onDocumentChange: (html: string, words: number, headings: string[]) => void;
   onSelectionChange: (text: string) => void;
   onActiveSectionChange: (section: string) => void;
+  onPhaseContextChange: (phase: string) => void;
   onInsertText: (text: string) => void;
   onDocLinked: (docId: string, docUrl: string) => void;
   onDocPulled: (html: string) => void;
