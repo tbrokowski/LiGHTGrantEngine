@@ -165,6 +165,18 @@ function ActiveGrantWorkspaceContent() {
     catch { fetchGrant(); }
   }, [id, fetchGrant]);
 
+  const handleDeadlineChange = useCallback(async (newDeadline: string | null) => {
+    if (!id) return;
+    try {
+      await grants.update(id, { external_deadline: newDeadline });
+      setGrant(g => g ? { ...g, external_deadline: newDeadline ?? undefined } : g);
+      fetchSummary();
+    } catch {
+      alert('Failed to save deadline.');
+      fetchGrant();
+    }
+  }, [id, fetchGrant, fetchSummary]);
+
   if (loading) {
     return <div className="flex justify-center py-24 text-sm text-gray-400">Loading…</div>;
   }
@@ -315,6 +327,7 @@ function ActiveGrantWorkspaceContent() {
               summary={summary}
               tasks={taskList}
               onTabChange={(tab) => handleTabChange(tab as ActiveTab)}
+              onDeadlineChange={isGrantEditor ? handleDeadlineChange : undefined}
             />
           )}
           {activeTab === 'overview' && !summary && (

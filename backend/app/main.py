@@ -88,7 +88,7 @@ app.include_router(grant_writing.status_router,    prefix=f"{API}/grants",  tags
 app.include_router(grant_writing.router,           prefix=f"{API}/grants",  tags=["grant-writing"])
 app.include_router(organizations.router,     prefix=f"{API}/organizations",  tags=["organizations"])
 app.include_router(proxy.router,             prefix=f"{API}/proxy",           tags=["proxy"])
-app.include_router(grant_comments.router,    prefix=f"{API}",                 tags=["grant-comments"])
+app.include_router(grant_comments.router,    prefix=f"{API}/grants",          tags=["grant-comments"])
 
 
 @app.get("/health")

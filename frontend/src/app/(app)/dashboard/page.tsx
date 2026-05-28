@@ -195,7 +195,7 @@ export default function DashboardPage() {
       </div>
 
       {/* ── Grant Timeline (Gantt) ── */}
-      <GrantTimeline grants={grantList} loading={loading} starredIds={starredIds} />
+      <GrantTimeline grants={grantList} loading={loading} starredIds={starredIds} tasks={taskList} />
 
       {/* ── Review Queue — New Opportunities This Week ── */}
       <div className="bg-white border border-gray-100 rounded-2xl overflow-hidden">

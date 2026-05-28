@@ -1,6 +1,7 @@
 'use client';
 
-import { AlertTriangle, CalendarDays, CheckSquare, DollarSign, Folder, Users, TrendingUp } from 'lucide-react';
+import { useState } from 'react';
+import { AlertTriangle, CalendarDays, CheckSquare, DollarSign, Folder, Pencil, Users, TrendingUp } from 'lucide-react';
 import type { WorkspaceSummary, Task, Milestone } from './types';
 
 interface GrantInfo {
@@ -20,6 +21,7 @@ interface Props {
   summary: WorkspaceSummary;
   tasks: Task[];
   onTabChange: (tab: string) => void;
+  onDeadlineChange?: (newDeadline: string | null) => void;
 }
 
 function formatDate(d: string | null | undefined): string {
@@ -34,12 +36,32 @@ function formatCurrency(amount: number | null | undefined, currency: string | nu
   return `${sym}${new Intl.NumberFormat('en-US', { notation: 'compact', maximumFractionDigits: 1 }).format(amount)}`;
 }
 
-function ProjectPeriodBar({ awardedDate, endDate }: { awardedDate: string | null; endDate: string | null }) {
+function ProjectPeriodBar({
+  awardedDate,
+  endDate,
+  onEditEndDate,
+}: {
+  awardedDate: string | null;
+  endDate: string | null;
+  onEditEndDate?: () => void;
+}) {
   if (!awardedDate || !endDate) {
     return (
-      <p className="text-xs text-emerald-600/70">
-        {awardedDate ? `Awarded ${formatDate(awardedDate)}` : 'Active grant'}
-      </p>
+      <div className="flex items-center gap-2">
+        <p className="text-xs text-emerald-600/70">
+          {awardedDate ? `Awarded ${formatDate(awardedDate)}` : 'Active grant'}
+        </p>
+        {onEditEndDate && (
+          <button
+            type="button"
+            onClick={onEditEndDate}
+            className="text-emerald-500 hover:text-emerald-700 transition-colors"
+            title="Set project end date"
+          >
+            <Pencil className="w-3 h-3" />
+          </button>
+        )}
+      </div>
     );
   }
 
@@ -61,8 +83,18 @@ function ProjectPeriodBar({ awardedDate, endDate }: { awardedDate: string | null
         <span className={`font-medium ${daysLeft <= 30 ? 'text-amber-600' : 'text-emerald-700'}`}>
           {daysLeft > 0 ? `${daysLeft}d remaining` : 'Period ended'}
         </span>
-        <span className="text-emerald-700/70">
+        <span className="flex items-center gap-1.5 text-emerald-700/70">
           {formatDate(endDate)}
+          {onEditEndDate && (
+            <button
+              type="button"
+              onClick={onEditEndDate}
+              className="text-emerald-400 hover:text-emerald-700 transition-colors"
+              title="Edit project end date"
+            >
+              <Pencil className="w-3 h-3" />
+            </button>
+          )}
         </span>
       </div>
       <div className="h-1.5 w-full bg-emerald-200/60 rounded-full overflow-hidden">
@@ -196,7 +228,22 @@ function QuickLink({ icon: Icon, label, tab, onClick }: {
   );
 }
 
-export default function ActiveGrantDashboard({ grant, summary, tasks, onTabChange }: Props) {
+export default function ActiveGrantDashboard({ grant, summary, tasks, onTabChange, onDeadlineChange }: Props) {
+  const [editingDeadline, setEditingDeadline] = useState(false);
+  const [deadlineInput, setDeadlineInput] = useState('');
+  const [savingDeadline, setSavingDeadline] = useState(false);
+
+  async function handleSaveDeadline() {
+    setSavingDeadline(true);
+    try {
+      const newDeadline = deadlineInput || null;
+      onDeadlineChange?.(newDeadline);
+      setEditingDeadline(false);
+    } finally {
+      setSavingDeadline(false);
+    }
+  }
+
   const awardDisplay = formatCurrency(grant.award_amount, grant.currency);
   const taskPct = summary.total_tasks > 0
     ? Math.round((summary.complete_tasks / summary.total_tasks) * 100)
@@ -209,6 +256,38 @@ export default function ActiveGrantDashboard({ grant, summary, tasks, onTabChang
 
   return (
     <div className="p-5 space-y-6 max-w-4xl">
+      {editingDeadline && (
+        <div className="fixed inset-0 z-40 flex items-center justify-center bg-black/20 backdrop-blur-sm">
+          <div className="bg-white rounded-2xl shadow-xl border border-gray-100 p-6 w-80">
+            <h3 className="text-sm font-semibold text-gray-900 mb-1">Edit Project End Date</h3>
+            <p className="text-xs text-gray-400 mb-4">{grant.title}</p>
+            <input
+              type="date"
+              value={deadlineInput}
+              onChange={e => setDeadlineInput(e.target.value)}
+              className="w-full px-3 py-2 text-sm border border-gray-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-emerald-400 mb-4"
+              autoFocus
+            />
+            <div className="flex gap-2 justify-end">
+              <button
+                type="button"
+                onClick={() => setEditingDeadline(false)}
+                className="px-3 py-1.5 text-sm text-gray-600 hover:text-gray-900 transition-colors"
+              >
+                Cancel
+              </button>
+              <button
+                type="button"
+                onClick={handleSaveDeadline}
+                disabled={savingDeadline}
+                className="px-4 py-1.5 text-sm font-medium bg-emerald-600 text-white rounded-lg hover:bg-emerald-700 disabled:opacity-50 transition-colors"
+              >
+                {savingDeadline ? 'Saving…' : 'Save'}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
 
       {/* ── Award card ── */}
       <div
@@ -249,6 +328,10 @@ export default function ActiveGrantDashboard({ grant, summary, tasks, onTabChang
         <ProjectPeriodBar
           awardedDate={grant.decision_at ?? null}
           endDate={grant.external_deadline ?? null}
+          onEditEndDate={onDeadlineChange ? () => {
+            setDeadlineInput(grant.external_deadline?.substring(0, 10) ?? '');
+            setEditingDeadline(true);
+          } : undefined}
         />
       </div>
 

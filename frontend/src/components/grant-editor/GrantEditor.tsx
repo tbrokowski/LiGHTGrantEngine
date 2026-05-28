@@ -17,8 +17,7 @@ import CommentsPanel from './CommentsPanel';
 import WorkspaceContext, { type SyncState, type WorkspaceCitation } from './WorkspaceContext';
 import type { SkeletonSection } from './SkeletonEditor';
 import {
-  CloudUpload, CloudDownload, Check, Loader2,
-  AlertCircle, FileText, Sparkles, MessageCircle,
+  AlertCircle, Sparkles, MessageCircle,
 } from 'lucide-react';
 import type { PanelTabType } from './split-view/types';
 import { grantComments } from '@/lib/api';
@@ -83,7 +82,7 @@ export default function GrantEditor({ grant, onGrantUpdate, onHeadingsChange }: 
   const [lastSynced, setLastSynced] = useState(grant.google_doc_last_synced || '');
 
   // ── AI sidebar + Comments panel ───────────────────────────────────────────────
-  const [aiOpen, setAiOpen] = useState(true);
+  const [aiOpen, setAiOpen] = useState(false);
   const [commentsOpen, setCommentsOpen] = useState(false);
   const [aiWidth, setAiWidth] = useState<number>(() => {
     if (typeof window === 'undefined') return 340;
@@ -407,8 +406,6 @@ export default function GrantEditor({ grant, onGrantUpdate, onHeadingsChange }: 
     document.addEventListener('mouseup', onUp);
   };
 
-  const syncBusy = syncState === 'pushing' || syncState === 'pulling';
-
   // ── Workspace context value ───────────────────────────────────────────────────
   const contextValue = {
     grantId: grant.id,
@@ -471,42 +468,6 @@ export default function GrantEditor({ grant, onGrantUpdate, onHeadingsChange }: 
 
           {/* Right: status + controls */}
           <div className="flex items-center gap-2 flex-shrink-0">
-            {/* Word / char count */}
-            <span className="text-xs text-gray-400">
-              {wordCount.toLocaleString()} words · {documentHtml.replace(/<[^>]+>/g, '').length.toLocaleString()} chars
-            </span>
-
-            {/* Google Docs chip */}
-            {docLinked && (
-              <div className="flex items-center gap-1.5 border border-gray-200 rounded-lg px-2 py-1">
-                <FileText className="w-3.5 h-3.5 text-blue-500" />
-                <a href={docUrl} target="_blank" rel="noopener noreferrer" className="text-xs text-blue-600 hover:underline">
-                  Google Doc
-                </a>
-                {syncState === 'pushing' && (
-                  <span className="flex items-center gap-1 text-xs text-gray-400">
-                    <Loader2 className="w-3 h-3 animate-spin" /> Syncing…
-                  </span>
-                )}
-                {syncState === 'pulling' && (
-                  <span className="flex items-center gap-1 text-xs text-gray-400">
-                    <Loader2 className="w-3 h-3 animate-spin" /> Pulling…
-                  </span>
-                )}
-                {syncState === 'success' && (
-                  <span className="flex items-center gap-1 text-xs text-green-600">
-                    <Check className="w-3 h-3" /> Synced
-                  </span>
-                )}
-                <button onClick={handlePushToDoc} disabled={syncBusy} title="Push to Google Doc" className="text-xs text-gray-400 hover:text-gray-700 disabled:opacity-40 ml-1">
-                  <CloudUpload className="w-3.5 h-3.5" />
-                </button>
-                <button onClick={handlePullFromDoc} disabled={syncBusy} title="Pull from Google Doc" className="text-xs text-gray-400 hover:text-gray-700 disabled:opacity-40">
-                  <CloudDownload className="w-3.5 h-3.5" />
-                </button>
-              </div>
-            )}
-
             {/* Comments toggle */}
             <button
               onClick={() => setCommentsOpen((v) => !v)}

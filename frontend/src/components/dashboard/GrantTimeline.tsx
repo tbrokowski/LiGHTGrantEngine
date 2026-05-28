@@ -3,6 +3,14 @@ import { useState, useRef, useEffect } from 'react';
 import Link from 'next/link';
 import type { GrantItem } from './FocusPanel';
 
+interface TaskDot {
+  id: string;
+  title: string;
+  grant_id: string;
+  due_date: string | null;
+  status: string;
+}
+
 const STAGE_DOT: Record<string, string> = {
   proposal: 'bg-blue-400',
   pending: 'bg-amber-400',
@@ -43,9 +51,11 @@ interface GrantBarProps {
   containerW: number;
   today: Date;
   starred: boolean;
+  tasks?: TaskDot[];
 }
 
-function GrantBar({ grant, windowDays, containerW, today, starred }: GrantBarProps) {
+function GrantBar({ grant, windowDays, containerW, today, starred, tasks = [] }: GrantBarProps) {
+  const [tooltipTaskId, setTooltipTaskId] = useState<string | null>(null);
   const gridW = containerW - LABEL_W;
   const dayPx = gridW / windowDays;
 
@@ -145,6 +155,36 @@ function GrantBar({ grant, windowDays, containerW, today, starred }: GrantBarPro
             />
           </div>
         )}
+        {/* Task dots */}
+        {tasks.map(task => {
+          if (!task.due_date) return null;
+          const taskDays = daysFrom(today, task.due_date);
+          if (taskDays === null || taskDays < 0 || taskDays > windowDays) return null;
+          const dotPx = taskDays * dayPx;
+          const isDone = task.status === 'completed' || task.status === 'dropped';
+          return (
+            <div
+              key={task.id}
+              className="absolute z-20"
+              style={{ left: dotPx - 4, top: '50%', transform: 'translateY(-50%)' }}
+            >
+              <Link href={`/grants/${task.grant_id}/workspace?tab=tasks`}>
+                <div
+                  className={`w-2.5 h-2.5 rounded-full border-2 border-white shadow cursor-pointer transition-transform hover:scale-125 ${isDone ? 'bg-gray-300' : 'bg-indigo-500'}`}
+                  onMouseEnter={() => setTooltipTaskId(task.id)}
+                  onMouseLeave={() => setTooltipTaskId(null)}
+                />
+              </Link>
+              {tooltipTaskId === task.id && (
+                <div className="absolute bottom-full left-1/2 -translate-x-1/2 mb-2 px-2 py-1 bg-gray-900 text-white text-[11px] rounded-lg whitespace-nowrap shadow-lg z-30 pointer-events-none leading-snug max-w-[180px] truncate">
+                  {task.title}
+                  <div className="absolute top-full left-1/2 -translate-x-1/2 border-4 border-transparent border-t-gray-900" />
+                </div>
+              )}
+            </div>
+          );
+        })}
+
         {/* No deadline label */}
         {extDays === null && (
           <div className="absolute inset-y-0 left-0 flex items-center">
@@ -174,6 +214,7 @@ interface GrantTimelineProps {
   grants: GrantItem[];
   loading: boolean;
   starredIds?: Set<string>;
+  tasks?: TaskDot[];
 }
 
 const PROPOSAL_STAGES = new Set(['proposal', 'pending']);
@@ -208,7 +249,7 @@ function SectionHeaderRow({ label, count, labelW }: SectionHeaderRowProps) {
   );
 }
 
-export default function GrantTimeline({ grants, loading, starredIds = new Set() }: GrantTimelineProps) {
+export default function GrantTimeline({ grants, loading, starredIds = new Set(), tasks = [] }: GrantTimelineProps) {
   const [window, setWindow] = useState<Window>(60);
   const containerRef = useRef<HTMLDivElement>(null);
   const [containerW, setContainerW] = useState(700);
@@ -260,6 +301,7 @@ export default function GrantTimeline({ grants, loading, starredIds = new Set() 
           containerW={containerW}
           today={today}
           starred={starredIds.has(g.id)}
+          tasks={tasks.filter(t => t.grant_id === g.id)}
         />
       </div>
     ));
@@ -383,6 +425,10 @@ export default function GrantTimeline({ grants, loading, starredIds = new Set() 
                   <div className="w-px h-full bg-white/70" />
                 </div>
                 <span className="text-[10px] text-gray-400">Internal deadline</span>
+              </div>
+              <div className="flex items-center gap-1.5">
+                <div className="w-2.5 h-2.5 rounded-full bg-indigo-500 border-2 border-white shadow" />
+                <span className="text-[10px] text-gray-400">Task due date</span>
               </div>
             </div>
           </div>

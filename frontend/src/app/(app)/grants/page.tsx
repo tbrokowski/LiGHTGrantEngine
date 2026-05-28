@@ -291,6 +291,10 @@ export default function GrantsPage() {
     setAllGrants(prev => prev.map(g => g.id === id ? { ...g, grant_stage: newStage } : g));
   }
 
+  function handleDeadlineChange(id: string, deadline: string | null) {
+    setAllGrants(prev => prev.map(g => g.id === id ? { ...g, external_deadline: deadline } : g));
+  }
+
   async function handleDelete(id: string) {
     if (!confirm('Permanently delete this grant? This cannot be undone.')) return;
     try {
@@ -444,6 +448,7 @@ export default function GrantsPage() {
               grant={g}
               onStageChange={handleStageChange}
               onDelete={handleDelete}
+              onDeadlineChange={handleDeadlineChange}
             />
           ))
         )}
