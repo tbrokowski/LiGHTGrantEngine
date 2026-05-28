@@ -5,7 +5,7 @@ from datetime import date, datetime, timezone
 import redis.asyncio as aioredis
 from fastapi import APIRouter, Depends, HTTPException, Query, BackgroundTasks
 from pydantic import BaseModel
-from sqlalchemy import select, and_, or_, func, desc, delete
+from sqlalchemy import select, and_, or_, func, desc
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.database import get_db
@@ -13,7 +13,6 @@ from app.models.opportunity import Opportunity, OpportunityReview, OpportunitySt
 from app.models.institution_opportunity import InstitutionOpportunity
 from app.models.document import Document
 from app.models.user_opportunity_state import UserOpportunityState
-from app.models.user_shortlist import UserShortlist
 from app.models.user import User
 from app.models.institution import Institution
 from app.models.institution_source import InstitutionSource
@@ -301,11 +300,14 @@ async def personal_shortlist(
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ):
-    """Returns the current user's personal shortlist."""
+    """Returns the current user's personal shortlist (saved opportunities)."""
     sl_result = await db.execute(
-        select(UserShortlist.opportunity_id)
-        .where(UserShortlist.user_id == current_user.id)
-        .order_by(UserShortlist.added_at.desc())
+        select(UserOpportunityState.opportunity_id)
+        .where(
+            UserOpportunityState.user_id == current_user.id,
+            UserOpportunityState.saved_at.isnot(None),
+        )
+        .order_by(UserOpportunityState.saved_at.desc())
     )
     opp_ids = [row[0] for row in sl_result.all()]
     if not opp_ids:
@@ -394,11 +396,32 @@ async def update_opportunity(
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ):
+    """Update opportunity fields.
+
+    Per-org fields (status, fit_score, priority, fit_rationale,
+    assigned_reviewer_id, notes) are written to institution_opportunities.
+    Content fields go to the global opportunities record.
+    """
     opp = await _get_opp_or_404(opp_id, db)
-    for k, v in data.model_dump(exclude_none=True).items():
+    updates = data.model_dump(exclude_none=True)
+
+    # Fields that belong on institution_opportunities, not the global record
+    io_fields = {"status", "fit_score", "priority", "assigned_reviewer_id", "notes"}
+    io_updates = {k: v for k, v in updates.items() if k in io_fields}
+    opp_updates = {k: v for k, v in updates.items() if k not in io_fields}
+
+    for k, v in opp_updates.items():
         setattr(opp, k, v)
+
+    if io_updates and current_user.institution_id:
+        io = await _get_institution_opp(db, current_user, opp_id)
+        if io:
+            for k, v in io_updates.items():
+                setattr(io, k, v)
+
     await db.commit()
-    return {"id": opp.id, "status": opp.status}
+    io = await _get_institution_opp(db, current_user, opp_id)
+    return {"id": opp.id, "status": io.status if io else opp.status}
 
 
 @router.post("/{opp_id}/reviews")
@@ -605,17 +628,28 @@ async def add_to_shortlist(
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ):
-    """Add an opportunity to the current user's personal shortlist."""
+    """Save an opportunity to the current user's personal shortlist.
+
+    Writes to user_opportunity_states.saved_at (canonical). The legacy
+    user_shortlists table is no longer written to but is kept in the DB.
+    """
     await _get_opp_or_404(opp_id, db)
-    existing = await db.execute(
-        select(UserShortlist).where(
-            UserShortlist.user_id == current_user.id,
-            UserShortlist.opportunity_id == opp_id,
+    now = datetime.now(timezone.utc)
+    existing = (await db.execute(
+        select(UserOpportunityState).where(
+            UserOpportunityState.user_id == current_user.id,
+            UserOpportunityState.opportunity_id == opp_id,
         )
-    )
-    if not existing.scalar_one_or_none():
-        db.add(UserShortlist(user_id=current_user.id, opportunity_id=opp_id))
-        await db.commit()
+    )).scalar_one_or_none()
+    if existing:
+        existing.saved_at = now
+    else:
+        db.add(UserOpportunityState(
+            user_id=current_user.id,
+            opportunity_id=opp_id,
+            saved_at=now,
+        ))
+    await db.commit()
     return {"id": opp_id, "shortlisted": True}
 
 
@@ -627,13 +661,15 @@ async def remove_from_shortlist(
 ):
     """Remove an opportunity from the current user's personal shortlist."""
     await _get_opp_or_404(opp_id, db)
-    await db.execute(
-        delete(UserShortlist).where(
-            UserShortlist.user_id == current_user.id,
-            UserShortlist.opportunity_id == opp_id,
+    state = (await db.execute(
+        select(UserOpportunityState).where(
+            UserOpportunityState.user_id == current_user.id,
+            UserOpportunityState.opportunity_id == opp_id,
         )
-    )
-    await db.commit()
+    )).scalar_one_or_none()
+    if state:
+        state.saved_at = None
+        await db.commit()
     return {"id": opp_id, "shortlisted": False}
 
 
@@ -854,12 +890,19 @@ async def _load_read_map(
 async def _load_personal_shortlist_map(
     db: AsyncSession, user_id: str, opp_ids: list[str]
 ) -> dict[str, bool]:
+    """Returns a map of opportunity_id → True for opportunities the user has saved.
+
+    Reads from user_opportunity_states.saved_at (new canonical source).
+    user_shortlists is kept in the DB but new saves/reads go through
+    user_opportunity_states only.
+    """
     if not opp_ids:
         return {}
     result = await db.execute(
-        select(UserShortlist.opportunity_id).where(
-            UserShortlist.user_id == user_id,
-            UserShortlist.opportunity_id.in_(opp_ids),
+        select(UserOpportunityState.opportunity_id).where(
+            UserOpportunityState.user_id == user_id,
+            UserOpportunityState.opportunity_id.in_(opp_ids),
+            UserOpportunityState.saved_at.isnot(None),
         )
     )
     return {row[0]: True for row in result.all()}

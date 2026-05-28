@@ -5,7 +5,7 @@ Each endpoint calls the appropriate agent and logs the AI run.
 import json
 import uuid
 from typing import Optional, List
-from datetime import datetime
+from datetime import datetime, timezone
 
 from fastapi import APIRouter, Depends, HTTPException
 from fastapi.responses import StreamingResponse
@@ -15,6 +15,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.database import get_db
 from app.models.opportunity import Opportunity
+from app.models.institution_opportunity import InstitutionOpportunity
 from app.models.active_grant import ActiveGrant
 from app.models.archive import GrantArchive
 from app.models.ai_run import AIRun, AgentType, AIRunStatus
@@ -198,10 +199,20 @@ async def deep_review_opportunity_endpoint(
         archive_context=archive_context,
     )
 
-    # Persist the updated score and rationale
-    opp.fit_score = result.get("fit_score", opp.fit_score)
-    opp.priority = result.get("priority", opp.priority)
-    opp.fit_rationale = result.get("verdict", "")
+    # Persist the updated score and rationale to institution_opportunities
+    # (the canonical per-org record). Legacy opp columns are left unchanged.
+    if current_user.institution_id:
+        io = (await db.execute(
+            select(InstitutionOpportunity).where(
+                InstitutionOpportunity.institution_id == current_user.institution_id,
+                InstitutionOpportunity.opportunity_id == opportunity_id,
+            )
+        )).scalar_one_or_none()
+        if io:
+            io.fit_score = result.get("fit_score", io.fit_score)
+            io.priority = result.get("priority", io.priority)
+            io.fit_rationale = result.get("verdict", "")
+            io.scored_at = datetime.now(timezone.utc)
     await db.commit()
 
     await _complete_ai_run(db, run_id, result)
@@ -236,6 +247,20 @@ async def go_no_go(
     run_id = await _start_ai_run(db, current_user.id, "opportunity", req.opportunity_id, AgentType.GO_NO_GO)
     accessible_grant_ids = await _get_accessible_grant_ids(current_user, db, redis)
 
+    # Prefer per-org fit_score from institution_opportunities; fall back to global
+    io_fit_score = 0.0
+    if current_user.institution_id:
+        io_row = (await db.execute(
+            select(InstitutionOpportunity).where(
+                InstitutionOpportunity.institution_id == current_user.institution_id,
+                InstitutionOpportunity.opportunity_id == req.opportunity_id,
+            )
+        )).scalar_one_or_none()
+        if io_row:
+            io_fit_score = io_row.fit_score or 0.0
+    if not io_fit_score:
+        io_fit_score = opp.fit_score or 0.0
+
     # Retrieve similar past grants
     similar = await retrieve_similar_sections(
         query=f"{opp.title} {opp.description or ''}",
@@ -250,7 +275,7 @@ async def go_no_go(
     result = await generate_go_no_go_memo(
         opportunity_title=opp.title,
         call_analysis=call_analysis,
-        fit_score=opp.fit_score or 0,
+        fit_score=io_fit_score,
         similar_grants=similar,
         team_context=req.team_context or "",
     )

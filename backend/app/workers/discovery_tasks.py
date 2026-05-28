@@ -269,7 +269,9 @@ def _process_listing(db, listing: dict, source_id: str, source_url: str | None =
         opportunity_url=call_url,
         source_url=source_url,
         source_id=source_id,
-        status="new",
+        # "active" signals the global record is live. Workflow status
+        # (new/needs_review/archived/etc.) lives in institution_opportunities.
+        status="active",
         duplicate_status=DuplicateStatus.UNIQUE,
         raw_text=listing.get("raw_text"),
         funder_logo_url=funder_logo_url,

@@ -22,17 +22,9 @@ class OpportunityStatus(str, Enum):
     ARCHIVED = "archived"
 
 
-class ReviewStatus(str, Enum):
-    NEW = "new"
-    NEEDS_REVIEW = "needs_review"
-    IN_REVIEW = "in_review"
-    WATCHING = "watching"
-    POTENTIAL_FIT = "potential_fit"
-    HIGH_PRIORITY = "high_priority"
-    ACTIVELY_PURSUING = "actively_pursuing"
-    REJECTED = "rejected"
-    DUPLICATE = "duplicate"
-    ARCHIVED = "archived"
+# ReviewStatus was identical to OpportunityStatus — use OpportunityStatus everywhere.
+# Kept as alias for backwards compatibility with any existing imports.
+ReviewStatus = OpportunityStatus
 
 
 class DuplicateStatus(str, Enum):
