@@ -110,8 +110,10 @@ export default function DocumentPane({
     if (raw.includes('/content')) {
       let apiPath = raw;
       try {
-        apiPath = new URL(raw).pathname; // strips host, keeps /api/v1/documents/{id}/content
+        apiPath = new URL(raw).pathname; // strip host → /api/v1/documents/{id}/content
       } catch { /* already a relative path */ }
+      // Strip /api/v1 prefix — axios baseURL already includes it, so passing it again doubles to /api/v1/api/v1/... → 404
+      apiPath = apiPath.replace(/^\/api\/v1/, '');
       setFileError('');
       api.get<{ url?: string; text?: string }>(apiPath)
         .then((res) => {
