@@ -206,23 +206,39 @@ def surface_opportunity_for_institution(
     return row
 
 
-def bootstrap_institution_feed(session: Session, institution_id: str) -> int:
-    """Surface all global opportunities for one institution."""
+def bootstrap_institution_feed(session: Session, institution_id: str, *, force: bool = False) -> int:
+    """Surface all global opportunities for one institution.
+
+    When force=True every existing InstitutionOpportunity record is re-evaluated
+    and its status/score updated from the current institution profile and
+    opportunity data.  Use force=True to recover from archived/missing records.
+    """
     opps = session.execute(select(Opportunity)).scalars().all()
     count = 0
     for opp in opps:
-        if surface_opportunity_for_institution(session, institution_id, opp):
+        if surface_opportunity_for_institution(session, institution_id, opp, force=force):
             count += 1
     session.commit()
     return count
 
 
-def bootstrap_all_institution_feeds(session: Session) -> int:
+def bootstrap_all_institution_feeds(session: Session, *, force: bool = False) -> int:
     institutions = session.execute(select(Institution)).scalars().all()
     total = 0
     for inst in institutions:
-        total += bootstrap_institution_feed(session, inst.id)
+        total += bootstrap_institution_feed(session, inst.id, force=force)
     return total
+
+
+def needs_resync(session: Session, institution_id: str) -> bool:
+    """Return True if the institution has opportunities that have no InstitutionOpportunity record."""
+    opp_count = session.execute(select(Opportunity)).scalars().all()
+    io_count = session.execute(
+        select(InstitutionOpportunity).where(
+            InstitutionOpportunity.institution_id == institution_id
+        )
+    ).scalars().all()
+    return len(opp_count) > 0 and len(io_count) == 0
 
 
 def queue_missing_enrichments(session: Session) -> int:
@@ -241,14 +257,19 @@ def queue_missing_enrichments(session: Session) -> int:
     return len(opps)
 
 
-def run_full_bootstrap() -> dict:
+def run_full_bootstrap(*, force: bool = False) -> dict:
     settings = get_settings()
     engine = create_engine(settings.database_url)
     with Session(engine) as session:
         sources_added = seed_sources_from_json(session)
         opps_added = seed_opportunities_from_json(session)
         sources_linked = fan_out_sources_to_institutions(session)
-        feeds = bootstrap_all_institution_feeds(session)
+
+        # Force a resync if any institution has opportunities in the global pool
+        # but no InstitutionOpportunity rows (i.e. first boot or after data loss).
+        institutions = session.execute(select(Institution)).scalars().all()
+        should_force = force or any(needs_resync(session, i.id) for i in institutions)
+        feeds = bootstrap_all_institution_feeds(session, force=should_force)
         enrichments_queued = queue_missing_enrichments(session)
     return {
         "sources_added": sources_added,
@@ -256,4 +277,5 @@ def run_full_bootstrap() -> dict:
         "institution_sources_linked": sources_linked,
         "institution_opportunities_created": feeds,
         "enrichments_queued": enrichments_queued,
+        "force_resync": should_force,
     }

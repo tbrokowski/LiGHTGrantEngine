@@ -22,7 +22,7 @@ from app.routers.auth import get_current_user
 from app.auth.permissions import get_redis, invalidate_permission_cache
 from app.config import get_settings
 from app.schemas.grant_profile import (
-    GrantProfile, UserGrantPreferences, merge_keywords, opportunity_matches_keywords,
+    GrantProfile, UserGrantPreferences, merge_keywords, opportunity_matches_keywords, _opp_text,
 )
 
 router = APIRouter()
@@ -757,9 +757,16 @@ async def _fetch_institution_feed(
     inst = (await db.execute(
         select(Institution).where(Institution.id == user.institution_id)
     )).scalar_one_or_none()
-    org_profile = GrantProfile.from_dict(inst.grant_profile if inst else {})
+
+    # Only apply personal keyword preferences as an in-memory display filter.
+    # Org-level keyword filtering is handled at surfacing time (surface_opportunity_for_institution
+    # sets status="archived" for non-matching opps). Applying org keywords here
+    # again would double-filter: opportunities that were surfaced before keywords
+    # were configured would permanently disappear from the queue even though their
+    # InstitutionOpportunity status is still "needs_review".
     personal = UserGrantPreferences.from_dict(user.grant_preferences or {})
-    keywords, excluded = merge_keywords(org_profile, personal)
+    personal_keywords = [k.lower() for k in personal.keywords if k]
+    personal_excluded = [k.lower() for k in personal.excluded_keywords if k]
 
     enabled_source_ids = await _enabled_source_ids(db, user.institution_id)
 
@@ -783,9 +790,11 @@ async def _fetch_institution_feed(
     for opp, io in rows:
         if enabled_source_ids is not None and opp.source_id and opp.source_id not in enabled_source_ids:
             continue
-        if keywords or excluded:
-            if not opportunity_matches_keywords(opp, keywords, excluded):
-                continue
+        # Apply personal (user-level) keyword preferences only — not org keywords
+        if personal_excluded and any(kw in _opp_text(opp) for kw in personal_excluded):
+            continue
+        if personal_keywords and not any(kw in _opp_text(opp) for kw in personal_keywords):
+            continue
         items.append(opp)
         io_map[opp.id] = io
 

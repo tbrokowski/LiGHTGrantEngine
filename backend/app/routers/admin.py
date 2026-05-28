@@ -36,3 +36,46 @@ async def trigger_reindex(current_user: User = Depends(get_current_user)):
     from app.workers.celery_app import celery_app
     celery_app.send_task("app.workers.embedding_tasks.reindex_all")
     return {"message": "Re-indexing queued"}
+
+
+@router.post("/resync-feeds")
+async def resync_feeds(
+    institution_id: str | None = None,
+    current_user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+):
+    """
+    Force-resync InstitutionOpportunity records so all existing opportunities
+    are surfaced to every institution (or a specific one) with fresh scoring.
+
+    Fixes 'opportunities disappeared' issues caused by:
+    - Keyword filter changes that archived previously-visible opportunities
+    - Missing InstitutionOpportunity rows after a DB migration or first boot
+    - Status stuck on 'archived' after profile changes
+    """
+    _require_admin(current_user)
+    import asyncio
+    from sqlalchemy import create_engine
+    from sqlalchemy.orm import Session
+    from app.config import get_settings as gs
+    from app.services.grant_bootstrap import (
+        bootstrap_institution_feed,
+        bootstrap_all_institution_feeds,
+        fan_out_sources_to_institutions,
+    )
+
+    settings_obj = gs()
+
+    def _run_sync():
+        engine = create_engine(settings_obj.database_url)
+        with Session(engine) as session:
+            fan_out_sources_to_institutions(session)
+            if institution_id:
+                count = bootstrap_institution_feed(session, institution_id, force=True)
+                return {"institution_id": institution_id, "opportunities_resynced": count}
+            else:
+                count = bootstrap_all_institution_feeds(session, force=True)
+                return {"institution_id": "all", "opportunities_resynced": count}
+
+    result = await asyncio.get_event_loop().run_in_executor(None, _run_sync)
+    return result
