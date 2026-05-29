@@ -251,7 +251,9 @@ def _process_listing(db, listing: dict, source_id: str, source_url: str | None =
 
     if existing and is_definitive:
         # Re-queue enrichment only if the record was never successfully fetched
-        if not existing.parsed_text and existing.opportunity_url:
+        # and hasn't been permanently marked as unfetchable.
+        parsed = existing.parsed_text or ""
+        if not parsed and existing.opportunity_url:
             from app.workers.enrichment_tasks import enrich_opportunity
             enrich_opportunity.delay(str(existing.id))
         return "duplicate"

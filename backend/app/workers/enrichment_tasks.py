@@ -128,6 +128,8 @@ def enrich_opportunity(self, opportunity_id: str, skip_pdf: bool = False):
             return {"status": "no_url"}
 
         if opp.parsed_text:
+            if opp.parsed_text == "[fetch_failed]":
+                return {"status": "fetch_failed_permanent", "skipped": True}
             return {"status": "already_enriched"}
 
         detail_selectors, use_playwright = _source_enrichment_config(db, opp)
@@ -145,13 +147,36 @@ def enrich_opportunity(self, opportunity_id: str, skip_pdf: bool = False):
             raise self.retry(exc=e)
 
         if result.get("error") and not result.get("pdf_urls"):
+            error_str = result["error"]
             logger.warning(
                 "Detail fetch returned error",
                 opp_id=opportunity_id,
                 url=opp.opportunity_url,
-                error=result["error"],
+                error=error_str,
             )
-            return {"status": "fetch_error", "error": result["error"]}
+            # Permanent failures (4xx HTTP, DNS resolution failure, or after all
+            # retries exhausted) — mark the opportunity so it is never re-queued.
+            # We set parsed_text to a sentinel so `not opp.parsed_text` is False
+            # on the next discovery scan.
+            is_permanent = (
+                "HTTP 4" in error_str       # 403, 404, 410, etc.
+                or "Name or service not known" in error_str
+                or "nodename nor servname" in error_str
+                or "No address associated" in error_str
+                or self.request.retries >= self.max_retries
+            )
+            if is_permanent:
+                if not opp.parsed_text:
+                    opp.parsed_text = "[fetch_failed]"
+                    db.commit()
+                    logger.info(
+                        "Marked opportunity fetch-failed (permanent)",
+                        opp_id=opportunity_id,
+                        url=opp.opportunity_url,
+                        error=error_str,
+                    )
+                return {"status": "fetch_failed_permanent", "error": error_str}
+            return {"status": "fetch_error", "error": error_str}
 
         changed = _apply_page_enrichment(db, opp, result, skip_pdf=skip_pdf)
 
