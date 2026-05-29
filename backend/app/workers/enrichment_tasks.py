@@ -82,14 +82,11 @@ def _apply_page_enrichment(db, opp, result: dict, *, skip_pdf: bool = False) -> 
 
 
 def _queue_post_enrichment(opportunity_id: str) -> None:
-    from app.workers.discovery_tasks import score_opportunity
-    from app.workers.surfacing_tasks import rescore_opportunity_for_institutions
-
-    score_opportunity.delay(opportunity_id)
-    rescore_opportunity_for_institutions.delay(opportunity_id)
-    # Delay summary by 30 s so score_opportunity completes first — the summary
-    # prompt then has access to the real fit_score and fit_rationale.
-    generate_ai_summary.apply_async(args=[opportunity_id], countdown=30)
+    # Route through the tagger first so universal taxonomy tags are written
+    # before keyword scoring runs. The tagger task chains scoring + summary
+    # internally once it completes.
+    from app.workers.tagging_tasks import tag_and_embed_opportunity
+    tag_and_embed_opportunity.delay(opportunity_id)
 
 
 @celery_app.task(

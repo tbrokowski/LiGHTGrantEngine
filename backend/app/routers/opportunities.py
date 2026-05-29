@@ -5,7 +5,10 @@ from datetime import date, datetime, timezone, timedelta
 import redis.asyncio as aioredis
 from fastapi import APIRouter, Depends, HTTPException, Query, BackgroundTasks
 from pydantic import BaseModel
-from sqlalchemy import select, and_, or_, func, desc
+import hashlib
+import json as _json
+from sqlalchemy import select, and_, or_, func, desc, case, text as sa_text
+from sqlalchemy import Text as SaText
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.database import get_db
@@ -29,6 +32,68 @@ settings = get_settings()
 
 QUEUE_STATUSES = ["new", "needs_review", "in_review"]
 SHORTLIST_STATUSES = ["potential_fit"]
+
+# ── Semantic search helpers ────────────────────────────────────────────────────
+
+_SEMANTIC_CANDIDATE_LIMIT = 200
+_SEMANTIC_CACHE_TTL = 3600  # 1 hour
+
+
+async def _get_semantic_candidate_ids(
+    db: AsyncSession,
+    query: str,
+    redis_client=None,
+    limit: int = _SEMANTIC_CANDIDATE_LIMIT,
+) -> list[str]:
+    """
+    Return opportunity IDs whose embeddings are closest (cosine distance) to
+    the query string. Uses Redis to cache the query embedding for 1 hour.
+    Returns an empty list on any failure so callers can degrade gracefully.
+    """
+    try:
+        from app.ai.client import get_embedding
+
+        # Cache key = hash of the normalised query string
+        cache_key = f"search_emb:{hashlib.sha256(query.lower().strip().encode()).hexdigest()}"
+
+        embedding: list[float] | None = None
+
+        if redis_client is not None:
+            try:
+                cached = await redis_client.get(cache_key)
+                if cached:
+                    embedding = _json.loads(cached)
+            except Exception:
+                pass
+
+        if embedding is None:
+            embedding = await get_embedding(query)
+            if embedding and any(v != 0.0 for v in embedding):
+                if redis_client is not None:
+                    try:
+                        await redis_client.setex(cache_key, _SEMANTIC_CACHE_TTL, _json.dumps(embedding))
+                    except Exception:
+                        pass
+            else:
+                return []
+
+        # Use raw SQL for the <=> cosine distance operator (pgvector)
+        vec_literal = "[" + ",".join(str(v) for v in embedding) + "]"
+        result = await db.execute(
+            sa_text(
+                "SELECT id FROM opportunities "
+                "WHERE embedding IS NOT NULL "
+                "  AND status != 'duplicate' "
+                "  AND (embedding <=> :qvec) < 0.45 "
+                "ORDER BY embedding <=> :qvec "
+                f"LIMIT {limit}"
+            ),
+            {"qvec": vec_literal},
+        )
+        return [row[0] for row in result.fetchall()]
+
+    except Exception:
+        return []
 
 
 # ── Schemas ───────────────────────────────────────────────────────────────────
@@ -96,6 +161,7 @@ async def list_opportunities(
     sort_dir: str = "desc",
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(get_current_user),
+    redis: aioredis.Redis = Depends(get_redis),
 ):
     """List all grants in the database, optionally sorted by org relevance."""
     inst_id = current_user.institution_id
@@ -136,14 +202,33 @@ async def list_opportunities(
         filters.append(Opportunity.deadline >= deadline_after)
     if theme:
         filters.append(Opportunity.thematic_areas.contains([theme]))
+
+    # Semantic candidate IDs (populated below when search is present)
+    semantic_ids: list[str] = []
+
     if search:
-        filters.append(
-            or_(
-                Opportunity.title.ilike(f"%{search}%"),
-                Opportunity.description.ilike(f"%{search}%"),
-                Opportunity.funder.ilike(f"%{search}%"),
-            )
+        term = f"%{search}%"
+        # Keyword + tag text matching: covers title, description, funder, and the
+        # universal taxonomy tags in thematic_areas / keywords JSON arrays.
+        keyword_filter = or_(
+            Opportunity.title.ilike(term),
+            Opportunity.description.ilike(term),
+            Opportunity.funder.ilike(term),
+            func.cast(Opportunity.thematic_areas, SaText).ilike(term),
+            func.cast(Opportunity.keywords, SaText).ilike(term),
         )
+
+        # Semantic vector search: only engage when the query has ≥ 2 words
+        # (single words are better served by exact ILIKE).
+        if len(search.split()) >= 2:
+            semantic_ids = await _get_semantic_candidate_ids(db, search, redis_client=redis)
+
+        if semantic_ids:
+            # Union of keyword matches and semantic candidates so both paths surface results.
+            filters.append(or_(keyword_filter, Opportunity.id.in_(semantic_ids)))
+        else:
+            filters.append(keyword_filter)
+
     q = q.where(and_(*filters))
 
     if unread_only:
@@ -163,8 +248,18 @@ async def list_opportunities(
         relevance = func.coalesce(InstitutionOpportunity.fit_score, Opportunity.fit_score, 0)
     else:
         relevance = func.coalesce(Opportunity.fit_score, 0)
+
     if sort_by == "relevance":
-        order_cols = [desc(relevance), Opportunity.deadline]
+        if semantic_ids:
+            # When semantic search is active, boost semantic matches to the top
+            # of the relevance sort so the most similar grants surface first.
+            semantic_boost = case(
+                (Opportunity.id.in_(semantic_ids), 1),
+                else_=0,
+            )
+            order_cols = [desc(semantic_boost), desc(relevance), Opportunity.deadline]
+        else:
+            order_cols = [desc(relevance), Opportunity.deadline]
     else:
         sort_col = getattr(Opportunity, sort_by, Opportunity.date_discovered)
         order_cols = [desc(sort_col) if sort_dir == "desc" else sort_col]
