@@ -1,6 +1,6 @@
 'use client';
 
-import { useState } from 'react';
+import { useState, useEffect, useRef } from 'react';
 import { ChevronDown } from 'lucide-react';
 
 export interface AIThinkingStep {
@@ -97,6 +97,31 @@ export default function AIThinkingLog({
   error,
   className = '',
 }: AIThinkingLogProps) {
+  // Local animated percentage — slowly advances during active steps so the bar
+  // visibly moves even when no step flips to "done" (e.g. during the long LLM call).
+  const [displayPct, setDisplayPct] = useState(progressPct);
+  const earnedRef = useRef(progressPct);
+
+  // Snap to real value whenever a step completes (prop jumps forward)
+  useEffect(() => {
+    earnedRef.current = progressPct;
+    setDisplayPct(progressPct);
+  }, [progressPct]);
+
+  // Slowly nudge the bar while any step is active (simulates in-step progress)
+  const isActive = steps.some((s) => s.status === 'active');
+  useEffect(() => {
+    if (!isActive) return;
+    const interval = setInterval(() => {
+      setDisplayPct((prev) => {
+        // Cap at earned + 18 so we never promise more than we can deliver
+        const cap = Math.min(earnedRef.current + 18, 94);
+        return prev < cap ? prev + 1.2 : prev;
+      });
+    }, 1800);
+    return () => clearInterval(interval);
+  }, [isActive]);
+
   return (
     <div className={`space-y-3 ${className}`}>
       {/* Header + bar */}
@@ -106,8 +131,8 @@ export default function AIThinkingLog({
         )}
         <div className="h-1.5 bg-gray-100 rounded-full overflow-hidden">
           <div
-            className="h-full bg-indigo-400 transition-all duration-700 ease-out"
-            style={{ width: `${Math.max(3, progressPct)}%` }}
+            className="h-full bg-indigo-400 transition-all duration-500 ease-out"
+            style={{ width: `${Math.max(3, displayPct)}%` }}
           />
         </div>
       </div>
