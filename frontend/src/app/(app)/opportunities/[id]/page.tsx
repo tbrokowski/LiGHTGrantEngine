@@ -4,7 +4,7 @@ import { useRouter, useParams } from 'next/navigation';
 import Link from 'next/link';
 import { Sparkles, Check, AlertTriangle, Folder, ChevronRight, Loader2 } from 'lucide-react';
 import { opportunities, ai, api } from '@/lib/api';
-import { openDocumentContent } from '@/lib/documents';
+import { usePdfViewer } from '@/contexts/PdfViewerContext';
 import SuggestedPartners from '@/components/crm/SuggestedPartners';
 import FunderLogo from '@/components/opportunities/FunderLogo';
 import BookmarkButton from '@/components/opportunities/BookmarkButton';
@@ -157,6 +157,7 @@ export default function OpportunityDetailPage() {
   const [actionBusy, setActionBusy] = useState(false);
   const [enriching, setEnriching] = useState(false);
   const [enrichMessage, setEnrichMessage] = useState('');
+  const { openPdfViewer } = usePdfViewer();
 
   const fetchOpp = useCallback(() => {
     if (!id) return;
@@ -236,8 +237,7 @@ export default function OpportunityDetailPage() {
   }
 
   async function handleDownloadDocument(docId: string, fileName?: string) {
-    const ok = await openDocumentContent(docId, fileName);
-    if (!ok) alert(`Failed to open ${fileName || 'document'}.`);
+    await openPdfViewer(docId, fileName);
   }
 
   async function handleConvert() {
@@ -496,7 +496,7 @@ export default function OpportunityDetailPage() {
                         onClick={() => handleDownloadDocument(doc.id, doc.file_name)}
                         className="shrink-0 text-blue-600 hover:text-blue-800 font-medium"
                       >
-                        Download PDF
+                        View PDF
                       </button>
                     </li>
                   ))}

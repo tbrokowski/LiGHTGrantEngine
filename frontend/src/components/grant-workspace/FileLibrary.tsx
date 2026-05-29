@@ -7,7 +7,7 @@ import {
 } from 'lucide-react';
 import { WorkspaceFile } from './types';
 import { grants, documents } from '@/lib/api';
-import { openDocumentContent } from '@/lib/documents';
+import { usePdfViewer } from '@/contexts/PdfViewerContext';
 
 const API_URL = process.env.NEXT_PUBLIC_API_URL ?? '';
 
@@ -57,11 +57,12 @@ function SourceIcon({ sourceType, className }: { sourceType: string; className?:
 
 function FileCard({ file, onDelete }: { file: WorkspaceFile; onDelete: () => void }) {
   const docId = file.file_url ? extractDocId(file.file_url) : null;
+  const { openPdfViewer } = usePdfViewer();
 
   const handleOpen = (e: React.MouseEvent) => {
     if (!docId) return;
     e.preventDefault();
-    openDocumentContent(docId, file.file_name);
+    openPdfViewer(docId, file.file_name);
   };
 
   return (

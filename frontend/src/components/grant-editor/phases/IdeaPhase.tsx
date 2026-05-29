@@ -100,6 +100,7 @@ export default function IdeaPhase({
   const [ideaExpanded, setIdeaExpanded] = useState(true);
   const [docExpanded, setDocExpanded] = useState(true);
   const [docsExpanded, setDocsExpanded] = useState(false);
+  const [intelligenceExpanded, setIntelligenceExpanded] = useState(true);
 
   // Upload state
   const [uploading, setUploading] = useState(false);
@@ -255,215 +256,218 @@ export default function IdeaPhase({
 
   return (
     <div className="flex-1 flex flex-col overflow-hidden">
-      {/* Two-panel body */}
-      <div className="flex-1 flex overflow-hidden">
+      {/* Single scrollable column */}
+      <div className="flex-1 overflow-y-auto p-5 space-y-5">
 
-        {/* Left panel — inputs */}
-        <div className="w-[38%] flex-shrink-0 border-r border-gray-200 overflow-y-auto p-5 space-y-5">
+        {/* 1. Call Document */}
+        <CollapsibleSection
+          label="Call Document"
+          expanded={docExpanded}
+          onToggle={() => setDocExpanded(!docExpanded)}
+          summary={docSummary}
+        >
+          <input
+            ref={fileRef}
+            type="file"
+            accept=".pdf,.docx,.txt"
+            className="hidden"
+            onChange={(e) => {
+              const f = e.target.files?.[0];
+              if (f) handleUpload(f);
+              if (fileRef.current) fileRef.current.value = '';
+            }}
+          />
 
-          {/* Your Idea */}
-          <CollapsibleSection
-            label="Your Idea"
-            expanded={ideaExpanded}
-            onToggle={() => setIdeaExpanded(!ideaExpanded)}
-            summary={ideaSummary}
-          >
-            <div className="relative">
-              <textarea
-                value={grantIdea}
-                onChange={(e) => onIdeaChange(e.target.value)}
-                onSelect={(e) => {
-                  const t = e.currentTarget;
-                  const sel = t.value.substring(t.selectionStart, t.selectionEnd);
-                  onSelectionChange?.(sel);
-                }}
-                onBlur={() => onSelectionChange?.('')}
-                rows={8}
-                placeholder="Describe your concept — the problem, approach, and impact…"
-                className="w-full text-sm border border-gray-200 rounded-lg px-3 py-2.5 focus:outline-none focus:ring-2 focus:ring-indigo-400 resize-none"
-              />
+          {uploading ? (
+            <div className="flex items-center gap-2 text-sm text-gray-500 py-1">
+              <Loader2 className="w-3.5 h-3.5 animate-spin text-indigo-500" />
+              Analyzing call document…
+            </div>
+          ) : uploadedDoc || hasExistingAnalysis ? (
+            <div className="flex items-center gap-2 text-sm text-gray-600">
+              <CheckCircle2 className="w-3.5 h-3.5 text-green-600 flex-shrink-0" />
+              <span className="flex-1 truncate">{uploadedDoc?.file_name ?? 'Call document analyzed'}</span>
+              {uploadedDoc?.file_url && (
+                <a href={uploadedDoc.file_url} target="_blank" rel="noopener noreferrer" className="text-gray-400 hover:text-indigo-600">
+                  <ExternalLink className="w-3.5 h-3.5" />
+                </a>
+              )}
               <button
-                type="button"
-                onClick={toggleVoice}
-                className={`absolute bottom-2.5 right-2.5 p-1 rounded-full transition-colors ${
-                  listening ? 'text-red-500' : 'text-gray-400 hover:text-indigo-500'
-                }`}
-                title="Voice input"
+                onClick={handleReanalyze}
+                disabled={reanalyzing}
+                className="flex items-center gap-1 text-sm text-gray-400 hover:text-indigo-600 disabled:opacity-50 transition-colors"
               >
-                {listening ? <MicOff className="w-4 h-4" /> : <Mic className="w-4 h-4" />}
+                <RefreshCw className={`w-3.5 h-3.5 ${reanalyzing ? 'animate-spin' : ''}`} />
+                Re-analyze
+              </button>
+              <button
+                onClick={() => fileRef.current?.click()}
+                className="flex items-center gap-1 text-sm text-gray-400 hover:text-indigo-600 transition-colors"
+              >
+                <Upload className="w-3.5 h-3.5" />
+                Upload new
               </button>
             </div>
-          </CollapsibleSection>
+          ) : (
+            <button
+              type="button"
+              onDrop={handleDrop}
+              onDragOver={handleDragOver}
+              onDragLeave={handleDragLeave}
+              onClick={() => fileRef.current?.click()}
+              className={`flex items-center gap-1.5 text-sm py-1 w-full text-left transition-colors ${
+                isDragOver ? 'text-indigo-600' : 'text-gray-400 hover:text-gray-600'
+              }`}
+            >
+              <Upload className="w-3.5 h-3.5 flex-shrink-0" />
+              {isDragOver ? 'Drop to upload' : 'Drop PDF/DOCX or click to upload'}
+            </button>
+          )}
+        </CollapsibleSection>
 
-          {/* Call Document */}
-          <CollapsibleSection
-            label="Call Document"
-            expanded={docExpanded}
-            onToggle={() => setDocExpanded(!docExpanded)}
-            summary={docSummary}
-          >
-            <input
-              ref={fileRef}
-              type="file"
-              accept=".pdf,.docx,.txt"
-              className="hidden"
-              onChange={(e) => {
-                const f = e.target.files?.[0];
-                if (f) handleUpload(f);
-                if (fileRef.current) fileRef.current.value = '';
-              }}
-            />
-
-            {uploading ? (
-              <div className="flex items-center gap-2 text-sm text-gray-500 py-1">
-                <Loader2 className="w-3.5 h-3.5 animate-spin text-indigo-500" />
-                Analyzing call document…
-              </div>
-            ) : uploadedDoc || hasExistingAnalysis ? (
+        {/* 2. Google Docs */}
+        <CollapsibleSection
+          label="Google Docs"
+          expanded={docsExpanded}
+          onToggle={() => setDocsExpanded(!docsExpanded)}
+          summary={googleDocSummary}
+        >
+          {docLinked ? (
+            <div className="space-y-2">
               <div className="flex items-center gap-2 text-sm text-gray-600">
                 <CheckCircle2 className="w-3.5 h-3.5 text-green-600 flex-shrink-0" />
-                <span className="flex-1 truncate">{uploadedDoc?.file_name ?? 'Call document analyzed'}</span>
-                {uploadedDoc?.file_url && (
-                  <a href={uploadedDoc.file_url} target="_blank" rel="noopener noreferrer" className="text-gray-400 hover:text-indigo-600">
-                    <ExternalLink className="w-3.5 h-3.5" />
-                  </a>
+                <a
+                  href={googleDocUrl ?? '#'}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="hover:underline flex-1 truncate"
+                >
+                  Google Doc linked
+                </a>
+                {googleDocLastSynced && (
+                  <span className="text-gray-400 shrink-0">
+                    synced {new Date(googleDocLastSynced).toLocaleDateString()}
+                  </span>
                 )}
-                <button
-                  onClick={handleReanalyze}
-                  disabled={reanalyzing}
-                  className="flex items-center gap-1 text-sm text-gray-400 hover:text-indigo-600 disabled:opacity-50 transition-colors"
-                >
-                  <RefreshCw className={`w-3.5 h-3.5 ${reanalyzing ? 'animate-spin' : ''}`} />
-                  Re-analyze
-                </button>
-                <button
-                  onClick={() => fileRef.current?.click()}
-                  className="flex items-center gap-1 text-sm text-gray-400 hover:text-indigo-600 transition-colors"
-                >
-                  <Upload className="w-3.5 h-3.5" />
-                  Upload new
-                </button>
               </div>
-            ) : (
-              <button
-                type="button"
-                onDrop={handleDrop}
-                onDragOver={handleDragOver}
-                onDragLeave={handleDragLeave}
-                onClick={() => fileRef.current?.click()}
-                className={`flex items-center gap-1.5 text-sm py-1 w-full text-left transition-colors ${
-                  isDragOver ? 'text-indigo-600' : 'text-gray-400 hover:text-gray-600'
-                }`}
-              >
-                <Upload className="w-3.5 h-3.5 flex-shrink-0" />
-                {isDragOver ? 'Drop to upload' : 'Drop PDF/DOCX or click to upload'}
-              </button>
-            )}
-          </CollapsibleSection>
-
-          {/* Google Docs */}
-          <CollapsibleSection
-            label="Google Docs"
-            expanded={docsExpanded}
-            onToggle={() => setDocsExpanded(!docsExpanded)}
-            summary={googleDocSummary}
-          >
-            {docLinked ? (
-              <div className="space-y-2">
-                <div className="flex items-center gap-2 text-sm text-gray-600">
-                  <CheckCircle2 className="w-3.5 h-3.5 text-green-600 flex-shrink-0" />
-                  <a
-                    href={googleDocUrl ?? '#'}
-                    target="_blank"
-                    rel="noopener noreferrer"
-                    className="hover:underline flex-1 truncate"
-                  >
-                    Google Doc linked
-                  </a>
-                  {googleDocLastSynced && (
-                    <span className="text-gray-400 shrink-0">
-                      synced {new Date(googleDocLastSynced).toLocaleDateString()}
-                    </span>
-                  )}
-                </div>
-                <div className="flex items-center gap-3">
-                  <button
-                    onClick={handlePullFromDoc}
-                    disabled={docSyncBusy}
-                    className="flex items-center gap-1 text-sm text-gray-400 hover:text-indigo-600 disabled:opacity-50 transition-colors"
-                    title="Pull from Google Doc"
-                  >
-                    {docSyncState === 'pulling' ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <CloudDownload className="w-3.5 h-3.5" />}
-                    Pull
-                  </button>
-                  <button
-                    onClick={handlePushToDoc}
-                    disabled={docSyncBusy}
-                    className="flex items-center gap-1 text-sm text-gray-400 hover:text-indigo-600 disabled:opacity-50 transition-colors"
-                    title="Push to Google Doc"
-                  >
-                    {docSyncState === 'pushing' ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <CloudUpload className="w-3.5 h-3.5" />}
-                    Push
-                  </button>
-                </div>
-              </div>
-            ) : showDocLinkInput ? (
-              <div className="flex gap-2 items-center">
-                <input
-                  type="url"
-                  value={docLinkInput}
-                  onChange={(e) => setDocLinkInput(e.target.value)}
-                  placeholder="https://docs.google.com/document/d/…"
-                  className="flex-1 text-xs border border-gray-200 rounded px-2 py-1 focus:outline-none focus:ring-1 focus:ring-indigo-400"
-                  onKeyDown={(e) => e.key === 'Enter' && handleLinkGoogleDoc()}
-                  autoFocus
-                />
-                <button
-                  onClick={handleLinkGoogleDoc}
-                  disabled={docSyncBusy || !docLinkInput.trim()}
-                  className="text-sm text-indigo-600 hover:underline disabled:opacity-50"
-                >
-                  {docSyncState === 'linking' ? <Loader2 className="w-3 h-3 animate-spin" /> : 'Link'}
-                </button>
-                <button
-                  onClick={() => { setShowDocLinkInput(false); setDocLinkInput(''); }}
-                  className="text-sm text-gray-400 hover:text-gray-600"
-                >
-                  Cancel
-                </button>
-              </div>
-            ) : (
               <div className="flex items-center gap-3">
                 <button
-                  onClick={() => setShowDocLinkInput(true)}
+                  onClick={handlePullFromDoc}
                   disabled={docSyncBusy}
                   className="flex items-center gap-1 text-sm text-gray-400 hover:text-indigo-600 disabled:opacity-50 transition-colors"
+                  title="Pull from Google Doc"
                 >
-                  <Link2 className="w-3.5 h-3.5" />
-                  Link
+                  {docSyncState === 'pulling' ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <CloudDownload className="w-3.5 h-3.5" />}
+                  Pull
                 </button>
                 <button
-                  onClick={handleCreateGoogleDoc}
+                  onClick={handlePushToDoc}
                   disabled={docSyncBusy}
                   className="flex items-center gap-1 text-sm text-gray-400 hover:text-indigo-600 disabled:opacity-50 transition-colors"
+                  title="Push to Google Doc"
                 >
-                  {docSyncState === 'creating' ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <PlusCircle className="w-3.5 h-3.5" />}
-                  Create
+                  {docSyncState === 'pushing' ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <CloudUpload className="w-3.5 h-3.5" />}
+                  Push
                 </button>
               </div>
-            )}
+            </div>
+          ) : showDocLinkInput ? (
+            <div className="flex gap-2 items-center">
+              <input
+                type="url"
+                value={docLinkInput}
+                onChange={(e) => setDocLinkInput(e.target.value)}
+                placeholder="https://docs.google.com/document/d/…"
+                className="flex-1 text-xs border border-gray-200 rounded px-2 py-1 focus:outline-none focus:ring-1 focus:ring-indigo-400"
+                onKeyDown={(e) => e.key === 'Enter' && handleLinkGoogleDoc()}
+                autoFocus
+              />
+              <button
+                onClick={handleLinkGoogleDoc}
+                disabled={docSyncBusy || !docLinkInput.trim()}
+                className="text-sm text-indigo-600 hover:underline disabled:opacity-50"
+              >
+                {docSyncState === 'linking' ? <Loader2 className="w-3 h-3 animate-spin" /> : 'Link'}
+              </button>
+              <button
+                onClick={() => { setShowDocLinkInput(false); setDocLinkInput(''); }}
+                className="text-sm text-gray-400 hover:text-gray-600"
+              >
+                Cancel
+              </button>
+            </div>
+          ) : (
+            <div className="flex items-center gap-3">
+              <button
+                onClick={() => setShowDocLinkInput(true)}
+                disabled={docSyncBusy}
+                className="flex items-center gap-1 text-sm text-gray-400 hover:text-indigo-600 disabled:opacity-50 transition-colors"
+              >
+                <Link2 className="w-3.5 h-3.5" />
+                Link
+              </button>
+              <button
+                onClick={handleCreateGoogleDoc}
+                disabled={docSyncBusy}
+                className="flex items-center gap-1 text-sm text-gray-400 hover:text-indigo-600 disabled:opacity-50 transition-colors"
+              >
+                {docSyncState === 'creating' ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <PlusCircle className="w-3.5 h-3.5" />}
+                Create
+              </button>
+            </div>
+          )}
 
-            {docSyncState === 'error' && docSyncError && (
-              <p className="text-sm text-red-600 mt-1">{docSyncError}</p>
-            )}
+          {docSyncState === 'error' && docSyncError && (
+            <p className="text-sm text-red-600 mt-1">{docSyncError}</p>
+          )}
+        </CollapsibleSection>
+
+        {/* 3. Your Idea */}
+        <CollapsibleSection
+          label="Your Idea"
+          expanded={ideaExpanded}
+          onToggle={() => setIdeaExpanded(!ideaExpanded)}
+          summary={ideaSummary}
+        >
+          <div className="relative">
+            <textarea
+              value={grantIdea}
+              onChange={(e) => onIdeaChange(e.target.value)}
+              onSelect={(e) => {
+                const t = e.currentTarget;
+                const sel = t.value.substring(t.selectionStart, t.selectionEnd);
+                onSelectionChange?.(sel);
+              }}
+              onBlur={() => onSelectionChange?.('')}
+              rows={10}
+              placeholder="Describe your concept — the problem, approach, and impact…"
+              className="w-full text-sm border border-gray-200 rounded-lg px-3 py-2.5 focus:outline-none focus:ring-2 focus:ring-indigo-400 resize-none"
+            />
+            <button
+              type="button"
+              onClick={toggleVoice}
+              className={`absolute bottom-2.5 right-2.5 p-1 rounded-full transition-colors ${
+                listening ? 'text-red-500' : 'text-gray-400 hover:text-indigo-500'
+              }`}
+              title="Voice input"
+            >
+              {listening ? <MicOff className="w-4 h-4" /> : <Mic className="w-4 h-4" />}
+            </button>
+          </div>
+        </CollapsibleSection>
+
+        {/* 4. Call Intelligence */}
+        {hasExistingAnalysis && (
+          <CollapsibleSection
+            label="Call Intelligence"
+            expanded={intelligenceExpanded}
+            onToggle={() => setIntelligenceExpanded(!intelligenceExpanded)}
+            summary={intelligenceExpanded ? '' : 'Analysis ready'}
+          >
+            <CallRequirementsPanel callAnalysis={callAnalysis} />
           </CollapsibleSection>
-        </div>
+        )}
 
-        {/* Right panel — call intelligence */}
-        <div className="flex-1 overflow-y-auto p-5">
-          <p className="text-sm font-semibold text-gray-500 mb-4">Call Intelligence</p>
-          <CallRequirementsPanel callAnalysis={callAnalysis} />
-        </div>
       </div>
 
       {/* Sticky footer */}

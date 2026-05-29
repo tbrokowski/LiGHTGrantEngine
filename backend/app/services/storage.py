@@ -80,15 +80,23 @@ def upload_file(
     return key
 
 
-def get_presigned_url(key: str, expires_in: int = 3600) -> str:
+def get_presigned_url(key: str, expires_in: int = 3600, filename: str | None = None) -> str:
     """Generate a time-limited presigned GET URL for a stored object.
 
     Default expiry is 1 hour. Use shorter values for sensitive archive docs.
+    Setting filename forces ResponseContentDisposition to inline so browsers
+    render the file in-place instead of triggering a download.
     """
     s = get_settings()
+    disposition = f'inline; filename="{filename}"' if filename else "inline"
+    params: dict = {
+        "Bucket": s.r2_bucket_name,
+        "Key": key,
+        "ResponseContentDisposition": disposition,
+    }
     return _client().generate_presigned_url(
         "get_object",
-        Params={"Bucket": s.r2_bucket_name, "Key": key},
+        Params=params,
         ExpiresIn=expires_in,
     )
 

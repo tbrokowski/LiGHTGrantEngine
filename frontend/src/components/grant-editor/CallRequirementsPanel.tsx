@@ -3,6 +3,10 @@
 import { useState } from 'react';
 import { ChevronDown } from 'lucide-react';
 
+// ---------------------------------------------------------------------------
+// Types
+// ---------------------------------------------------------------------------
+
 interface EligibilityItem {
   item: string;
   met: boolean | null;
@@ -27,9 +31,25 @@ interface Deadlines {
   questions_due?: string | null;
 }
 
+interface KeyFocusArea {
+  area: string;
+  description?: string;
+  why_it_matters?: string;
+}
+
+interface KeyPhrase {
+  phrase: string;
+  context?: string;
+  significance?: string;
+}
+
 interface CallRequirementsPanelProps {
   callAnalysis: Record<string, unknown>;
 }
+
+// ---------------------------------------------------------------------------
+// Shared primitives
+// ---------------------------------------------------------------------------
 
 function CollapsibleGroup({
   label,
@@ -63,8 +83,26 @@ function CollapsibleGroup({
   );
 }
 
+function BulletList({ items, className = '' }: { items: string[]; className?: string }) {
+  return (
+    <ul className={`space-y-2 ${className}`}>
+      {items.map((item, i) => (
+        <li key={i} className="flex gap-2 text-sm text-gray-600 leading-snug">
+          <span className="text-gray-300 flex-shrink-0 mt-0.5">•</span>
+          <span>{item}</span>
+        </li>
+      ))}
+    </ul>
+  );
+}
+
+// ---------------------------------------------------------------------------
+// Main component
+// ---------------------------------------------------------------------------
+
 export default function CallRequirementsPanel({ callAnalysis }: CallRequirementsPanelProps) {
   const [expandedSection, setExpandedSection] = useState<string | null>(null);
+  const [expandedFocusArea, setExpandedFocusArea] = useState<string | null>(null);
 
   if (!callAnalysis || Object.keys(callAnalysis).length === 0) {
     return (
@@ -74,6 +112,7 @@ export default function CallRequirementsPanel({ callAnalysis }: CallRequirements
     );
   }
 
+  // --- Existing fields ---
   const narrativeBrief = callAnalysis.narrative_brief as string | undefined;
   const summary = callAnalysis.summary as string | undefined;
   const awardAmount = callAnalysis.award_amount as string | undefined;
@@ -91,9 +130,16 @@ export default function CallRequirementsPanel({ callAnalysis }: CallRequirements
   const budgetConstraints = callAnalysis.budget_constraints as string | undefined;
   const geographicEligibility = callAnalysis.geographic_eligibility as string | undefined;
 
+  // --- New fields ---
+  const callBackground = callAnalysis.call_background as string[] | undefined;
+  const funderPriorities = callAnalysis.funder_priorities as string[] | undefined;
+  const strategicObjectives = callAnalysis.strategic_objectives as string[] | undefined;
+  const keyFocusAreas = callAnalysis.key_focus_areas as KeyFocusArea[] | undefined;
+  const keyPhrases = callAnalysis.key_phrases as KeyPhrase[] | undefined;
+  const requirementsOverview = callAnalysis.requirements_overview as string[] | undefined;
+
   const primaryDeadline = deadlines?.full_proposal || deadlines?.concept_note || deadlines?.loi;
 
-  // Stats line
   const statParts = [
     awardAmount,
     primaryDeadline,
@@ -101,7 +147,6 @@ export default function CallRequirementsPanel({ callAnalysis }: CallRequirements
     projectDuration,
   ].filter(Boolean) as string[];
 
-  // Critical eligibility flags
   const criticalFlags = (eligibilityChecklist || []).filter(
     (item) => item.critical && item.met === false
   );
@@ -146,19 +191,134 @@ export default function CallRequirementsPanel({ callAnalysis }: CallRequirements
         </p>
       )}
 
-      {/* Call Brief */}
-      {(narrativeBrief || summary) && (
-        <div className="space-y-1.5">
-          <p className="text-sm font-semibold text-gray-700">Call Brief</p>
-          <div className="text-sm text-gray-700 leading-relaxed space-y-2.5">
-            {(narrativeBrief || summary || '').split('\n\n').filter(Boolean).map((para, i) => (
-              <p key={i}>{para}</p>
-            ))}
-          </div>
-        </div>
+      {/* ------------------------------------------------------------------ */}
+      {/* NEW: Background & Context                                           */}
+      {/* ------------------------------------------------------------------ */}
+      {callBackground && callBackground.length > 0 && (
+        <CollapsibleGroup
+          label="Background & Context"
+          count={callBackground.length}
+          defaultOpen
+        >
+          <BulletList items={callBackground} />
+        </CollapsibleGroup>
       )}
 
-      {/* Required Sections — expanded by default */}
+      {/* ------------------------------------------------------------------ */}
+      {/* NEW: What They're Looking For                                       */}
+      {/* ------------------------------------------------------------------ */}
+      {requirementsOverview && requirementsOverview.length > 0 && (
+        <CollapsibleGroup
+          label="What They're Looking For"
+          count={requirementsOverview.length}
+          defaultOpen
+        >
+          <BulletList items={requirementsOverview} />
+        </CollapsibleGroup>
+      )}
+
+      {/* ------------------------------------------------------------------ */}
+      {/* NEW: Funder Priorities                                              */}
+      {/* ------------------------------------------------------------------ */}
+      {funderPriorities && funderPriorities.length > 0 && (
+        <CollapsibleGroup
+          label="Funder Priorities"
+          count={funderPriorities.length}
+          defaultOpen
+        >
+          <ol className="space-y-2 pl-1">
+            {funderPriorities.map((p, i) => (
+              <li key={i} className="flex gap-2 text-sm text-gray-600 leading-snug">
+                <span className="text-gray-400 shrink-0 font-medium">{i + 1}.</span>
+                <span>{p}</span>
+              </li>
+            ))}
+          </ol>
+        </CollapsibleGroup>
+      )}
+
+      {/* ------------------------------------------------------------------ */}
+      {/* NEW: Strategic Objectives                                           */}
+      {/* ------------------------------------------------------------------ */}
+      {strategicObjectives && strategicObjectives.length > 0 && (
+        <CollapsibleGroup
+          label="Strategic Objectives"
+          count={strategicObjectives.length}
+        >
+          <BulletList items={strategicObjectives} />
+        </CollapsibleGroup>
+      )}
+
+      {/* ------------------------------------------------------------------ */}
+      {/* NEW: Key Focus Areas                                                */}
+      {/* ------------------------------------------------------------------ */}
+      {keyFocusAreas && keyFocusAreas.length > 0 && (
+        <CollapsibleGroup
+          label="Key Focus Areas"
+          count={keyFocusAreas.length}
+        >
+          <div className="space-y-2">
+            {keyFocusAreas.map((area) => {
+              const isOpen = expandedFocusArea === area.area;
+              const hasDetail = area.description || area.why_it_matters;
+              return (
+                <div key={area.area} className="border border-gray-100 rounded-md">
+                  <button
+                    type="button"
+                    onClick={() => hasDetail && setExpandedFocusArea(isOpen ? null : area.area)}
+                    className={`flex items-center gap-2 w-full text-left px-3 py-2 ${hasDetail ? 'cursor-pointer' : 'cursor-default'}`}
+                  >
+                    {hasDetail && (
+                      <ChevronDown
+                        className={`w-3 h-3 text-gray-300 flex-shrink-0 transition-transform ${isOpen ? '' : '-rotate-90'}`}
+                      />
+                    )}
+                    {!hasDetail && <span className="w-3 flex-shrink-0" />}
+                    <span className="text-sm font-medium text-gray-800">{area.area}</span>
+                  </button>
+                  {isOpen && (
+                    <div className="px-3 pb-3 space-y-1.5 border-t border-gray-100 pt-2">
+                      {area.description && (
+                        <p className="text-sm text-gray-600 leading-snug">{area.description}</p>
+                      )}
+                      {area.why_it_matters && (
+                        <p className="text-xs text-indigo-600 leading-snug">
+                          Why it matters: {area.why_it_matters}
+                        </p>
+                      )}
+                    </div>
+                  )}
+                </div>
+              );
+            })}
+          </div>
+        </CollapsibleGroup>
+      )}
+
+      {/* ------------------------------------------------------------------ */}
+      {/* NEW: Key Phrases                                                    */}
+      {/* ------------------------------------------------------------------ */}
+      {keyPhrases && keyPhrases.length > 0 && (
+        <CollapsibleGroup
+          label="Key Phrases to Use"
+          count={keyPhrases.length}
+        >
+          <div className="space-y-3">
+            {keyPhrases.map((kp, i) => (
+              <div key={i} className="pl-3 border-l-2 border-indigo-100">
+                <p className="text-sm text-gray-800 italic">&ldquo;{kp.phrase}&rdquo;</p>
+                {kp.significance && (
+                  <p className="text-xs text-gray-500 mt-0.5 leading-snug">{kp.significance}</p>
+                )}
+              </div>
+            ))}
+          </div>
+        </CollapsibleGroup>
+      )}
+
+      {/* ------------------------------------------------------------------ */}
+      {/* Existing: Required Sections                                         */}
+      {/* ------------------------------------------------------------------ */}
       {sectionKeys.length > 0 && (
         <CollapsibleGroup
           label="Required Sections"
@@ -212,31 +372,19 @@ export default function CallRequirementsPanel({ callAnalysis }: CallRequirements
                       {req?.key_asks && req.key_asks.length > 0 && (
                         <div>
                           <p className="text-xs font-semibold text-gray-500 uppercase tracking-wide mb-1">What the funder asks for</p>
-                          <ul className="space-y-1">
-                            {req.key_asks.map((ask, i) => (
-                              <li key={i} className="text-sm text-gray-600">• {ask}</li>
-                            ))}
-                          </ul>
+                          <BulletList items={req.key_asks} />
                         </div>
                       )}
                       {req?.questions_to_address && req.questions_to_address.length > 0 && (
                         <div>
                           <p className="text-xs font-semibold text-gray-500 uppercase tracking-wide mb-1">Questions to answer</p>
-                          <ul className="space-y-1">
-                            {req.questions_to_address.map((q, i) => (
-                              <li key={i} className="text-sm text-gray-600">• {q}</li>
-                            ))}
-                          </ul>
+                          <BulletList items={req.questions_to_address} />
                         </div>
                       )}
                       {req?.evidence_needed && req.evidence_needed.length > 0 && (
                         <div>
                           <p className="text-xs font-semibold text-gray-500 uppercase tracking-wide mb-1">Evidence needed</p>
-                          <ul className="space-y-1">
-                            {req.evidence_needed.map((e, i) => (
-                              <li key={i} className="text-sm text-gray-600">• {e}</li>
-                            ))}
-                          </ul>
+                          <BulletList items={req.evidence_needed} />
                         </div>
                       )}
                     </div>
@@ -286,11 +434,7 @@ export default function CallRequirementsPanel({ callAnalysis }: CallRequirements
       {/* Risks */}
       {Array.isArray(risks) && risks.length > 0 && (
         <CollapsibleGroup label="Risks" count={risks.length}>
-          <ul className="space-y-1.5">
-            {risks.map((r, i) => (
-              <li key={i} className="text-sm text-gray-600">• {r}</li>
-            ))}
-          </ul>
+          <BulletList items={risks} />
         </CollapsibleGroup>
       )}
 
@@ -309,6 +453,17 @@ export default function CallRequirementsPanel({ callAnalysis }: CallRequirements
               <li key={i} className="text-sm text-gray-600">? {m}</li>
             ))}
           </ul>
+        </CollapsibleGroup>
+      )}
+
+      {/* Call Brief (narrative_brief fallback — shown collapsed) */}
+      {(narrativeBrief || summary) && (
+        <CollapsibleGroup label="Full Call Brief">
+          <div className="text-sm text-gray-700 leading-relaxed space-y-2.5">
+            {(narrativeBrief || summary || '').split('\n\n').filter(Boolean).map((para, i) => (
+              <p key={i}>{para}</p>
+            ))}
+          </div>
         </CollapsibleGroup>
       )}
     </div>

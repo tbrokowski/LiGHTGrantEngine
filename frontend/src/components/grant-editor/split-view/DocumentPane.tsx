@@ -75,8 +75,9 @@ export default function DocumentPane({
   const [renameValue, setRenameValue] = useState('');
   const [commentsOpen, setCommentsOpen] = useState(false);
   const [dragOverPanel, setDragOverPanel] = useState(false);
-  // Resolved presigned URL for workspace-file tabs (the stored URL returns JSON)
+  // Resolved presigned URL and metadata for workspace-file tabs
   const [resolvedFileUrl, setResolvedFileUrl] = useState<string | null>(null);
+  const [resolvedFileName, setResolvedFileName] = useState<string | null>(null);
   const [fileError, setFileError] = useState('');
   const renameInputRef = useRef<HTMLInputElement>(null);
   const triggerRef = useRef<HTMLButtonElement>(null);
@@ -101,23 +102,32 @@ export default function DocumentPane({
 
   // Resolve presigned URL when a workspace-file tab is active
   useEffect(() => {
-    if (activeTab?.type !== 'workspace-file') { setResolvedFileUrl(null); setFileError(''); return; }
+    if (activeTab?.type !== 'workspace-file') {
+      setResolvedFileUrl(null);
+      setResolvedFileName(null);
+      setFileError('');
+      return;
+    }
     const raw = activeTab.meta?.fileUrl ?? '';
     if (!raw) { setResolvedFileUrl(null); return; }
-    // Internal /content endpoints return JSON {"url": presigned} — resolve it.
+    // Internal /content endpoints return JSON {"url": presigned, "file_name": "..."} — resolve it.
     // Normalise to a path (strip host) so axios always routes to the FastAPI base.
     if (raw.includes('/content')) {
       let apiPath = raw;
       try {
         apiPath = new URL(raw).pathname; // strip host → /api/v1/documents/{id}/content
       } catch { /* already a relative path */ }
-      // Strip /api/v1 prefix — axios baseURL already includes it, so passing it again doubles to /api/v1/api/v1/... → 404
+      // Strip /api/v1 prefix — axios baseURL already includes it.
       apiPath = apiPath.replace(/^\/api\/v1/, '');
       setFileError('');
-      api.get<{ url?: string; text?: string }>(apiPath)
+      api.get<{ url?: string; text?: string; file_name?: string }>(apiPath)
         .then((res) => {
-          if (res.data.url) setResolvedFileUrl(res.data.url);
-          else setFileError('File binary not available. The document may only contain parsed text.');
+          if (res.data.url) {
+            setResolvedFileUrl(res.data.url);
+            setResolvedFileName(res.data.file_name ?? null);
+          } else {
+            setFileError('File binary not available. The document may only contain parsed text.');
+          }
         })
         .catch(() => setFileError('Could not load file — it may have been deleted or moved.'));
     } else {
@@ -347,17 +357,24 @@ export default function DocumentPane({
           );
         }
 
+        // Detect PDF by resolved filename (most reliable) or URL pattern fallback
+        const lowerName = (resolvedFileName ?? activeTab.label ?? '').toLowerCase();
         const lowerSrc = (src ?? '').toLowerCase();
-        const isPdf = lowerSrc.includes('.pdf') || lowerSrc.includes('application%2Fpdf') || lowerSrc.includes('content-type=pdf');
+        const isPdf =
+          lowerName.endsWith('.pdf') ||
+          lowerSrc.includes('.pdf') ||
+          lowerSrc.includes('application%2Fpdf') ||
+          lowerSrc.includes('content-type=pdf');
         const isGoogleDoc = (src ?? '').includes('docs.google.com') || (src ?? '').includes('drive.google.com');
 
         if (isPdf && src) {
-          // Google Docs Viewer renders PDFs reliably across browsers (including presigned R2 URLs)
-          const viewerUrl = `https://docs.google.com/viewer?url=${encodeURIComponent(src)}&embedded=true`;
+          // Use native browser PDF rendering via iframe — no external services needed.
+          // The presigned URL already carries ResponseContentDisposition: inline so the
+          // browser renders it rather than downloading.
           return (
             <div className="flex flex-col flex-1 overflow-hidden">
               <div className="flex-shrink-0 flex items-center justify-between px-3 py-1 bg-gray-50 border-b border-gray-100 text-xs text-gray-500">
-                <span className="truncate max-w-[300px]">{activeTab.label}</span>
+                <span className="truncate max-w-[300px]">{resolvedFileName ?? activeTab.label}</span>
                 <a href={src} target="_blank" rel="noopener noreferrer"
                   className="flex items-center gap-1 text-indigo-600 hover:underline flex-shrink-0">
                   <ExternalLink className="w-3 h-3" />
@@ -365,10 +382,9 @@ export default function DocumentPane({
                 </a>
               </div>
               <iframe
-                src={viewerUrl}
+                src={src}
                 className="flex-1 w-full h-full border-0"
-                title={activeTab.label}
-                allow="autoplay"
+                title={resolvedFileName ?? activeTab.label}
               />
             </div>
           );

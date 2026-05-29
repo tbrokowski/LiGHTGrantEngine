@@ -120,12 +120,12 @@ async def serve_document_content(
 
     r2_key = storage.resolve_storage_key(doc.notes)
     if r2_key and storage.object_exists(r2_key):
-        presigned = storage.get_presigned_url(r2_key, expires_in=3600)
-        return {"url": presigned}
+        presigned = storage.get_presigned_url(r2_key, expires_in=3600, filename=doc.file_name)
+        return {"url": presigned, "file_name": doc.file_name}
 
     # Fallback: return parsed text if the binary is no longer in storage
     if doc.parsed_text:
-        return {"text": doc.parsed_text}
+        return {"text": doc.parsed_text, "file_name": doc.file_name}
 
     raise HTTPException(404, "Document content not found")
 

@@ -4,7 +4,7 @@ import { useParams } from 'next/navigation';
 import Link from 'next/link';
 import { ChevronDown, ChevronRight, Pencil, X } from 'lucide-react';
 import { archive } from '@/lib/api';
-import { openDocumentContent } from '@/lib/documents';
+import { usePdfViewer } from '@/contexts/PdfViewerContext';
 import EditArchiveModal from '@/components/archive/EditArchiveModal';
 
 interface ProposalSection {
@@ -116,6 +116,7 @@ export default function ArchiveDetailPage() {
   const [textPreviewDoc, setTextPreviewDoc] = useState<ArchiveDocument | null>(null);
   const [openingDocId, setOpeningDocId] = useState<string | null>(null);
   const [showEdit, setShowEdit] = useState(false);
+  const { openPdfViewer } = usePdfViewer();
   const prevSectionCountRef = useRef(0);
 
   const load = useCallback((silent = false) => {
@@ -178,8 +179,7 @@ export default function ArchiveDetailPage() {
 
   async function handleOpenDocument(doc: ArchiveDocument) {
     setOpeningDocId(doc.id);
-    const ok = await openDocumentContent(doc.id, doc.file_name ?? undefined);
-    if (!ok) alert(`Failed to open ${doc.file_name || 'document'}.`);
+    await openPdfViewer(doc.id, doc.file_name ?? undefined);
     setOpeningDocId(null);
   }
 
