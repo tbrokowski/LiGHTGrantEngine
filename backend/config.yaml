@@ -15,7 +15,7 @@ ai:
     call_analyzer:
       model: gpt-4o
       temperature: 0.1
-      max_tokens: 8000
+      max_tokens: 16000
     go_no_go:
       temperature: 0.2
       max_tokens: 1500
@@ -33,7 +33,7 @@ ai:
       temperature: 0.1
       max_tokens: 512
     opportunity_summarizer:
-      model: gpt-4o
+      model: gpt-4o-mini
       temperature: 0.3
       max_tokens: 4000
     style_profiler:

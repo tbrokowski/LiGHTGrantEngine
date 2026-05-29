@@ -16,10 +16,13 @@ document in context natively.
 For very long documents (> 400k chars) the existing chunking logic is preserved.
 """
 import json
+import logging
 import re
 import asyncio
 from collections.abc import Callable
 from app.ai.client import chat_complete
+
+logger = logging.getLogger(__name__)
 
 
 def _parse_llm_json(response: str) -> dict:
@@ -56,11 +59,19 @@ def _parse_llm_json(response: str) -> dict:
 
 
 def _analysis_has_content(result: dict) -> bool:
-    """True if the analysis dict contains user-visible content."""
+    """True if the analysis dict contains user-visible content.
+
+    Checks known field names first (fast path), then falls back to a
+    structural check: if the model returned a rich dict with 5+ non-empty
+    values that are not just error/metadata keys, accept it even if the
+    field names differ from what we expect (guards against minor schema drift).
+    """
     if not result:
         return False
+    # Fast path: known text fields
     if result.get("narrative_brief") or result.get("summary"):
         return True
+    # Known list/dict fields
     list_fields = (
         "call_background", "funder_priorities", "strategic_objectives",
         "requirements_overview", "required_sections", "evaluation_criteria",
@@ -79,7 +90,24 @@ def _analysis_has_content(result: dict) -> bool:
         "budget_constraints", "geographic_eligibility", "award_amount",
         "submission_portal", "required_partners",
     )
-    return any(result.get(f) for f in scalar_fields)
+    if any(result.get(f) for f in scalar_fields):
+        return True
+    # Fallback: accept any response that has 5+ populated keys outside of
+    # error/parse-metadata keys — this handles minor field-name schema drift.
+    skip = {"error", "raw_response"}
+    populated = sum(
+        1 for k, v in result.items()
+        if k not in skip and v not in (None, "", [], {})
+    )
+    if populated >= 5:
+        logger.warning(
+            "call_analyzer: _analysis_has_content fallback triggered — "
+            "model returned %d populated keys not matching known schema: %s",
+            populated,
+            list(result.keys())[:15],
+        )
+        return True
+    return False
 
 SYSTEM_PROMPT = """You are an expert grant analyst.
 Your task is to analyze grant calls and produce a thorough, complete analysis that helps proposal teams
@@ -299,7 +327,17 @@ Return a JSON object with these fields. Be THOROUGH and COMPLETE — do not summ
     if parsed and _analysis_has_content(parsed):
         return parsed
     if parsed:
+        logger.warning(
+            "call_analyzer: parsed JSON has no usable content (keys=%s, response_len=%d)",
+            list(parsed.keys())[:15],
+            len(response or ""),
+        )
         return parsed
+    logger.warning(
+        "call_analyzer: failed to parse JSON response (response_len=%d, preview=%.200s)",
+        len(response or ""),
+        (response or "")[:200],
+    )
     return {
         "error": "Failed to parse analysis response from the model",
         "raw_response": (response or "")[:2000],
