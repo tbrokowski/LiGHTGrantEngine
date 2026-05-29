@@ -702,16 +702,12 @@
       "source_type": "eu_funding",
       "api_endpoint": null,
       "scraper_config": {},
-      "refresh_frequency": "weekly",
-      "is_high_priority": false,
+      "refresh_frequency": "daily",
+      "is_high_priority": true,
       "logo_url": "/logos/horizon-europe.svg",
       "status": "active",
-      "relevant_themes": [
-        "health",
-        "AI",
-        "digital"
-      ],
-      "notes": "Official EC API; covers 200+ programmes and €95.5B Horizon Europe budget"
+      "relevant_themes": ["health", "AI", "digital", "research", "innovation"],
+      "notes": "Canonical EC SEDIA API source (apiKey=SEDIA). Fetches all open/forthcoming calls across Horizon, ERC, EIC, LIFE, Digital Europe and more. All other eu_funding sources are paused to avoid duplicates."
     },
     {
       "name": "Horizon Europe / CORDIS",
@@ -721,25 +717,28 @@
       "api_endpoint": null,
       "scraper_config": {},
       "refresh_frequency": "daily",
-      "is_high_priority": true,
+      "is_high_priority": false,
       "logo_url": "/logos/horizon-europe.svg",
-      "status": "active",
+      "status": "paused",
       "relevant_themes": ["health", "AI", "digital", "research"],
-      "notes": "Open data via data.europa.eu; bulk CSV/XML downloads + API endpoint on api.store"
+      "notes": "Redundant — covered by EU Funding & Tenders Portal (Horizon, LIFE, etc.) via the same SEDIA API. Paused to prevent duplicate grants."
     },
     {
       "name": "EU Funding & Grants Portal (eufundingportal.eu – aggregator)",
       "category": "EU / European",
       "url": "https://eufundingportal.eu",
-      "source_type": "eu_funding",
+      "source_type": "ai_scraper",
       "api_endpoint": null,
-      "scraper_config": {},
+      "scraper_config": {
+        "use_playwright": true,
+        "crawl_depth": 0
+      },
       "refresh_frequency": "weekly",
       "is_high_priority": false,
       "logo_url": null,
-      "status": "active",
+      "status": "paused",
       "relevant_themes": [],
-      "notes": "No API; scraping required"
+      "notes": "Third-party aggregator site — not the EC API. Changed source_type to ai_scraper (Playwright). Paused until a proper scraper config is written for this site."
     },
     {
       "name": "European Research Council (ERC)",
@@ -768,9 +767,9 @@
       "refresh_frequency": "weekly",
       "is_high_priority": false,
       "logo_url": "/logos/horizon-europe.svg",
-      "status": "active",
+      "status": "paused",
       "relevant_themes": [],
-      "notes": "Accessible through EU Funding & Tenders Portal API"
+      "notes": "Redundant — EIC calls (EIC-ACCELERATOR, EIC-PATHFINDER, etc.) are already returned by the canonical EU Funding & Tenders Portal source via the SEDIA API. Paused to prevent duplicates."
     },
     {
       "name": "European Structural & Investment Funds (ESIF / Cohesion)",
@@ -782,9 +781,9 @@
       "refresh_frequency": "weekly",
       "is_high_priority": false,
       "logo_url": "/logos/horizon-europe.svg",
-      "status": "active",
+      "status": "paused",
       "relevant_themes": [],
-      "notes": "Open data API; Socrata-based platform"
+      "notes": "ESIF/Cohesion uses a Socrata-based platform — different from the EC SEDIA API. Paused until a dedicated scraper is implemented for cohesiondata.ec.europa.eu."
     },
     {
       "name": "EU Funding & Tenders – Horizon Programmes",
@@ -794,11 +793,11 @@
       "api_endpoint": null,
       "scraper_config": {},
       "refresh_frequency": "weekly",
-      "is_high_priority": true,
+      "is_high_priority": false,
       "logo_url": "/logos/horizon-europe.svg",
-      "status": "active",
+      "status": "paused",
       "relevant_themes": ["health", "AI", "digital", "research", "innovation"],
-      "notes": "Horizon Europe programme listing page on the EU Funding & Tenders Portal; covers all Horizon funding calls"
+      "notes": "Redundant — Horizon programmes are fully covered by the canonical EU Funding & Tenders Portal source. Paused to prevent duplicates."
     },
     {
       "name": "DFG – Deutsche Forschungsgemeinschaft (German Research Foundation)",
