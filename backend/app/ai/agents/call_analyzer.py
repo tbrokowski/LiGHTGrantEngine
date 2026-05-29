@@ -487,131 +487,142 @@ CALL URL: {call_url or "N/A"}
 {f"NOTE: {extra_instructions}" if extra_instructions else ""}{f"NOTE: {chunk_note}" if chunk_note else ""}
 
 {type_context_block}{structure_context}
-─── QUOTING RULES ──────────────────────────────────────────────────────────────
-For funder_priorities, strategic_objectives, requirements_overview, and winning_factors:
-  - ALWAYS use the funder's exact language in quotes where possible
-  - Format: "\"[exact phrase from document]\" — [1-sentence interpretation, ≤15 words]"
-  - If no exact quote is available, paraphrase tightly and note it's a paraphrase
-  - Strip all generic grant-writing boilerplate — every bullet must be specific to THIS call
+─── EXTRACTION RULES ───────────────────────────────────────────────────────────
+PRIORITY: raw document content over interpretation. The proposal team can interpret — they cannot
+invent language the call didn't use. Your job is to surface what the document actually says.
+
+1. QUOTE VERBATIM wherever possible. Prefer longer, complete phrases over short fragments.
+   Wrap quotes in double-quote characters. Do NOT shorten a good quote to fit a format.
+2. When paraphrasing is unavoidable, keep it tight and mark it with (paraphrase) at the end.
+3. Avoid generic phrases ("strong team", "clear objectives") — every item must be specific to THIS document.
+4. More items is better than fewer. Aim for the upper end of every count range.
+5. For key_phrases: be aggressive — pull EVERY phrase that is emphasized, repeated, appears in
+   scoring criteria, or will clearly signal to reviewers that a proposal "gets it".
 
 ─── REQUIRED JSON FIELDS ───────────────────────────────────────────────────────
 
 summary
-  string — 2-3 sentence plain-English overview of what this call funds, who it targets, and the
-  expected outcome. Include the call reference number if found.
+  string — 2-3 sentence overview: what this call funds, who it targets, expected outputs, call
+  reference number. Embed 1-2 direct quotes from the document's own description of itself.
 
 narrative_brief
-  string — 4-paragraph actionable synthesis for the proposal team:
-    (1) What the funder wants to achieve and the specific gap/problem they are funding a solution for
-        (quote key phrases from the document)
-    (2) What a WINNING proposal MUST contain, demonstrate, and deliver — be concrete and call-specific,
-        not generic. Focus on the project plan, methodology, and research proposal requirements.
-    (3) Team composition, eligibility, consortium requirements, and any critical partnership mandates
-    (4) Critical constraints, budget rules, page limits, and the top 2-3 disqualifiers to avoid
-  Write as tight, actionable prose. No generic policy language. Each paragraph must give the team
-  a concrete action or decision.
+  string — 4-paragraph actionable synthesis. Weave in verbatim phrases throughout:
+    (1) The funder's stated goal and the specific gap/problem — quote their own framing
+    (2) What a WINNING proposal MUST contain and demonstrate — be concrete, quote the call's
+        exact requirements for the project plan, methodology, and research approach
+    (3) Team composition, eligibility, consortium requirements — quote any specific mandates
+    (4) Key constraints, disqualifiers, budget rules, page limits — quote specific figures/limits
+  Dense prose, no generic filler. Every sentence driven by document language.
 
 call_background
-  list[string] — 5-8 bullets on background/context/funder motivation. Each bullet = one complete
-  informative sentence. Cover: the problem being addressed, why now, program history, funder's
-  strategic motivation, sector context.
+  list[string] — 6-10 bullets. Mix of verbatim quotes and tight paraphrases. Each bullet
+  = one complete sentence grounded in the document. Prioritize: stated problem, funder motivation,
+  program history, sector context. Quote the document's own framing wherever it appears.
 
 funder_priorities
-  list[string] — 4-6 strings, highest priority first. Use the funder's EXACT language:
-  "\"[exact phrase from call]\" — [why this is top priority, ≤12 words]"
-  Pull phrases that are repeated, appear in scoring criteria, or are bolded/emphasized.
+  list[string] — 6-10 strings, highest priority first. VERBATIM document language only.
+  Format: "\"[exact phrase from document]\"" — no interpretation suffix needed.
+  If the document ranks or weights priorities, reflect that order exactly.
+  Pull from: objective statements, evaluation criteria, repeated language, section headers,
+  bolded/emphasized text. Prefer complete clauses (10-25 words) over short fragments.
 
 strategic_objectives
-  list[string] — 4-8 outcome strings stating what the funder explicitly defines as success.
-  Use the call's language: "Call states: \"[quote]\" — proposals must [concrete deliverable, ≤12 words]"
-  Include specific KPIs, TRLs, measurable targets, or milestones if stated.
+  list[string] — 6-10 strings. Pull directly from the document's stated outcomes, expected results,
+  KPIs, TRL targets, or success criteria. VERBATIM wherever possible.
+  Format: "\"[verbatim outcome statement]\"" — or plain text if paraphrasing unavoidable.
+  Include every measurable target, TRL level, timeline, or deliverable the call names explicitly.
 
 key_focus_areas
-  list[{{"area":str, "description":str, "why_it_matters":str}}]
-  area = the focus area name as used in the document.
-  description = what proposals in this area must address (quote the call where possible).
-  why_it_matters = why the funder has prioritized this area (1 sentence).
+  list[{{"area":str, "description":str, "quote":str}}]
+  area = the focus area name exactly as used in the document.
+  description = 2-3 sentences on what proposals in this area must address. Quote the call.
+  quote = the single most important verbatim phrase from this focus area's section.
 
 key_phrases
-  list[{{"phrase":str, "context":str, "significance":str}}] — 8-12 items.
-  phrase = exact quoted text from the document (3-20 words).
-  context = one sentence on where/how it appears.
-  significance = why a proposal MUST echo or address this phrase.
+  list[{{"phrase":str, "context":str, "significance":str}}] — 15-20 items. Be aggressive.
+  Pull EVERY phrase that is: repeated 2+ times, in a section header, in evaluation criteria,
+  bolded/italicized, or central to the call's stated objectives. Miss nothing important.
+  phrase = verbatim text, 5-35 words. Prefer complete clauses. Keep the FULL phrase, do not truncate.
+  context = WHERE in the document this appears (e.g. "Evaluation criteria, section 3.2").
+  significance = what this tells the proposal team — max 12 words, be specific not generic.
 
 requirements_overview
-  list[string] — 6-10 MANDATORY requirements for a competitive proposal.
-  Format: "\"[Requirement from call]\" — key for [section], [why it scores high, ≤10 words]"
-  FOCUS ON: project plan, methodology, innovation, impact demonstration. NOT generic sections.
+  list[string] — 8-12 items. Each item = a requirement DIRECTLY FROM THE DOCUMENT.
+  Format: "\"[Requirement verbatim or tight paraphrase]\" — [section name, ≤5 words]"
+  DO NOT add interpretation or scoring commentary. Just what the call says is required.
+  Focus on: project plan structure, methodology requirements, what must be demonstrated,
+  specific deliverables named, and any explicit "proposals must..." or "applicants shall..." language.
 
 winning_factors
-  list[string] — 5-8 bullets on what separates FUNDED from merely adequate proposals.
-  Derived from scoring weights, call emphasis, evaluation criteria, and repeated language.
-  Be specific: "Preliminary data demonstrating [exact X from call]" not "strong track record".
-  Format: "[Specific factor per this call] — [concrete evidence or demonstration needed, ≤12 words]"
+  list[string] — 6-10 bullets. Derived from scoring weights, evaluation criteria, and emphasis.
+  Each bullet quotes or closely paraphrases the call to ground it in document language.
+  Format: "\"[call language]\" — [one concrete demonstration needed, ≤10 words]"
 
 eligibility_checklist
   list[{{"item":str, "met":true/false/null, "notes":str, "critical":bool}}]
-  Flag all hard eligibility criteria. critical=true for any that would disqualify the team.
+  Flag ALL eligibility criteria. critical=true for any that would disqualify the team.
+  Quote the eligibility language verbatim in the notes field.
 
 required_sections
-  list[string] — proposal sections explicitly required by the call (use exact names from the document).
+  list[string] — proposal sections explicitly required (use exact section names from the document).
 
 section_requirements
   object mapping each required section name to:
   {{
-    "requirements": str,           — one-sentence purpose of this section per the call
+    "requirements": str,           — one sentence: purpose per the call's own words
     "word_limit": int|null,
     "page_limit": str|null,
     "priority": "high"|"medium"|"low",
-    "key_asks": [str],             — 3-6 bullets of what the funder explicitly asks for IN THIS SECTION
-                                     (quote the call); focus on project plan and research proposal
-    "questions_to_address": [str], — 3-5 strategic questions THIS SECTION must answer to score high
-    "evidence_needed": [str],      — 2-4 specific data points, proof, or citations this section needs
-    "critical_differentiator": str, — one sentence: what separates excellent from adequate IN THIS SECTION
-    "direct_quote": str            — the exact phrase from the call that defines this section's purpose
+    "key_asks": [str],             — 4-6 verbatim or near-verbatim bullets of what the funder
+                                     explicitly asks for; focus on project plan + research proposal
+    "questions_to_address": [str], — 3-5 specific questions this section must answer to score high
+    "evidence_needed": [str],      — 2-4 specific data, proof points, or citations needed
+    "critical_differentiator": str, — what separates excellent from adequate in this section
+    "direct_quote": str            — verbatim phrase from the call defining this section's purpose
   }}
 
 deadlines
   object — {{"full_proposal":str|null, "loi":str|null, "concept_note":str|null, "questions_due":str|null}}
+  Include exact dates and times as stated.
 
 budget_constraints
-  string — full description: total budget, per-year limit, indirect cost rules, eligible cost
-  categories, sub-contracting limits, cost-sharing requirements. Quote specific figures.
+  string — comprehensive: total budget cap, per-year limits, indirect cost rate, eligible/ineligible
+  cost categories, sub-contracting caps, cost-sharing requirements, currency. Quote every figure.
 
 evaluation_criteria
-  list[string] — evaluation criteria EXACTLY as stated in the call, with weights/scores if given.
+  list[string] — evaluation criteria EXACTLY as stated, with weights/scores/thresholds if given.
+  Use the document's own wording and ordering. Do not paraphrase.
 
 required_partners
-  string — consortium, co-PI, sub-award, or institutional partner requirements. Minimum/maximum
-  partner counts, required partner types (SME, university, LMIC, etc.).
+  string — full partner/consortium requirements. Quote specific language about minimum partner
+  counts, required types (SME, university, LMIC partner, etc.), roles, and responsibilities.
 
 risks
-  list[string] — risks or concerns for our team: eligibility gaps, competitive landscape issues,
-  technical challenges explicitly flagged in the call, or budget concerns.
+  list[string] — risks grounded in the document: eligibility constraints, competitive signals,
+  technical requirements that are ambitious, budget limits, timeline pressures.
 
 missing_information
-  list[string] — things not stated in the call that we need to find out before applying.
+  list[string] — things not stated in the call that the team needs before applying.
 
 recommended_next_steps
-  list[string] — numbered, time-ordered immediate actions the team should take.
+  list[string] — numbered, time-ordered actions the team should take within the next 2-4 weeks.
 
-thematic_areas    list[string]  — themes/topics this call addresses (use exact call language).
-geographic_eligibility string   — geographic scope, country restrictions, or LMIC requirements.
-award_amount      string        — exact funding amount, range, or description per the call.
-project_duration  string        — project duration.
-submission_portal string        — submission platform, system, or email address.
+thematic_areas    list[string]  — themes/topics exactly as named in the document.
+geographic_eligibility string   — geographic scope and country restrictions, verbatim.
+award_amount      string        — exact figures as stated (total, per project, range).
+project_duration  string        — project duration as stated.
+submission_portal string        — submission platform, URL, or system name from the document.
 page_limit        string|null   — overall page limit if stated.
 word_limit        string|null   — overall word limit if stated.
 format_requirements string      — font, margins, file format, naming conventions if stated.
-foa_number        string        — official solicitation, FOA, topic, or call reference number.
-contact_info      string        — program officer name, email, questions deadline.
+foa_number        string        — official solicitation, FOA, topic ID, or call reference number.
+contact_info      string        — program officer name, email, Q&A deadline.
 
 ─── GRANT CALL DOCUMENT ────────────────────────────────────────────────────────
 {chunk_text}
 ────────────────────────────────────────────────────────────────────────────────
 
-Return the JSON object now. Fill every field from the document above. Use direct quotes wherever
-possible. Do not wrap in a parent key. Do not add any text outside the JSON."""
+Return the JSON object now. Maximise verbatim document language. Do not wrap in a parent key."""
 
     response = await chat_complete(
         messages=[
