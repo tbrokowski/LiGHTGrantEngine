@@ -329,6 +329,7 @@ export default function CallRequirementsPanel({
   const keyFocusAreas = callAnalysis.key_focus_areas as KeyFocusArea[] | undefined;
   const keyPhrases = callAnalysis.key_phrases as KeyPhrase[] | undefined;
   const requirementsOverview = callAnalysis.requirements_overview as string[] | undefined;
+  const administrativeRequirements = callAnalysis.administrative_requirements as string[] | undefined;
 
   // Detect whether the new enhanced fields are present (post-deployment analysis)
   const isEnhanced = !!(
@@ -780,6 +781,16 @@ export default function CallRequirementsPanel({
               <li key={i} className="text-sm text-gray-600">? {m}</li>
             ))}
           </ul>
+        </CollapsibleGroup>
+      )}
+
+      {/* Administrative & Compliance — collapsed at bottom, not primary for grant writers */}
+      {administrativeRequirements && administrativeRequirements.length > 0 && (
+        <CollapsibleGroup
+          label="Administrative & Compliance"
+          count={administrativeRequirements.length}
+        >
+          <BulletList items={administrativeRequirements} />
         </CollapsibleGroup>
       )}
 

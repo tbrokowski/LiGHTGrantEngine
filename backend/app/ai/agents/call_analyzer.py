@@ -547,11 +547,27 @@ key_phrases
   significance = what this tells the proposal team — max 12 words, be specific not generic.
 
 requirements_overview
-  list[string] — 8-12 items. Each item = a requirement DIRECTLY FROM THE DOCUMENT.
-  Format: "\"[Requirement verbatim or tight paraphrase]\" — [section name, ≤5 words]"
-  DO NOT add interpretation or scoring commentary. Just what the call says is required.
-  Focus on: project plan structure, methodology requirements, what must be demonstrated,
-  specific deliverables named, and any explicit "proposals must..." or "applicants shall..." language.
+  list[string] — 8-12 items. PROPOSAL CONTENT REQUIREMENTS ONLY.
+  These are what grant reviewers will score — what the proposal must SCIENTIFICALLY or TECHNICALLY
+  demonstrate, contain, prove, or address. This is the most important field for the proposal team.
+  Format: "[Requirement verbatim or tight paraphrase]" — [section name, ≤5 words]
+  Order: highest-impact first (requirements tied directly to evaluation criteria and scoring).
+  INCLUDE: methodology requirements, what must be demonstrated or validated, required deliverables,
+    clinical/technical evidence needed, innovation requirements, impact requirements, plan components
+    the proposal must include (e.g. data protection plan, regulatory approval plan, MEL framework).
+  DO NOT INCLUDE: submission deadlines, page/word limits, file format rules, submission portal,
+    legal eligibility criteria, consortium size rules, signature requirements — those go in
+    administrative_requirements. Those fields already exist elsewhere; do not duplicate them here.
+  Every item must be directly actionable for a grant writer drafting the proposal content.
+
+administrative_requirements
+  list[string] — 4-8 items. ADMINISTRATIVE AND COMPLIANCE REQUIREMENTS ONLY.
+  Format: "[Requirement verbatim or tight paraphrase]" — [category, ≤3 words]
+  INCLUDE: submission deadlines, submission portal/platform, page limits, word limits, file format
+    rules, font/margin requirements, legal eligibility rules (entity type, nationality), consortium
+    size or partner count requirements, co-financing requirements, language of submission.
+  DO NOT INCLUDE: any scientific, technical, or proposal content requirements — those go in
+    requirements_overview.
 
 winning_factors
   list[string] — 6-10 bullets. Derived from scoring weights, evaluation criteria, and emphasis.
