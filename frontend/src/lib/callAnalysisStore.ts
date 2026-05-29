@@ -94,6 +94,8 @@ export interface WritingStatusPayload {
   draft_status?: AIGenerationStatus;
   draft_steps?: AIThinkingStepData[];
   draft_error?: string | null;
+  draft_execution_plan?: Record<string, unknown> | null;
+  draft_qa_report?: Record<string, unknown> | null;
   editor_document?: string | null;
 }
 

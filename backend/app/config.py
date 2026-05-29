@@ -161,6 +161,8 @@ class Settings(BaseSettings):
 
     # Slack
     slack_webhook_url: Optional[str] = None
+    slack_bot_token: Optional[str] = None
+    slack_signing_secret: Optional[str] = None
 
     # Tavily web search
     tavily_api_key: Optional[str] = None

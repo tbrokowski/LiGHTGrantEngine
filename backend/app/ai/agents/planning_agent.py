@@ -83,7 +83,7 @@ def _format_skeleton_sections(sections: list[dict]) -> str:
         lines.append(f"## {name}{flagged}")
         if requirements:
             lines.append(f"Coverage notes: {requirements}")
-        lines.append(content[:1500] if content else "[No content yet]")
+        lines.append(content[:8000] if content else "[No content yet]")
         lines.append("")
     return "\n".join(lines)
 
@@ -119,6 +119,7 @@ async def plan_draft_research(
     flagged_section_names: list[str] | None = None,
     call_strategy: dict | None = None,
     aligned_concept: dict | None = None,
+    execution_plan: dict | None = None,
 ) -> dict:
     """
     Produce a research and narrative plan for the draft generation phase.
@@ -148,6 +149,11 @@ async def plan_draft_research(
         strategy_block=strategy_block,
         skeleton_sections=sections_str,
     )
+    if execution_plan:
+        user_prompt += "\n\nDRAFT EXECUTION PLAN (per-section targets):\n" + json.dumps(
+            {"sections": (execution_plan.get("sections") or [])[:20], "document_profile": execution_plan.get("document_profile")},
+            indent=0,
+        )[:4000]
 
     response = await chat_complete(
         messages=[

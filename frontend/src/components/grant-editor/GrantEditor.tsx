@@ -83,6 +83,7 @@ export default function GrantEditor({ grant, onGrantUpdate, onHeadingsChange }: 
   const [generatingDraft, setGeneratingDraft] = useState(false);
   const [draftSteps, setDraftSteps] = useState<AIThinkingStepData[] | null>(null);
   const [draftError, setDraftError] = useState<string | null>(null);
+  const [draftExecutionPlan, setDraftExecutionPlan] = useState<Record<string, unknown> | null>(null);
   const [wordCountWarnings, setWordCountWarnings] = useState<Record<string, {word_limit: number; actual: number; overage: number}>>({});
   const [missingSections, setMissingSections] = useState<string[]>([]);
   // Figure generation
@@ -305,6 +306,9 @@ export default function GrantEditor({ grant, onGrantUpdate, onHeadingsChange }: 
   const runDraftPoll = useCallback(async () => {
     try {
       const data = await pollDraftUntilDone(grant.id, (progress) => {
+        if (progress.draft_execution_plan) {
+          setDraftExecutionPlan(progress.draft_execution_plan as Record<string, unknown>);
+        }
         if (progress.draft_steps && progress.draft_steps.length > 0) {
           setDraftSteps(progress.draft_steps as AIThinkingStepData[]);
         }
@@ -508,6 +512,7 @@ export default function GrantEditor({ grant, onGrantUpdate, onHeadingsChange }: 
     generatingDraft,
     draftSteps,
     draftError,
+    draftExecutionPlan,
     wordCountWarnings,
     missingSections,
     overviewFigureUrl,

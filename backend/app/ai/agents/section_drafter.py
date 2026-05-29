@@ -59,6 +59,8 @@ async def draft_section(
     emphasis_direction: str = "",
     concept_bundles: list[dict] | None = None,
     writing_instructions: str = "",
+    min_words: int | None = None,
+    target_words: int | None = None,
 ) -> dict:
     prior_str = ""
     if retrieved_sections:
@@ -101,7 +103,13 @@ async def draft_section(
     sec_specific_reqs = sec_req.get("requirements", "")
 
     limit_parts = []
-    if effective_word_limit:
+    tw = target_words or effective_word_limit
+    mn = min_words or (int(tw * 0.9) if tw else None)
+    if tw:
+        limit_parts.append(
+            f"WORD TARGET: {mn or int(tw*0.9)}-{tw} words (write at least the minimum; aim for the target)"
+        )
+    elif effective_word_limit:
         limit_parts.append(
             f"WORD LIMIT: {effective_word_limit} words (hard constraint — do not exceed; "
             f"write close to this limit to fully use the allowance)"

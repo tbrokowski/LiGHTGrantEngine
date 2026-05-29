@@ -456,6 +456,7 @@ def _map_skeleton_event(event_name: str) -> list | None:
 # Draft step mapping ----------------------------------------------------------
 
 def _make_draft_steps(
+    orchestrator: str = "pending",
     planning: str = "pending",
     research_label: str = "Researching sections…",
     research: str = "pending",
@@ -466,6 +467,7 @@ def _make_draft_steps(
     assemble: str = "pending",
 ) -> list:
     return [
+        {"id": "orchestrator", "label": "Building draft execution plan", "status": orchestrator},
         {"id": "planning",  "label": "Planning research approach",  "status": planning},
         {"id": "research",  "label": research_label,                 "status": research},
         {"id": "drafting",  "label": draft_label,                    "status": draft},
@@ -479,19 +481,24 @@ def _map_draft_event(event: dict, current_steps: list) -> list | None:
     name = event.get("event", "")
     total = event.get("total", "")
 
+    if name == "orchestrator_start":
+        return _make_draft_steps(orchestrator="active")
+    if name == "orchestrator_complete":
+        return _make_draft_steps(orchestrator="done", planning="active")
     if name == "planning_start":
-        return _make_draft_steps(planning="active")
+        return _make_draft_steps(orchestrator="done", planning="active")
     if name == "planning_complete":
-        return _make_draft_steps(planning="done", research_label=f"Researching {total} sections…", research="active")
+        return _make_draft_steps(orchestrator="done", planning="done", research_label=f"Researching {total} sections…", research="active")
     if name == "research_start":
-        return _make_draft_steps(planning="done", research_label=f"Researching 0/{total} sections…", research="active")
+        return _make_draft_steps(orchestrator="done", planning="done", research_label=f"Researching 0/{total} sections…", research="active")
     if name == "research_complete":
-        return _make_draft_steps(planning="done", research_label=f"Research complete ({total} sections)", research="done",
+        return _make_draft_steps(orchestrator="done", planning="done", research_label=f"Research complete ({total} sections)", research="done",
                                  draft_label=f"Drafting 0/{total} sections…", draft="active")
     if name == "section_start":
         idx = event.get("index", 0)
         tot = event.get("total", 0)
         return _make_draft_steps(
+            orchestrator="done",
             planning="done",
             research_label=f"Research complete ({tot} sections)", research="done",
             draft_label=f"Drafting section {idx + 1}/{tot}…", draft="active",
@@ -499,6 +506,7 @@ def _map_draft_event(event: dict, current_steps: list) -> list | None:
     if name == "meta_agent_start":
         tot = event.get("total", "")
         return _make_draft_steps(
+            orchestrator="done",
             planning="done",
             research_label="Research complete", research="done",
             draft_label="All sections drafted", draft="done",
@@ -512,6 +520,7 @@ def _map_draft_event(event: dict, current_steps: list) -> list | None:
         for s in current_steps:
             if s["id"] == "meta" and s["status"] == "active":
                 return _make_draft_steps(
+                    orchestrator="done",
                     planning="done",
                     research_label="Research complete", research="done",
                     draft_label="All sections drafted", draft="done",
@@ -520,6 +529,7 @@ def _map_draft_event(event: dict, current_steps: list) -> list | None:
         return None
     if name in ("coherence_check", "compliance_pass", "bibliography_start"):
         return _make_draft_steps(
+            orchestrator="done",
             planning="done",
             research_label="Research complete", research="done",
             draft_label="All sections drafted", draft="done",
@@ -528,6 +538,7 @@ def _map_draft_event(event: dict, current_steps: list) -> list | None:
         )
     if name == "draft_complete":
         return _make_draft_steps(
+            orchestrator="done",
             planning="done",
             research_label="Research complete", research="done",
             draft_label="All sections drafted", draft="done",
@@ -630,8 +641,8 @@ def generate_skeleton_task(
     name="app.workers.grant_writing_tasks.generate_draft_task",
     bind=True,
     max_retries=0,
-    soft_time_limit=5400,
-    time_limit=5460,
+    soft_time_limit=10800,
+    time_limit=10920,
 )
 def generate_draft_task(
     self,
@@ -644,7 +655,7 @@ def generate_draft_task(
 
     logger.info("generate_draft_task started for grant %s", grant_id)
 
-    init_steps = _make_draft_steps(planning="active")
+    init_steps = _make_draft_steps(orchestrator="active")
 
     def _upd(steps: list, status: str = "running", error: str | None = None) -> None:
         _update_ai_generation_steps(

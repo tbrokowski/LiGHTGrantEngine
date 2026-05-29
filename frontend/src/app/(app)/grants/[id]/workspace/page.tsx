@@ -11,6 +11,7 @@ import GrantColorPicker from '@/components/grants/GrantColorPicker';
 import FileLibrary from '@/components/grant-workspace/FileLibrary';
 import BudgetPanel from '@/components/grant-workspace/BudgetPanel';
 import CollaboratorsPanel from '@/components/grant-workspace/CollaboratorsPanel';
+import FinanceHub from '@/components/grant-workspace/finance/FinanceHub';
 import ActiveGrantDashboard from '@/components/grant-workspace/ActiveGrantDashboard';
 import MilestoneTracker from '@/components/grant-workspace/MilestoneTracker';
 import type {
@@ -25,13 +26,14 @@ const TasksHub = dynamic(() => import('@/components/grant-workspace/TasksHub'), 
   ssr: false,
 });
 
-type ActiveTab = 'overview' | 'tasks' | 'milestones' | 'budget' | 'files' | 'team';
+type ActiveTab = 'overview' | 'tasks' | 'milestones' | 'budget' | 'finance' | 'files' | 'team';
 
 const TABS: { id: ActiveTab; label: string }[] = [
   { id: 'overview', label: 'Overview' },
   { id: 'tasks', label: 'Tasks' },
   { id: 'milestones', label: 'Milestones' },
   { id: 'budget', label: 'Budget' },
+  { id: 'finance', label: 'Finance' },
   { id: 'files', label: 'Files' },
   { id: 'team', label: 'Team' },
 ];
@@ -73,7 +75,8 @@ function ActiveGrantWorkspaceContent() {
   const searchParams = useSearchParams();
   const router = useRouter();
   const { user } = useAuth();
-  const initialTab = (searchParams.get('tab') as ActiveTab) ?? 'overview';
+  const tabParam = searchParams.get('tab') as ActiveTab | null;
+  const initialTab = tabParam && TABS.some(t => t.id === tabParam) ? tabParam : 'overview';
 
   const [grant, setGrant] = useState<GrantDetail | null>(null);
   const [loading, setLoading] = useState(true);
@@ -363,6 +366,16 @@ function ActiveGrantWorkspaceContent() {
                 grantTitle={grant.title}
               />
             </div>
+          )}
+
+          {/* Finance */}
+          {activeTab === 'finance' && (
+            <FinanceHub
+              grantId={id}
+              grantTitle={grant.title}
+              currency={grant.currency}
+              isEditor={isGrantEditor}
+            />
           )}
 
           {/* Files */}

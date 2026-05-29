@@ -38,6 +38,8 @@ async def draft_introduction(
     opening_hook: str = "",
     strategic_framing: str = "",
     concept_bundles: list[dict] | None = None,
+    min_words: int | None = None,
+    writing_instructions: str = "",
 ) -> dict:
     arc = intro_arc or DEFAULT_INTRO_ARC
     arc_str = "\n".join(
@@ -62,7 +64,13 @@ async def draft_introduction(
             f"- {c.get('formatted_citation', c.get('title', ''))}" for c in citations[:8]
         )
 
-    limit_str = f"TARGET: ~{word_limit} words\n" if word_limit else ""
+    mn = min_words or (int(word_limit * 0.9) if word_limit else None)
+    if word_limit:
+        limit_str = f"WORD TARGET: {mn}-{word_limit} words (minimum {mn} words required)\n"
+    else:
+        limit_str = ""
+    if writing_instructions:
+        limit_str += f"SECTION GUIDE: {writing_instructions}\n"
 
     narrative_ctx = narrative_context or {}
     theory_of_change = narrative_ctx.get("theory_of_change", "")

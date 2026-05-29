@@ -108,4 +108,8 @@ celery_app.conf.beat_schedule = {
         "task": "app.workers.discovery_tasks.deduplicate_opportunity_pool",
         "schedule": crontab(hour=2, minute=0),
     },
+    "finance-overspend-alerts": {
+        "task": "app.workers.notification_tasks.check_finance_overspend",
+        "schedule": crontab(hour=9, minute=0),
+    },
 }

@@ -16,6 +16,8 @@ from app.routers import (
 from app.routers import grant_workspace
 from app.routers import grant_writing
 from app.routers import grant_comments
+from app.routers import grant_finance
+from app.routers import slack_events
 from app.routers import browser_sessions
 from app.routers import partner_meetings, partner_documents, partner_organizations, partner_tasks
 
@@ -109,6 +111,8 @@ app.include_router(grant_writing.router,           prefix=f"{API}/grants",  tags
 app.include_router(organizations.router,     prefix=f"{API}/organizations",  tags=["organizations"])
 app.include_router(browser_sessions.router,  prefix=f"{API}/browser/session", tags=["browser"])
 app.include_router(grant_comments.router,    prefix=f"{API}/grants",          tags=["grant-comments"])
+app.include_router(grant_finance.router,     prefix=f"{API}/grants",          tags=["grant-finance"])
+app.include_router(slack_events.router,    prefix=f"{API}/slack",           tags=["slack"])
 
 
 @app.get("/health")

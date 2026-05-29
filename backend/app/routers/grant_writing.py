@@ -461,6 +461,41 @@ class GenerateDraftRequest(BaseModel):
     flagged_sections: Optional[list[str]] = None
 
 
+
+
+@router.post("/{grant_id}/writing/preview-draft-plan")
+async def preview_draft_plan(
+    grant_id: str,
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    """Dry-run draft orchestrator — returns execution plan without starting draft."""
+    grant = await _get_grant(grant_id, db)
+    skeleton = grant.proposal_skeleton or {}
+    if not skeleton.get("sections") and not skeleton.get("raw_text"):
+        raise HTTPException(400, "Proposal skeleton required")
+    if not grant.call_analysis:
+        raise HTTPException(400, "Call analysis required")
+    from app.ai.agents.draft_orchestrator import build_draft_execution_plan
+    from app.ai.orchestrator.adaptive_draft import wait_for_call_intelligence
+
+    ci = await wait_for_call_intelligence(grant, db, timeout_sec=45)
+    plan = await build_draft_execution_plan(
+        opportunity_title=grant.title or "",
+        funder=grant.funder or "",
+        grant_idea=grant.grant_idea or "",
+        call_requirements=grant.call_requirements or "",
+        call_analysis=grant.call_analysis or {},
+        call_intelligence=ci,
+        proposal_skeleton=skeleton,
+        call_strategy=grant.call_strategy,
+        aligned_concept=grant.aligned_concept,
+    )
+    grant.draft_execution_plan = plan
+    await db.commit()
+    return {"draft_execution_plan": plan}
+
+
 @router.post("/{grant_id}/writing/generate-draft", status_code=202)
 async def generate_draft(
     grant_id: str,
@@ -880,3 +915,35 @@ async def generate_overview_figure(
         "alt_text": alt_text,
         "revised_prompt": result.get("revised_prompt", ""),
     }
+
+
+@router.post("/{grant_id}/writing/export-proposal-doc")
+async def export_proposal_doc(
+    grant_id: str,
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    """Push draft to linked Google Doc with figures when available."""
+    grant = await _get_grant(grant_id, db)
+    if not grant.google_doc_id:
+        raise HTTPException(400, "Link a Google Doc first")
+    if not grant.editor_document:
+        raise HTTPException(400, "No draft document to export")
+    from app.services.google_auth import get_valid_google_token
+    from app.services.google_docs import push_to_doc, insert_image_after_heading
+
+    token = await get_valid_google_token(current_user, db)
+    push_to_doc(grant.google_doc_id, grant.editor_document, token)
+    if grant.overview_figure_url:
+        try:
+            insert_image_after_heading(
+                grant.google_doc_id,
+                grant.overview_figure_url,
+                token,
+                heading_text="Introduction",
+            )
+        except Exception:
+            pass
+    return {"ok": True, "doc_id": grant.google_doc_id}
+
+

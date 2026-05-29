@@ -359,10 +359,35 @@ export default function ActiveGrantDashboard({ grant, summary, tasks, onTabChang
           onClick={() => onTabChange('milestones')}
         />
         <StatCard
-          label="Budget"
-          value={summary.budget_status === 'on_track' ? 'On Track' : summary.budget_status === 'over_budget' ? 'Over' : summary.budget_status === 'under_budget' ? 'Under' : '—'}
-          accent={summary.budget_status === 'over_budget' ? 'red' : summary.budget_status === 'on_track' ? 'emerald' : undefined}
-          onClick={() => onTabChange('budget')}
+          label="Finance"
+          value={
+            summary.finance_status?.enabled
+              ? summary.finance_status.status === 'over_budget'
+                ? 'Over budget'
+                : summary.finance_status.status === 'at_risk'
+                  ? 'At risk'
+                  : summary.finance_status.status === 'on_track'
+                    ? `${summary.finance_status.utilization_pct ?? 0}% used`
+                    : summary.finance_status.pending_requests
+                      ? `${summary.finance_status.pending_requests} pending`
+                      : 'Setup'
+              : '—'
+          }
+          sub={
+            summary.finance_status?.enabled && summary.finance_status.total_available != null
+              ? `${summary.finance_status.currency ?? ''} ${summary.finance_status.total_available.toLocaleString()} avail.`
+              : undefined
+          }
+          accent={
+            summary.finance_status?.status === 'over_budget'
+              ? 'red'
+              : summary.finance_status?.status === 'at_risk'
+                ? 'amber'
+                : summary.finance_status?.status === 'on_track'
+                  ? 'emerald'
+                  : undefined
+          }
+          onClick={() => onTabChange(summary.finance_status?.enabled ? 'finance' : 'budget')}
         />
       </div>
 
@@ -464,6 +489,7 @@ export default function ActiveGrantDashboard({ grant, summary, tasks, onTabChang
             <div className="flex flex-wrap gap-2">
               <QuickLink icon={CheckSquare} label="Tasks" tab="tasks" onClick={onTabChange} />
               <QuickLink icon={CalendarDays} label="Milestones" tab="milestones" onClick={onTabChange} />
+              <QuickLink icon={DollarSign} label="Finance" tab="finance" onClick={onTabChange} />
               <QuickLink icon={DollarSign} label="Budget" tab="budget" onClick={onTabChange} />
               <QuickLink icon={Folder} label="Files" tab="files" onClick={onTabChange} />
               <QuickLink icon={Users} label="Team" tab="team" onClick={onTabChange} />

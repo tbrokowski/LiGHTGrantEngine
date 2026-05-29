@@ -59,6 +59,7 @@ interface SkeletonPhaseProps {
   overviewFigureAlt?: string | null;
   generatingFigure?: boolean;
   onGenerateFigure?: (customInstructions?: string) => void;
+  draftExecutionPlan?: Record<string, unknown> | null;
 }
 
 
@@ -182,6 +183,7 @@ export default function SkeletonPhase({
   overviewFigureAlt,
   generatingFigure = false,
   onGenerateFigure,
+  draftExecutionPlan,
 }: SkeletonPhaseProps) {
   const [editingTitle, setEditingTitle] = useState(false);
   const [titleDraft, setTitleDraft] = useState(skeleton.title_suggestion || '');
@@ -737,6 +739,39 @@ export default function SkeletonPhase({
         </div>
       </div>
 
+
+          {(localDraftPlan || draftExecutionPlan) && !generating && (
+            <div className="rounded-lg border border-indigo-100 bg-indigo-50/50 px-4 py-3 text-sm space-y-2">
+              <div className="font-medium text-indigo-900">Draft execution plan</div>
+              {(() => {
+                const plan = (localDraftPlan || draftExecutionPlan) as Record<string, unknown>;
+                const profile = (plan.document_profile || {}) as Record<string, unknown>;
+                const gaps = (plan.alignment_gaps || []) as string[];
+                const secs = (plan.sections || []) as Array<Record<string, unknown>>;
+                return (
+                  <>
+                    {profile.total_target_words != null && (
+                      <p className="text-indigo-800">Target document: ~{String(profile.total_target_words)} words</p>
+                    )}
+                    {gaps.length > 0 && (
+                      <ul className="list-disc list-inside text-amber-800 text-xs">
+                        {gaps.slice(0, 4).map((g, i) => <li key={i}>{g}</li>)}
+                      </ul>
+                    )}
+                    {secs.length > 0 && (
+                      <div className="text-xs text-gray-600 max-h-24 overflow-y-auto">
+                        {secs.slice(0, 8).map((s, i) => (
+                          <div key={i}>{String(s.section_name)} — {String(s.target_words || '?')} words ({String(s.agent || 'default')})</div>
+                        ))}
+                      </div>
+                    )}
+                  </>
+                );
+              })()}
+            </div>
+          )}
+
+
       {/* Sticky footer */}
       <div className="flex-shrink-0 border-t border-gray-200 px-6 py-3 flex items-center justify-between gap-4">
         <p className="text-sm text-gray-400 flex-1 min-w-0">
@@ -770,6 +805,22 @@ export default function SkeletonPhase({
               {generatingFigure ? 'Generating…' : overviewFigureUrl ? 'Regenerate Figure' : 'Generate Figure'}
             </button>
           )}
+          <button
+            type="button"
+            onClick={async () => {
+              setPreviewingPlan(true);
+              try {
+                const res = await grantWriting.previewDraftPlan(grantId);
+                setLocalDraftPlan((res.data as { draft_execution_plan?: Record<string, unknown> }).draft_execution_plan ?? null);
+              } catch { /* ignore */ }
+              finally { setPreviewingPlan(false); }
+            }}
+            disabled={!hasContent || generating || previewingPlan}
+            className="flex items-center gap-2 border border-indigo-300 text-indigo-700 text-sm px-4 py-2.5 rounded-lg hover:bg-indigo-50 disabled:opacity-50 transition-colors"
+          >
+            {previewingPlan ? <Loader2 className="w-4 h-4 animate-spin" /> : <BookOpen className="w-4 h-4" />}
+            Preview plan
+          </button>
           <button
             onClick={handleGenerateDraft}
             disabled={!hasContent || generating}

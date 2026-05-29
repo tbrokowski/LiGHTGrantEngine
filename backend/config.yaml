@@ -38,7 +38,44 @@ ai:
     section_drafter:
       model: gpt-4o
       temperature: 0.5
+      max_tokens: 12000
+    draft_orchestrator:
+      model: gpt-4o
+      temperature: 0.2
+      max_tokens: 6000
+    methods_agent:
+      model: gpt-4o
+      temperature: 0.5
+      max_tokens: 12000
+    work_package_agent:
+      model: gpt-4o
+      temperature: 0.4
+      max_tokens: 12000
+    impact_agent:
+      model: gpt-4o
+      temperature: 0.5
       max_tokens: 8000
+    section_expander:
+      model: gpt-4o
+      temperature: 0.4
+      max_tokens: 12000
+    section_compressor:
+      model: gpt-4o-mini
+      temperature: 0.2
+      max_tokens: 8000
+    section_stitcher:
+      model: gpt-4o
+      temperature: 0.3
+      max_tokens: 12000
+    subsection_planner:
+      model: gpt-4o-mini
+      temperature: 0.2
+      max_tokens: 2000
+    domain_reviewer:
+      model: gpt-4o-mini
+      temperature: 0.1
+      max_tokens: 1500
+
     section_splitter:
       temperature: 0.1
       max_tokens: 8000
