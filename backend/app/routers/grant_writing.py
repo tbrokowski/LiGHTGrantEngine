@@ -65,6 +65,7 @@ class SkeletonConstraintsUpdate(BaseModel):
     total_word_limit: Optional[int] = None
     total_page_limit: Optional[str] = None
     sections: Optional[list[SectionConstraint]] = None
+    document_constraints: Optional[dict] = None
 
 
 class CitationSearchRequest(BaseModel):
@@ -147,6 +148,7 @@ async def writing_status(
         "grant_idea": grant.grant_idea,
         "call_analysis": grant.call_analysis or {},
         "call_intelligence": grant.call_intelligence or {},
+        "document_constraints": getattr(grant, "document_constraints", None) or {},
         "call_requirements": grant.call_requirements,
         "proposal_skeleton": skeleton,
         "style_profile": grant.style_profile or {},
@@ -427,20 +429,34 @@ async def update_skeleton_constraints(
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ):
-    """Merge updated word/page limits and section constraints into proposal_skeleton."""
+    """Merge updated word/page limits and section constraints into proposal_skeleton and document_constraints."""
     grant = await _get_grant(grant_id, db)
     skeleton = dict(grant.proposal_skeleton or {})
+    doc_constraints = dict(getattr(grant, "document_constraints", None) or {})
 
     if data.total_word_limit is not None:
         skeleton["total_word_limit"] = data.total_word_limit
+        doc_constraints["total_word_limit"] = data.total_word_limit
     if data.total_page_limit is not None:
         skeleton["total_page_limit"] = data.total_page_limit
+        doc_constraints["total_page_limit"] = data.total_page_limit
     if data.sections is not None:
-        skeleton["sections"] = [s.model_dump() for s in data.sections]
+        sections_payload = [s.model_dump() for s in data.sections]
+        skeleton["sections"] = sections_payload
+        doc_constraints["sections"] = sections_payload
+    if data.document_constraints is not None:
+        doc_constraints = {**doc_constraints, **data.document_constraints}
+        if data.document_constraints.get("sections"):
+            skeleton["sections"] = data.document_constraints["sections"]
+        if data.document_constraints.get("total_word_limit") is not None:
+            skeleton["total_word_limit"] = data.document_constraints["total_word_limit"]
+        if data.document_constraints.get("total_page_limit") is not None:
+            skeleton["total_page_limit"] = data.document_constraints["total_page_limit"]
 
     grant.proposal_skeleton = skeleton
+    grant.document_constraints = doc_constraints
     await db.commit()
-    return {"proposal_skeleton": skeleton}
+    return {"proposal_skeleton": skeleton, "document_constraints": doc_constraints}
 
 
 @router.patch("/{grant_id}/writing/skeleton")

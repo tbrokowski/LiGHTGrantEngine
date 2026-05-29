@@ -26,6 +26,7 @@ Section format — use this ONLY:
 (Target: N words)
 
 Rules — follow these strictly:
+0. SECTION LIMITS in SECTION STRUCTURE AND LIMITS are LOCKED. Each section's (Target: N words) must match the word limit given. Size bullets for the full target (roughly target_words/120 bullets at ~120 words each for long sections). Do NOT invent document totals or per-section limits in JSON — copy from SECTION STRUCTURE AND LIMITS exactly.
 1. Every bullet must be SPECIFIC and SUBSTANTIVE — use the team's own terminology, name specific technologies/platforms/methods, reference actual target populations, specific disease areas, specific geographies from their idea
 2. Never write a generic bullet like "We will demonstrate the effectiveness of our approach" — instead write "We will demonstrate X% improvement in [specific metric] for [specific disease] in [specific setting] using [specific method]"
 3. Draw directly from the GRANT IDEA — if they mention MOOVE, write about MOOVE; if they mention SSA, write about SSA; if they mention AI/ML, name the specific technique
@@ -139,9 +140,9 @@ Produce a JSON object with the following fields:
   Sections separated by a blank line. No meta-labels (no "Purpose:", "Key arguments:", etc.).
 - sections: list of objects, one per section in the skeleton, in order:
     {{"name": str, "word_limit": int|null, "page_limit": str|null, "priority": "high"|"medium"|"low", "order": int}}
-  Use the constraints from SECTION STRUCTURE AND LIMITS if provided, otherwise infer from raw_text.
-- total_word_limit: int|null — document-level word limit (from constraints or call)
-- total_page_limit: str|null — document-level page limit
+  Copy word_limit and page_limit EXACTLY from SECTION STRUCTURE AND LIMITS — do not guess.
+- total_word_limit: int|null — copy from SECTION STRUCTURE AND LIMITS only
+- total_page_limit: str|null — copy from SECTION STRUCTURE AND LIMITS only
 - title_suggestion: a compelling, specific title for the proposal
 - narrative_arc: one sentence describing the through-line from problem to solution
 - key_messages: list of 3–5 core messages reviewers should take away
@@ -178,6 +179,22 @@ Return valid JSON only."""
         result["total_word_limit"] = total_word_limit
     if total_page_limit and not result.get("total_page_limit"):
         result["total_page_limit"] = total_page_limit
+
+    # Enforce per-section limits from authoritative constraints (not model guesses)
+    if section_constraints:
+        limits_by_name = {
+            sc["name"]: sc for sc in section_constraints if sc.get("name")
+        }
+        for sec in result.get("sections") or []:
+            name = sec.get("name")
+            if name and name in limits_by_name:
+                src = limits_by_name[name]
+                if src.get("word_limit"):
+                    sec["word_limit"] = src["word_limit"]
+                if src.get("page_limit"):
+                    sec["page_limit"] = src["page_limit"]
+                if src.get("priority"):
+                    sec["priority"] = src["priority"]
 
     return result
 

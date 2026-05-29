@@ -17,6 +17,7 @@ const NAV: NavItem[] = [
   { href: '/dashboard', label: 'Dashboard' },
   { href: '/opportunities', label: 'Opportunities' },
   { href: '/grants', label: 'Grants', permissionKey: 'can_view_grants' },
+  { href: '/finance', label: 'Finance', permissionKey: 'can_view_finance' },
   { href: '/archive', label: 'Archive', permissionKey: 'can_view_archive' },
   { href: '/partners', label: 'Partners', permissionKey: 'can_view_partners' },
   { href: '/settings', label: 'Settings' },

@@ -292,6 +292,7 @@ export default function DocumentPane({
             onDocPulled={workspace.onDocPulled}
             onSelectionChange={workspace.onSelectionChange}
             callIntelligence={workspace.callIntelligence}
+            documentConstraints={workspace.documentConstraints}
           />
         );
 
@@ -329,6 +330,7 @@ export default function DocumentPane({
             generatingFigure={workspace.generatingFigure}
             onGenerateFigure={workspace.onGenerateFigure}
             draftExecutionPlan={workspace.draftExecutionPlan}
+            documentConstraints={workspace.documentConstraints}
           />
         );
       }

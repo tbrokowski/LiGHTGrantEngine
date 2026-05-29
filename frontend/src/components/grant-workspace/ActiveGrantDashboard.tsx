@@ -2,6 +2,7 @@
 
 import { useState } from 'react';
 import { AlertTriangle, CalendarDays, CheckSquare, DollarSign, Folder, Pencil, Users, TrendingUp } from 'lucide-react';
+import { useAuth, canViewFinance } from '@/lib/auth';
 import type { WorkspaceSummary, Task, Milestone } from './types';
 
 interface GrantInfo {
@@ -229,6 +230,8 @@ function QuickLink({ icon: Icon, label, tab, onClick }: {
 }
 
 export default function ActiveGrantDashboard({ grant, summary, tasks, onTabChange, onDeadlineChange }: Props) {
+  const { user } = useAuth();
+  const showFinance = canViewFinance(user);
   const [editingDeadline, setEditingDeadline] = useState(false);
   const [deadlineInput, setDeadlineInput] = useState('');
   const [savingDeadline, setSavingDeadline] = useState(false);
@@ -358,37 +361,45 @@ export default function ActiveGrantDashboard({ grant, summary, tasks, onTabChang
           accent={upcomingMilestones.some(m => m.status === 'at_risk') ? 'amber' : undefined}
           onClick={() => onTabChange('milestones')}
         />
-        <StatCard
-          label="Finance"
-          value={
-            summary.finance_status?.enabled
-              ? summary.finance_status.status === 'over_budget'
-                ? 'Over budget'
-                : summary.finance_status.status === 'at_risk'
-                  ? 'At risk'
-                  : summary.finance_status.status === 'on_track'
-                    ? `${summary.finance_status.utilization_pct ?? 0}% used`
-                    : summary.finance_status.pending_requests
-                      ? `${summary.finance_status.pending_requests} pending`
-                      : 'Setup'
-              : '—'
-          }
-          sub={
-            summary.finance_status?.enabled && summary.finance_status.total_available != null
-              ? `${summary.finance_status.currency ?? ''} ${summary.finance_status.total_available.toLocaleString()} avail.`
-              : undefined
-          }
-          accent={
-            summary.finance_status?.status === 'over_budget'
-              ? 'red'
-              : summary.finance_status?.status === 'at_risk'
-                ? 'amber'
-                : summary.finance_status?.status === 'on_track'
-                  ? 'emerald'
-                  : undefined
-          }
-          onClick={() => onTabChange(summary.finance_status?.enabled ? 'finance' : 'budget')}
-        />
+        {showFinance && (
+          <StatCard
+            label="Finance"
+            value={
+              summary.finance_status?.enabled
+                ? summary.finance_status.status === 'over_budget'
+                  ? 'Over budget'
+                  : summary.finance_status.status === 'at_risk'
+                    ? 'At risk'
+                    : summary.finance_status.status === 'on_track'
+                      ? `${summary.finance_status.utilization_pct ?? 0}% used`
+                      : summary.finance_status.pending_requests
+                        ? `${summary.finance_status.pending_requests} pending`
+                        : 'Setup'
+                : '—'
+            }
+            sub={
+              summary.finance_status?.enabled && summary.finance_status.total_available != null
+                ? `${summary.finance_status.currency ?? ''} ${summary.finance_status.total_available.toLocaleString()} avail.`
+                : undefined
+            }
+            accent={
+              summary.finance_status?.status === 'over_budget'
+                ? 'red'
+                : summary.finance_status?.status === 'at_risk'
+                  ? 'amber'
+                  : summary.finance_status?.status === 'on_track'
+                    ? 'emerald'
+                    : undefined
+            }
+            onClick={() => {
+              if (summary.finance_status?.enabled && grant.id) {
+                window.location.href = `/finance/${grant.id}`;
+              } else {
+                onTabChange('budget');
+              }
+            }}
+          />
+        )}
       </div>
 
       {/* ── Alert banners ── */}
@@ -489,8 +500,16 @@ export default function ActiveGrantDashboard({ grant, summary, tasks, onTabChang
             <div className="flex flex-wrap gap-2">
               <QuickLink icon={CheckSquare} label="Tasks" tab="tasks" onClick={onTabChange} />
               <QuickLink icon={CalendarDays} label="Milestones" tab="milestones" onClick={onTabChange} />
-              <QuickLink icon={DollarSign} label="Finance" tab="finance" onClick={onTabChange} />
               <QuickLink icon={DollarSign} label="Budget" tab="budget" onClick={onTabChange} />
+              {showFinance && summary.finance_status?.enabled && (
+                <a
+                  href={`/finance/${grant.id}`}
+                  className="flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium text-gray-600 bg-white border border-gray-200 rounded-lg hover:border-emerald-300 hover:text-emerald-700 hover:shadow-sm transition-all"
+                >
+                  <DollarSign className="w-3.5 h-3.5 opacity-60" />
+                  Finance
+                </a>
+              )}
               <QuickLink icon={Folder} label="Files" tab="files" onClick={onTabChange} />
               <QuickLink icon={Users} label="Team" tab="team" onClick={onTabChange} />
             </div>

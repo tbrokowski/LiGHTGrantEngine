@@ -97,11 +97,25 @@ def is_ops_or_above(user: User) -> bool:
 # - can_view_grants: False (requires explicit grant membership or org admin)
 # - can_view_archive: True  (backward-compatible; archive was always visible)
 # - can_view_partners: True (backward-compatible; partners were always visible)
+# - can_view_finance: False (restricted to org admins + ops_manager / grant_lead+)
 _MODULE_PERMISSION_DEFAULTS: dict[str, bool] = {
     "can_view_grants": False,
     "can_view_archive": True,
     "can_view_partners": True,
+    "can_view_finance": False,
 }
+
+
+def can_view_finance_module(user: User) -> bool:
+    """Finance module: org admins, or ops_manager / grant_lead with optional per-user revoke."""
+    if is_org_admin(user):
+        return True
+    if _role_rank(user.role) < _role_rank(UserRole.OPERATIONS_MANAGER):
+        return False
+    perms: dict = user.module_permissions or {}
+    if "can_view_finance" in perms:
+        return bool(perms["can_view_finance"])
+    return True
 
 
 def has_module_permission(user: User, key: str) -> bool:
@@ -111,6 +125,8 @@ def has_module_permission(user: User, key: str) -> bool:
     For regular members the value is read from User.module_permissions with a
     sensible default (see _MODULE_PERMISSION_DEFAULTS).
     """
+    if key == "can_view_finance":
+        return can_view_finance_module(user)
     if is_org_admin(user):
         return True
     perms: dict = user.module_permissions or {}
@@ -215,6 +231,35 @@ def require_archive_editor() -> Callable:
             raise HTTPException(
                 status_code=status.HTTP_403_FORBIDDEN,
                 detail="Requires grant lead role or organization admin privileges.",
+            )
+        return current_user
+    return _check
+
+
+def require_finance_module() -> Callable:
+    """Finance module: org admin, or operations_manager / grant_lead (unless revoked)."""
+    async def _check(current_user: User = Depends(get_current_user)) -> User:
+        if not can_view_finance_module(current_user):
+            raise HTTPException(
+                status_code=status.HTTP_403_FORBIDDEN,
+                detail="Finance access requires organization admin, Operations Manager, or Grant Lead role.",
+            )
+        return current_user
+    return _check
+
+
+def can_edit_finance(user: User) -> bool:
+    """Grant lead (or higher) or organization admin may manage ledgers and approve requests."""
+    return _role_rank(user.role) >= _role_rank(UserRole.GRANT_LEAD) or is_org_admin(user)
+
+
+def require_finance_editor() -> Callable:
+    """Finance write endpoints: grant_lead+ or institution/org admin."""
+    async def _check(current_user: User = Depends(get_current_user)) -> User:
+        if not can_edit_finance(current_user):
+            raise HTTPException(
+                status_code=status.HTTP_403_FORBIDDEN,
+                detail="Requires grant lead role or organization admin privileges for finance management.",
             )
         return current_user
     return _check

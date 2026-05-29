@@ -42,7 +42,12 @@ from app.ai.rag.retriever import (
 from app.models.active_grant import ActiveGrant
 from app.models.document import Document
 from app.services.citation_lookup import search_citations
-from app.ai.orchestrator.adaptive_draft import run_adaptive_draft_stream
+from app.ai.orchestrator.adaptive_draft import run_adaptive_draft_stream, wait_for_call_intelligence
+from app.ai.services.document_constraints_builder import (
+    build_document_constraints,
+    enforce_skeleton_constraints,
+)
+from app.ai.services.constraint_allocator import audit_constraints_compliance
 
 
 INTRO_KEYWORDS = ("intro", "background", "problem", "executive", "rationale")
@@ -155,8 +160,9 @@ class GrantWritingOrchestrator:
         """
         yield _sse({"event": "skeleton_start"})
 
-        # ── Read call_intelligence (may still be running, graceful fallback) ──────────
-        call_intelligence: dict = grant.call_intelligence or {}
+        # ── Gate: wait for call_intelligence (blueprint + word budgets) ─────────────
+        yield _sse({"event": "constraints_wait_intelligence"})
+        call_intelligence: dict = await wait_for_call_intelligence(grant, db, timeout_sec=60)
         grant_type_context: str = call_intelligence.get("grant_type_context") or ""
         section_blueprint: list[dict] = call_intelligence.get("section_blueprint") or []
 
@@ -225,6 +231,39 @@ class GrantWritingOrchestrator:
             except Exception:
                 pass
         yield _sse({"event": "idea_alignment_complete"})
+
+        # ── Stage 0: Document constraints (extract → verify → allocate → align) ───
+        call_analysis = grant.call_analysis or {}
+        document_constraints: dict = {}
+        yield _sse({"event": "constraints_extraction_start"})
+        try:
+            document_constraints = await build_document_constraints(
+                call_requirements=grant.call_requirements or "",
+                call_analysis=call_analysis,
+                call_intelligence=call_intelligence,
+                grant_idea=grant.grant_idea or "",
+                aligned_concept=aligned_concept or None,
+                user_section_constraints=user_section_constraints,
+                user_total_word_limit=user_total_word_limit,
+                user_total_page_limit=user_total_page_limit,
+                funder=grant.funder or "",
+                title=grant.title or "",
+            )
+            grant.document_constraints = document_constraints
+            await db.commit()
+            yield _sse({
+                "event": "constraints_verified",
+                "confidence": document_constraints.get("confidence"),
+            })
+            yield _sse({
+                "event": "constraints_allocated",
+                "total_word_limit": document_constraints.get("total_word_limit"),
+                "section_count": len(document_constraints.get("sections") or []),
+            })
+        except Exception as exc:
+            yield _sse({"event": "constraints_error", "error": str(exc)[:300]})
+            document_constraints = grant.document_constraints or {}
+
         # Entity anchor RAG for skeleton (named programs in idea)
         skeleton_concept_rag: dict[str, list] = {}
         try:
@@ -340,13 +379,13 @@ class GrantWritingOrchestrator:
                 call_analysis,
             )
 
-            # Resolve section constraints: user overrides take precedence, fall back to call_analysis
             section_constraints, total_word_limit, total_page_limit = (
                 self._resolve_section_constraints(
                     call_analysis,
                     user_section_constraints,
                     user_total_word_limit,
                     user_total_page_limit,
+                    document_constraints=document_constraints,
                 )
             )
 
@@ -374,6 +413,13 @@ class GrantWritingOrchestrator:
             yield _sse({"event": "skeleton_error", "error": str(exc)[:500]})
             return
 
+        # ── Enforce locked document constraints on skeleton output ─────────────
+        if document_constraints:
+            try:
+                skeleton = enforce_skeleton_constraints(skeleton, document_constraints)
+            except Exception:
+                pass
+
         # ── Stage 6: Adversarial Alignment Review ──────────────────────────────
         try:
             review = await review_skeleton(
@@ -382,8 +428,19 @@ class GrantWritingOrchestrator:
                 call_analysis=call_analysis,
                 call_strategy=call_strategy or {},
                 grant_idea=grant.grant_idea or "",
+                document_constraints=document_constraints,
             )
             skeleton["review"] = review
+            if document_constraints:
+                constraints_audit = audit_constraints_compliance(
+                    document_constraints, skeleton
+                )
+                skeleton["constraints_audit"] = constraints_audit
+                if constraints_audit.get("issues"):
+                    review.setdefault("compliance_gaps", [])
+                    for issue in constraints_audit["issues"][:5]:
+                        if issue not in review["compliance_gaps"]:
+                            review["compliance_gaps"].append(f"[Constraints] {issue}")
             # Surface compliance gaps and weak sections as top-level fields
             if review.get("compliance_gaps"):
                 skeleton["compliance_gaps"] = review["compliance_gaps"]
@@ -404,11 +461,12 @@ class GrantWritingOrchestrator:
 
         grant.proposal_skeleton = skeleton
         grant.writing_phase = "skeleton"
-        # Persist strategy context so the draft pipeline can use it without re-computing
         if call_strategy:
             grant.call_strategy = call_strategy
         if aligned_concept:
             grant.aligned_concept = aligned_concept
+        if document_constraints:
+            grant.document_constraints = document_constraints
         await db.commit()
 
         yield _sse({"event": "skeleton_complete", "proposal_skeleton": skeleton})
@@ -468,9 +526,21 @@ class GrantWritingOrchestrator:
         user_section_constraints: list[dict] | None,
         user_total_word_limit: int | None,
         user_total_page_limit: str | None,
+        document_constraints: dict | None = None,
     ) -> tuple[list[dict], int | None, str | None]:
-        """Resolve section constraints with user overrides taking precedence over call_analysis."""
-        # User-provided constraints win over auto-extracted ones
+        """Resolve section constraints; document_constraints (Stage 0) is authoritative when present."""
+        dc = document_constraints or {}
+        if dc.get("sections"):
+            from app.ai.services.document_constraints_builder import merge_user_section_overrides
+
+            sections, tw, tp = merge_user_section_overrides(
+                dc["sections"],
+                user_section_constraints,
+                user_total_word_limit or dc.get("total_word_limit"),
+                user_total_page_limit or dc.get("total_page_limit"),
+            )
+            return sections, tw, tp
+
         if user_section_constraints:
             return (
                 user_section_constraints,
@@ -478,7 +548,6 @@ class GrantWritingOrchestrator:
                 user_total_page_limit,
             )
 
-        # Auto-extract from call_analysis.section_requirements
         section_reqs = call_analysis.get("section_requirements", {})
         section_constraints = []
         for i, (sec_name, details) in enumerate(section_reqs.items()):
@@ -492,7 +561,6 @@ class GrantWritingOrchestrator:
                 "order": i + 1,
             })
 
-        # Parse document-level limits from call_analysis
         total_word_limit = _parse_int_limit(call_analysis.get("word_limit"))
         total_page_limit = call_analysis.get("page_limit") or None
 

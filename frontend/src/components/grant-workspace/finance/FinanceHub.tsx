@@ -32,13 +32,6 @@ export default function FinanceHub({ grantId, grantTitle, currency, isEditor = t
 
   return (
     <div className="p-4 space-y-4">
-      <div className="flex items-center justify-between">
-        <div>
-          <h2 className="text-base font-semibold text-gray-800">Financial Management</h2>
-          <p className="text-xs text-gray-500 mt-0.5">Budget ledger, fund requests, and spend tracking</p>
-        </div>
-      </div>
-
       <div className="flex gap-1 border-b border-gray-200">
         {SUB_TABS.map(t => (
           <button

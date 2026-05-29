@@ -60,6 +60,7 @@ interface SkeletonPhaseProps {
   generatingFigure?: boolean;
   onGenerateFigure?: (customInstructions?: string) => void;
   draftExecutionPlan?: Record<string, unknown> | null;
+  documentConstraints?: Record<string, unknown>;
 }
 
 
@@ -184,6 +185,7 @@ export default function SkeletonPhase({
   generatingFigure = false,
   onGenerateFigure,
   draftExecutionPlan,
+  documentConstraints = {},
 }: SkeletonPhaseProps) {
   const [editingTitle, setEditingTitle] = useState(false);
   const [titleDraft, setTitleDraft] = useState(skeleton.title_suggestion || '');
@@ -219,6 +221,11 @@ export default function SkeletonPhase({
   }, [skeleton.sections, skeleton.total_word_limit, skeleton.total_page_limit]);
 
   const rawText = skeleton.raw_text || '';
+  const constraintsAudit = (skeleton.constraints_audit as Record<string, unknown>) || {};
+  const constraintsConfidence = (documentConstraints?.confidence as string) || '';
+  const sectionWordSum = constraintSections.reduce((sum, s) => sum + (s.word_limit || 0), 0);
+  const totalWordsNum = constraintWordLimit ? parseInt(constraintWordLimit.replace(/,/g, ''), 10) : 0;
+  const sumMismatch = totalWordsNum > 0 && sectionWordSum > 0 && Math.abs(sectionWordSum - totalWordsNum) > totalWordsNum * 0.05;
   const flaggedSections: string[] = (skeleton.flagged_sections as string[]) || [];
   const hasContent = rawText.trim().length > 0;
   const flagCount = flaggedSections.length;
@@ -418,6 +425,15 @@ export default function SkeletonPhase({
 
               {constraintsExpanded && (
                 <div className="p-3 space-y-3">
+                  {constraintsConfidence && constraintsConfidence !== 'high' && (
+                    <p className="text-xs text-amber-700 bg-amber-50 border border-amber-100 rounded px-2 py-1.5">
+                      Limits confidence: <span className="font-medium">{constraintsConfidence}</span>
+                      {Array.isArray(documentConstraints?.verification_notes) &&
+                        (documentConstraints.verification_notes as string[]).slice(0, 2).map((n, i) => (
+                          <span key={i} className="block mt-0.5 text-amber-600">{n}</span>
+                        ))}
+                    </p>
+                  )}
                   {/* Document totals */}
                   <div className="flex items-center gap-4 text-xs">
                     <label className="flex items-center gap-1.5 text-gray-500">
@@ -459,7 +475,8 @@ export default function SkeletonPhase({
                             {constraintsEditing && <th className="px-2 py-1.5 w-6" />}
                             <th className="text-left px-2 py-1.5 w-6">#</th>
                             <th className="text-left px-2 py-1.5">Section</th>
-                            <th className="text-right px-2 py-1.5 w-28">Word count</th>
+                            <th className="text-right px-2 py-1.5 w-24">Target words</th>
+                            <th className="text-right px-2 py-1.5 w-24">Skeleton words</th>
                             <th className="text-right px-2 py-1.5 w-16">Pages</th>
                             <th className="text-left px-2 py-1.5 w-20">Priority</th>
                             {constraintsEditing && <th className="w-8" />}
@@ -541,15 +558,22 @@ export default function SkeletonPhase({
                                       className="w-20 bg-transparent focus:outline-none focus:bg-indigo-50 rounded px-0.5 text-right"
                                     />
                                   ) : (
-                                    <span className={
-                                      overLimit ? 'text-red-600 font-medium' :
-                                      nearLimit ? 'text-amber-600' :
-                                      'text-gray-600'
-                                    }>
-                                      {actual > 0 ? actual.toLocaleString() : '—'}
-                                      {limit ? ` / ${limit.toLocaleString()}` : ''}
+                                    <span className="font-medium text-gray-800">
+                                      {limit ? limit.toLocaleString() : '—'}
                                     </span>
                                   )}
+                                </td>
+                                <td className="px-2 py-1.5 text-right">
+                                  {!constraintsEditing && (
+                                    <span className={
+                                      overLimit ? 'text-red-600' :
+                                      nearLimit ? 'text-amber-600' :
+                                      'text-gray-400'
+                                    } title="Words in skeleton bullets (draft outline, not final target)">
+                                      {actual > 0 ? actual.toLocaleString() : '—'}
+                                    </span>
+                                  )}
+                                  {constraintsEditing && <span className="text-gray-300">—</span>}
                                 </td>
                                 <td className="px-2 py-1.5 text-right">
                                   {constraintsEditing ? (
@@ -608,6 +632,14 @@ export default function SkeletonPhase({
                           })}
                         </tbody>
                       </table>
+                      {!constraintsEditing && totalWordsNum > 0 && (
+                        <p className={`text-xs px-2 py-1.5 border-t border-gray-100 ${sumMismatch ? 'text-amber-700 bg-amber-50' : 'text-gray-500'}`}>
+                          Section targets sum: {sectionWordSum.toLocaleString()}
+                          {' / '}
+                          {totalWordsNum.toLocaleString()} total words
+                          {sumMismatch ? ' — adjust section targets to match document total' : ''}
+                        </p>
+                      )}
                     </div>
                   )}
 

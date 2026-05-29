@@ -359,7 +359,7 @@ def check_finance_overspend():
                     member_ids = [grant.internal_lead_id]
                 msg = (
                     f"Grant '{grant.title}': category '{cat.name}' is at {util:.0f}% "
-                    f"({settings.base_url}/grants/{grant.id}/workspace?tab=finance)"
+                    f"({settings.base_url}/finance/{grant.id})"
                 )
                 for uid in member_ids:
                     db.add(Notification(

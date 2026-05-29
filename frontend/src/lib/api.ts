@@ -305,6 +305,9 @@ export const grants = {
 
 // ── Grant Finance (active grants) ───────────────────────────────────────────
 export const finance = {
+  portfolio: () => api.get('/finance/portfolio'),
+  listAllFundRequests: (status?: 'all' | string) =>
+    api.get('/finance/fund-requests', { params: status ? { status } : {} }),
   getLedger: (grantId: string) => api.get(`/grants/${grantId}/finance/ledger`),
   updateLedger: (grantId: string, data: Record<string, unknown>) =>
     api.patch(`/grants/${grantId}/finance/ledger`, data),
@@ -396,6 +399,7 @@ export const grantWriting = {
         priority?: string;
         order?: number;
       }>;
+      document_constraints?: Record<string, unknown>;
     }
   ) =>
     api.patch(`/grants/${grantId}/writing/skeleton-constraints`, data),

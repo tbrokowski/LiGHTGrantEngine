@@ -6,7 +6,14 @@ export interface ModulePermissions {
   can_view_grants: boolean;
   can_view_archive: boolean;
   can_view_partners: boolean;
+  can_view_finance: boolean;
 }
+
+const MODULE_PERMISSION_DEFAULTS: Partial<Record<keyof ModulePermissions, boolean>> = {
+  can_view_archive: true,
+  can_view_partners: true,
+  can_view_finance: false,
+};
 
 export interface AuthUser {
   id: string;
@@ -73,8 +80,55 @@ export function isInstitutionAdmin(user: AuthUser | null): boolean {
   return user?.role === 'admin' || user?.institution_role === 'admin';
 }
 
-export function hasModulePermission(user: AuthUser | null, key: keyof ModulePermissions): boolean {
+const ROLE_RANK: Record<string, number> = {
+  viewer: 0,
+  contributor: 1,
+  reviewer: 2,
+  operations_manager: 3,
+  grant_lead: 4,
+  admin: 5,
+};
+
+export function roleEligibleForFinance(role: string): boolean {
+  return (ROLE_RANK[role] ?? -1) >= ROLE_RANK.operations_manager;
+}
+
+/** Finance module: org admins, or ops_manager / grant_lead (unless explicitly revoked). */
+export function canViewFinance(user: AuthUser | null): boolean {
   if (!user) return false;
   if (isInstitutionAdmin(user)) return true;
-  return user.module_permissions?.[key] ?? false;
+  if (!roleEligibleForFinance(user.role)) return false;
+  if (user.module_permissions && 'can_view_finance' in user.module_permissions) {
+    return Boolean(user.module_permissions.can_view_finance);
+  }
+  return true;
+}
+
+export function canViewFinanceForMember(member: {
+  role: string;
+  institution_role: string;
+  module_permissions?: Record<string, boolean>;
+}): boolean {
+  if (member.institution_role === 'admin') return true;
+  if (!roleEligibleForFinance(member.role)) return false;
+  const perms = member.module_permissions ?? {};
+  if ('can_view_finance' in perms) return Boolean(perms.can_view_finance);
+  return true;
+}
+
+export function hasModulePermission(user: AuthUser | null, key: keyof ModulePermissions): boolean {
+  if (!user) return false;
+  if (key === 'can_view_finance') return canViewFinance(user);
+  if (isInstitutionAdmin(user)) return true;
+  if (user.module_permissions && key in user.module_permissions) {
+    return Boolean(user.module_permissions[key]);
+  }
+  return MODULE_PERMISSION_DEFAULTS[key] ?? false;
+}
+
+/** Grant lead+ or org admin — can manage ledgers, approve fund requests, etc. */
+export function canEditFinance(user: AuthUser | null): boolean {
+  if (!user) return false;
+  if (isInstitutionAdmin(user)) return true;
+  return (ROLE_RANK[user.role] ?? -1) >= ROLE_RANK.grant_lead;
 }

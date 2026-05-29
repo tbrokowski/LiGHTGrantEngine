@@ -1,8 +1,9 @@
 'use client';
 
-import { useState, useEffect, useRef } from 'react';
+import { useState } from 'react';
 import { ChevronDown, RefreshCw } from 'lucide-react';
 import type { AIThinkingStepData } from '@/lib/callAnalysisStore';
+import { useAnimatedProgressPct } from './useAnimatedProgressPct';
 
 // ---------------------------------------------------------------------------
 // Types
@@ -152,50 +153,7 @@ export default function CallRequirementsPanel({
 
   const displaySteps = callAnalysisSteps && callAnalysisSteps.length > 0 ? callAnalysisSteps : null;
 
-  // Smooth progress bar: tracks a displayed pct that drifts forward during active steps
-  const [displayedPct, setDisplayedPct] = useState(5);
-  const driftTimerRef = useRef<ReturnType<typeof setInterval> | null>(null);
-
-  useEffect(() => {
-    if (!isRunning) {
-      if (driftTimerRef.current) clearInterval(driftTimerRef.current);
-      setDisplayedPct(5);
-      return;
-    }
-    if (!displaySteps) return;
-
-    const total = displaySteps.length;
-    const doneCount = displaySteps.filter((s) => s.status === 'done').length;
-    const hasActive = displaySteps.some((s) => s.status === 'active');
-
-    // Real percentage from completed steps (leaves headroom for drift)
-    const realPct = Math.round((doneCount / total) * 80) + 5;
-
-    // Snap forward to real progress when a step actually completes
-    setDisplayedPct((prev) => Math.max(prev, realPct));
-
-    // While a step is active, drift slowly toward the next milestone
-    if (driftTimerRef.current) clearInterval(driftTimerRef.current);
-    if (hasActive) {
-      // Ceiling: 4% before where the next milestone would be
-      const nextMilestonePct = Math.round(((doneCount + 1) / total) * 80) + 5;
-      const ceiling = nextMilestonePct - 4;
-
-      driftTimerRef.current = setInterval(() => {
-        setDisplayedPct((prev) => {
-          if (prev >= ceiling) return prev;
-          // Ease-out: faster at start, slower near ceiling
-          const remaining = ceiling - prev;
-          const step = Math.max(0.08, remaining * 0.015);
-          return Math.min(prev + step, ceiling);
-        });
-      }, 600);
-    }
-
-    return () => {
-      if (driftTimerRef.current) clearInterval(driftTimerRef.current);
-    };
-  }, [isRunning, displaySteps]);
+  const displayedPct = useAnimatedProgressPct(displaySteps, isRunning && !!displaySteps);
 
   if (isRunning) {
     return (
@@ -211,7 +169,7 @@ export default function CallRequirementsPanel({
               className="h-full bg-indigo-400"
               style={{
                 width: `${displayedPct}%`,
-                transition: 'width 1.2s cubic-bezier(0.4, 0, 0.2, 1)',
+                transition: 'width 0.55s cubic-bezier(0.22, 1, 0.36, 1)',
               }}
             />
           </div>

@@ -120,6 +120,8 @@ class ActiveGrant(Base):
     aligned_concept: Mapped[dict | None] = mapped_column(JSON, nullable=True)
     # Meta-synthesizer output: section blueprint + per-section writing guide + gap questions
     call_intelligence: Mapped[dict | None] = mapped_column(JSON, nullable=True)
+    # Verified page/word limits + per-section budgets (constraints-first skeleton pipeline)
+    document_constraints: Mapped[dict | None] = mapped_column(JSON, nullable=True)
     draft_execution_plan: Mapped[dict | None] = mapped_column(JSON, nullable=True)
     draft_qa_report: Mapped[dict | None] = mapped_column(JSON, nullable=True)
     style_profile: Mapped[dict] = mapped_column(JSON, default=dict)

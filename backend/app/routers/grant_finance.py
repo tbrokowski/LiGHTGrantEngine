@@ -4,7 +4,7 @@ import io
 import json
 import uuid
 from datetime import date, datetime
-from typing import Optional
+from typing import Optional, Callable
 
 from fastapi import APIRouter, Depends, HTTPException, UploadFile, File
 from fastapi.responses import StreamingResponse
@@ -26,12 +26,39 @@ from app.models.slack_config import SlackGrantConfig
 from app.models.budget_tracker import BudgetTracker
 from app.models.user import User
 from app.routers.auth import get_current_user
-from app.auth.permissions import grant_access
+from app.auth.permissions import (
+    grant_access,
+    require_finance_module,
+    can_edit_finance,
+    get_redis,
+    _check_grant_access,
+)
+import redis.asyncio as aioredis
 from app.routers.grant_workspace import _get_grant_or_404, log_activity, _serialize
 from app.services.grant_finance_service import category_balances, enrich_category
 from app.services import finance_ai
 
-router = APIRouter(dependencies=[Depends(grant_access())])
+def finance_grant_write() -> Callable:
+    """Grant-scoped finance writes: org finance editors (grant_lead+) or grant editors."""
+    async def _dep(
+        grant_id: str,
+        current_user: User = Depends(get_current_user),
+        db: AsyncSession = Depends(get_db),
+        redis: aioredis.Redis = Depends(get_redis),
+    ):
+        if can_edit_finance(current_user):
+            return await _check_grant_access(grant_id, current_user, db, redis, require_editor=False)
+        return await _check_grant_access(grant_id, current_user, db, redis, require_editor=True)
+
+    return _dep
+
+
+router = APIRouter(
+    dependencies=[
+        Depends(require_finance_module()),
+        Depends(grant_access()),
+    ]
+)
 
 
 def _require_active_grant(grant: ActiveGrant) -> None:
@@ -166,7 +193,7 @@ async def update_ledger(
     data: LedgerUpdate,
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(get_current_user),
-    _edit: None = Depends(grant_access(require_editor=True)),
+    _edit: None = Depends(finance_grant_write()),
 ):
     grant = await _get_grant_or_404(grant_id, db)
     _require_active_grant(grant)
@@ -184,7 +211,7 @@ async def create_category(
     data: CategoryCreate,
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(get_current_user),
-    _edit: None = Depends(grant_access(require_editor=True)),
+    _edit: None = Depends(finance_grant_write()),
 ):
     grant = await _get_grant_or_404(grant_id, db)
     _require_active_grant(grant)
@@ -210,7 +237,7 @@ async def update_category(
     data: CategoryUpdate,
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(get_current_user),
-    _edit: None = Depends(grant_access(require_editor=True)),
+    _edit: None = Depends(finance_grant_write()),
 ):
     grant = await _get_grant_or_404(grant_id, db)
     _require_active_grant(grant)
@@ -237,7 +264,7 @@ async def delete_category(
     category_id: str,
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(get_current_user),
-    _edit: None = Depends(grant_access(require_editor=True)),
+    _edit: None = Depends(finance_grant_write()),
 ):
     grant = await _get_grant_or_404(grant_id, db)
     ledger = await _get_or_create_ledger(grant_id, db, grant)
@@ -261,7 +288,7 @@ async def import_ledger_spreadsheet(
     file: UploadFile = File(...),
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(get_current_user),
-    _edit: None = Depends(grant_access(require_editor=True)),
+    _edit: None = Depends(finance_grant_write()),
 ):
     """Parse budget spreadsheet and create ledger categories (grouped by category)."""
     grant = await _get_grant_or_404(grant_id, db)
@@ -319,7 +346,7 @@ async def import_categories_json(
     body: ImportCategoriesBody,
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(get_current_user),
-    _edit: None = Depends(grant_access(require_editor=True)),
+    _edit: None = Depends(finance_grant_write()),
 ):
     grant = await _get_grant_or_404(grant_id, db)
     _require_active_grant(grant)
@@ -502,7 +529,7 @@ async def update_fund_request(
     data: FundRequestUpdate,
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(get_current_user),
-    _edit: None = Depends(grant_access(require_editor=True)),
+    _edit: None = Depends(finance_grant_write()),
 ):
     grant = await _get_grant_or_404(grant_id, db)
     result = await db.execute(
@@ -607,7 +634,7 @@ async def approve_fund_request(
     request_id: str,
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(get_current_user),
-    _edit: None = Depends(grant_access(require_editor=True)),
+    _edit: None = Depends(finance_grant_write()),
 ):
     return await update_fund_request(
         grant_id,
@@ -630,7 +657,7 @@ async def reject_fund_request(
     body: RejectBody,
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(get_current_user),
-    _edit: None = Depends(grant_access(require_editor=True)),
+    _edit: None = Depends(finance_grant_write()),
 ):
     return await update_fund_request(
         grant_id,
@@ -663,7 +690,7 @@ async def create_expenditure(
     data: ExpenditureCreate,
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(get_current_user),
-    _edit: None = Depends(grant_access(require_editor=True)),
+    _edit: None = Depends(finance_grant_write()),
 ):
     grant = await _get_grant_or_404(grant_id, db)
     _require_active_grant(grant)
@@ -695,7 +722,7 @@ async def delete_expenditure(
     expenditure_id: str,
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(get_current_user),
-    _edit: None = Depends(grant_access(require_editor=True)),
+    _edit: None = Depends(finance_grant_write()),
 ):
     result = await db.execute(
         select(Expenditure).where(
@@ -735,7 +762,7 @@ async def upsert_slack_config(
     data: SlackConfigUpdate,
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(get_current_user),
-    _edit: None = Depends(grant_access(require_editor=True)),
+    _edit: None = Depends(finance_grant_write()),
 ):
     grant = await _get_grant_or_404(grant_id, db)
     _require_active_grant(grant)

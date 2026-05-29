@@ -122,7 +122,14 @@ function GrantBar({ grant, windowDays, containerW, today, starred, tasks = [] }:
           className={`w-1.5 h-1.5 rounded-full shrink-0 ${grant.color ? '' : (STAGE_DOT[grant.grant_stage] ?? 'bg-gray-300')}`}
           style={grant.color ? { backgroundColor: grant.color } : undefined}
         />
-        <Link href={`/grants/${grant.id}`} className="min-w-0">
+        <Link
+          href={
+            grant.grant_stage === 'active' || grant.grant_stage === 'awarded'
+              ? `/grants/${grant.id}/workspace`
+              : `/grants/${grant.id}`
+          }
+          className="min-w-0"
+        >
           <p className="text-xs font-medium text-gray-700 truncate hover:text-gray-900 transition-colors leading-tight">
             {grant.title}
           </p>

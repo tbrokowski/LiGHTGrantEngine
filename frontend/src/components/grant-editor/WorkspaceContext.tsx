@@ -28,6 +28,7 @@ export interface WorkspaceContextType {
   grantIdea: string;
   callAnalysis: Record<string, unknown>;
   callIntelligence: Record<string, unknown>;
+  documentConstraints: Record<string, unknown>;
   skeleton: Record<string, unknown>;
   documentHtml: string;
   callRequirements: string;

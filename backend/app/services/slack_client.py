@@ -123,7 +123,7 @@ def build_fund_request_blocks(
             "text": {"type": "mrkdwn", "text": f"{vendor_line}{desc_line}".strip() or "—"},
         })
 
-    finance_url = f"{app_base_url}/grants/{grant_id}/workspace?tab=finance"
+    finance_url = f"{app_base_url}/finance/{grant_id}"
     blocks.append({
         "type": "actions",
         "block_id": f"fund_request_{request_id}",

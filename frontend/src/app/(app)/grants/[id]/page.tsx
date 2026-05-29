@@ -117,6 +117,18 @@ function DeadlineChip({ label, date }: { label: string; date: string }) {
 
 const ACTIVE_STAGES = ['active', 'awarded'];
 
+const ACTIVE_WORKSPACE_TABS = new Set([
+  'overview', 'tasks', 'milestones', 'budget', 'finance', 'files', 'team',
+]);
+
+/** Map proposal workspace tab query params to active-grant workspace tabs. */
+function activeWorkspaceTabFromParam(tab: string | null): string | null {
+  if (!tab) return null;
+  if (ACTIVE_WORKSPACE_TABS.has(tab)) return tab;
+  if (tab === 'editor' || tab === 'planning' || tab === 'more') return 'overview';
+  return null;
+}
+
 function GrantDetailContent() {
   const { id } = useParams<{ id: string }>();
   const searchParams = useSearchParams();
@@ -149,14 +161,16 @@ function GrantDetailContent() {
         setGrant(r.data);
         const tabParam = searchParams.get('tab');
 
-        // Redirect to canonical sub-route if accessed from base /grants/[id]
+        // Active/awarded grants live at /workspace (finance tab, milestones, etc.)
         const isBaseRoute = !pathname.endsWith('/write') && !pathname.endsWith('/workspace');
-        if (isBaseRoute && !tabParam) {
+        if (isBaseRoute) {
           const stage = r.data.grant_stage;
           if (stage && ACTIVE_STAGES.includes(stage)) {
-            router.replace(`/grants/${id}/workspace`);
+            const wTab = activeWorkspaceTabFromParam(tabParam);
+            const qs = wTab ? `?tab=${wTab}` : '';
+            router.replace(`/grants/${id}/workspace${qs}`);
             return;
-          } else {
+          } else if (!tabParam) {
             const draftingStatuses = ['full_proposal_drafting', 'concept_note_drafting'];
             if (draftingStatuses.includes(r.data.status)) {
               setActiveTab('editor');
