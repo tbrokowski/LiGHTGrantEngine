@@ -144,7 +144,7 @@ export default function MetaAgentPanel({
             {pendingQuestions.length} question{pendingQuestions.length > 1 ? 's' : ''}
           </span>
         )}
-        {collapsed ? <ChevronDown className="w-3.5 h-3.5 text-gray-400 shrink-0" /> : <ChevronUp className="w-3.5 h-3.5 text-gray-400 shrink-0" />}
+        {collapsed ? <ChevronDown className="w-3.5 h-3.5 text-gray-500 shrink-0" /> : <ChevronUp className="w-3.5 h-3.5 text-gray-500 shrink-0" />}
       </button>
 
       {!collapsed && (

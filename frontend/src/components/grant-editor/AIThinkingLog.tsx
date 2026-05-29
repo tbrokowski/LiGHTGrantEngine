@@ -71,7 +71,7 @@ function StepRow({ step }: { step: AIThinkingStep }) {
             aria-label={subOpen ? 'Collapse' : 'Expand'}
           >
             <ChevronDown
-              className={`w-3 h-3 text-gray-400 transition-transform ${subOpen ? '' : '-rotate-90'}`}
+              className={`w-3 h-3 text-gray-500 transition-transform ${subOpen ? '' : '-rotate-90'}`}
             />
           </button>
         )}

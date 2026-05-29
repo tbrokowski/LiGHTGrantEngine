@@ -102,7 +102,7 @@ function CollapsibleGroup({
         className="flex items-center gap-1.5 w-full text-left py-1"
       >
         <ChevronDown
-          className={`w-3.5 h-3.5 text-gray-400 transition-transform ${open ? '' : '-rotate-90'}`}
+          className={`w-3.5 h-3.5 text-gray-500 transition-transform ${open ? '' : '-rotate-90'}`}
         />
         <span className="text-sm font-semibold text-gray-800">{label}</span>
         {count !== undefined && (
@@ -494,7 +494,7 @@ export default function CallRequirementsPanel({
                   >
                     {hasDetail && (
                       <ChevronDown
-                        className={`w-3 h-3 text-gray-300 flex-shrink-0 transition-transform ${isOpen ? '' : '-rotate-90'}`}
+                        className={`w-3 h-3 text-gray-400 flex-shrink-0 transition-transform ${isOpen ? '' : '-rotate-90'}`}
                       />
                     )}
                     {!hasDetail && <span className="w-3 flex-shrink-0" />}
@@ -568,7 +568,7 @@ export default function CallRequirementsPanel({
                   >
                     {hasDetails && (
                       <ChevronDown
-                        className={`w-3 h-3 text-gray-300 flex-shrink-0 mt-0.5 transition-transform ${isExpanded ? '' : '-rotate-90'}`}
+                        className={`w-3 h-3 text-gray-400 flex-shrink-0 mt-0.5 transition-transform ${isExpanded ? '' : '-rotate-90'}`}
                       />
                     )}
                     {!hasDetails && <span className="w-3 flex-shrink-0" />}

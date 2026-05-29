@@ -84,7 +84,7 @@ function CollapsibleSection({
         className="flex items-center gap-1 w-full text-left"
       >
         <ChevronDown
-          className={`w-3.5 h-3.5 text-gray-400 transition-transform flex-shrink-0 ${expanded ? '' : '-rotate-90'}`}
+          className={`w-3.5 h-3.5 text-gray-500 transition-transform flex-shrink-0 ${expanded ? '' : '-rotate-90'}`}
         />
         <span className="text-sm font-semibold text-gray-500">{label}</span>
         {!expanded && summary && (
