@@ -1,15 +1,15 @@
 """CRM overhaul — organizations, meetings, documents, reminders, enrichment fields.
 
-Revision ID: 032
-Revises: 031
+Revision ID: 033
+Revises: 032
 Create Date: 2026-05-29
 """
 from alembic import op
 import sqlalchemy as sa
 from pgvector.sqlalchemy import Vector
 
-revision = "032"
-down_revision = "031"
+revision = "033"
+down_revision = "032"
 branch_labels = None
 depends_on = None
 
