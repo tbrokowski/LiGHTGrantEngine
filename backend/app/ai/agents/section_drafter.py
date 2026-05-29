@@ -55,6 +55,9 @@ async def draft_section(
     compliance_guidance: str = "",
     evidence_summary: str = "",
     narrative_context: dict | None = None,
+    strategic_guidance: str = "",
+    emphasis_direction: str = "",
+    concept_bundles: list[dict] | None = None,
 ) -> dict:
     prior_str = ""
     if retrieved_sections:
@@ -114,6 +117,21 @@ async def draft_section(
         f"\nSKELETON CONTENT (team-authored — EXPAND THIS, do not replace it):\n{skeleton_content}\n"
         if skeleton_content else ""
     )
+
+    strategy_block = ""
+    if strategic_guidance or emphasis_direction:
+        strategy_block = "\nSECTION STRATEGY (what this section must achieve for this specific funder):\n"
+        if strategic_guidance:
+            strategy_block += strategic_guidance + "\n"
+        if emphasis_direction:
+            strategy_block += f"EMPHASIS: {emphasis_direction}\n"
+
+    concept_block = ""
+    if concept_bundles:
+        concept_block = "\nCONCEPT CONTEXT (archive content about named concepts in your skeleton — use for specificity):\n"
+        for bundle in concept_bundles[:4]:
+            if bundle.get("full_text"):
+                concept_block += f"\n--- {bundle.get('section_type','?')} / {bundle.get('grant_title','?')} ---\n{bundle.get('full_text','')[:1500]}\n"
     evidence_block = (
         f"\nRESEARCH EVIDENCE SUMMARY (incorporate naturally where relevant):\n{evidence_summary}\n"
         if evidence_summary else ""
@@ -138,7 +156,9 @@ OVERALL NARRATIVE CONTEXT:
 Theory of change: {theory_of_change or 'See grant idea'}
 Cross-section themes to maintain: {cross_themes or 'Coherence and impact'}
 {f'Funder priorities to emphasise:{chr(10)}{funder_priorities}' if funder_priorities else ''}
+{strategy_block}
 {skeleton_block}
+{concept_block}
 {evidence_block}
 {compliance_block}
 
@@ -159,8 +179,9 @@ PRIOR SECTIONS SUMMARY (maintain narrative continuity and avoid repetition):
 
 Expand the skeleton content into a complete section now. Write in full paragraphs, not bullet points.
 Preserve the team's voice and structure; enrich with evidence and specificity.
+When the skeleton or grant idea references a specific named program, technology, or methodology (e.g. MOOVE, WASH, OneHealth),
+use the concept context above to add specific, accurate details about it.
 Every key claim should be supported or flagged with [VERIFY:].
-
 Return JSON with:
 - draft: the full expanded section text (HTML paragraphs preferred)
 - word_count: approximate word count
@@ -170,7 +191,8 @@ Return JSON with:
 - warnings: list of any issues, compliance risks, or areas needing human review
 - suggested_next_edits: specific improvements a human reviewer should make
 - human_review_required: true/false
-- evaluation_criteria_addressed: list of criteria explicitly addressed in this draft"""
+- evaluation_criteria_addressed: list of criteria explicitly addressed in this draft
+- citations_used: list of citation strings actually referenced in the draft"""
 
     response = await chat_complete(
         messages=[

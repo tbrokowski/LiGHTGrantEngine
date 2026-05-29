@@ -1,7 +1,8 @@
 'use client';
 import { useState, useCallback, useRef, useEffect } from 'react';
 import { toast } from 'sonner';
-import { grants, grantWriting, streamDraftGeneration } from '@/lib/api';
+import { grants, grantWriting, streamDraftGeneration, streamSkeletonGeneration } from '@/lib/api';
+const grantWritingApi = grantWriting;
 
 import {
   startGeneration,
@@ -36,6 +37,8 @@ interface GrantDetail {
   style_profile?: Record<string, unknown>;
   writing_phase?: string;
   last_review?: Record<string, unknown>;
+  overview_figure_url?: string | null;
+  overview_figure_alt?: string | null;
 }
 
 interface GrantEditorProps {
@@ -68,14 +71,38 @@ export default function GrantEditor({ grant, onGrantUpdate, onHeadingsChange }: 
 
   // ── Generation state ─────────────────────────────────────────────────────────
   const [generatingSkeleton, setGeneratingSkeleton] = useState(false);
+  const [skeletonProgress, setSkeletonProgress] = useState<import('./phases/SkeletonPhase').SkeletonProgress | null>(null);
   const [generatingDraft, setGeneratingDraft] = useState(false);
   const [draftProgress, setDraftProgress] = useState<import('./phases/SkeletonPhase').DraftProgress | null>(null);
+  const [wordCountWarnings, setWordCountWarnings] = useState<Record<string, {word_limit: number; actual: number; overage: number}>>({});
+  const [missingSections, setMissingSections] = useState<string[]>([]);
+  // Figure generation
+  const [overviewFigureUrl, setOverviewFigureUrl] = useState<string | null>(grant.overview_figure_url || null);
+  const [overviewFigureAlt, setOverviewFigureAlt] = useState<string | null>(grant.overview_figure_alt || null);
+  const [generatingFigure, setGeneratingFigure] = useState(false);
 
   // ── Meta-agent state ──────────────────────────────────────────────────────────
   const [metaAgentEvents, setMetaAgentEvents] = useState<MetaAgentEvent[]>([]);
   const [agentQuestions, setAgentQuestions] = useState<AgentQuestion[]>([]);
   const [coherenceResult, setCoherenceResult] = useState<CoherenceResult | null>(null);
   const [refiningDraft, setRefiningDraft] = useState(false);
+
+  const handleGenerateFigure = async (customInstructions?: string) => {
+    if (generatingFigure) return;
+    setGeneratingFigure(true);
+    try {
+      const resp = await grantWritingApi.generateFigure(grant.id, customInstructions);
+      if (resp.data?.figure_url) {
+        setOverviewFigureUrl(resp.data.figure_url);
+        setOverviewFigureAlt(resp.data.alt_text || 'Grant overview figure');
+        onGrantUpdate();
+      }
+    } catch (err) {
+      console.error('Figure generation failed', err);
+    } finally {
+      setGeneratingFigure(false);
+    }
+  };
 
   // ── Review / citations ───────────────────────────────────────────────────────
   const [reviewReport, setReviewReport] = useState<Record<string, unknown> | null>(grant.last_review || null);
@@ -271,39 +298,58 @@ export default function GrantEditor({ grant, onGrantUpdate, onHeadingsChange }: 
 
   const handleGenerateSkeleton = async () => {
     setGeneratingSkeleton(true);
+    setSkeletonProgress({ phase: 'starting' });
     try {
       await grantWriting.saveIdea(grant.id, { grant_idea: grantIdea, writing_phase: 'idea' });
     } catch {
       setGeneratingSkeleton(false);
+      setSkeletonProgress(null);
       return;
     }
 
     const grantId = grant.id;
-    const generationPromise = grantWriting.generateSkeleton(grantId)
-      .then((res) => (res.data.proposal_skeleton || {}) as Record<string, unknown>);
 
-    startGeneration(grantId, generationPromise);
-
-    generationPromise.then((skeletonData) => {
-      completeGeneration(grantId);
-      if (isMountedRef.current) {
-        setSkeleton(skeletonData);
-        setGeneratingSkeleton(false);
-        onGrantUpdateRef.current();
-        openPanelRef.current?.('skeleton');
-      } else if (!isBeingWatched(grantId)) {
-        toast.success('Skeleton ready!', {
-          description: 'Your grant proposal skeleton has been generated.',
-          action: { label: 'View it', onClick: () => { window.location.href = `/grants/${grantId}/write`; } },
-          duration: Infinity,
-        });
-      }
-    }).catch((err) => {
-      failGeneration(grantId);
-      if (isMountedRef.current) setGeneratingSkeleton(false);
-      console.error('Skeleton generation failed', err);
-      toast.error('Skeleton generation failed. Please try again.');
-    });
+    streamSkeletonGeneration(
+      grantId,
+      (event) => {
+        const ev = event.event as string;
+        if (ev === 'skeleton_start') {
+          setSkeletonProgress({ phase: 'starting' });
+        } else if (ev === 'style_profile_start') {
+          setSkeletonProgress({ phase: 'style_profile' });
+        } else if (ev === 'style_profile_complete') {
+          setSkeletonProgress({ phase: 'archive_retrieval' });
+        } else if (ev === 'archive_retrieval_complete') {
+          setSkeletonProgress({ phase: 'call_strategy' });
+        } else if (ev === 'call_strategy_complete') {
+          setSkeletonProgress({ phase: 'idea_alignment' });
+        } else if (ev === 'idea_alignment_complete') {
+          setSkeletonProgress({ phase: 'synthesis' });
+        } else if (ev === 'skeleton_complete' && event.proposal_skeleton) {
+          const skeletonData = event.proposal_skeleton as Record<string, unknown>;
+          setSkeleton(skeletonData);
+          setSkeletonProgress({ phase: 'complete' });
+          completeGeneration(grantId);
+          onGrantUpdateRef.current();
+          openPanelRef.current?.('skeleton');
+        }
+      },
+      () => {
+        if (isMountedRef.current) {
+          setGeneratingSkeleton(false);
+          setSkeletonProgress(null);
+        }
+      },
+      (err) => {
+        failGeneration(grantId);
+        if (isMountedRef.current) {
+          setGeneratingSkeleton(false);
+          setSkeletonProgress(null);
+        }
+        console.error('Skeleton generation failed', err);
+        toast.error('Skeleton generation failed. Please try again.');
+      },
+    );
   };
 
   const handleSkeletonChange = async (updated: Record<string, unknown>) => {
@@ -339,6 +385,13 @@ export default function GrantEditor({ grant, onGrantUpdate, onHeadingsChange }: 
           setDraftProgress({ phase: 'drafting', section: String(event.section), index: Number(event.index), total: Number(event.total) });
         } else if (ev === 'section_complete') {
           setDraftProgress({ phase: 'drafting', section: String(event.section), index: Number(event.index), total: Number(event.total) });
+        } else if (ev === 'section_word_count_warning') {
+          const { section, word_limit, actual, overage } = event as { section: string; word_limit: number; actual: number; overage: number };
+          setWordCountWarnings((prev) => ({ ...prev, [section]: { word_limit, actual, overage } }));
+        } else if (ev === 'section_compliance_map') {
+          setMissingSections((event.missing as string[]) || []);
+        } else if (ev === 'bibliography_complete') {
+          setDraftProgress((p) => ({ ...(p ?? { phase: 'assembling' }), phase: 'assembling' }));
         } else if (ev === 'compliance_pass') {
           setDraftProgress({ phase: 'assembling' });
 
@@ -520,8 +573,15 @@ export default function GrantEditor({ grant, onGrantUpdate, onHeadingsChange }: 
     selectedText,
     activeSection,
     generatingSkeleton,
+    skeletonProgress,
     generatingDraft,
     draftProgress,
+    wordCountWarnings,
+    missingSections,
+    overviewFigureUrl,
+    overviewFigureAlt,
+    generatingFigure,
+    onGenerateFigure: handleGenerateFigure,
     reviewReport,
     reviewLoading,
     citations,

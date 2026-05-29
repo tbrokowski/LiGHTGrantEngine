@@ -46,6 +46,8 @@ async def generate_proposal_outline(
     grant_idea: str = "",
     style_profile: dict | None = None,
     call_requirements_text: str = "",
+    call_strategy: dict | None = None,
+    aligned_concept: dict | None = None,
 ) -> dict:
     structure_str = _format_structure_templates(structure_templates or [])
     similar_str = _format_similar_grants(similar_grants or [])
@@ -53,11 +55,15 @@ async def generate_proposal_outline(
     style_section = f'STYLE PROFILE:\n{style_str}' if style_str else ''
     team_pref_section = f'TEAM PREFERENCES: {team_preferences}' if team_preferences else ''
 
+    # Build enriched strategy sections when available
+    strategy_section = _format_call_strategy(call_strategy) if call_strategy else ''
+    alignment_section = _format_aligned_concept(aligned_concept) if aligned_concept else ''
+
     user_prompt = f"""Think step by step before producing the skeleton:
 1. Identify the grant's core narrative: what problem, what solution, what impact — from the grant idea.
-2. Identify the 3–5 highest-weight evaluation criteria from the call — these are thematic coverage goals.
-3. Design a section structure that best tells this grant's story (informed by archive structures and the grant idea), ensuring the thematic coverage goals are distributed naturally across sections.
-4. Draft 2–4 paragraphs of actual skeleton prose per section, grounded in the grant idea and the funder's goals.
+2. Identify the critical themes and must-demonstrate requirements from the call strategy (if provided).
+3. Design a section structure that best tells this grant's story, ensuring critical themes and winning differentiators are distributed naturally across sections.
+4. Draft 2–4 paragraphs of actual skeleton prose per section, grounded in the aligned idea and the funder's specific priorities.
 Then produce the full JSON response.
 
 ---
@@ -66,17 +72,19 @@ GRANT: {opportunity_title}
 EXTERNAL DEADLINE: {external_deadline or 'Not specified'}
 INTERNAL DEADLINE: {internal_deadline or 'Not specified'}
 
-GRANT IDEA:
+GRANT IDEA (aligned to funder priorities):
 {grant_idea or 'Not provided'}
 
-CALL REQUIREMENTS (thematic guidance — coverage goals, not rigid section names):
+CALL REQUIREMENTS AND STRATEGY:
 {call_requirements_text or 'Not provided — use call_analysis fields below'}
 
-CALL ANALYSIS (for coverage guidance only — do not mirror section names 1:1):
+CALL ANALYSIS (coverage guidance):
 Coverage themes from required sections: {call_analysis.get('required_sections', [])}
 Evaluation criteria (key thematic priorities): {call_analysis.get('evaluation_criteria', [])}
 Budget constraints: {call_analysis.get('budget_constraints', '')}
 
+{strategy_section}
+{alignment_section}
 {structure_str}
 
 {similar_str}
@@ -177,5 +185,66 @@ def _format_similar_grants(grants: list[dict]) -> str:
                 f"- {g.get('grant_title', '?')}: {g.get('section_type', '?')} section "
                 f"from {g.get('funder', '?')} ({g.get('outcome', '?')})"
             )
+
+    return "\n".join(lines)
+
+
+def _format_call_strategy(strategy: dict) -> str:
+    if not strategy:
+        return ""
+    lines = ["CALL STRATEGY BRIEF (what a winning proposal must do for THIS call):"]
+
+    if strategy.get("narrative_framing"):
+        lines.append(f"OVERALL FRAMING: {strategy['narrative_framing']}")
+
+    if strategy.get("critical_themes"):
+        lines.append("CRITICAL THEMES (priority order): " + " | ".join(strategy["critical_themes"][:6]))
+
+    if strategy.get("must_demonstrate"):
+        lines.append("MUST DEMONSTRATE:")
+        for d in strategy["must_demonstrate"][:6]:
+            lines.append(f"  - {d}")
+
+    if strategy.get("winning_differentiators"):
+        lines.append("WINNING DIFFERENTIATORS:")
+        for d in strategy["winning_differentiators"][:4]:
+            lines.append(f"  - {d}")
+
+    if strategy.get("key_phrases_to_echo"):
+        lines.append("KEY FUNDER PHRASES TO ECHO: " + " | ".join(
+            f'"{p}"' for p in strategy["key_phrases_to_echo"][:5]
+        ))
+
+    if strategy.get("red_flags"):
+        lines.append("RED FLAGS TO AVOID:")
+        for r in strategy["red_flags"][:3]:
+            lines.append(f"  - {r}")
+
+    return "\n".join(lines)
+
+
+def _format_aligned_concept(concept: dict) -> str:
+    if not concept:
+        return ""
+    lines = ["IDEA ALIGNMENT (how to frame this idea for this funder):"]
+
+    if concept.get("strengths_to_lead_with"):
+        lines.append("LEAD WITH THESE STRENGTHS:")
+        for s in concept["strengths_to_lead_with"]:
+            lines.append(f"  - {s}")
+
+    if concept.get("gaps_to_address"):
+        lines.append("GAPS TO INCORPORATE:")
+        for g in concept["gaps_to_address"]:
+            lines.append(f"  - {g}")
+
+    if concept.get("opening_hook"):
+        lines.append(f"SUGGESTED OPENING HOOK:\n{concept['opening_hook']}")
+
+    if concept.get("emphasis_areas"):
+        lines.append("SECTION EMPHASIS:")
+        for ea in concept["emphasis_areas"][:5]:
+            if isinstance(ea, dict):
+                lines.append(f"  - {ea.get('section', '')}: {ea.get('emphasis', '')}")
 
     return "\n".join(lines)

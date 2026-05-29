@@ -2,6 +2,7 @@
 
 import { useState } from 'react';
 import { ChevronDown, RefreshCw } from 'lucide-react';
+import type { AIThinkingStepData } from '@/lib/callAnalysisStore';
 
 // ---------------------------------------------------------------------------
 // Types
@@ -49,9 +50,11 @@ interface CallRequirementsPanelProps {
   callAnalysis: Record<string, unknown>;
   callRequirementsText?: string;
   callAnalysisStatus?: CallAnalysisStatus;
+  callAnalysisSteps?: AIThinkingStepData[];
   onReanalyze?: () => void;
   reanalyzing?: boolean;
   analysisError?: string | null;
+  softTimeout?: boolean;
 }
 
 function hasDisplayableContent(analysis: Record<string, unknown>): boolean {
@@ -131,21 +134,72 @@ export default function CallRequirementsPanel({
   callAnalysis,
   callRequirementsText,
   callAnalysisStatus = 'idle',
+  callAnalysisSteps,
   onReanalyze,
   reanalyzing,
   analysisError,
+  softTimeout,
 }: CallRequirementsPanelProps) {
   const [expandedSection, setExpandedSection] = useState<string | null>(null);
   const [expandedFocusArea, setExpandedFocusArea] = useState<string | null>(null);
 
   const isRunning = reanalyzing || callAnalysisStatus === 'running';
 
+  const displaySteps = callAnalysisSteps && callAnalysisSteps.length > 0 ? callAnalysisSteps : null;
+
+  const stepPct = displaySteps
+    ? Math.round((displaySteps.filter((s) => s.status === 'done').length / displaySteps.length) * 90) + 5
+    : 15;
+
   if (isRunning) {
     return (
-      <div className="flex flex-col items-center justify-center gap-3 py-10 text-center">
-        <RefreshCw className="w-6 h-6 text-indigo-500 animate-spin" />
-        <p className="text-sm text-gray-600">Analyzing call document…</p>
-        <p className="text-xs text-gray-400">This may take 1–3 minutes for long calls</p>
+      <div className="space-y-4 py-4">
+        {/* Progress bar */}
+        <div className="space-y-1.5">
+          <div className="flex items-center gap-2 text-xs text-gray-500">
+            <RefreshCw className="w-3.5 h-3.5 animate-spin text-indigo-500 shrink-0" />
+            <span className="font-medium text-gray-700">Analyzing call document…</span>
+          </div>
+          <div className="h-1.5 bg-gray-100 rounded-full overflow-hidden">
+            <div
+              className="h-full bg-indigo-400 transition-all duration-700 ease-out"
+              style={{ width: `${stepPct}%` }}
+            />
+          </div>
+        </div>
+        {/* Step log */}
+        {displaySteps ? (
+          <div className="space-y-1">
+            {displaySteps.map((step) => (
+              <div key={step.id} className="flex items-start gap-2 text-xs">
+                {step.status === 'done' && (
+                  <span className="mt-px text-green-500 shrink-0">✓</span>
+                )}
+                {step.status === 'active' && (
+                  <span className="mt-px w-3.5 h-3.5 shrink-0 flex items-center justify-center">
+                    <span className="block w-2 h-2 rounded-full bg-indigo-500 animate-pulse" />
+                  </span>
+                )}
+                {step.status === 'pending' && (
+                  <span className="mt-px text-gray-300 shrink-0">·</span>
+                )}
+                {step.status === 'error' && (
+                  <span className="mt-px text-red-500 shrink-0">✗</span>
+                )}
+                <span className={
+                  step.status === 'done' ? 'text-gray-400' :
+                  step.status === 'active' ? 'text-gray-700 font-medium' :
+                  step.status === 'error' ? 'text-red-600' :
+                  'text-gray-300'
+                }>
+                  {step.label}
+                </span>
+              </div>
+            ))}
+          </div>
+        ) : (
+          <p className="text-xs text-gray-400">This may take 1–5 minutes for long call documents.</p>
+        )}
       </div>
     );
   }
@@ -242,7 +296,18 @@ export default function CallRequirementsPanel({
 
   return (
     <div className="space-y-5">
-      {analysisErrorMsg && !isRunning && (
+      {softTimeout && !analysisErrorMsg && !isRunning && (
+        <div className="rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-sm text-amber-700">
+          Analysis is taking longer than expected. The job is still running in the background — refresh the page later to see results.
+          {onReanalyze && (
+            <button type="button" onClick={onReanalyze} className="ml-2 font-medium underline hover:no-underline">
+              Try again now
+            </button>
+          )}
+        </div>
+      )}
+
+      {analysisErrorMsg && !isRunning && !softTimeout && (
         <div className="rounded-lg border border-red-200 bg-red-50 px-3 py-2 text-sm text-red-700">
           {analysisErrorMsg}
           {onReanalyze && callAnalysisStatus !== 'running' && (

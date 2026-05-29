@@ -16,10 +16,30 @@ ai:
       model: gpt-4o
       temperature: 0.1
       max_tokens: 8000
+    call_analyzer_scan:
+      model: gpt-4o-mini
+      temperature: 0.1
+      max_tokens: 2000
+    call_strategy_agent:
+      model: gpt-4o
+      temperature: 0.2
+      max_tokens: 3000
+    idea_alignment_agent:
+      model: gpt-4o
+      temperature: 0.3
+      max_tokens: 3000
+    bibliography_generator:
+      model: gpt-4o-mini
+      temperature: 0.1
+      max_tokens: 4000
+    figure_generator:
+      temperature: 0.5
+      max_tokens: 1000
     go_no_go:
       temperature: 0.2
       max_tokens: 1500
     section_drafter:
+      model: gpt-4o
       temperature: 0.4
       max_tokens: 8000
     section_splitter:
@@ -45,8 +65,13 @@ ai:
       temperature: 0.2
       max_tokens: 6000
     intro_architect:
-      temperature: 0.5
+      model: gpt-4o
+      temperature: 0.4
       max_tokens: 8000
+    meta_agent:
+      model: gpt-4o
+      temperature: 0.3
+      max_tokens: 6000
     citation_agent:
       temperature: 0.1
       max_tokens: 2048

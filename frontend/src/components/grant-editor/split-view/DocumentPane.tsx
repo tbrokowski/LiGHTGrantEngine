@@ -274,6 +274,7 @@ export default function DocumentPane({
             onCallAnalysis={workspace.onCallAnalysis}
             onGenerateSkeleton={workspace.onGenerateSkeleton}
             generating={workspace.generatingSkeleton}
+            skeletonProgress={workspace.skeletonProgress}
             googleDocId={workspace.googleDocId}
             googleDocUrl={workspace.docUrl || null}
             googleDocLastSynced={workspace.lastSynced || null}
@@ -305,6 +306,12 @@ export default function DocumentPane({
             onAnswerAgentQuestion={workspace.onAnswerAgentQuestion}
             onSkipAgentQuestion={workspace.onSkipAgentQuestion}
             onRefineDraft={workspace.onRefineDraft}
+            wordCountWarnings={workspace.wordCountWarnings}
+            missingSections={workspace.missingSections}
+            overviewFigureUrl={workspace.overviewFigureUrl}
+            overviewFigureAlt={workspace.overviewFigureAlt}
+            generatingFigure={workspace.generatingFigure}
+            onGenerateFigure={workspace.onGenerateFigure}
           />
         );
       }

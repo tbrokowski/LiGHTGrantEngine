@@ -4,9 +4,9 @@
  */
 import { grantWriting } from '@/lib/api';
 
-const MAX_STALE_MS = 10 * 60 * 1000;
+const MAX_STALE_MS = 20 * 60 * 1000;
 const POLL_INTERVAL_MS = 3000;
-const MAX_POLL_MS = 10 * 60 * 1000;
+const MAX_POLL_MS = 15 * 60 * 1000;
 
 const analyzing = new Set<string>();
 
@@ -60,12 +60,24 @@ export function isMarkedAnalyzing(grantId: string): boolean {
 
 export type CallAnalysisStatus = 'idle' | 'running' | 'completed' | 'failed';
 
+export interface AIThinkingStepData {
+  id: string;
+  label: string;
+  status: 'done' | 'active' | 'pending' | 'error';
+  detail?: string;
+  subSteps?: string[];
+}
+
 export interface WritingStatusPayload {
   call_analysis?: Record<string, unknown>;
   call_requirements?: string;
   call_analysis_status?: CallAnalysisStatus;
   call_analysis_error?: string | null;
+  call_analysis_steps?: AIThinkingStepData[];
   has_call_analysis?: boolean;
+  has_draft?: boolean;
+  overview_figure_url?: string | null;
+  overview_figure_alt?: string | null;
 }
 
 function sleep(ms: number): Promise<void> {
@@ -99,8 +111,10 @@ export async function pollCallAnalysisUntilDone(
     }
     await sleep(POLL_INTERVAL_MS);
   }
-  failAnalysis(grantId);
-  throw new Error('Call analysis timed out. Try again or refresh the page.');
+  // Soft timeout — job may still be running on the worker; keep localStorage flag
+  // so a refresh resumes polling. Surface a non-fatal message instead of an error.
+  const SOFT_TIMEOUT_MSG = 'Analysis is taking longer than expected. The job is still running in the background — you can leave this page and refresh later to see the results.';
+  throw new Error(SOFT_TIMEOUT_MSG);
 }
 
 /** Start analysis: POST enqueue + poll until done. */

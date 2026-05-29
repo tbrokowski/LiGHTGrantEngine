@@ -316,8 +316,10 @@ export const grantWriting = {
       timeout: 60_000,
     });
   },
-  analyzeCall: (grantId: string) =>
-    api.post(`/grants/${grantId}/writing/analyze-call`, null, { timeout: 60_000 }),
+  analyzeCall: (grantId: string, force = false) =>
+    api.post(`/grants/${grantId}/writing/analyze-call${force ? '?force=true' : ''}`, null, { timeout: 60_000 }),
+  generateFigure: (grantId: string, customInstructions?: string) =>
+    api.post(`/grants/${grantId}/writing/generate-figure`, { custom_instructions: customInstructions || null }, { timeout: 120_000 }),
   generateSkeleton: (grantId: string) => api.post(`/grants/${grantId}/writing/generate-skeleton`),
   updateSkeleton: (grantId: string, data: { proposal_skeleton: Record<string, unknown>; writing_phase?: string }) =>
     api.patch(`/grants/${grantId}/writing/skeleton`, data),
@@ -416,15 +418,50 @@ export const partners = {
   get: (id: string) => api.get(`/partners/${id}`),
   create: (data: Record<string, unknown>) => api.post('/partners/', data),
   update: (id: string, data: Record<string, unknown>) => api.patch(`/partners/${id}`, data),
+  updateStage: (id: string, relationship_stage: string) => api.patch(`/partners/${id}/stage`, { relationship_stage }),
   delete: (id: string) => api.delete(`/partners/${id}`),
+  pipeline: () => api.get('/partners/pipeline'),
+  upcomingContacts: (days?: number) => api.get('/partners/upcoming-contacts', { params: { days } }),
   listUpdates: (id: string) => api.get(`/partners/${id}/updates`),
   addUpdate: (id: string, data: Record<string, unknown>) => api.post(`/partners/${id}/updates`, data),
   listLinks: (id: string) => api.get(`/partners/${id}/links`),
   addLink: (id: string, data: Record<string, unknown>) => api.post(`/partners/${id}/links`, data),
   deleteLink: (id: string, linkId: string) => api.delete(`/partners/${id}/links/${linkId}`),
-  upcomingContacts: (days?: number) => api.get('/partners/upcoming-contacts', { params: { days } }),
   recommendForGrant: (entity_type: string, entity_id: string, top_n?: number) =>
     api.post('/ai/recommend-partners', { entity_type, entity_id, top_n }),
+  enrich: (id: string) => api.post(`/partners/${id}/enrich`),
+  fitScores: (id: string) => api.get(`/partners/${id}/fit-scores`),
+  draftOutreach: (id: string, data: { purpose: string; grant_context?: string }) =>
+    api.post(`/partners/${id}/draft-outreach`, data),
+  discover: (params: { q: string; institution_type?: string; country?: string }) =>
+    api.get('/partners/search-discover', { params }),
+  analytics: () => api.get('/partners/analytics'),
+  workspaceSyncStatus: (id: string) => api.get(`/partners/${id}/workspace-sync-status`),
+  // Meetings
+  listMeetings: (id: string) => api.get(`/partners/${id}/meetings`),
+  createMeeting: (id: string, data: Record<string, unknown>) => api.post(`/partners/${id}/meetings`, data),
+  updateMeeting: (id: string, meetingId: string, data: Record<string, unknown>) =>
+    api.patch(`/partners/${id}/meetings/${meetingId}`, data),
+  deleteMeeting: (id: string, meetingId: string) => api.delete(`/partners/${id}/meetings/${meetingId}`),
+  generateMeetingPrep: (id: string, meetingId: string) =>
+    api.post(`/partners/${id}/meetings/${meetingId}/generate-prep`),
+  completeMeeting: (id: string, meetingId: string, data: Record<string, unknown>) =>
+    api.post(`/partners/${id}/meetings/${meetingId}/complete`, data),
+  // Documents
+  listDocuments: (id: string) => api.get(`/partners/${id}/documents`),
+  uploadDocument: (id: string, formData: FormData) =>
+    api.post(`/partners/${id}/documents`, formData, { headers: { 'Content-Type': 'multipart/form-data' } }),
+  extractExpertise: (id: string, docId: string) =>
+    api.post(`/partners/${id}/documents/${docId}/extract-expertise`),
+  deleteDocument: (id: string, docId: string) => api.delete(`/partners/${id}/documents/${docId}`),
+};
+
+export const partnerOrgs = {
+  list: (params?: Record<string, unknown>) => api.get('/partner-organizations/', { params }),
+  get: (id: string) => api.get(`/partner-organizations/${id}`),
+  create: (data: Record<string, unknown>) => api.post('/partner-organizations/', data),
+  update: (id: string, data: Record<string, unknown>) => api.patch(`/partner-organizations/${id}`, data),
+  delete: (id: string) => api.delete(`/partner-organizations/${id}`),
 };
 
 // ── AI Assistant ─────────────────────────────────────────────────────────────
@@ -606,6 +643,53 @@ export function streamWritingChat(
     })
     .catch((err) => {
       if (err.name !== 'AbortError') onError(err.message || 'Stream failed');
+    });
+
+  return controller;
+}
+
+export function streamSkeletonGeneration(
+  grantId: string,
+  onEvent: (event: Record<string, unknown>) => void,
+  onDone: () => void,
+  onError: (err: string) => void,
+): AbortController {
+  const controller = new AbortController();
+  const token = typeof window !== 'undefined' ? localStorage.getItem('access_token') : null;
+  const baseUrl = getApiBaseUrl();
+
+  fetch(`${baseUrl}/api/v1/grants/${grantId}/writing/generate-skeleton`, {
+    method: 'POST',
+    headers: { ...(token ? { Authorization: `Bearer ${token}` } : {}) },
+    signal: controller.signal,
+  })
+    .then(async (res) => {
+      if (!res.ok) throw new Error(`HTTP ${res.status}`);
+      if (!res.body) throw new Error('No response body');
+      const reader = res.body.getReader();
+      const decoder = new TextDecoder();
+      let buffer = '';
+      while (true) {
+        const { done, value } = await reader.read();
+        if (done) break;
+        buffer += decoder.decode(value, { stream: true });
+        const lines = buffer.split('\n');
+        buffer = lines.pop() ?? '';
+        for (const line of lines) {
+          if (!line.startsWith('data: ')) continue;
+          const payload = line.slice(6).trim();
+          if (payload === '[DONE]') { onDone(); return; }
+          try {
+            const parsed = JSON.parse(payload);
+            if (parsed.error) { onError(parsed.error); return; }
+            onEvent(parsed);
+          } catch { /* ignore */ }
+        }
+      }
+      onDone();
+    })
+    .catch((err) => {
+      if (err.name !== 'AbortError') onError(err.message || 'Skeleton generation failed');
     });
 
   return controller;

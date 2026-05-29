@@ -31,6 +31,8 @@ GRANT IDEA:
 CALL REQUIREMENTS (guidance for compliance coverage):
 {call_requirements}
 
+{strategy_block}
+
 PROPOSAL SKELETON (user-authored — these are the sections and content the team has drafted):
 {skeleton_sections}
 
@@ -42,9 +44,11 @@ For each section, identify:
 - 2–3 targeted web search queries to find supporting evidence (specific enough to return useful results)
 - 1–2 academic search queries for peer-reviewed support (PubMed/OpenAlex style)
 - Any compliance gaps relative to call requirements that the drafter should address
+- If a call strategy is provided, note which CRITICAL_THEMES or MUST_DEMONSTRATE items this section should address
 
 Also identify the overall narrative context: the core theory of change, the key differentiators of this
-proposal, and any cross-section themes the drafters must maintain.
+proposal, and any cross-section themes the drafters must maintain. Ensure the narrative_context
+incorporates the call strategy's critical themes and winning differentiators if provided.
 
 Return JSON with this structure:
 {{
@@ -62,6 +66,7 @@ Return JSON with this structure:
       "web_search_queries": ["query 1", "query 2"],
       "academic_search_queries": ["query 1"],
       "compliance_notes": "...",
+      "strategy_themes_to_address": ["..."],
       "priority": "high" | "medium" | "low"
     }}
   ]
@@ -83,6 +88,28 @@ def _format_skeleton_sections(sections: list[dict]) -> str:
     return "\n".join(lines)
 
 
+def _format_strategy_block(call_strategy: dict | None, aligned_concept: dict | None) -> str:
+    """Build the strategy context block injected into the planning prompt."""
+    parts = []
+    if call_strategy:
+        if call_strategy.get("critical_themes"):
+            parts.append("CRITICAL THEMES (priority order): " + " | ".join(call_strategy["critical_themes"][:6]))
+        if call_strategy.get("must_demonstrate"):
+            parts.append("MUST DEMONSTRATE:\n" + "\n".join(f"- {d}" for d in call_strategy["must_demonstrate"][:6]))
+        if call_strategy.get("winning_differentiators"):
+            parts.append("WINNING DIFFERENTIATORS:\n" + "\n".join(f"- {d}" for d in call_strategy["winning_differentiators"][:4]))
+        if call_strategy.get("red_flags"):
+            parts.append("RED FLAGS TO AVOID:\n" + "\n".join(f"- {r}" for r in call_strategy["red_flags"][:3]))
+    if aligned_concept:
+        if aligned_concept.get("gaps_to_address"):
+            parts.append("GAPS TO ADDRESS IN PROPOSAL:\n" + "\n".join(f"- {g}" for g in aligned_concept["gaps_to_address"]))
+        if aligned_concept.get("strengths_to_lead_with"):
+            parts.append("STRENGTHS TO FOREGROUND:\n" + "\n".join(f"- {s}" for s in aligned_concept["strengths_to_lead_with"]))
+    if not parts:
+        return ""
+    return "CALL STRATEGY BRIEF:\n" + "\n\n".join(parts)
+
+
 async def plan_draft_research(
     opportunity_title: str,
     funder: str,
@@ -90,6 +117,8 @@ async def plan_draft_research(
     skeleton_sections: list[dict],
     call_requirements: str,
     flagged_section_names: list[str] | None = None,
+    call_strategy: dict | None = None,
+    aligned_concept: dict | None = None,
 ) -> dict:
     """
     Produce a research and narrative plan for the draft generation phase.
@@ -109,12 +138,14 @@ async def plan_draft_research(
         enriched_sections.append({**sec, "flagged": name in flagged_set})
 
     sections_str = _format_skeleton_sections(enriched_sections)
+    strategy_block = _format_strategy_block(call_strategy, aligned_concept)
 
     user_prompt = USER_PROMPT_TEMPLATE.format(
         opportunity_title=opportunity_title,
         funder=funder or "Not specified",
         grant_idea=grant_idea or "Not provided",
         call_requirements=call_requirements[:3000] if call_requirements else "Not provided",
+        strategy_block=strategy_block,
         skeleton_sections=sections_str,
     )
 

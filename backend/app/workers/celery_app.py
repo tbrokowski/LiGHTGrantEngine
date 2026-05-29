@@ -20,6 +20,7 @@ celery_app = Celery(
         "app.workers.clustering_tasks",
         "app.workers.archive_clustering_tasks",
         "app.workers.grant_writing_tasks",
+        "app.workers.partner_tasks",
     ],
 )
 
@@ -73,7 +74,18 @@ celery_app.conf.beat_schedule = {
     },
     "recover-stale-archive-tasks": {
         "task": "app.workers.archive_tasks.recover_stale_archive_tasks",
-        # Check every 15 minutes for archives stuck in processing after a crash/restart
         "schedule": crontab(minute="*/15"),
+    },
+    "recover-stale-call-analysis": {
+        "task": "app.workers.grant_writing_tasks.recover_stale_call_analysis_tasks",
+        "schedule": crontab(minute="*/15"),
+    },
+    "partner-reminders": {
+        "task": "app.workers.partner_tasks.send_partner_reminders",
+        "schedule": crontab(hour=8, minute=30),
+    },
+    "pre-meeting-preps": {
+        "task": "app.workers.partner_tasks.generate_pre_meeting_preps",
+        "schedule": crontab(hour=7, minute=0),
     },
 }

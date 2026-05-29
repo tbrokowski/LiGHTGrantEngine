@@ -11,6 +11,7 @@ import {
   formatAnalysisError,
   isMarkedAnalyzing,
   type CallAnalysisStatus,
+  type AIThinkingStepData,
 } from '@/lib/callAnalysisStore';
 import CallRequirementsPanel from '../CallRequirementsPanel';
 
@@ -49,12 +50,58 @@ interface IdeaPhaseProps {
   onCallAnalysis: (analysis: Record<string, unknown>, requirements?: string) => void;
   onGenerateSkeleton: () => void;
   generating: boolean;
+  skeletonProgress?: import('./SkeletonPhase').SkeletonProgress | null;
   googleDocId?: string | null;
   googleDocUrl?: string | null;
   googleDocLastSynced?: string | null;
   onDocLinked?: (docId: string, docUrl: string) => void;
   onDocPulled?: (html: string) => void;
   onSelectionChange?: (text: string) => void;
+}
+
+// Skeleton generation step log
+const SKELETON_STEPS: Array<{ key: import('./SkeletonPhase').SkeletonProgress['phase']; label: string }> = [
+  { key: 'starting',          label: 'Initializing generation pipeline' },
+  { key: 'style_profile',     label: 'Building style profile from archive' },
+  { key: 'archive_retrieval', label: 'Retrieving similar grants & structures' },
+  { key: 'call_strategy',     label: 'Synthesizing call strategy brief' },
+  { key: 'idea_alignment',    label: 'Aligning idea to funder priorities' },
+  { key: 'synthesis',         label: 'Generating skeleton sections' },
+  { key: 'complete',          label: 'Skeleton ready' },
+];
+
+const PHASE_ORDER = SKELETON_STEPS.map((s) => s.key);
+
+function SkeletonThinkingLog({ phase }: { phase: import('./SkeletonPhase').SkeletonProgress['phase'] }) {
+  const currentIdx = PHASE_ORDER.indexOf(phase);
+  const doneCount = Math.max(0, currentIdx);
+  const pct = Math.round(5 + (doneCount / (SKELETON_STEPS.length - 1)) * 90);
+
+  return (
+    <div className="space-y-2">
+      <div className="h-1.5 bg-gray-100 rounded-full overflow-hidden">
+        <div
+          className="h-full bg-indigo-400 transition-all duration-700 ease-out"
+          style={{ width: `${pct}%` }}
+        />
+      </div>
+      <div className="space-y-0.5">
+        {SKELETON_STEPS.map((step, i) => {
+          const status = i < currentIdx ? 'done' : i === currentIdx ? 'active' : 'pending';
+          return (
+            <div key={step.key} className="flex items-start gap-1.5 text-xs">
+              {status === 'done'   && <span className="text-green-500 mt-px w-3.5 text-center shrink-0">✓</span>}
+              {status === 'active' && <span className="mt-1 w-3.5 shrink-0 flex items-center justify-center"><span className="block w-2 h-2 rounded-full bg-indigo-500 animate-pulse" /></span>}
+              {status === 'pending'&& <span className="text-gray-200 mt-px w-3.5 text-center shrink-0">·</span>}
+              <span className={status === 'done' ? 'text-gray-400' : status === 'active' ? 'text-gray-800 font-medium' : 'text-gray-300'}>
+                {step.label}
+              </span>
+            </div>
+          );
+        })}
+      </div>
+    </div>
+  );
 }
 
 // Collapsible section wrapper
@@ -103,6 +150,7 @@ export default function IdeaPhase({
   onCallAnalysis,
   onGenerateSkeleton,
   generating,
+  skeletonProgress,
   googleDocId,
   googleDocUrl,
   googleDocLastSynced,
@@ -122,6 +170,8 @@ export default function IdeaPhase({
   const [uploadedDoc, setUploadedDoc] = useState<UploadedCallDoc | null>(null);
   const [reanalyzing, setReanalyzing] = useState(false);
   const [analysisError, setAnalysisError] = useState<string | null>(null);
+  const [analysisSoftTimeout, setAnalysisSoftTimeout] = useState(false);
+  const [callAnalysisSteps, setCallAnalysisSteps] = useState<AIThinkingStepData[] | undefined>(undefined);
 
   // Voice state
   const [listening, setListening] = useState(false);
@@ -162,6 +212,8 @@ export default function IdeaPhase({
   const runAnalysis = useCallback(
     async (trigger: () => Promise<unknown>, opts?: { afterUpload?: (data: Record<string, unknown>) => void }) => {
       setAnalysisError(null);
+      setAnalysisSoftTimeout(false);
+      setCallAnalysisSteps(undefined);
       setIntelligenceExpanded(true);
       onCallAnalysisStatusChange?.('running', null);
       setReanalyzing(true);
@@ -169,14 +221,25 @@ export default function IdeaPhase({
         const data = await runCallAnalysisJob(grantId, trigger, (progress) => {
           if (progress.call_analysis_status === 'running') {
             onCallAnalysisStatusChange?.('running', null);
+            if (progress.call_analysis_steps && progress.call_analysis_steps.length > 0) {
+              setCallAnalysisSteps(progress.call_analysis_steps);
+            }
           }
         });
         opts?.afterUpload?.(data as Record<string, unknown>);
         applyAnalysisResult(data);
+        setCallAnalysisSteps(undefined);
       } catch (e: unknown) {
         const message = formatAnalysisError(e);
-        setAnalysisError(message);
-        onCallAnalysisStatusChange?.('failed', message);
+        const isSoftTimeout = message.includes('still running in the background');
+        if (isSoftTimeout) {
+          setAnalysisSoftTimeout(true);
+          // Don't mark as failed — job may still be running on worker
+          onCallAnalysisStatusChange?.('running', null);
+        } else {
+          setAnalysisError(message);
+          onCallAnalysisStatusChange?.('failed', message);
+        }
       } finally {
         setReanalyzing(false);
       }
@@ -225,9 +288,10 @@ export default function IdeaPhase({
     }
   };
 
-  const handleReanalyze = async () => {
-    if (isAnalyzing) return;
-    await runAnalysis(() => grantWriting.analyzeCall(grantId));
+  const handleReanalyze = async (force = false) => {
+    if (isAnalyzing && !force) return;
+    setAnalysisSoftTimeout(false);
+    await runAnalysis(() => grantWriting.analyzeCall(grantId, true));
   };
 
   const handleDrop = useCallback((e: React.DragEvent) => {
@@ -554,18 +618,27 @@ export default function IdeaPhase({
               callAnalysis={callAnalysis}
               callRequirementsText={callRequirementsText}
               callAnalysisStatus={callAnalysisStatus}
-              onReanalyze={handleReanalyze}
+              callAnalysisSteps={callAnalysisSteps}
+              onReanalyze={() => handleReanalyze(true)}
               reanalyzing={isAnalyzing}
               analysisError={analysisError}
+              softTimeout={analysisSoftTimeout}
             />
           </CollapsibleSection>
         )}
 
       </div>
 
+      {/* Skeleton generation progress */}
+      {generating && skeletonProgress && (
+        <div className="flex-shrink-0 border-t border-gray-200 px-5 py-3">
+          <SkeletonThinkingLog phase={skeletonProgress.phase} />
+        </div>
+      )}
+
       {/* Sticky footer */}
       <div className="flex-shrink-0 border-t border-gray-200 px-5 py-3 flex items-center justify-end gap-3">
-        {generating && (
+        {generating && !skeletonProgress && (
           <p className="text-sm text-gray-400">Generating — you can navigate away and come back</p>
         )}
         <button

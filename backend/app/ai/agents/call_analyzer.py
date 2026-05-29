@@ -89,8 +89,9 @@ Be precise and factual. Capture every important requirement, no matter how minor
 
 CHUNK_SIZE = 400_000  # GPT-4o supports 128k tokens (~512k chars) — covers any real-world grant document
 CHUNK_OVERLAP = 500
-SHORT_DOC_THRESHOLD = 25_000   # chars — skip structure scan below this
+SHORT_DOC_THRESHOLD = 60_000   # chars — skip Stage 1 structure scan below this
 SCAN_CAP = 60_000              # chars fed to Stage 1 structure scan
+STAGE2_INPUT_CAP = 120_000     # max chars sent to Stage 2 for single-chunk docs
 
 
 # ---------------------------------------------------------------------------
@@ -145,7 +146,7 @@ Return a JSON object with:
             {"role": "system", "content": SYSTEM_PROMPT},
             {"role": "user", "content": prompt},
         ],
-        agent_name="call_analyzer",
+        agent_name="call_analyzer_scan",  # uses gpt-4o-mini via config override
         json_mode=True,
     )
     return _parse_llm_json(response)
@@ -391,49 +392,43 @@ async def analyze_call(
     call_url: str = "",
     funder: str = "",
     extra_instructions: str = "",
+    skip_structure_scan: bool = False,
 ) -> dict:
     """
     Analyze a grant call document using a two-stage pipeline.
 
-    Stage 1 (skipped for short docs < 25k chars):
-      _scan_document_structure — fast structural pass identifying sections and
-      extracting key text excerpts.
+    Stage 1 (skipped for short docs < SHORT_DOC_THRESHOLD chars, or when skip_structure_scan=True):
+      _scan_document_structure — fast structural pass (gpt-4o-mini) identifying sections
+      and extracting key text excerpts.
 
     Stage 2:
-      _analyze_chunk (one per chunk for long docs) — deep extraction guided by
-      the Stage 1 structure map, producing a rich JSON including new fields:
-      call_background, funder_priorities, strategic_objectives, key_focus_areas,
-      key_phrases, requirements_overview — alongside all existing fields.
+      _analyze_chunk — deep extraction guided by the Stage 1 structure map (if available),
+      producing a rich JSON with call_background, funder_priorities, strategic_objectives,
+      key_focus_areas, key_phrases, requirements_overview, and all existing fields.
 
-    Returns a dict including:
-      - call_background, funder_priorities, strategic_objectives (new)
-      - key_focus_areas, key_phrases, requirements_overview (new)
-      - narrative_brief, summary (existing)
-      - eligibility_checklist, required_sections, section_requirements (existing)
-      - deadlines, budget_constraints, evaluation_criteria, required_partners (existing)
-      - risks, missing_information, recommended_next_steps (existing)
-      - thematic_areas, geographic_eligibility, award_amount, project_duration (existing)
-      - submission_portal, page_limit, word_limit, format_requirements (existing)
-      - foa_number, contact_info (existing)
+    skip_structure_scan=True skips Stage 1 entirely (used on re-analyze for speed).
     """
     if not call_text:
         return {"error": "No call text provided"}
 
-    # Stage 1: structure scan (skip for short documents)
+    # Stage 1: structure scan (skip for short documents or on re-analyze)
     structure_map: dict | None = None
-    if len(call_text) > SHORT_DOC_THRESHOLD:
+    if not skip_structure_scan and len(call_text) > SHORT_DOC_THRESHOLD:
         structure_map = await _scan_document_structure(call_text, funder)
 
+    # Cap Stage 2 input for single-chunk docs to reduce latency
+    text_for_stage2 = call_text[:STAGE2_INPUT_CAP] if len(call_text) > STAGE2_INPUT_CAP else call_text
+
     # Split into overlapping chunks if the document is very long
-    if len(call_text) <= CHUNK_SIZE:
-        chunks_text = [call_text]
+    if len(text_for_stage2) <= CHUNK_SIZE:
+        chunks_text = [text_for_stage2]
     else:
         chunks_text = []
         start = 0
         while start < len(call_text):
             end = min(start + CHUNK_SIZE, len(call_text))
-            chunks_text.append(call_text[start:end])
-            if end == len(call_text):
+            chunks_text.append(text_for_stage2[start:end])
+            if end == len(text_for_stage2):
                 break
             start = end - CHUNK_OVERLAP
 
@@ -454,7 +449,7 @@ async def analyze_call(
     # If merge produced nothing useful, retry once without structure map (simpler prompt path)
     if not _analysis_has_content(merged) and structure_map is not None:
         fallback = await _analyze_chunk(
-            call_text[:CHUNK_SIZE],
+            text_for_stage2,
             0,
             1,
             call_url,

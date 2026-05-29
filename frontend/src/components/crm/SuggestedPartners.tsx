@@ -1,7 +1,7 @@
 'use client';
 import { useState } from 'react';
 import Link from 'next/link';
-import { Sparkles, Check } from 'lucide-react';
+import { Sparkles, Check, GraduationCap, ExternalLink, RefreshCw } from 'lucide-react';
 import { partners as partnersApi } from '@/lib/api';
 import PartnerTagChip from './PartnerTagChip';
 
@@ -12,6 +12,8 @@ interface Recommendation {
   score: number;
   reason: string;
   suggested_role?: string;
+  h_index?: number;
+  expertise?: string[];
 }
 
 interface SuggestedPartnersProps {
@@ -51,9 +53,7 @@ export default function SuggestedPartners({ entityType, entityId }: SuggestedPar
     } catch (e: unknown) {
       const msg = e instanceof Error ? e.message : 'Failed to load recommendations.';
       setError(msg);
-    } finally {
-      setLoading(false);
-    }
+    } finally { setLoading(false); }
   }
 
   async function handleLink(rec: Recommendation) {
@@ -66,11 +66,8 @@ export default function SuggestedPartners({ entityType, entityId }: SuggestedPar
         notes: `AI recommended: ${rec.reason}`,
       });
       setLinkedIds(prev => new Set([...prev, rec.partner_id]));
-    } catch {
-      alert('Failed to link partner.');
-    } finally {
-      setLinkingId(null);
-    }
+    } catch { alert('Failed to link partner.'); }
+    finally { setLinkingId(null); }
   }
 
   return (
@@ -80,21 +77,15 @@ export default function SuggestedPartners({ entityType, entityId }: SuggestedPar
           <Sparkles className="w-4 h-4 text-purple-500" />
           <h3 className="text-base font-semibold text-gray-900">Suggested Partners</h3>
         </div>
-        {!loaded && (
-          <button
-            onClick={loadRecommendations}
-            disabled={loading}
-            className="text-sm font-medium text-blue-600 hover:text-blue-800 border border-blue-200 px-3 py-1.5 rounded-lg hover:bg-blue-50 disabled:opacity-50"
-          >
+        {!loaded ? (
+          <button onClick={loadRecommendations} disabled={loading}
+            className="text-sm font-medium text-blue-600 hover:text-blue-800 border border-blue-200 px-3 py-1.5 rounded-lg hover:bg-blue-50 disabled:opacity-50">
             {loading ? 'Analyzing…' : 'Find Partners'}
           </button>
-        )}
-        {loaded && (
-          <button
-            onClick={loadRecommendations}
-            disabled={loading}
-            className="text-xs text-gray-400 hover:text-gray-600 border border-gray-200 px-2.5 py-1 rounded-lg hover:bg-gray-50 disabled:opacity-50"
-          >
+        ) : (
+          <button onClick={loadRecommendations} disabled={loading}
+            className="text-xs text-gray-400 hover:text-gray-600 border border-gray-200 px-2.5 py-1 rounded-lg hover:bg-gray-50 disabled:opacity-50 flex items-center gap-1">
+            <RefreshCw className={`w-3 h-3 ${loading ? 'animate-spin' : ''}`} />
             {loading ? '…' : 'Refresh'}
           </button>
         )}
@@ -105,20 +96,15 @@ export default function SuggestedPartners({ entityType, entityId }: SuggestedPar
           Click &quot;Find Partners&quot; to get AI-powered recommendations from your CRM.
         </div>
       )}
-
       {loading && (
-        <div className="text-sm text-gray-400 text-center py-6 animate-pulse">
-          Analyzing grant and matching partners…
-        </div>
+        <div className="text-sm text-gray-400 text-center py-6 animate-pulse">Analyzing and matching partners…</div>
       )}
-
       {error && (
         <div className="text-sm text-red-600 bg-red-50 border border-red-200 rounded-lg px-3 py-2">{error}</div>
       )}
-
       {loaded && !loading && recommendations.length === 0 && (
         <div className="text-sm text-gray-400 text-center py-4">
-          No matching partners found. Add partners to your CRM to get recommendations.
+          No matching partners found. Add more partners to your CRM to get recommendations.
         </div>
       )}
 
@@ -139,6 +125,13 @@ export default function SuggestedPartners({ entityType, entityId }: SuggestedPar
                   {rec.organization && (
                     <div className="text-xs text-gray-500 truncate">{rec.organization}</div>
                   )}
+                  <div className="flex items-center gap-2 mt-1">
+                    {rec.h_index != null && (
+                      <span className="flex items-center gap-1 text-xs text-purple-600">
+                        <GraduationCap className="w-3 h-3" />h-index {rec.h_index}
+                      </span>
+                    )}
+                  </div>
                 </div>
                 {rec.suggested_role && (
                   <PartnerTagChip tag={rec.suggested_role} />
@@ -147,21 +140,28 @@ export default function SuggestedPartners({ entityType, entityId }: SuggestedPar
 
               <ScoreBar score={rec.score} />
 
+              {rec.expertise && rec.expertise.length > 0 && (
+                <div className="flex flex-wrap gap-1 mt-1.5">
+                  {rec.expertise.slice(0, 3).map(e => (
+                    <span key={e} className="text-xs bg-blue-50 text-blue-600 px-1.5 py-0.5 rounded">{e}</span>
+                  ))}
+                </div>
+              )}
+
               <p className="text-xs text-gray-600 mt-1.5 leading-relaxed">{rec.reason}</p>
 
               <div className="mt-2 flex gap-2">
                 <Link href={`/partners/${rec.partner_id}`}
-                  className="text-xs text-blue-600 hover:text-blue-800 border border-blue-200 px-2 py-1 rounded-lg hover:bg-blue-50">
-                  View Profile
+                  className="text-xs text-blue-600 hover:text-blue-800 border border-blue-200 px-2 py-1 rounded-lg hover:bg-blue-50 flex items-center gap-1">
+                  <ExternalLink className="w-3 h-3" />Profile
                 </Link>
                 {linkedIds.has(rec.partner_id) ? (
-                  <span className="flex items-center gap-1 text-xs text-green-600 px-2 py-1"><Check className="w-3 h-3" /> Linked</span>
+                  <span className="flex items-center gap-1 text-xs text-green-600 px-2 py-1">
+                    <Check className="w-3 h-3" />Linked
+                  </span>
                 ) : (
-                  <button
-                    onClick={() => handleLink(rec)}
-                    disabled={linkingId === rec.partner_id}
-                    className="text-xs text-gray-600 hover:text-gray-900 border border-gray-200 px-2 py-1 rounded-lg hover:bg-gray-50 disabled:opacity-50"
-                  >
+                  <button onClick={() => handleLink(rec)} disabled={linkingId === rec.partner_id}
+                    className="text-xs text-gray-600 hover:text-gray-900 border border-gray-200 px-2 py-1 rounded-lg hover:bg-gray-50 disabled:opacity-50">
                     {linkingId === rec.partner_id ? 'Linking…' : '+ Link to Grant'}
                   </button>
                 )}

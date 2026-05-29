@@ -35,6 +35,9 @@ async def draft_introduction(
     evidence_summary: str = "",
     narrative_context: dict | None = None,
     user_instructions: str = "",
+    opening_hook: str = "",
+    strategic_framing: str = "",
+    concept_bundles: list[dict] | None = None,
 ) -> dict:
     arc = intro_arc or DEFAULT_INTRO_ARC
     arc_str = "\n".join(
@@ -71,6 +74,21 @@ async def draft_introduction(
         f"\nSKELETON CONTENT (team-authored — EXPAND THIS, preserve the framing):\n{skeleton_content}\n"
         if skeleton_content else ""
     )
+
+    strategy_block = ""
+    if opening_hook or strategic_framing:
+        strategy_block = "\nSTRATEGIC GUIDANCE (use this to shape the opening):\n"
+        if opening_hook:
+            strategy_block += f"SUGGESTED OPENING HOOK (adapt into your first beat):\n{opening_hook}\n"
+        if strategic_framing:
+            strategy_block += f"OVERALL FRAMING:\n{strategic_framing}\n"
+
+    concept_block = ""
+    if concept_bundles:
+        concept_block = "\nCONCEPT CONTEXT (archive content about named concepts in your skeleton):\n"
+        for bundle in concept_bundles[:3]:
+            if bundle.get("full_text"):
+                concept_block += f"\n--- {bundle.get('section_type','?')} / {bundle.get('grant_title','?')} ---\n{bundle.get('full_text','')[:1500]}\n"
     evidence_block = (
         f"\nRESEARCH EVIDENCE SUMMARY (weave in naturally):\n{evidence_summary}\n"
         if evidence_summary else ""
@@ -98,7 +116,9 @@ GRANT IDEA:
 OVERALL NARRATIVE CONTEXT:
 Theory of change: {theory_of_change or 'See grant idea and skeleton'}
 {f'Funder priorities to emphasise:{chr(10)}{funder_priorities}' if funder_priorities else ''}
+{strategy_block}
 {skeleton_block}
+{concept_block}
 {evidence_block}
 {compliance_block}
 {user_instructions_block}

@@ -629,6 +629,66 @@ def _write_content_to_doc(docs_svc: Any, doc_id: str, content_html: str) -> None
         ).execute()
 
 
+def insert_image_after_heading(
+    doc_id: str,
+    image_url: str,
+    access_token: str,
+    heading_text: str = "Introduction",
+    width_pt: float = 432.0,
+) -> None:
+    """
+    Insert an inline image into a Google Doc after the first paragraph whose
+    text contains `heading_text` (case-insensitive). Inserts at position 1 (very
+    top of document) if the heading is not found, so the figure always appears.
+
+    Args:
+        doc_id      : Google Docs document ID.
+        image_url   : A publicly accessible image URL (e.g. presigned R2 URL or OpenAI temp URL).
+                      The Docs API requires a publicly reachable URL to fetch the image.
+        access_token: Valid Google OAuth token.
+        heading_text: Section heading to insert after (e.g. "Introduction").
+        width_pt    : Width of the inserted image in points (1 inch = 72 pt). 432 pt = 6 inches.
+    """
+    docs_svc = _build_docs_service(access_token)
+
+    doc = docs_svc.documents().get(documentId=doc_id).execute()
+    body_content = doc.get("body", {}).get("content", [])
+
+    # Find the index just after the target heading paragraph
+    insert_index = 1  # fallback: insert at very top
+    heading_lower = heading_text.lower()
+    for elem in body_content:
+        para = elem.get("paragraph")
+        if not para:
+            continue
+        text = "".join(
+            (e.get("textRun") or {}).get("content", "")
+            for e in para.get("elements", [])
+        ).strip().lower()
+        if heading_lower in text:
+            insert_index = elem.get("endIndex", insert_index)
+            break
+
+    requests = [
+        {
+            "insertInlineImage": {
+                "location": {"index": insert_index - 1},
+                "uri": image_url,
+                "objectSize": {
+                    "width": {"magnitude": width_pt, "unit": "PT"},
+                    "height": {"magnitude": width_pt * 0.75, "unit": "PT"},
+                },
+            }
+        }
+    ]
+
+    docs_svc.documents().batchUpdate(
+        documentId=doc_id, body={"requests": requests}
+    ).execute()
+
+    logger.info("Inserted overview figure into Google Doc %s after '%s'", doc_id, heading_text)
+
+
 def _style_to_tag(style: str) -> str:
     mapping = {
         "HEADING_1": "h1",

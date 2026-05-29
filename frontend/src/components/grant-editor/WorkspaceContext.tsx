@@ -40,8 +40,17 @@ export interface WorkspaceContextType {
 
   // Generation state
   generatingSkeleton: boolean;
+  skeletonProgress: import('./phases/SkeletonPhase').SkeletonProgress | null;
   generatingDraft: boolean;
   draftProgress: import('./phases/SkeletonPhase').DraftProgress | null;
+  wordCountWarnings: Record<string, { word_limit: number; actual: number; overage: number }>;
+  missingSections: string[];
+
+  // Figure generation
+  overviewFigureUrl: string | null;
+  overviewFigureAlt: string | null;
+  generatingFigure: boolean;
+  onGenerateFigure: (customInstructions?: string) => void;
 
   // Meta-agent state
   metaAgentEvents: MetaAgentEvent[];

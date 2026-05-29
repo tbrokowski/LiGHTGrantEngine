@@ -17,6 +17,7 @@ from app.routers import grant_workspace
 from app.routers import grant_writing
 from app.routers import grant_comments
 from app.routers import browser_sessions
+from app.routers import partner_meetings, partner_documents, partner_organizations
 
 settings = get_settings()
 logger = structlog.get_logger()
@@ -82,7 +83,10 @@ app.include_router(ai_assistant.router,  prefix=f"{API}/ai",            tags=["a
 app.include_router(notifications.router, prefix=f"{API}/notifications", tags=["notifications"])
 app.include_router(analytics.router,     prefix=f"{API}/analytics",     tags=["analytics"])
 app.include_router(admin.router,         prefix=f"{API}/admin",         tags=["admin"])
-app.include_router(partners.router,      prefix=f"{API}/partners",      tags=["partners"])
+app.include_router(partners.router,              prefix=f"{API}/partners",               tags=["partners"])
+app.include_router(partner_meetings.router,      prefix=f"{API}/partners",               tags=["partner-meetings"])
+app.include_router(partner_documents.router,     prefix=f"{API}/partners",               tags=["partner-documents"])
+app.include_router(partner_organizations.router, prefix=f"{API}/partner-organizations",  tags=["partner-organizations"])
 app.include_router(grant_workspace.router,         prefix=f"{API}/grants",  tags=["grant-workspace"])
 app.include_router(grant_writing.status_router,    prefix=f"{API}/grants",  tags=["grant-writing"])
 app.include_router(grant_writing.router,           prefix=f"{API}/grants",  tags=["grant-writing"])

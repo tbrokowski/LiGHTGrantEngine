@@ -1762,6 +1762,47 @@ async def push_to_google_doc(
     return {"ok": True, "last_synced": now.isoformat()}
 
 
+@router.post("/{grant_id}/docs/push-figure")
+async def push_figure_to_google_doc(
+    grant_id: str,
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+    _edit: None = Depends(grant_access(require_editor=True)),
+):
+    """
+    Insert the grant's overview figure into the linked Google Doc,
+    placing it after the Introduction heading.
+    """
+    grant = await _get_grant_or_404(grant_id, db)
+
+    if not grant.google_doc_id:
+        raise HTTPException(400, "No Google Doc linked.")
+
+    if not getattr(grant, "overview_figure_url", None):
+        raise HTTPException(400, "No overview figure has been generated yet. Generate a figure first.")
+
+    access_token = await _get_user_google_token(current_user, db)
+    from app.services.google_docs import insert_image_after_heading
+
+    try:
+        insert_image_after_heading(
+            doc_id=grant.google_doc_id,
+            image_url=grant.overview_figure_url,
+            access_token=access_token,
+            heading_text="Introduction",
+        )
+    except Exception as exc:
+        raise HTTPException(502, f"Google Docs API error: {exc}") from exc
+
+    await log_activity(
+        db, grant_id, "figure_pushed_to_doc", current_user.id,
+        description="Overview figure inserted into Google Doc",
+    )
+    await db.commit()
+
+    return {"ok": True, "message": "Figure inserted into Google Doc after Introduction."}
+
+
 @router.post("/{grant_id}/docs/pull")
 async def pull_from_google_doc(
     grant_id: str,

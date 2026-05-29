@@ -1,9 +1,11 @@
 'use client';
 
 import { useState } from 'react';
-import { Loader2, Sparkles, Star, BookOpen, RefreshCw } from 'lucide-react';
+import { Loader2, Sparkles, Star, BookOpen, RefreshCw, ImageIcon, AlertTriangle, CheckCircle2 } from 'lucide-react';
 import SkeletonEditor from '../SkeletonEditor';
 import MetaAgentPanel from '../MetaAgentPanel';
+import AIThinkingLog from '../AIThinkingLog';
+import type { AIThinkingStep } from '../AIThinkingLog';
 import type { MetaAgentEvent, AgentQuestion } from '../MetaAgentPanel';
 import type { CoherenceResult } from '../WorkspaceContext';
 
@@ -14,6 +16,10 @@ export interface DraftProgress {
   total?: number;
   researchTotal?: number;
   researchDone?: number;
+}
+
+export interface SkeletonProgress {
+  phase: 'starting' | 'style_profile' | 'archive_retrieval' | 'call_strategy' | 'idea_alignment' | 'synthesis' | 'complete';
 }
 
 interface SkeletonPhaseProps {
@@ -36,6 +42,12 @@ interface SkeletonPhaseProps {
   onSkipAgentQuestion?: (questionId: string) => void;
   onRefineDraft?: () => void;
   refining?: boolean;
+  wordCountWarnings?: Record<string, { word_limit: number; actual: number; overage: number }>;
+  missingSections?: string[];
+  overviewFigureUrl?: string | null;
+  overviewFigureAlt?: string | null;
+  generatingFigure?: boolean;
+  onGenerateFigure?: (customInstructions?: string) => void;
 }
 
 const PHASE_LABELS: Record<DraftProgress['phase'], string> = {
@@ -45,6 +57,33 @@ const PHASE_LABELS: Record<DraftProgress['phase'], string> = {
   assembling: 'Assembling & compliance check…',
   complete: 'Draft complete',
 };
+
+const DRAFT_PHASE_ORDER: DraftProgress['phase'][] = ['planning', 'researching', 'drafting', 'assembling', 'complete'];
+
+function draftProgressToSteps(progress: DraftProgress | null): AIThinkingStep[] {
+  return DRAFT_PHASE_ORDER.map((phase) => {
+    const currentIdx = progress ? DRAFT_PHASE_ORDER.indexOf(progress.phase) : -1;
+    const thisIdx = DRAFT_PHASE_ORDER.indexOf(phase);
+    const status: AIThinkingStep['status'] =
+      !progress ? 'pending' :
+      thisIdx < currentIdx ? 'done' :
+      thisIdx === currentIdx ? 'active' :
+      'pending';
+
+    let label = PHASE_LABELS[phase];
+    if (progress && phase === 'drafting' && status === 'active') {
+      if (progress.section) label = `Drafting: ${progress.section}`;
+      if (progress.total) label += ` (${(progress.index ?? 0) + 1}/${progress.total})`;
+    }
+    if (progress && phase === 'researching' && status === 'active') {
+      if (progress.researchTotal) {
+        label += ` (${progress.researchDone ?? 0}/${progress.researchTotal})`;
+      }
+    }
+
+    return { id: phase, label, status };
+  });
+}
 
 export default function SkeletonPhase({
   skeleton,
@@ -60,6 +99,12 @@ export default function SkeletonPhase({
   onSkipAgentQuestion,
   onRefineDraft,
   refining = false,
+  wordCountWarnings = {},
+  missingSections = [],
+  overviewFigureUrl,
+  overviewFigureAlt,
+  generatingFigure = false,
+  onGenerateFigure,
 }: SkeletonPhaseProps) {
   const [editingTitle, setEditingTitle] = useState(false);
   const [titleDraft, setTitleDraft] = useState(skeleton.title_suggestion || '');
@@ -182,30 +227,59 @@ export default function SkeletonPhase({
           )}
 
           {/* Draft progress */}
-          {generating && draftProgress && (
-            <div className="space-y-2 pt-4">
-              <div className="flex items-center gap-2 text-xs text-gray-600">
-                <Loader2 className="w-3.5 h-3.5 animate-spin text-indigo-500 shrink-0" />
-                <span>{PHASE_LABELS[draftProgress.phase] ?? 'Generating draft…'}</span>
-                {draftProgress.phase === 'drafting' && draftProgress.total && (
-                  <span className="text-gray-400">({(draftProgress.index ?? 0) + 1}/{draftProgress.total})</span>
-                )}
-              </div>
-              <div className="h-1.5 bg-gray-100 rounded-full overflow-hidden">
-                <div
-                  className="h-full bg-indigo-400 transition-all duration-700"
-                  style={{ width: `${progressPct}%` }}
-                />
-              </div>
-              {draftProgress.section && (
-                <p className="text-xs text-gray-400 truncate">{draftProgress.section}</p>
-              )}
+          {generating && (
+            <div className="pt-4">
+              <AIThinkingLog
+                steps={draftProgressToSteps(draftProgress ?? null)}
+                progressPct={progressPct}
+                title={draftProgress
+                  ? PHASE_LABELS[draftProgress.phase] ?? 'Generating draft…'
+                  : 'Starting…'}
+              />
             </div>
           )}
-          {generating && !draftProgress && (
-            <div className="flex items-center gap-2 text-xs text-gray-500 pt-4">
-              <Loader2 className="w-3.5 h-3.5 animate-spin text-indigo-500" />
-              Starting…
+
+          {/* Word count warnings */}
+          {Object.keys(wordCountWarnings).length > 0 && !generating && (
+            <div className="pt-3 space-y-1.5">
+              {Object.entries(wordCountWarnings).map(([section, info]) => (
+                <div key={section} className="flex items-center gap-2 text-xs text-amber-700 bg-amber-50 border border-amber-200 rounded-md px-3 py-2">
+                  <AlertTriangle className="w-3.5 h-3.5 text-amber-500 shrink-0" />
+                  <span>
+                    <strong>{section}</strong>: {info.actual.toLocaleString()} words (limit {info.word_limit.toLocaleString()}, over by {info.overage.toLocaleString()})
+                  </span>
+                </div>
+              ))}
+            </div>
+          )}
+
+          {/* Missing required sections */}
+          {missingSections.length > 0 && !generating && (
+            <div className="pt-3">
+              <div className="text-xs text-red-700 bg-red-50 border border-red-200 rounded-md px-3 py-2 space-y-1">
+                <div className="flex items-center gap-1.5 font-medium">
+                  <AlertTriangle className="w-3.5 h-3.5 text-red-500 shrink-0" />
+                  Required sections not drafted:
+                </div>
+                <ul className="list-disc list-inside space-y-0.5 pl-1">
+                  {missingSections.map((s) => <li key={s}>{s}</li>)}
+                </ul>
+              </div>
+            </div>
+          )}
+
+          {/* Overview figure */}
+          {overviewFigureUrl && !generating && (
+            <div className="pt-3 space-y-2">
+              <div className="flex items-center gap-2 text-xs font-medium text-gray-600">
+                <ImageIcon className="w-3.5 h-3.5" />
+                Overview Figure
+              </div>
+              <img
+                src={overviewFigureUrl}
+                alt={overviewFigureAlt || 'Grant overview figure'}
+                className="w-full rounded-lg border border-gray-200 shadow-sm"
+              />
             </div>
           )}
 
@@ -243,6 +317,19 @@ export default function SkeletonPhase({
             >
               {refining ? <Loader2 className="w-4 h-4 animate-spin" /> : <RefreshCw className="w-4 h-4" />}
               {refining ? 'Refining…' : 'Refine Draft'}
+            </button>
+          )}
+
+          {/* Generate Figure button */}
+          {hasContent && !generating && onGenerateFigure && (
+            <button
+              onClick={() => onGenerateFigure()}
+              disabled={generatingFigure}
+              title="Generate an AI overview figure for this grant"
+              className="flex items-center gap-2 bg-violet-600 text-white text-sm px-4 py-2.5 rounded-lg hover:bg-violet-700 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
+            >
+              {generatingFigure ? <Loader2 className="w-4 h-4 animate-spin" /> : <ImageIcon className="w-4 h-4" />}
+              {generatingFigure ? 'Generating…' : overviewFigureUrl ? 'Regenerate Figure' : 'Generate Figure'}
             </button>
           )}
           <button

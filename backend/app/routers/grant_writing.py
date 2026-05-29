@@ -133,7 +133,10 @@ async def writing_status(
         "has_call_analysis": bool(grant.call_analysis),
         "call_analysis_status": getattr(grant, "call_analysis_status", None) or "idle",
         "call_analysis_error": getattr(grant, "call_analysis_error", None),
+        "call_analysis_steps": getattr(grant, "call_analysis_steps", None) or [],
         "has_draft": bool(grant.editor_document),
+        "overview_figure_url": getattr(grant, "overview_figure_url", None),
+        "overview_figure_alt": getattr(grant, "overview_figure_alt", None),
     }
 
 
@@ -258,19 +261,30 @@ async def _enqueue_call_analysis(
     call_text: str,
     db: AsyncSession,
     user_id: str,
+    force: bool = False,
 ) -> dict:
-    """Mark analysis as running, commit, and queue Celery worker."""
+    """Mark analysis as running, commit, and queue Celery worker.
+
+    force=True clears any stuck running/failed state before re-queuing.
+    """
     from app.workers.celery_app import celery_app
 
-    if (grant.call_analysis_status or "idle") == "running":
+    current_status = grant.call_analysis_status or "idle"
+    if current_status == "running" and not force:
         return {
             "status": "running",
             "call_analysis_status": "running",
             "message": "Call analysis already in progress",
         }
 
+    existing_analysis = bool(grant.call_analysis)
     grant.call_analysis_status = "running"
     grant.call_analysis_error = None
+    grant.call_analysis_steps = [
+        {"id": "parse",   "label": "Loading document text",              "status": "active"},
+        {"id": "extract", "label": "Extracting requirements and context", "status": "pending"},
+        {"id": "save",    "label": "Saving Call Intelligence",            "status": "pending"},
+    ]
     await db.commit()
 
     celery_app.send_task(
@@ -281,6 +295,7 @@ async def _enqueue_call_analysis(
             grant.call_url or "",
             grant.funder or "",
             user_id,
+            existing_analysis,
         ],
     )
     return {
@@ -293,6 +308,7 @@ async def _enqueue_call_analysis(
 @router.post("/{grant_id}/writing/analyze-call", status_code=202)
 async def reanalyze_call(
     grant_id: str,
+    force: bool = False,
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ):
@@ -300,7 +316,7 @@ async def reanalyze_call(
     call_text, _doc = await _resolve_call_text(grant_id, grant, db)
     if not call_text.strip():
         raise HTTPException(400, "No call document or requirements available")
-    payload = await _enqueue_call_analysis(grant, call_text, db, current_user.id)
+    payload = await _enqueue_call_analysis(grant, call_text, db, current_user.id, force=force)
     return JSONResponse(status_code=202, content=payload)
 
 
@@ -313,9 +329,17 @@ async def generate_skeleton(
     grant = await _get_grant(grant_id, db)
     if not grant.grant_idea:
         raise HTTPException(400, "Grant idea is required before generating skeleton")
-    skeleton = await orchestrator.generate_skeleton(grant, db)
-    await _log_ai_run(db, current_user.id, grant_id, AgentType.PROPOSAL_ARCHITECT, skeleton)
-    return {"proposal_skeleton": skeleton, "writing_phase": grant.writing_phase}
+
+    async def stream():
+        async for chunk in orchestrator.generate_skeleton_stream(grant, db):
+            yield chunk
+        yield "data: [DONE]\n\n"
+
+    return StreamingResponse(
+        stream(),
+        media_type="text/event-stream",
+        headers={"Cache-Control": "no-cache", "X-Accel-Buffering": "no"},
+    )
 
 
 @router.patch("/{grant_id}/writing/skeleton")
@@ -587,3 +611,66 @@ async def writing_chat_stream(
         media_type="text/event-stream",
         headers={"Cache-Control": "no-cache", "X-Accel-Buffering": "no"},
     )
+
+
+class FigureGenerationRequest(BaseModel):
+    custom_instructions: Optional[str] = None
+
+
+@router.post("/{grant_id}/writing/generate-figure")
+async def generate_overview_figure(
+    grant_id: str,
+    req: FigureGenerationRequest = FigureGenerationRequest(),
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    """
+    Generate an AI overview figure for the grant proposal and store it.
+    The image is downloaded from OpenAI's temporary URL and uploaded to R2.
+    Returns { figure_url, alt_text } where figure_url is a presigned R2 URL.
+    """
+    import httpx
+    from app.ai.agents.figure_generator import generate_overview_figure as _generate
+
+    grant = await _get_grant(grant_id, db)
+
+    try:
+        result = await _generate(
+            opportunity_title=grant.title or "",
+            grant_idea=grant.grant_idea or "",
+            call_strategy=grant.call_strategy,
+            call_analysis=grant.call_analysis or {},
+            aligned_concept=grant.aligned_concept,
+            funder=grant.funder or "",
+            custom_instructions=req.custom_instructions or "",
+        )
+    except Exception as exc:
+        raise HTTPException(500, f"Figure generation failed: {str(exc)[:200]}") from exc
+
+    # Download the image from OpenAI's temporary URL and store in R2
+    temp_url = result.get("image_url", "")
+    r2_key = storage_svc.build_key("overview_figure.png", grant_id=grant_id)
+    try:
+        async with httpx.AsyncClient(timeout=30) as http:
+            img_response = await http.get(temp_url)
+            img_response.raise_for_status()
+            image_bytes = img_response.content
+
+        storage_svc.upload_file(r2_key, image_bytes, content_type="image/png")
+        figure_url = storage_svc.get_presigned_url(r2_key, expires_in=86400 * 7, filename="overview_figure.png")
+    except Exception as exc:
+        # Fall back to OpenAI temporary URL if R2 upload fails
+        figure_url = temp_url
+        r2_key = None
+
+    alt_text = result.get("alt_text", "Grant proposal overview figure")
+
+    grant.overview_figure_url = figure_url
+    grant.overview_figure_alt = alt_text
+    await db.commit()
+
+    return {
+        "figure_url": figure_url,
+        "alt_text": alt_text,
+        "revised_prompt": result.get("revised_prompt", ""),
+    }
