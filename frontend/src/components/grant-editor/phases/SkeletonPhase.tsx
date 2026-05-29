@@ -6,21 +6,9 @@ import SkeletonEditor from '../SkeletonEditor';
 import MetaAgentPanel from '../MetaAgentPanel';
 import AIThinkingLog from '../AIThinkingLog';
 import type { AIThinkingStep } from '../AIThinkingLog';
+import type { AIThinkingStepData } from '@/lib/callAnalysisStore';
 import type { MetaAgentEvent, AgentQuestion } from '../MetaAgentPanel';
 import type { CoherenceResult } from '../WorkspaceContext';
-
-export interface DraftProgress {
-  phase: 'planning' | 'researching' | 'drafting' | 'assembling' | 'complete';
-  section?: string;
-  index?: number;
-  total?: number;
-  researchTotal?: number;
-  researchDone?: number;
-}
-
-export interface SkeletonProgress {
-  phase: 'starting' | 'style_profile' | 'archive_retrieval' | 'call_strategy' | 'idea_alignment' | 'synthesis' | 'complete';
-}
 
 interface SkeletonPhaseProps {
   skeleton: {
@@ -33,7 +21,8 @@ interface SkeletonPhaseProps {
   onSkeletonChange: (skeleton: Record<string, unknown>) => void;
   onGenerateDraft: (flaggedSections: string[]) => void;
   generating: boolean;
-  draftProgress?: DraftProgress | null;
+  draftSteps?: AIThinkingStepData[] | null;
+  draftError?: string | null;
   onSelectionChange?: (text: string) => void;
   metaAgentEvents?: MetaAgentEvent[];
   agentQuestions?: AgentQuestion[];
@@ -50,47 +39,14 @@ interface SkeletonPhaseProps {
   onGenerateFigure?: (customInstructions?: string) => void;
 }
 
-const PHASE_LABELS: Record<DraftProgress['phase'], string> = {
-  planning: 'Planning research strategy…',
-  researching: 'Researching sections in parallel…',
-  drafting: 'Drafting sections…',
-  assembling: 'Assembling & compliance check…',
-  complete: 'Draft complete',
-};
-
-const DRAFT_PHASE_ORDER: DraftProgress['phase'][] = ['planning', 'researching', 'drafting', 'assembling', 'complete'];
-
-function draftProgressToSteps(progress: DraftProgress | null): AIThinkingStep[] {
-  return DRAFT_PHASE_ORDER.map((phase) => {
-    const currentIdx = progress ? DRAFT_PHASE_ORDER.indexOf(progress.phase) : -1;
-    const thisIdx = DRAFT_PHASE_ORDER.indexOf(phase);
-    const status: AIThinkingStep['status'] =
-      !progress ? 'pending' :
-      thisIdx < currentIdx ? 'done' :
-      thisIdx === currentIdx ? 'active' :
-      'pending';
-
-    let label = PHASE_LABELS[phase];
-    if (progress && phase === 'drafting' && status === 'active') {
-      if (progress.section) label = `Drafting: ${progress.section}`;
-      if (progress.total) label += ` (${(progress.index ?? 0) + 1}/${progress.total})`;
-    }
-    if (progress && phase === 'researching' && status === 'active') {
-      if (progress.researchTotal) {
-        label += ` (${progress.researchDone ?? 0}/${progress.researchTotal})`;
-      }
-    }
-
-    return { id: phase, label, status };
-  });
-}
 
 export default function SkeletonPhase({
   skeleton,
   onSkeletonChange,
   onGenerateDraft,
   generating,
-  draftProgress,
+  draftSteps,
+  draftError,
   onSelectionChange: _onSelectionChange,
   metaAgentEvents = [],
   agentQuestions = [],
@@ -132,20 +88,9 @@ export default function SkeletonPhase({
   };
 
   const progressPct = (() => {
-    if (!draftProgress) return 0;
-    if (draftProgress.phase === 'planning') return 5;
-    if (draftProgress.phase === 'researching') {
-      const done = draftProgress.researchDone ?? 0;
-      const total = draftProgress.researchTotal ?? 1;
-      return 10 + Math.round((done / total) * 30);
-    }
-    if (draftProgress.phase === 'drafting') {
-      const idx = draftProgress.index ?? 0;
-      const total = draftProgress.total ?? 1;
-      return 40 + Math.round((idx / total) * 50);
-    }
-    if (draftProgress.phase === 'assembling') return 92;
-    return 100;
+    if (!draftSteps || draftSteps.length === 0) return 5;
+    const done = draftSteps.filter((s) => s.status === 'done').length;
+    return Math.round(5 + (done / draftSteps.length) * 90);
   })();
 
   return (
@@ -230,12 +175,16 @@ export default function SkeletonPhase({
           {generating && (
             <div className="pt-4">
               <AIThinkingLog
-                steps={draftProgressToSteps(draftProgress ?? null)}
+                steps={(draftSteps ?? []).map((s) => ({ id: s.id, label: s.label, status: s.status as AIThinkingStep['status'], detail: s.detail }))}
                 progressPct={progressPct}
-                title={draftProgress
-                  ? PHASE_LABELS[draftProgress.phase] ?? 'Generating draft…'
-                  : 'Starting…'}
+                title="Generating draft…"
               />
+            </div>
+          )}
+          {draftError && !generating && (
+            <div className="pt-3 flex items-start gap-2 text-xs text-red-600 bg-red-50 border border-red-200 rounded-md px-3 py-2">
+              <AlertTriangle className="w-3.5 h-3.5 shrink-0 mt-0.5" />
+              <span>{draftError}</span>
             </div>
           )}
 

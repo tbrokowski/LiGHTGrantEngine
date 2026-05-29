@@ -52,7 +52,7 @@ ai:
       temperature: 0.1
       max_tokens: 512
     opportunity_summarizer:
-      model: gpt-4o
+      model: gpt-4o-mini
       temperature: 0.2
       max_tokens: 4000
     style_profiler:

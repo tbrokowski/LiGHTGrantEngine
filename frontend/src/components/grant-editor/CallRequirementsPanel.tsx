@@ -52,6 +52,7 @@ interface CallRequirementsPanelProps {
   callAnalysisStatus?: CallAnalysisStatus;
   callAnalysisSteps?: AIThinkingStepData[];
   onReanalyze?: () => void;
+  onReset?: () => void;
   reanalyzing?: boolean;
   analysisError?: string | null;
   softTimeout?: boolean;
@@ -136,6 +137,7 @@ export default function CallRequirementsPanel({
   callAnalysisStatus = 'idle',
   callAnalysisSteps,
   onReanalyze,
+  onReset,
   reanalyzing,
   analysisError,
   softTimeout,
@@ -200,6 +202,26 @@ export default function CallRequirementsPanel({
         ) : (
           <p className="text-xs text-gray-400">This may take 1–5 minutes for long call documents.</p>
         )}
+        <div className="pt-1 flex items-center gap-3">
+          {onReanalyze && (
+            <button
+              type="button"
+              onClick={onReanalyze}
+              className="text-xs text-gray-400 hover:text-indigo-600 underline transition-colors"
+            >
+              Stuck? Force re-analyze
+            </button>
+          )}
+          {onReset && (
+            <button
+              type="button"
+              onClick={onReset}
+              className="text-xs text-red-400 hover:text-red-600 underline transition-colors"
+            >
+              Cancel &amp; reset
+            </button>
+          )}
+        </div>
       </div>
     );
   }
@@ -307,10 +329,10 @@ export default function CallRequirementsPanel({
         </div>
       )}
 
-      {analysisErrorMsg && !isRunning && !softTimeout && (
+      {analysisErrorMsg && !softTimeout && (
         <div className="rounded-lg border border-red-200 bg-red-50 px-3 py-2 text-sm text-red-700">
           {analysisErrorMsg}
-          {onReanalyze && callAnalysisStatus !== 'running' && (
+          {onReanalyze && (
             <button
               type="button"
               onClick={onReanalyze}

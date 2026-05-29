@@ -18,6 +18,7 @@ For very long documents (> 400k chars) the existing chunking logic is preserved.
 import json
 import re
 import asyncio
+from collections.abc import Callable
 from app.ai.client import chat_complete
 
 
@@ -393,6 +394,7 @@ async def analyze_call(
     funder: str = "",
     extra_instructions: str = "",
     skip_structure_scan: bool = False,
+    on_step: Callable[[list[dict]], None] | None = None,
 ) -> dict:
     """
     Analyze a grant call document using a two-stage pipeline.
@@ -407,14 +409,41 @@ async def analyze_call(
       key_focus_areas, key_phrases, requirements_overview, and all existing fields.
 
     skip_structure_scan=True skips Stage 1 entirely (used on re-analyze for speed).
+    on_step: optional sync callback(list[dict]) called at each progress milestone so
+      the Celery task can push granular step updates to the DB without waiting for the
+      full LLM call to return.
     """
     if not call_text:
         return {"error": "No call text provided"}
 
-    # Stage 1: structure scan (skip for short documents or on re-analyze)
+    run_stage1 = not skip_structure_scan and len(call_text) > SHORT_DOC_THRESHOLD
+
+    # Stage 1: structure scan
     structure_map: dict | None = None
-    if not skip_structure_scan and len(call_text) > SHORT_DOC_THRESHOLD:
+    if run_stage1:
+        if on_step:
+            on_step([
+                {"id": "parse",   "label": "Document text loaded",             "status": "done"},
+                {"id": "scan",    "label": "Scanning document structure…",     "status": "active"},
+                {"id": "extract", "label": "Extracting requirements",          "status": "pending"},
+                {"id": "save",    "label": "Saving Call Intelligence",         "status": "pending"},
+            ])
         structure_map = await _scan_document_structure(call_text, funder)
+        if on_step:
+            on_step([
+                {"id": "parse",   "label": "Document text loaded",             "status": "done"},
+                {"id": "scan",    "label": "Document structure mapped",        "status": "done"},
+                {"id": "extract", "label": "Extracting requirements and context…", "status": "active"},
+                {"id": "save",    "label": "Saving Call Intelligence",         "status": "pending"},
+            ])
+    else:
+        # Short doc or re-analyze — skip straight to extraction
+        if on_step:
+            on_step([
+                {"id": "parse",   "label": "Document text loaded",             "status": "done"},
+                {"id": "extract", "label": "Extracting requirements and context…", "status": "active"},
+                {"id": "save",    "label": "Saving Call Intelligence",         "status": "pending"},
+            ])
 
     # Cap Stage 2 input for single-chunk docs to reduce latency
     text_for_stage2 = call_text[:STAGE2_INPUT_CAP] if len(call_text) > STAGE2_INPUT_CAP else call_text
@@ -435,16 +464,49 @@ async def analyze_call(
     total = len(chunks_text)
 
     # Stage 2: analyze chunks concurrently (cap at 3 in parallel to avoid rate limits)
+    # For multi-chunk docs fire per-chunk progress updates so the UI doesn't appear frozen.
     semaphore = asyncio.Semaphore(3)
+    completed_chunks: list[int] = []
 
     async def analyze_with_sem(idx: int, text: str) -> dict:
+        if on_step and total > 1:
+            scan_status = "done" if run_stage1 else None
+            base: list[dict] = [{"id": "parse", "label": "Document text loaded", "status": "done"}]
+            if scan_status:
+                base.append({"id": "scan", "label": "Document structure mapped", "status": "done"})
+            base.append({
+                "id": f"extract_{idx}",
+                "label": f"Extracting chunk {idx + 1}/{total}…",
+                "status": "active",
+            })
+            base.append({"id": "save", "label": "Saving Call Intelligence", "status": "pending"})
+            on_step(base)
         async with semaphore:
-            return await _analyze_chunk(
+            result = await _analyze_chunk(
                 text, idx, total, call_url, funder, extra_instructions, structure_map
             )
+        completed_chunks.append(idx)
+        if on_step and total > 1:
+            done_label = f"Chunk {idx + 1}/{total} extracted"
+            base2: list[dict] = [{"id": "parse", "label": "Document text loaded", "status": "done"}]
+            if run_stage1:
+                base2.append({"id": "scan", "label": "Document structure mapped", "status": "done"})
+            base2.append({"id": f"extract_{idx}", "label": done_label, "status": "done"})
+            base2.append({"id": "save", "label": "Saving Call Intelligence", "status": "pending"})
+            on_step(base2)
+        return result
 
     results = await asyncio.gather(*[analyze_with_sem(i, t) for i, t in enumerate(chunks_text)])
     merged = _merge_chunk_results(list(results))
+
+    # Signal extraction complete before save
+    if on_step:
+        base3: list[dict] = [{"id": "parse", "label": "Document text loaded", "status": "done"}]
+        if run_stage1:
+            base3.append({"id": "scan", "label": "Document structure mapped", "status": "done"})
+        base3.append({"id": "extract", "label": "Requirements extracted", "status": "done"})
+        base3.append({"id": "save", "label": "Saving Call Intelligence…", "status": "active"})
+        on_step(base3)
 
     # If merge produced nothing useful, retry once without structure map (simpler prompt path)
     if not _analysis_has_content(merged) and structure_map is not None:

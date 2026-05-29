@@ -38,10 +38,10 @@ _EU_PREFIX_RE = re.compile(
 )
 _TOPIC_DETAILS_RE = re.compile(r"/topic-details/([^/?#]+)", re.I)
 
-# NIH project numbers  e.g. 1R01AI123456-01
+# NIH project numbers  e.g. 1R01AI123456-01, 5U01AI069924-15S1
 # Capture group 1 = base without activity-year digit and supplement suffix
 _NIH_PROJECT_RE = re.compile(
-    r"^\d?([A-Z]\d{2}[A-Z]{2,4}\d{6,})(?:-\d+)?$",
+    r"^\d?([A-Z]\d{2}[A-Z]{2,4}\d{6,})(?:-[\dA-Z]+)?$",
     re.I,
 )
 
@@ -172,11 +172,15 @@ def _extract_external_id(
         if raw == _str(opportunity_number) and raw:
             return f"id:{upper}"
 
-    # UUID in last URL path segment (UKRI, 360Giving)
+    # UUID or NIH project number in last URL path segment
     if url:
         last_seg = urlparse(url).path.rstrip("/").split("/")[-1]
         if _UUID_RE.match(last_seg):
             return f"uuid:{last_seg.lower()}"
+        # NIH RePORTER URLs: /project-details/5U01AI069924-17 → nih:U01AI069924
+        nih_base = _normalise_nih(last_seg)
+        if nih_base:
+            return f"nih:{nih_base}"
 
     return None
 

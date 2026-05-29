@@ -41,6 +41,11 @@ export function failAnalysis(grantId: string): void {
   }
 }
 
+/** Clear all in-memory and localStorage tracking for a grant (used by Cancel & Reset). */
+export function resetAnalysis(grantId: string): void {
+  failAnalysis(grantId);
+}
+
 export function isMarkedAnalyzing(grantId: string): boolean {
   if (analyzing.has(grantId)) return true;
   try {
@@ -68,6 +73,8 @@ export interface AIThinkingStepData {
   subSteps?: string[];
 }
 
+export type AIGenerationStatus = 'idle' | 'running' | 'completed' | 'failed';
+
 export interface WritingStatusPayload {
   call_analysis?: Record<string, unknown>;
   call_requirements?: string;
@@ -78,6 +85,16 @@ export interface WritingStatusPayload {
   has_draft?: boolean;
   overview_figure_url?: string | null;
   overview_figure_alt?: string | null;
+  // Skeleton async job
+  skeleton_status?: AIGenerationStatus;
+  skeleton_steps?: AIThinkingStepData[];
+  skeleton_error?: string | null;
+  proposal_skeleton?: Record<string, unknown>;
+  // Draft async job
+  draft_status?: AIGenerationStatus;
+  draft_steps?: AIThinkingStepData[];
+  draft_error?: string | null;
+  editor_document?: string | null;
 }
 
 function sleep(ms: number): Promise<void> {
@@ -148,4 +165,138 @@ export function formatAnalysisError(err: unknown): string {
     return 'Connection lost while analyzing. The job may still be running — wait a moment or refresh the page.';
   }
   return ax.response?.data?.detail || ax.message || 'Call analysis failed. Please try again.';
+}
+
+// ---------------------------------------------------------------------------
+// Skeleton generation tracking
+// ---------------------------------------------------------------------------
+
+const skeletonGenerating = new Set<string>();
+
+function skeletonLsKey(grantId: string): string {
+  return `skeleton_generation_${grantId}`;
+}
+
+export function startSkeletonGeneration(grantId: string): void {
+  skeletonGenerating.add(grantId);
+  try {
+    localStorage.setItem(skeletonLsKey(grantId), JSON.stringify({ status: 'running', startedAt: Date.now() }));
+  } catch { /* ignore */ }
+}
+
+export function completeSkeletonGeneration(grantId: string): void {
+  skeletonGenerating.delete(grantId);
+  try { localStorage.removeItem(skeletonLsKey(grantId)); } catch { /* ignore */ }
+}
+
+export function resetSkeletonGeneration(grantId: string): void {
+  skeletonGenerating.delete(grantId);
+  try { localStorage.removeItem(skeletonLsKey(grantId)); } catch { /* ignore */ }
+}
+
+export function isSkeletonGenerating(grantId: string): boolean {
+  if (skeletonGenerating.has(grantId)) return true;
+  try {
+    const raw = localStorage.getItem(skeletonLsKey(grantId));
+    if (!raw) return false;
+    const parsed = JSON.parse(raw) as { status: string; startedAt: number };
+    if (parsed.status !== 'running') return false;
+    if (Date.now() - parsed.startedAt > MAX_STALE_MS) {
+      localStorage.removeItem(skeletonLsKey(grantId));
+      return false;
+    }
+    return true;
+  } catch { return false; }
+}
+
+export async function pollSkeletonUntilDone(
+  grantId: string,
+  onProgress?: (data: WritingStatusPayload) => void,
+): Promise<WritingStatusPayload> {
+  const started = Date.now();
+  while (Date.now() - started < MAX_POLL_MS) {
+    const res = await grantWriting.status(grantId);
+    const data = res.data as WritingStatusPayload;
+    onProgress?.(data);
+
+    const status = data.skeleton_status || 'idle';
+    if (status === 'completed') {
+      completeSkeletonGeneration(grantId);
+      return data;
+    }
+    if (status === 'failed') {
+      resetSkeletonGeneration(grantId);
+      throw new Error(data.skeleton_error || 'Skeleton generation failed');
+    }
+    await sleep(POLL_INTERVAL_MS);
+  }
+  throw new Error('Skeleton generation is taking longer than expected. The job is still running — refresh to check progress.');
+}
+
+// ---------------------------------------------------------------------------
+// Draft generation tracking
+// ---------------------------------------------------------------------------
+
+const draftGenerating = new Set<string>();
+
+function draftLsKey(grantId: string): string {
+  return `draft_generation_${grantId}`;
+}
+
+export function startDraftGeneration(grantId: string): void {
+  draftGenerating.add(grantId);
+  try {
+    localStorage.setItem(draftLsKey(grantId), JSON.stringify({ status: 'running', startedAt: Date.now() }));
+  } catch { /* ignore */ }
+}
+
+export function completeDraftGeneration(grantId: string): void {
+  draftGenerating.delete(grantId);
+  try { localStorage.removeItem(draftLsKey(grantId)); } catch { /* ignore */ }
+}
+
+export function resetDraftGeneration(grantId: string): void {
+  draftGenerating.delete(grantId);
+  try { localStorage.removeItem(draftLsKey(grantId)); } catch { /* ignore */ }
+}
+
+export function isDraftGenerating(grantId: string): boolean {
+  if (draftGenerating.has(grantId)) return true;
+  try {
+    const raw = localStorage.getItem(draftLsKey(grantId));
+    if (!raw) return false;
+    const parsed = JSON.parse(raw) as { status: string; startedAt: number };
+    if (parsed.status !== 'running') return false;
+    if (Date.now() - parsed.startedAt > MAX_STALE_MS) {
+      localStorage.removeItem(draftLsKey(grantId));
+      return false;
+    }
+    return true;
+  } catch { return false; }
+}
+
+export async function pollDraftUntilDone(
+  grantId: string,
+  onProgress?: (data: WritingStatusPayload) => void,
+): Promise<WritingStatusPayload> {
+  const started = Date.now();
+  // Draft can take 90+ minutes — extend timeout
+  const DRAFT_MAX_POLL_MS = 100 * 60 * 1000;
+  while (Date.now() - started < DRAFT_MAX_POLL_MS) {
+    const res = await grantWriting.status(grantId);
+    const data = res.data as WritingStatusPayload;
+    onProgress?.(data);
+
+    const status = data.draft_status || 'idle';
+    if (status === 'completed') {
+      completeDraftGeneration(grantId);
+      return data;
+    }
+    if (status === 'failed') {
+      resetDraftGeneration(grantId);
+      throw new Error(data.draft_error || 'Draft generation failed');
+    }
+    await sleep(POLL_INTERVAL_MS);
+  }
+  throw new Error('Draft generation is taking longer than expected. The job is still running — refresh to check progress.');
 }

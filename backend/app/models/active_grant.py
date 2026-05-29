@@ -108,6 +108,14 @@ class ActiveGrant(Base):
     call_analysis_error: Mapped[str | None] = mapped_column(Text, nullable=True)
     call_analysis_steps: Mapped[list | None] = mapped_column(JSON, nullable=True)
     proposal_skeleton: Mapped[dict] = mapped_column(JSON, default=dict)
+    # Skeleton generation async job state
+    skeleton_status: Mapped[str] = mapped_column(String(20), default="idle", server_default="idle", nullable=False)
+    skeleton_steps: Mapped[list | None] = mapped_column(JSON, nullable=True)
+    skeleton_error: Mapped[str | None] = mapped_column(Text, nullable=True)
+    # Draft generation async job state
+    draft_status: Mapped[str] = mapped_column(String(20), default="idle", server_default="idle", nullable=False)
+    draft_steps: Mapped[list | None] = mapped_column(JSON, nullable=True)
+    draft_error: Mapped[str | None] = mapped_column(Text, nullable=True)
     call_strategy: Mapped[dict | None] = mapped_column(JSON, nullable=True)
     aligned_concept: Mapped[dict | None] = mapped_column(JSON, nullable=True)
     style_profile: Mapped[dict] = mapped_column(JSON, default=dict)

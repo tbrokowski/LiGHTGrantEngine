@@ -59,6 +59,7 @@ async def generate_opportunity_summary(
     opportunity_url: str = "",
     fit_score: float | None = None,
     fit_rationale: str = "",
+    summary_tier: str = "full",
 ) -> dict:
     """
     Translate, reformat, and summarise a grant opportunity.
@@ -83,7 +84,7 @@ async def generate_opportunity_summary(
 
     themes_str = ", ".join(thematic_areas) if thematic_areas else "Not specified"
 
-    user_prompt = f"""Translate (if needed) and reformat this grant opportunity for the LiGHT team.
+    header = f"""Translate (if needed) and reformat this grant opportunity for the LiGHT team.
 Return a JSON object with "short_description" and "full_summary".
 
 ─── SOURCE DETAILS ───────────────────────────────────────
@@ -113,8 +114,29 @@ TEAM PROFILE:
 
 "short_description": 2–3 sentences of plain English prose for the opportunity card.
   State what the grant funds, who qualifies, and the award/deadline. No markdown.
+"""
 
-"full_summary": Full markdown document with EXACTLY these ## sections:
+    # Brief tier: only the 5 most decision-critical sections (medium fit 25–54).
+    # Full tier: all 8 sections including project ideas and action items (fit ≥ 55).
+    if summary_tier == "brief":
+        sections_prompt = """"full_summary": Markdown document with EXACTLY these ## sections:
+
+## What This Grant Funds
+2–3 paragraphs: funder's goal, problem they want to solve, types of projects supported.
+
+## Eligibility at a Glance
+Bullet list of ALL eligibility requirements. Use ⚠️ to flag any LiGHT may not meet.
+
+## Key Dates
+Bullet list of all deadlines (full proposal, LOI, concept note, Q&A window).
+
+## Fit for LiGHT / EPFL
+3–4 sentences on why (or why not) this is a strong fit for the team.
+
+## Budget & Award Details
+Award size, duration, number of awards, indirect cost rules."""
+    else:
+        sections_prompt = """"full_summary": Full markdown document with EXACTLY these ## sections:
 
 ## What This Grant Funds
 2–3 paragraphs: funder's goal, problem they want to solve, types of projects supported,
@@ -146,6 +168,8 @@ Bullet list: competition level, eligibility uncertainty, scope mismatches, capac
 
 ## Action Items
 Numbered list of concrete next steps: contacts, documents to prepare, go/no-go timeline."""
+
+    user_prompt = header + sections_prompt
 
     try:
         raw = await chat_complete(

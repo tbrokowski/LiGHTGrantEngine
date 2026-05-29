@@ -959,7 +959,7 @@ async def _fetch_institution_feed(
     result = await db.execute(q)
     rows = result.all()
 
-    from app.services.opportunity_dedup import dedup_key
+    from app.services.opportunity_dedup import dedup_key, _funder_prefix
 
     items: list[Opportunity] = []
     io_map: dict[str, InstitutionOpportunity] = {}
@@ -973,19 +973,28 @@ async def _fetch_institution_feed(
         items.append(opp)
         io_map[opp.id] = io
 
-    # Collapse display-level duplicates using the same key logic as ingest dedup.
-    # Rows are already sorted by fit_score DESC so the first (highest-scoring)
-    # version of each duplicate group is kept. This handles existing DB rows that
-    # were inserted before the ingest dedup fix was deployed.
+    # Collapse display-level duplicates. Rows are sorted by fit_score DESC so
+    # the highest-scoring version of each duplicate group is kept.
+    # Primary key: stable extid / URL-based key from dedup_key().
+    # Secondary key: title+funder_prefix catches cases where program_name is
+    # NULL for old entries and dedup_key falls back to a year-specific URL.
     seen_keys: set[str] = set()
+    seen_titles: set[str] = set()
     deduped_items: list[Opportunity] = []
     deduped_io: dict[str, InstitutionOpportunity] = {}
     for opp in items:
         k = dedup_key(opp)
-        if k and k in seen_keys:
+        title_key = (
+            f"t:{(opp.title or '').strip().lower()}|{_funder_prefix(opp.funder or '')}"
+            if opp.title
+            else None
+        )
+        if (k and k in seen_keys) or (title_key and title_key in seen_titles):
             continue
         if k:
             seen_keys.add(k)
+        if title_key:
+            seen_titles.add(title_key)
         deduped_items.append(opp)
         if opp.id in io_map:
             deduped_io[opp.id] = io_map[opp.id]

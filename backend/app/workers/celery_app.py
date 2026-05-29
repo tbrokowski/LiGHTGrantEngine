@@ -1,6 +1,7 @@
 """Celery application factory — reads broker URL from config.yaml."""
 from celery import Celery
 from celery.schedules import crontab
+from kombu import Queue
 from app.config import get_settings
 
 settings = get_settings()
@@ -33,6 +34,17 @@ celery_app.conf.update(
     task_track_started=True,
     task_acks_late=True,
     worker_prefetch_multiplier=1,
+    task_queues=(
+        Queue("celery"),          # default — discovery, enrichment, scoring
+        Queue("call_analysis"),   # dedicated — never starved by bulk tasks
+        Queue("summaries"),       # low-priority — AI summaries (bulk, deferrable)
+    ),
+    task_routes={
+        "app.workers.grant_writing_tasks.analyze_grant_call":    {"queue": "call_analysis"},
+        "app.workers.grant_writing_tasks.generate_skeleton_task": {"queue": "call_analysis"},
+        "app.workers.grant_writing_tasks.generate_draft_task":    {"queue": "call_analysis"},
+        "app.workers.enrichment_tasks.generate_ai_summary":      {"queue": "summaries"},
+    },
 )
 
 # ── Celery Beat schedule ──────────────────────────────────────────────────────
@@ -78,7 +90,7 @@ celery_app.conf.beat_schedule = {
     },
     "recover-stale-call-analysis": {
         "task": "app.workers.grant_writing_tasks.recover_stale_call_analysis_tasks",
-        "schedule": crontab(minute="*/15"),
+        "schedule": crontab(minute="*/5"),
     },
     "partner-reminders": {
         "task": "app.workers.partner_tasks.send_partner_reminders",

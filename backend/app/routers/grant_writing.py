@@ -14,6 +14,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.ai.context.grant_context import GrantContextManager
 from app.ai.orchestrator.grant_writing import GrantWritingOrchestrator
+from app.workers.celery_app import celery_app
 from app.database import get_db
 from app.models.active_grant import ActiveGrant
 from app.models.document import Document, DocumentType, ProcessingStatus
@@ -137,6 +138,16 @@ async def writing_status(
         "has_draft": bool(grant.editor_document),
         "overview_figure_url": getattr(grant, "overview_figure_url", None),
         "overview_figure_alt": getattr(grant, "overview_figure_alt", None),
+        # Skeleton async job state
+        "skeleton_status": getattr(grant, "skeleton_status", None) or "idle",
+        "skeleton_steps":  getattr(grant, "skeleton_steps",  None) or [],
+        "skeleton_error":  getattr(grant, "skeleton_error",  None),
+        # Draft async job state
+        "draft_status":    getattr(grant, "draft_status",    None) or "idle",
+        "draft_steps":     getattr(grant, "draft_steps",     None) or [],
+        "draft_error":     getattr(grant, "draft_error",     None),
+        # Full document for frontend after draft completes
+        "editor_document": grant.editor_document,
     }
 
 
@@ -297,6 +308,7 @@ async def _enqueue_call_analysis(
             user_id,
             existing_analysis,
         ],
+        queue="call_analysis",
     )
     return {
         "status": "running",
@@ -320,26 +332,60 @@ async def reanalyze_call(
     return JSONResponse(status_code=202, content=payload)
 
 
-@router.post("/{grant_id}/writing/generate-skeleton")
+@router.post("/{grant_id}/writing/reset-analysis")
+async def reset_call_analysis(
+    grant_id: str,
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    """Hard-reset a stuck call analysis back to idle so the user can re-trigger it."""
+    grant = await _get_grant(grant_id, db)
+    grant.call_analysis_status = "idle"
+    grant.call_analysis_error = None
+    grant.call_analysis_steps = []
+    await db.commit()
+    return {"ok": True, "status": "idle"}
+
+
+@router.post("/{grant_id}/writing/generate-skeleton", status_code=202)
 async def generate_skeleton(
     grant_id: str,
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ):
+    """Enqueue skeleton generation as a background Celery task."""
     grant = await _get_grant(grant_id, db)
     if not grant.grant_idea:
         raise HTTPException(400, "Grant idea is required before generating skeleton")
+    if getattr(grant, "skeleton_status", "idle") == "running":
+        return JSONResponse(status_code=202, content={"status": "running", "message": "Skeleton generation already in progress"})
 
-    async def stream():
-        async for chunk in orchestrator.generate_skeleton_stream(grant, db):
-            yield chunk
-        yield "data: [DONE]\n\n"
+    grant.skeleton_status = "running"
+    grant.skeleton_steps = []
+    grant.skeleton_error = None
+    await db.commit()
 
-    return StreamingResponse(
-        stream(),
-        media_type="text/event-stream",
-        headers={"Cache-Control": "no-cache", "X-Accel-Buffering": "no"},
+    celery_app.send_task(
+        "app.workers.grant_writing_tasks.generate_skeleton_task",
+        args=[grant_id, current_user.id],
+        queue="call_analysis",
     )
+    return JSONResponse(status_code=202, content={"status": "running", "message": "Skeleton generation started"})
+
+
+@router.post("/{grant_id}/writing/reset-skeleton")
+async def reset_skeleton(
+    grant_id: str,
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    """Hard-reset a stuck skeleton generation back to idle."""
+    grant = await _get_grant(grant_id, db)
+    grant.skeleton_status = "idle"
+    grant.skeleton_steps = []
+    grant.skeleton_error = None
+    await db.commit()
+    return {"ok": True, "status": "idle"}
 
 
 @router.patch("/{grant_id}/writing/skeleton")
@@ -360,34 +406,51 @@ class GenerateDraftRequest(BaseModel):
     flagged_sections: Optional[list[str]] = None
 
 
-@router.post("/{grant_id}/writing/generate-draft")
+@router.post("/{grant_id}/writing/generate-draft", status_code=202)
 async def generate_draft(
     grant_id: str,
     data: Optional[GenerateDraftRequest] = None,
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ):
+    """Enqueue draft generation as a background Celery task."""
     grant = await _get_grant(grant_id, db)
     skeleton = grant.proposal_skeleton or {}
     has_sections = bool(skeleton.get("sections"))
     has_raw_text = bool(skeleton.get("raw_text"))
     if not has_sections and not has_raw_text:
         raise HTTPException(400, "Proposal skeleton is required. Generate or edit skeleton first.")
+    if getattr(grant, "draft_status", "idle") == "running":
+        return JSONResponse(status_code=202, content={"status": "running", "message": "Draft generation already in progress"})
 
     flagged_sections = (data.flagged_sections if data else None) or skeleton.get("flagged_sections") or None
 
-    async def stream():
-        async for chunk in orchestrator.generate_draft_stream(
-            grant, db, flagged_sections=flagged_sections
-        ):
-            yield chunk
-        yield "data: [DONE]\n\n"
+    grant.draft_status = "running"
+    grant.draft_steps = []
+    grant.draft_error = None
+    await db.commit()
 
-    return StreamingResponse(
-        stream(),
-        media_type="text/event-stream",
-        headers={"Cache-Control": "no-cache", "X-Accel-Buffering": "no"},
+    celery_app.send_task(
+        "app.workers.grant_writing_tasks.generate_draft_task",
+        args=[grant_id, current_user.id, flagged_sections],
+        queue="call_analysis",
     )
+    return JSONResponse(status_code=202, content={"status": "running", "message": "Draft generation started"})
+
+
+@router.post("/{grant_id}/writing/reset-draft")
+async def reset_draft(
+    grant_id: str,
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    """Hard-reset a stuck draft generation back to idle."""
+    grant = await _get_grant(grant_id, db)
+    grant.draft_status = "idle"
+    grant.draft_steps = []
+    grant.draft_error = None
+    await db.commit()
+    return {"ok": True, "status": "idle"}
 
 
 class RefineDraftAnswer(BaseModel):

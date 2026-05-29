@@ -1,19 +1,24 @@
 'use client';
 import { useState, useCallback, useRef, useEffect } from 'react';
 import { toast } from 'sonner';
-import { grants, grantWriting, streamDraftGeneration, streamSkeletonGeneration } from '@/lib/api';
+import { grants, grantWriting } from '@/lib/api';
 const grantWritingApi = grantWriting;
 
 import {
-  startGeneration,
-  getInFlight,
-  completeGeneration,
-  failGeneration,
-  isMarkedGenerating,
-  setWatching,
-  isBeingWatched,
-} from '@/lib/skeletonGenerationStore';
-import { isMarkedAnalyzing, type CallAnalysisStatus } from '@/lib/callAnalysisStore';
+  isMarkedAnalyzing,
+  type CallAnalysisStatus,
+  type AIThinkingStepData,
+  isSkeletonGenerating,
+  startSkeletonGeneration,
+  completeSkeletonGeneration,
+  resetSkeletonGeneration,
+  pollSkeletonUntilDone,
+  isDraftGenerating,
+  startDraftGeneration,
+  completeDraftGeneration,
+  resetDraftGeneration,
+  pollDraftUntilDone,
+} from '@/lib/callAnalysisStore';
 import UnifiedWorkspace from './UnifiedWorkspace';
 import AIChatPanel from './AIChatPanel';
 import WorkspaceContext, { type SyncState, type WorkspaceCitation, type CoherenceResult } from './WorkspaceContext';
@@ -71,9 +76,11 @@ export default function GrantEditor({ grant, onGrantUpdate, onHeadingsChange }: 
 
   // ── Generation state ─────────────────────────────────────────────────────────
   const [generatingSkeleton, setGeneratingSkeleton] = useState(false);
-  const [skeletonProgress, setSkeletonProgress] = useState<import('./phases/SkeletonPhase').SkeletonProgress | null>(null);
+  const [skeletonSteps, setSkeletonSteps] = useState<AIThinkingStepData[] | null>(null);
+  const [skeletonError, setSkeletonError] = useState<string | null>(null);
   const [generatingDraft, setGeneratingDraft] = useState(false);
-  const [draftProgress, setDraftProgress] = useState<import('./phases/SkeletonPhase').DraftProgress | null>(null);
+  const [draftSteps, setDraftSteps] = useState<AIThinkingStepData[] | null>(null);
+  const [draftError, setDraftError] = useState<string | null>(null);
   const [wordCountWarnings, setWordCountWarnings] = useState<Record<string, {word_limit: number; actual: number; overage: number}>>({});
   const [missingSections, setMissingSections] = useState<string[]>([]);
   // Figure generation
@@ -143,72 +150,69 @@ export default function GrantEditor({ grant, onGrantUpdate, onHeadingsChange }: 
   useEffect(() => { docLinkedRef.current = docLinked; }, [docLinked]);
 
   // ── Skeleton generation helpers ──────────────────────────────────────────────
-  const applySkeletonResult = useCallback((skeletonData: Record<string, unknown>) => {
-    completeGeneration(grant.id);
-    if (pollingIntervalRef.current) {
-      clearInterval(pollingIntervalRef.current);
-      pollingIntervalRef.current = null;
-    }
-    setSkeleton(skeletonData);
-    setGeneratingSkeleton(false);
-    onGrantUpdateRef.current();
-    // Auto-open the skeleton panel
-    openPanelRef.current?.('skeleton');
-  }, [grant.id]);
-
-  const startPollingStatus = useCallback(() => {
-    if (pollingIntervalRef.current) return;
-    pollingIntervalRef.current = setInterval(async () => {
-      try {
-        const res = await grantWriting.status(grant.id);
-        const d = res.data;
-        if (d.writing_phase === 'skeleton' && d.proposal_skeleton && Object.keys(d.proposal_skeleton).length) {
-          applySkeletonResult(d.proposal_skeleton as Record<string, unknown>);
+  const runSkeletonPoll = useCallback(async () => {
+    try {
+      const data = await pollSkeletonUntilDone(grant.id, (progress) => {
+        if (progress.skeleton_steps && progress.skeleton_steps.length > 0) {
+          setSkeletonSteps(progress.skeleton_steps as AIThinkingStepData[]);
         }
-      } catch { /* keep polling */ }
-    }, 3000);
-  }, [grant.id, applySkeletonResult]);
+      });
+      completeSkeletonGeneration(grant.id);
+      if (data.proposal_skeleton && Object.keys(data.proposal_skeleton).length) {
+        setSkeleton(data.proposal_skeleton as Record<string, unknown>);
+        openPanelRef.current?.('skeleton');
+      }
+      onGrantUpdateRef.current();
+    } catch (err: unknown) {
+      const msg = err instanceof Error ? err.message : 'Skeleton generation failed.';
+      setSkeletonError(msg);
+      resetSkeletonGeneration(grant.id);
+      toast.error(msg);
+    } finally {
+      if (isMountedRef.current) {
+        setGeneratingSkeleton(false);
+        setSkeletonSteps(null);
+      }
+    }
+  }, [grant.id]);
 
   // ── Mount effect ─────────────────────────────────────────────────────────────
   useEffect(() => {
     isMountedRef.current = true;
-    setWatching(grant.id, true);
 
-    const inFlight = getInFlight(grant.id);
-    if (inFlight) {
-      setGeneratingSkeleton(true);
-      inFlight.then((skeletonData) => {
-        if (isMountedRef.current) applySkeletonResult(skeletonData);
-      }).catch(() => {
-        if (isMountedRef.current) setGeneratingSkeleton(false);
-      });
-    } else if (isMarkedGenerating(grant.id)) {
-      setGeneratingSkeleton(true);
-      startPollingStatus();
-    } else {
-      grantWriting.status(grant.id).then((res) => {
-        const d = res.data;
-        if (d.grant_idea) setGrantIdea(d.grant_idea);
-        if (d.call_analysis && Object.keys(d.call_analysis).length) setCallAnalysis(d.call_analysis);
-        if (d.call_requirements) setCallRequirements(d.call_requirements);
-        if (d.call_analysis_status) setCallAnalysisStatus(d.call_analysis_status as CallAnalysisStatus);
-        if (d.call_analysis_error && d.call_analysis_status === 'failed') {
-          /* error surfaced in IdeaPhase via status poll */
-        }
-        if (d.proposal_skeleton && Object.keys(d.proposal_skeleton).length) setSkeleton(d.proposal_skeleton);
-        if (d.last_review && Object.keys(d.last_review).length) setReviewReport(d.last_review);
-      }).catch(() => {});
-    }
+    grantWriting.status(grant.id).then((res) => {
+      const d = res.data;
+      if (d.grant_idea) setGrantIdea(d.grant_idea as string);
+      if (d.call_analysis && Object.keys(d.call_analysis as object).length) setCallAnalysis(d.call_analysis as Record<string, unknown>);
+      if (d.call_requirements) setCallRequirements(d.call_requirements as string);
+      if (d.call_analysis_status) setCallAnalysisStatus(d.call_analysis_status as CallAnalysisStatus);
+      if (d.proposal_skeleton && Object.keys(d.proposal_skeleton as object).length) setSkeleton(d.proposal_skeleton as Record<string, unknown>);
+      if (d.last_review && Object.keys(d.last_review as object).length) setReviewReport(d.last_review as Record<string, unknown>);
+      if (d.editor_document) setDocumentHtml(d.editor_document as string);
+
+      // Resume in-progress skeleton or draft jobs if still running on server
+      const skelStatus = (d.skeleton_status as string) || 'idle';
+      const draftStatus = (d.draft_status as string) || 'idle';
+
+      if (skelStatus === 'running' || isSkeletonGenerating(grant.id)) {
+        setGeneratingSkeleton(true);
+        runSkeletonPoll();
+      }
+      if (draftStatus === 'running' || isDraftGenerating(grant.id)) {
+        setGeneratingDraft(true);
+        runDraftPoll();
+      }
+    }).catch(() => {});
 
     grantWriting.listCitations(grant.id).then((res) => setCitations(res.data)).catch(() => {});
 
     return () => {
       isMountedRef.current = false;
-      setWatching(grant.id, false);
       if (pollingIntervalRef.current) { clearInterval(pollingIntervalRef.current); pollingIntervalRef.current = null; }
       if (googlePushTimer.current) { clearTimeout(googlePushTimer.current); googlePushTimer.current = null; }
     };
-  }, [grant.id, applySkeletonResult, startPollingStatus]);
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [grant.id]);
 
   // ── Bidirectional Google Docs sync: poll every 15s ───────────────────────────
   // If remote changed AND local is clean → auto-pull silently.
@@ -296,60 +300,53 @@ export default function GrantEditor({ grant, onGrantUpdate, onHeadingsChange }: 
     }, 1000);
   };
 
+  const runDraftPoll = useCallback(async () => {
+    try {
+      const data = await pollDraftUntilDone(grant.id, (progress) => {
+        if (progress.draft_steps && progress.draft_steps.length > 0) {
+          setDraftSteps(progress.draft_steps as AIThinkingStepData[]);
+        }
+      });
+      completeDraftGeneration(grant.id);
+      if (data.editor_document) {
+        setDocumentHtml(data.editor_document as string);
+        openPanelRef.current?.('editor');
+      }
+      // Pick up agent questions from skeleton meta data
+      const skelMeta = (data.proposal_skeleton as Record<string, unknown> | undefined)?._meta_agent_questions;
+      if (Array.isArray(skelMeta) && skelMeta.length > 0) {
+        setAgentQuestions(skelMeta as AgentQuestion[]);
+      }
+      onGrantUpdateRef.current();
+    } catch (err: unknown) {
+      const msg = err instanceof Error ? err.message : 'Draft generation failed.';
+      setDraftError(msg);
+      resetDraftGeneration(grant.id);
+      toast.error(msg);
+    } finally {
+      if (isMountedRef.current) {
+        setGeneratingDraft(false);
+        setDraftSteps(null);
+      }
+    }
+  }, [grant.id]);
+
   const handleGenerateSkeleton = async () => {
+    if (generatingSkeleton) return;
     setGeneratingSkeleton(true);
-    setSkeletonProgress({ phase: 'starting' });
+    setSkeletonSteps(null);
+    setSkeletonError(null);
     try {
       await grantWriting.saveIdea(grant.id, { grant_idea: grantIdea, writing_phase: 'idea' });
-    } catch {
+      await grantWritingApi.enqueueSkeleton(grant.id);
+      startSkeletonGeneration(grant.id);
+      runSkeletonPoll();
+    } catch (err) {
+      console.error('Skeleton enqueue failed', err);
+      toast.error('Failed to start skeleton generation. Please try again.');
+      resetSkeletonGeneration(grant.id);
       setGeneratingSkeleton(false);
-      setSkeletonProgress(null);
-      return;
     }
-
-    const grantId = grant.id;
-
-    streamSkeletonGeneration(
-      grantId,
-      (event) => {
-        const ev = event.event as string;
-        if (ev === 'skeleton_start') {
-          setSkeletonProgress({ phase: 'starting' });
-        } else if (ev === 'style_profile_start') {
-          setSkeletonProgress({ phase: 'style_profile' });
-        } else if (ev === 'style_profile_complete') {
-          setSkeletonProgress({ phase: 'archive_retrieval' });
-        } else if (ev === 'archive_retrieval_complete') {
-          setSkeletonProgress({ phase: 'call_strategy' });
-        } else if (ev === 'call_strategy_complete') {
-          setSkeletonProgress({ phase: 'idea_alignment' });
-        } else if (ev === 'idea_alignment_complete') {
-          setSkeletonProgress({ phase: 'synthesis' });
-        } else if (ev === 'skeleton_complete' && event.proposal_skeleton) {
-          const skeletonData = event.proposal_skeleton as Record<string, unknown>;
-          setSkeleton(skeletonData);
-          setSkeletonProgress({ phase: 'complete' });
-          completeGeneration(grantId);
-          onGrantUpdateRef.current();
-          openPanelRef.current?.('skeleton');
-        }
-      },
-      () => {
-        if (isMountedRef.current) {
-          setGeneratingSkeleton(false);
-          setSkeletonProgress(null);
-        }
-      },
-      (err) => {
-        failGeneration(grantId);
-        if (isMountedRef.current) {
-          setGeneratingSkeleton(false);
-          setSkeletonProgress(null);
-        }
-        console.error('Skeleton generation failed', err);
-        toast.error('Skeleton generation failed. Please try again.');
-      },
-    );
   };
 
   const handleSkeletonChange = async (updated: Record<string, unknown>) => {
@@ -359,94 +356,24 @@ export default function GrantEditor({ grant, onGrantUpdate, onHeadingsChange }: 
     } catch { /* ignore */ }
   };
 
-  const handleGenerateDraft = (flaggedSections?: string[]) => {
+  const handleGenerateDraft = async (flaggedSections?: string[]) => {
+    if (generatingDraft) return;
     setGeneratingDraft(true);
-    setDraftProgress({ phase: 'planning' });
-    // Reset meta-agent state for new generation
+    setDraftSteps(null);
+    setDraftError(null);
     setMetaAgentEvents([]);
     setAgentQuestions([]);
     setCoherenceResult(null);
-
-    streamDraftGeneration(
-      grant.id,
-      (event) => {
-        const ev = event.event as string;
-
-        // ── Phase progress events ──────────────────────────────────────────────
-        if (ev === 'planning_start') {
-          setDraftProgress({ phase: 'planning', total: Number(event.total) });
-        } else if (ev === 'planning_complete') {
-          setDraftProgress({ phase: 'researching', total: Number(event.total), researchDone: 0, researchTotal: Number(event.total) });
-        } else if (ev === 'research_start') {
-          setDraftProgress((p) => ({ ...(p ?? { phase: 'researching' }), phase: 'researching', researchTotal: Number(event.total) }));
-        } else if (ev === 'research_complete') {
-          setDraftProgress((p) => ({ ...(p ?? { phase: 'drafting' }), phase: 'drafting', total: Number(event.total), index: 0 }));
-        } else if (ev === 'section_start') {
-          setDraftProgress({ phase: 'drafting', section: String(event.section), index: Number(event.index), total: Number(event.total) });
-        } else if (ev === 'section_complete') {
-          setDraftProgress({ phase: 'drafting', section: String(event.section), index: Number(event.index), total: Number(event.total) });
-        } else if (ev === 'section_word_count_warning') {
-          const { section, word_limit, actual, overage } = event as { section: string; word_limit: number; actual: number; overage: number };
-          setWordCountWarnings((prev) => ({ ...prev, [section]: { word_limit, actual, overage } }));
-        } else if (ev === 'section_compliance_map') {
-          setMissingSections((event.missing as string[]) || []);
-        } else if (ev === 'bibliography_complete') {
-          setDraftProgress((p) => ({ ...(p ?? { phase: 'assembling' }), phase: 'assembling' }));
-        } else if (ev === 'compliance_pass') {
-          setDraftProgress({ phase: 'assembling' });
-
-        // ── Meta-agent events ──────────────────────────────────────────────────
-        } else if (ev === 'meta_agent_start') {
-          setDraftProgress({ phase: 'assembling' });
-        } else if (
-          ev === 'meta_agent_thinking' ||
-          ev === 'meta_agent_action' ||
-          ev === 'meta_agent_revision' ||
-          ev === 'meta_agent_accepted'
-        ) {
-          setMetaAgentEvents((prev) => [...prev, event as MetaAgentEvent]);
-        } else if (ev === 'meta_agent_question') {
-          const q: AgentQuestion = {
-            question_id: String(event.question_id ?? ''),
-            section: String(event.section ?? ''),
-            question: String(event.question ?? ''),
-            why: String(event.why ?? ''),
-            section_context: event.section_context ? String(event.section_context) : undefined,
-          };
-          setAgentQuestions((prev) => [...prev, q]);
-          setMetaAgentEvents((prev) => [...prev, event as MetaAgentEvent]);
-
-        // ── Coherence check ────────────────────────────────────────────────────
-        } else if (ev === 'coherence_check') {
-          setCoherenceResult({
-            overall: String(event.overall ?? 'adequate'),
-            issues: (event.issues as CoherenceResult['issues']) || [],
-            strengths: (event.strengths as string[]) || [],
-          });
-
-        // ── Draft complete ─────────────────────────────────────────────────────
-        } else if (ev === 'draft_complete' && event.document_html) {
-          setDocumentHtml(String(event.document_html));
-          setDraftProgress({ phase: 'complete' });
-          // Populate questions from the event if any were bundled
-          if (Array.isArray(event.agent_questions) && event.agent_questions.length > 0) {
-            setAgentQuestions(event.agent_questions as AgentQuestion[]);
-          }
-          openPanelRef.current?.('editor');
-        }
-      },
-      () => {
-        setGeneratingDraft(false);
-        setDraftProgress(null);
-        onGrantUpdate();
-      },
-      (err) => {
-        console.error('Draft generation failed', err);
-        setGeneratingDraft(false);
-        setDraftProgress(null);
-      },
-      flaggedSections,
-    );
+    try {
+      await grantWritingApi.enqueueDraft(grant.id, flaggedSections ? { flagged_sections: flaggedSections } : undefined);
+      startDraftGeneration(grant.id);
+      runDraftPoll();
+    } catch (err) {
+      console.error('Draft enqueue failed', err);
+      toast.error('Failed to start draft generation. Please try again.');
+      resetDraftGeneration(grant.id);
+      setGeneratingDraft(false);
+    }
   };
 
   const handleAnswerAgentQuestion = (questionId: string, answer: string) => {
@@ -573,9 +500,11 @@ export default function GrantEditor({ grant, onGrantUpdate, onHeadingsChange }: 
     selectedText,
     activeSection,
     generatingSkeleton,
-    skeletonProgress,
+    skeletonSteps,
+    skeletonError,
     generatingDraft,
-    draftProgress,
+    draftSteps,
+    draftError,
     wordCountWarnings,
     missingSections,
     overviewFigureUrl,

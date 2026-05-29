@@ -40,9 +40,11 @@ export interface WorkspaceContextType {
 
   // Generation state
   generatingSkeleton: boolean;
-  skeletonProgress: import('./phases/SkeletonPhase').SkeletonProgress | null;
+  skeletonSteps: import('@/lib/callAnalysisStore').AIThinkingStepData[] | null;
+  skeletonError: string | null;
   generatingDraft: boolean;
-  draftProgress: import('./phases/SkeletonPhase').DraftProgress | null;
+  draftSteps: import('@/lib/callAnalysisStore').AIThinkingStepData[] | null;
+  draftError: string | null;
   wordCountWarnings: Record<string, { word_limit: number; actual: number; overage: number }>;
   missingSections: string[];
 

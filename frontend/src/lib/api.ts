@@ -318,6 +318,16 @@ export const grantWriting = {
   },
   analyzeCall: (grantId: string, force = false) =>
     api.post(`/grants/${grantId}/writing/analyze-call${force ? '?force=true' : ''}`, null, { timeout: 60_000 }),
+  resetCallAnalysis: (grantId: string) =>
+    api.post(`/grants/${grantId}/writing/reset-analysis`),
+  enqueueSkeleton: (grantId: string) =>
+    api.post(`/grants/${grantId}/writing/generate-skeleton`),
+  resetSkeleton: (grantId: string) =>
+    api.post(`/grants/${grantId}/writing/reset-skeleton`),
+  enqueueDraft: (grantId: string, body?: { flagged_sections?: string[] }) =>
+    api.post(`/grants/${grantId}/writing/generate-draft`, body ?? null),
+  resetDraft: (grantId: string) =>
+    api.post(`/grants/${grantId}/writing/reset-draft`),
   generateFigure: (grantId: string, customInstructions?: string) =>
     api.post(`/grants/${grantId}/writing/generate-figure`, { custom_instructions: customInstructions || null }, { timeout: 120_000 }),
   generateSkeleton: (grantId: string) => api.post(`/grants/${grantId}/writing/generate-skeleton`),

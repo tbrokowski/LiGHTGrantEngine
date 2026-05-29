@@ -10,10 +10,12 @@ import {
   runCallAnalysisJob,
   formatAnalysisError,
   isMarkedAnalyzing,
+  resetAnalysis,
   type CallAnalysisStatus,
   type AIThinkingStepData,
 } from '@/lib/callAnalysisStore';
 import CallRequirementsPanel from '../CallRequirementsPanel';
+import AIThinkingLog from '../AIThinkingLog';
 
 interface ISpeechRecognition extends EventTarget {
   continuous: boolean;
@@ -50,7 +52,8 @@ interface IdeaPhaseProps {
   onCallAnalysis: (analysis: Record<string, unknown>, requirements?: string) => void;
   onGenerateSkeleton: () => void;
   generating: boolean;
-  skeletonProgress?: import('./SkeletonPhase').SkeletonProgress | null;
+  skeletonSteps?: AIThinkingStepData[] | null;
+  skeletonError?: string | null;
   googleDocId?: string | null;
   googleDocUrl?: string | null;
   googleDocLastSynced?: string | null;
@@ -59,49 +62,7 @@ interface IdeaPhaseProps {
   onSelectionChange?: (text: string) => void;
 }
 
-// Skeleton generation step log
-const SKELETON_STEPS: Array<{ key: import('./SkeletonPhase').SkeletonProgress['phase']; label: string }> = [
-  { key: 'starting',          label: 'Initializing generation pipeline' },
-  { key: 'style_profile',     label: 'Building style profile from archive' },
-  { key: 'archive_retrieval', label: 'Retrieving similar grants & structures' },
-  { key: 'call_strategy',     label: 'Synthesizing call strategy brief' },
-  { key: 'idea_alignment',    label: 'Aligning idea to funder priorities' },
-  { key: 'synthesis',         label: 'Generating skeleton sections' },
-  { key: 'complete',          label: 'Skeleton ready' },
-];
 
-const PHASE_ORDER = SKELETON_STEPS.map((s) => s.key);
-
-function SkeletonThinkingLog({ phase }: { phase: import('./SkeletonPhase').SkeletonProgress['phase'] }) {
-  const currentIdx = PHASE_ORDER.indexOf(phase);
-  const doneCount = Math.max(0, currentIdx);
-  const pct = Math.round(5 + (doneCount / (SKELETON_STEPS.length - 1)) * 90);
-
-  return (
-    <div className="space-y-2">
-      <div className="h-1.5 bg-gray-100 rounded-full overflow-hidden">
-        <div
-          className="h-full bg-indigo-400 transition-all duration-700 ease-out"
-          style={{ width: `${pct}%` }}
-        />
-      </div>
-      <div className="space-y-0.5">
-        {SKELETON_STEPS.map((step, i) => {
-          const status = i < currentIdx ? 'done' : i === currentIdx ? 'active' : 'pending';
-          return (
-            <div key={step.key} className="flex items-start gap-1.5 text-xs">
-              {status === 'done'   && <span className="text-green-500 mt-px w-3.5 text-center shrink-0">✓</span>}
-              {status === 'active' && <span className="mt-1 w-3.5 shrink-0 flex items-center justify-center"><span className="block w-2 h-2 rounded-full bg-indigo-500 animate-pulse" /></span>}
-              {status === 'pending'&& <span className="text-gray-200 mt-px w-3.5 text-center shrink-0">·</span>}
-              <span className={status === 'done' ? 'text-gray-400' : status === 'active' ? 'text-gray-800 font-medium' : 'text-gray-300'}>
-                {step.label}
-              </span>
-            </div>
-          );
-        })}
-      </div>
-    </div>
-  );
 }
 
 // Collapsible section wrapper
@@ -150,7 +111,8 @@ export default function IdeaPhase({
   onCallAnalysis,
   onGenerateSkeleton,
   generating,
-  skeletonProgress,
+  skeletonSteps,
+  skeletonError,
   googleDocId,
   googleDocUrl,
   googleDocLastSynced,
@@ -292,6 +254,20 @@ export default function IdeaPhase({
     if (isAnalyzing && !force) return;
     setAnalysisSoftTimeout(false);
     await runAnalysis(() => grantWriting.analyzeCall(grantId, true));
+  };
+
+  const handleResetAnalysis = async () => {
+    try {
+      await grantWriting.resetCallAnalysis(grantId);
+    } catch {
+      // Best-effort — clear local state regardless
+    }
+    resetAnalysis(grantId);
+    setReanalyzing(false);
+    setAnalysisSoftTimeout(false);
+    setCallAnalysisSteps(undefined);
+    setAnalysisError(null);
+    onCallAnalysisStatusChange?.('idle', null);
   };
 
   const handleDrop = useCallback((e: React.DragEvent) => {
@@ -437,12 +413,12 @@ export default function IdeaPhase({
                 </a>
               )}
                 <button
-                  onClick={handleReanalyze}
-                  disabled={isAnalyzing}
-                  className="flex items-center gap-1 text-sm text-gray-400 hover:text-indigo-600 disabled:opacity-50 transition-colors"
+                  onClick={() => handleReanalyze(true)}
+                  disabled={false}
+                  className="flex items-center gap-1 text-sm text-gray-400 hover:text-indigo-600 transition-colors"
                 >
                   <RefreshCw className={`w-3.5 h-3.5 ${isAnalyzing ? 'animate-spin' : ''}`} />
-                  Re-analyze
+                  {isAnalyzing ? 'Re-analyze' : 'Re-analyze'}
                 </button>
               <button
                 onClick={() => fileRef.current?.click()}
@@ -620,6 +596,7 @@ export default function IdeaPhase({
               callAnalysisStatus={callAnalysisStatus}
               callAnalysisSteps={callAnalysisSteps}
               onReanalyze={() => handleReanalyze(true)}
+              onReset={handleResetAnalysis}
               reanalyzing={isAnalyzing}
               analysisError={analysisError}
               softTimeout={analysisSoftTimeout}
@@ -630,15 +607,20 @@ export default function IdeaPhase({
       </div>
 
       {/* Skeleton generation progress */}
-      {generating && skeletonProgress && (
+      {generating && skeletonSteps && skeletonSteps.length > 0 && (
         <div className="flex-shrink-0 border-t border-gray-200 px-5 py-3">
-          <SkeletonThinkingLog phase={skeletonProgress.phase} />
+          <AIThinkingLog steps={skeletonSteps} title="Generating skeleton…" />
+        </div>
+      )}
+      {skeletonError && !generating && (
+        <div className="flex-shrink-0 border-t border-red-100 bg-red-50 px-5 py-3">
+          <p className="text-xs text-red-600">{skeletonError}</p>
         </div>
       )}
 
       {/* Sticky footer */}
       <div className="flex-shrink-0 border-t border-gray-200 px-5 py-3 flex items-center justify-end gap-3">
-        {generating && !skeletonProgress && (
+        {generating && (!skeletonSteps || skeletonSteps.length === 0) && (
           <p className="text-sm text-gray-400">Generating — you can navigate away and come back</p>
         )}
         <button

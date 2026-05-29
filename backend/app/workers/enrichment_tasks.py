@@ -87,7 +87,9 @@ def _queue_post_enrichment(opportunity_id: str) -> None:
 
     score_opportunity.delay(opportunity_id)
     rescore_opportunity_for_institutions.delay(opportunity_id)
-    generate_ai_summary.delay(opportunity_id)
+    # Delay summary by 30 s so score_opportunity completes first — the summary
+    # prompt then has access to the real fit_score and fit_rationale.
+    generate_ai_summary.apply_async(args=[opportunity_id], countdown=30)
 
 
 @celery_app.task(
@@ -201,12 +203,30 @@ def generate_ai_summary(self, opportunity_id: str):
         if not opp.title:
             return {"status": "missing_title"}
 
+        # Skip if a full summary already exists — avoids redundant LLM calls on
+        # re-enrichment and dedup re-queuing.
+        if opp.ai_summary and len(opp.ai_summary) > 200:
+            return {"status": "already_summarized"}
+
+        # Skip low-fit opportunities — no point generating rich summaries for
+        # irrelevant grants. fit_score=None means not yet scored; proceed.
+        fit_score = opp.fit_score or 0
+        if opp.fit_score is not None and fit_score < 25:
+            return {"status": "skipped_low_fit", "fit_score": fit_score}
+
+        # Tier: brief summary for medium-fit (25–54), full for high-fit (≥ 55)
+        summary_tier = "brief" if fit_score < 55 else "full"
+
+        # Cap description to avoid ballooning token usage — parsed_text can be
+        # 10k–30k chars. 6000 chars covers all meaningful grant content.
+        description_text = (opp.description or opp.parsed_text or "")[:6000]
+
         try:
             from app.ai.agents.opportunity_summarizer import generate_opportunity_summary
             result = _run_async(generate_opportunity_summary(
                 title=opp.title,
                 funder=opp.funder or "",
-                description=opp.description or opp.parsed_text or "",
+                description=description_text,
                 eligibility=opp.eligibility_criteria or "",
                 geography=", ".join(opp.geography or []),
                 award_min=opp.award_min,
@@ -218,6 +238,7 @@ def generate_ai_summary(self, opportunity_id: str):
                 opportunity_url=opp.opportunity_url or "",
                 fit_score=opp.fit_score,
                 fit_rationale=opp.fit_rationale or "",
+                summary_tier=summary_tier,
             ))
             opp.ai_summary = result["full_summary"]
             if result["short_description"]:

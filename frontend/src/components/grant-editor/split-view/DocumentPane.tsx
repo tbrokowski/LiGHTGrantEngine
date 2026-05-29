@@ -274,7 +274,8 @@ export default function DocumentPane({
             onCallAnalysis={workspace.onCallAnalysis}
             onGenerateSkeleton={workspace.onGenerateSkeleton}
             generating={workspace.generatingSkeleton}
-            skeletonProgress={workspace.skeletonProgress}
+            skeletonSteps={workspace.skeletonSteps}
+            skeletonError={workspace.skeletonError}
             googleDocId={workspace.googleDocId}
             googleDocUrl={workspace.docUrl || null}
             googleDocLastSynced={workspace.lastSynced || null}
@@ -298,7 +299,8 @@ export default function DocumentPane({
             onSkeletonChange={workspace.onSkeletonChange}
             onGenerateDraft={workspace.onGenerateDraft}
             generating={workspace.generatingDraft}
-            draftProgress={workspace.draftProgress}
+            draftSteps={workspace.draftSteps}
+            draftError={workspace.draftError}
             onSelectionChange={workspace.onSelectionChange}
             metaAgentEvents={workspace.metaAgentEvents}
             agentQuestions={workspace.agentQuestions}
