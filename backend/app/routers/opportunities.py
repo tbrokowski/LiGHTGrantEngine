@@ -5,7 +5,7 @@ from datetime import date, datetime, timezone, timedelta
 import redis.asyncio as aioredis
 from fastapi import APIRouter, Depends, HTTPException, Query, BackgroundTasks
 from pydantic import BaseModel
-from sqlalchemy import select, and_, or_, func, desc, coalesce
+from sqlalchemy import select, and_, or_, func, desc
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.database import get_db
@@ -126,9 +126,9 @@ async def list_opportunities(
             filters.append(Opportunity.priority == priority)
     if min_fit_score is not None:
         if inst_id:
-            relevance_score = coalesce(InstitutionOpportunity.fit_score, Opportunity.fit_score, 0)
+            relevance_score = func.coalesce(InstitutionOpportunity.fit_score, Opportunity.fit_score, 0)
         else:
-            relevance_score = coalesce(Opportunity.fit_score, 0)
+            relevance_score = func.coalesce(Opportunity.fit_score, 0)
         filters.append(relevance_score >= min_fit_score)
     if deadline_before:
         filters.append(Opportunity.deadline <= deadline_before)
@@ -160,9 +160,9 @@ async def list_opportunities(
     total = (await db.execute(count_q)).scalar()
 
     if inst_id:
-        relevance = coalesce(InstitutionOpportunity.fit_score, Opportunity.fit_score, 0)
+        relevance = func.coalesce(InstitutionOpportunity.fit_score, Opportunity.fit_score, 0)
     else:
-        relevance = coalesce(Opportunity.fit_score, 0)
+        relevance = func.coalesce(Opportunity.fit_score, 0)
     if sort_by == "relevance":
         order_cols = [desc(relevance), Opportunity.deadline]
     else:
