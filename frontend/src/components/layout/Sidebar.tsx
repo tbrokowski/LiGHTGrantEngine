@@ -2,8 +2,9 @@
 import Image from 'next/image';
 import Link from 'next/link';
 import { usePathname } from 'next/navigation';
-import { useEffect, useRef, useState } from 'react';
+import { useEffect, useRef, useState, useCallback } from 'react';
 import { opportunities } from '@/lib/api';
+import { onOpportunitiesChanged } from '@/lib/opportunities-events';
 import { useAuth, hasModulePermission, ModulePermissions } from '@/lib/auth';
 
 interface NavItem {
@@ -28,11 +29,19 @@ export default function Sidebar() {
   const [isOpen, setIsOpen] = useState(false);
   const closeTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
 
-  useEffect(() => {
-    opportunities.queueCounts()
+  const refreshCount = useCallback(() => {
+    opportunities.newOpportunitiesCounts()
       .then(r => setQueueCount(r.data?.unread ?? null))
       .catch(() => null);
   }, []);
+
+  useEffect(() => {
+    refreshCount();
+  }, [refreshCount, path]);
+
+  useEffect(() => {
+    return onOpportunitiesChanged(refreshCount);
+  }, [refreshCount]);
 
   const isDashboard = path === '/dashboard';
 

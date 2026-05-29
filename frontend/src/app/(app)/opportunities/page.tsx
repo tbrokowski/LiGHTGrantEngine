@@ -2,6 +2,7 @@
 import { useEffect, useState, useCallback } from 'react';
 import { useRouter } from 'next/navigation';
 import { opportunities } from '@/lib/api';
+import { notifyOpportunitiesChanged, onOpportunitiesChanged } from '@/lib/opportunities-events';
 import OpportunityRow from '@/components/opportunities/OpportunityRow';
 import FocusReview from '@/components/opportunities/FocusReview';
 import OpportunityFiltersBar from '@/components/opportunities/OpportunityFilters';
@@ -93,6 +94,8 @@ export default function OpportunitiesPage() {
   const [loading, setLoading] = useState(true);
   const [loadingMore, setLoadingMore] = useState(false);
   const [queueTotal, setQueueTotal] = useState(0);
+  const [unreadTotal, setUnreadTotal] = useState(0);
+  const [page, setPage] = useState(1);
   const [filters, setFilters] = useState<OpportunityFilters>(EMPTY_FILTERS);
   const [showFilters, setShowFilters] = useState(false);
   const [showAddModal, setShowAddModal] = useState(false);
@@ -110,27 +113,47 @@ export default function OpportunitiesPage() {
     if (saved === 'table' || saved === 'focus') setViewMode(saved);
   }, []);
 
+  const refreshCounts = useCallback(() => {
+    opportunities.newOpportunitiesCounts()
+      .then(r => setUnreadTotal(r.data?.unread ?? 0))
+      .catch(() => null);
+  }, []);
+
   const loadQueue = useCallback(() => {
     setLoading(true);
-    opportunities.queue({ unread_only: unreadOnly, limit: 25, offset: 0 })
+    setPage(1);
+    opportunities.list({
+      sort_by: 'relevance',
+      unread_only: unreadOnly,
+      page: 1,
+      page_size: 25,
+    })
       .then(r => {
         setQueue(r.data.items ?? []);
         setQueueTotal(r.data.total ?? 0);
       })
       .catch(console.error)
       .finally(() => setLoading(false));
-  }, [unreadOnly]);
+    refreshCounts();
+  }, [unreadOnly, refreshCounts]);
 
   const loadMoreQueue = useCallback(() => {
+    const nextPage = page + 1;
     setLoadingMore(true);
-    opportunities.queue({ unread_only: unreadOnly, limit: 25, offset: queue.length })
+    opportunities.list({
+      sort_by: 'relevance',
+      unread_only: unreadOnly,
+      page: nextPage,
+      page_size: 25,
+    })
       .then(r => {
         setQueue(prev => [...prev, ...(r.data.items ?? [])]);
         setQueueTotal(r.data.total ?? 0);
+        setPage(nextPage);
       })
       .catch(console.error)
       .finally(() => setLoadingMore(false));
-  }, [unreadOnly, queue.length]);
+  }, [unreadOnly, page]);
 
   const loadShortlist = useCallback(() => {
     setLoading(true);
@@ -153,6 +176,21 @@ export default function OpportunitiesPage() {
     else if (activeTab === 'shortlist') loadShortlist();
     else loadOrgShortlist();
   }, [activeTab, loadQueue, loadShortlist, loadOrgShortlist]);
+
+  useEffect(() => {
+    const onVisible = () => {
+      if (document.visibilityState === 'visible' && activeTab === 'queue') loadQueue();
+    };
+    document.addEventListener('visibilitychange', onVisible);
+    const unsub = onOpportunitiesChanged(() => {
+      if (activeTab === 'queue') loadQueue();
+      else refreshCounts();
+    });
+    return () => {
+      document.removeEventListener('visibilitychange', onVisible);
+      unsub();
+    };
+  }, [activeTab, loadQueue, refreshCounts]);
 
   function setView(mode: ViewMode | 'graph') {
     setViewMode(mode as ViewMode);
@@ -193,7 +231,31 @@ export default function OpportunitiesPage() {
   const hasFilters = filters.search || filters.priority || filters.theme ||
     filters.deadlineBefore || filters.deadlineAfter || filters.awardMin ||
     filters.hasDeadline || filters.sortBy !== 'relevance';
-  const unreadCount = queue.filter(o => !o.is_read).length;
+  const unreadCount = unreadOnly ? queueTotal : unreadTotal;
+
+  async function backfillAfterRead(removedId: string) {
+    const remaining = queue.filter(o => o.id !== removedId);
+    const offset = remaining.length;
+    const pageSize = 25;
+    const pageNum = Math.floor(offset / pageSize) + 1;
+    const indexInPage = offset % pageSize;
+
+    const r = await opportunities.list({
+      sort_by: 'relevance',
+      unread_only: true,
+      page: pageNum,
+      page_size: pageSize,
+    });
+
+    const loadedIds = new Set(remaining.map(o => o.id));
+    const candidates = (r.data.items ?? []).slice(indexInPage);
+    const next = candidates.find(o => !loadedIds.has(o.id));
+
+    setQueue(next ? [...remaining, next] : remaining);
+    setQueueTotal(Math.max(0, (r.data.total ?? queueTotal) - 1));
+    refreshCounts();
+    notifyOpportunitiesChanged();
+  }
   const orgShortlistCount = orgShortlist.length;
 
   function removeFromList(id: string) {
@@ -221,9 +283,11 @@ export default function OpportunitiesPage() {
   async function handleMarkRead(id: string) {
     await opportunities.markRead(id);
     if (unreadOnly) {
-      removeFromList(id);
+      await backfillAfterRead(id);
     } else {
       markReadLocal(id);
+      refreshCounts();
+      notifyOpportunitiesChanged();
     }
   }
 
@@ -239,12 +303,16 @@ export default function OpportunitiesPage() {
     if (isRead) {
       await opportunities.markUnread(id);
       markUnreadLocal(id);
+      refreshCounts();
+      notifyOpportunitiesChanged();
     } else {
       await opportunities.markRead(id);
       if (unreadOnly) {
-        removeFromList(id);
+        await backfillAfterRead(id);
       } else {
         markReadLocal(id);
+        refreshCounts();
+        notifyOpportunitiesChanged();
       }
     }
   }
@@ -340,7 +408,7 @@ export default function OpportunitiesPage() {
           <h1 className="text-xl font-semibold text-gray-900 tracking-tight">Opportunities</h1>
           <p className="text-sm text-gray-400 mt-0.5">
             {loading ? 'Loading…' : activeTab === 'queue'
-              ? `${queueTotal > queue.length ? `${queue.length} of ${queueTotal}` : queue.length} in queue · ${unreadCount} unread · ${upcoming.length} upcoming${hasFilters && queue.length < queueTotal ? ' · filters apply to loaded items only' : ''}`
+              ? `${queueTotal > queue.length ? `${queue.length} of ${queueTotal.toLocaleString()}` : queueTotal.toLocaleString()} grants · ${unreadCount.toLocaleString()} unread · ${upcoming.length} upcoming${hasFilters && queue.length < queueTotal ? ' · filters apply to loaded items only' : ''}`
               : activeTab === 'shortlist'
               ? `${shortlist.length} bookmarked`
               : `${orgShortlist.length} on org shortlist`}
@@ -386,9 +454,9 @@ export default function OpportunitiesPage() {
                 : 'border-transparent text-gray-400 hover:text-gray-600'
             }`}
           >
-            Review Queue
+            All Opportunities
             {unreadCount > 0 && (
-              <span className="ml-1.5 text-xs bg-blue-100 text-blue-700 px-1.5 py-0.5 rounded-full">{unreadCount}</span>
+              <span className="ml-1.5 text-xs bg-blue-100 text-blue-700 px-1.5 py-0.5 rounded-full">{unreadCount.toLocaleString()}</span>
             )}
           </button>
           <button

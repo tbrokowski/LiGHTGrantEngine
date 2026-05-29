@@ -4,6 +4,7 @@ import { useRouter, useParams } from 'next/navigation';
 import Link from 'next/link';
 import { Sparkles, Check, AlertTriangle, Folder, ChevronRight, Loader2 } from 'lucide-react';
 import { opportunities, ai, api } from '@/lib/api';
+import { notifyOpportunitiesChanged } from '@/lib/opportunities-events';
 import { usePdfViewer } from '@/contexts/PdfViewerContext';
 import SuggestedPartners from '@/components/crm/SuggestedPartners';
 import FunderLogo from '@/components/opportunities/FunderLogo';
@@ -159,15 +160,18 @@ export default function OpportunityDetailPage() {
   const [enrichMessage, setEnrichMessage] = useState('');
   const { openPdfViewer } = usePdfViewer();
 
-  const fetchOpp = useCallback(() => {
+  const fetchOpp = useCallback((notify = false) => {
     if (!id) return;
     opportunities.get(id)
-      .then(r => setOpp(r.data))
+      .then(r => {
+        setOpp(r.data);
+        if (notify) notifyOpportunitiesChanged();
+      })
       .catch(console.error)
       .finally(() => setLoading(false));
   }, [id]);
 
-  useEffect(() => { fetchOpp(); }, [fetchOpp]);
+  useEffect(() => { fetchOpp(true); }, [fetchOpp]);
 
   // Poll for updated content after a re-enrich task is queued
   useEffect(() => {

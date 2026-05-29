@@ -1,11 +1,11 @@
 """Opportunities endpoints — review queue, database, detail pages."""
 from typing import Optional
-from datetime import date, datetime, timezone
+from datetime import date, datetime, timezone, timedelta
 
 import redis.asyncio as aioredis
 from fastapi import APIRouter, Depends, HTTPException, Query, BackgroundTasks
 from pydantic import BaseModel
-from sqlalchemy import select, and_, or_, func, desc
+from sqlalchemy import select, and_, or_, func, desc, coalesce
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.database import get_db
@@ -89,24 +89,47 @@ async def list_opportunities(
     deadline_after: Optional[date] = None,
     theme: Optional[str] = None,
     search: Optional[str] = None,
+    unread_only: bool = False,
     page: int = Query(1, ge=1),
     page_size: int = Query(25, ge=1, le=200),
-    sort_by: str = "date_discovered",
+    sort_by: str = "relevance",
     sort_dir: str = "desc",
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ):
-    q = select(Opportunity)
-    filters = []
+    """List all grants in the database, optionally sorted by org relevance."""
+    inst_id = current_user.institution_id
+    filters = [Opportunity.status != "duplicate"]
+
+    if inst_id:
+        io_join = and_(
+            InstitutionOpportunity.opportunity_id == Opportunity.id,
+            InstitutionOpportunity.institution_id == inst_id,
+        )
+        q = select(Opportunity, InstitutionOpportunity).outerjoin(InstitutionOpportunity, io_join)
+    else:
+        q = select(Opportunity)
 
     if status:
         filters.append(Opportunity.status == status)
     if funder:
         filters.append(Opportunity.funder.ilike(f"%{funder}%"))
     if priority:
-        filters.append(Opportunity.priority == priority)
+        if inst_id:
+            filters.append(
+                or_(
+                    InstitutionOpportunity.priority == priority,
+                    and_(InstitutionOpportunity.priority.is_(None), Opportunity.priority == priority),
+                )
+            )
+        else:
+            filters.append(Opportunity.priority == priority)
     if min_fit_score is not None:
-        filters.append(Opportunity.fit_score >= min_fit_score)
+        if inst_id:
+            relevance_score = coalesce(InstitutionOpportunity.fit_score, Opportunity.fit_score, 0)
+        else:
+            relevance_score = coalesce(Opportunity.fit_score, 0)
+        filters.append(relevance_score >= min_fit_score)
     if deadline_before:
         filters.append(Opportunity.deadline <= deadline_before)
     if deadline_after:
@@ -121,26 +144,70 @@ async def list_opportunities(
                 Opportunity.funder.ilike(f"%{search}%"),
             )
         )
-    if filters:
-        q = q.where(and_(*filters))
+    q = q.where(and_(*filters))
 
-    # Count
+    if unread_only:
+        read_subq = (
+            select(UserOpportunityState.opportunity_id)
+            .where(
+                UserOpportunityState.user_id == current_user.id,
+                UserOpportunityState.read_at.isnot(None),
+            )
+        )
+        q = q.where(Opportunity.id.notin_(read_subq))
+
     count_q = select(func.count()).select_from(q.subquery())
     total = (await db.execute(count_q)).scalar()
 
-    # Sort
-    sort_col = getattr(Opportunity, sort_by, Opportunity.date_discovered)
-    q = q.order_by(desc(sort_col) if sort_dir == "desc" else sort_col)
-    q = q.offset((page - 1) * page_size).limit(page_size)
+    if inst_id:
+        relevance = coalesce(InstitutionOpportunity.fit_score, Opportunity.fit_score, 0)
+    else:
+        relevance = coalesce(Opportunity.fit_score, 0)
+    if sort_by == "relevance":
+        order_cols = [desc(relevance), Opportunity.deadline]
+    else:
+        sort_col = getattr(Opportunity, sort_by, Opportunity.date_discovered)
+        order_cols = [desc(sort_col) if sort_dir == "desc" else sort_col]
 
+    q = q.order_by(*order_cols).offset((page - 1) * page_size).limit(page_size)
     result = await db.execute(q)
-    items = result.scalars().all()
+
+    if inst_id:
+        rows = result.all()
+        opp_ids = [opp.id for opp, _ in rows]
+    else:
+        opps = result.scalars().all()
+        opp_ids = [opp.id for opp in opps]
+
+    read_map = await _load_read_map(db, current_user.id, opp_ids)
+    personal_map = await _load_personal_shortlist_map(db, current_user.id, opp_ids)
+
+    if inst_id:
+        items = [
+            _opp_summary(
+                opp,
+                is_read=read_map.get(opp.id, False),
+                io=io,
+                is_personal_shortlisted=personal_map.get(opp.id, False),
+            )
+            for opp, io in rows
+        ]
+    else:
+        items = [
+            _opp_summary(
+                opp,
+                is_read=read_map.get(opp.id, False),
+                io=None,
+                is_personal_shortlisted=personal_map.get(opp.id, False),
+            )
+            for opp in opps
+        ]
 
     return {
         "total": total,
         "page": page,
         "page_size": page_size,
-        "items": [_opp_summary(o) for o in items],
+        "items": items,
     }
 
 
@@ -180,6 +247,64 @@ async def create_opportunity(
     # Score in background
     bg.add_task(_score_opportunity_bg, str(opp.id))
     return {"id": opp.id, "status": "created"}
+
+
+@router.get("/new-opportunities")
+async def new_opportunities_shortlist(
+    unread_only: bool = True,
+    limit: int = Query(10, ge=1, le=50),
+    offset: int = Query(0, ge=0),
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    """Unread opportunities ranked by org relevance — for dashboard shortlist."""
+    items, read_map, io_map = await _fetch_new_opportunities_pool(db, current_user)
+    if unread_only:
+        items = [o for o in items if not read_map.get(o.id)]
+    total = len(items)
+    paged_items = items[offset: offset + limit]
+    personal_map = await _load_personal_shortlist_map(db, current_user.id, [o.id for o in paged_items])
+    return {
+        "total": total,
+        "limit": limit,
+        "offset": offset,
+        "items": [
+            _opp_summary(
+                o,
+                is_read=read_map.get(o.id, False),
+                io=io_map.get(o.id),
+                is_personal_shortlisted=personal_map.get(o.id, False),
+            )
+            for o in paged_items
+        ],
+    }
+
+
+@router.get("/new-opportunities/counts")
+async def new_opportunities_counts(
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    """Unread/total counts for the relevance shortlist (sidebar badge)."""
+    items, read_map, io_map = await _fetch_new_opportunities_pool(db, current_user)
+    total = len(items)
+    unread = sum(1 for o in items if not read_map.get(o.id))
+    week_ago = date.today() - timedelta(days=7)
+    new_this_week = sum(
+        1 for o in items
+        if o.date_discovered and o.date_discovered.date() >= week_ago and not read_map.get(o.id)
+    )
+    high_fit_unread = sum(
+        1 for o in items
+        if not read_map.get(o.id)
+        and (io_map.get(o.id).fit_score if io_map.get(o.id) else o.fit_score or 0) >= 70
+    )
+    return {
+        "total": total,
+        "unread": unread,
+        "new_this_week": new_this_week,
+        "high_fit_unread": high_fit_unread,
+    }
 
 
 @router.get("/queue")
@@ -395,7 +520,6 @@ async def get_opportunity(
     current_user: User = Depends(get_current_user),
 ):
     opp = await _get_opp_or_404(opp_id, db)
-    await _require_institution_access(db, current_user, opp_id)
     await _mark_read(db, current_user.id, opp_id)
     read_map = await _load_read_map(db, current_user.id, [opp_id])
     # Load reviews
@@ -808,37 +932,28 @@ async def _fetch_queue_with_read_state(
 async def _fetch_institution_feed(
     db: AsyncSession,
     user: User,
-    statuses: list[str],
+    statuses: list[str] | None,
 ) -> tuple[list[Opportunity], dict[str, bool], dict[str, InstitutionOpportunity]]:
     if not user.institution_id:
         return [], {}, {}
 
-    inst = (await db.execute(
-        select(Institution).where(Institution.id == user.institution_id)
-    )).scalar_one_or_none()
-
-    # Only apply personal keyword preferences as an in-memory display filter.
-    # Org-level keyword filtering is handled at surfacing time (surface_opportunity_for_institution
-    # sets status="archived" for non-matching opps). Applying org keywords here
-    # again would double-filter: opportunities that were surfaced before keywords
-    # were configured would permanently disappear from the queue even though their
-    # InstitutionOpportunity status is still "needs_review".
     personal = UserGrantPreferences.from_dict(user.grant_preferences or {})
     personal_keywords = [k.lower() for k in personal.keywords if k]
     personal_excluded = [k.lower() for k in personal.excluded_keywords if k]
 
     enabled_source_ids = await _enabled_source_ids(db, user.institution_id)
 
+    join_conditions = [
+        InstitutionOpportunity.opportunity_id == Opportunity.id,
+        InstitutionOpportunity.institution_id == user.institution_id,
+    ]
+    if statuses is not None:
+        join_conditions.append(InstitutionOpportunity.status.in_(statuses))
+
     q = (
         select(Opportunity, InstitutionOpportunity)
-        .join(
-            InstitutionOpportunity,
-            and_(
-                InstitutionOpportunity.opportunity_id == Opportunity.id,
-                InstitutionOpportunity.institution_id == user.institution_id,
-                InstitutionOpportunity.status.in_(statuses),
-            ),
-        )
+        .join(InstitutionOpportunity, and_(*join_conditions))
+        .where(Opportunity.status != "duplicate")
         .order_by(desc(InstitutionOpportunity.fit_score), Opportunity.deadline)
     )
     result = await db.execute(q)
@@ -849,7 +964,6 @@ async def _fetch_institution_feed(
     for opp, io in rows:
         if enabled_source_ids is not None and opp.source_id and opp.source_id not in enabled_source_ids:
             continue
-        # Apply personal (user-level) keyword preferences only — not org keywords
         if personal_excluded and any(kw in _opp_text(opp) for kw in personal_excluded):
             continue
         if personal_keywords and not any(kw in _opp_text(opp) for kw in personal_keywords):
@@ -859,6 +973,34 @@ async def _fetch_institution_feed(
 
     read_map = await _load_read_map(db, user.id, [o.id for o in items])
     return items, read_map, io_map
+
+
+async def _fetch_new_opportunities_pool(
+    db: AsyncSession,
+    user: User,
+) -> tuple[list[Opportunity], dict[str, bool], dict[str, InstitutionOpportunity]]:
+    """All institution-surfaced grants ranked by org relevance (for shortlist)."""
+    return await _fetch_institution_feed(db, user, statuses=None)
+
+
+async def get_shortlist_stats(db: AsyncSession, user: User) -> dict:
+    """Dashboard analytics: unread shortlist counts by institution relevance."""
+    items, read_map, io_map = await _fetch_new_opportunities_pool(db, user)
+    week_ago = date.today() - timedelta(days=7)
+    unread = [o for o in items if not read_map.get(o.id)]
+    new_this_week = sum(
+        1 for o in unread
+        if o.date_discovered and o.date_discovered.date() >= week_ago
+    )
+    high_fit_pending = sum(
+        1 for o in unread
+        if (io_map.get(o.id).fit_score if io_map.get(o.id) else o.fit_score or 0) >= 70
+    )
+    return {
+        "new_opportunities_this_week": new_this_week,
+        "high_fit_pending_review": high_fit_pending,
+        "unread": len(unread),
+    }
 
 
 async def _get_institution_opp(

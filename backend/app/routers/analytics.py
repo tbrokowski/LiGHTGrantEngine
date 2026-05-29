@@ -4,13 +4,13 @@ from fastapi import APIRouter, Depends
 from sqlalchemy import select, func, and_
 from sqlalchemy.ext.asyncio import AsyncSession
 from app.database import get_db
-from app.models.opportunity import Opportunity
 from app.models.active_grant import ActiveGrant
 from app.models.task import Task
 from app.models.archive import GrantArchive
 from app.models.grant_member import GrantMember, GrantMemberStatus
 from app.models.user import User
 from app.routers.auth import get_current_user
+from app.routers.opportunities import get_shortlist_stats
 from app.auth.permissions import is_org_admin
 
 router = APIRouter()
@@ -18,19 +18,12 @@ router = APIRouter()
 @router.get("/dashboard")
 async def dashboard_stats(db: AsyncSession = Depends(get_db), current_user: User = Depends(get_current_user)):
     today = date.today()
-    week_ago = today - timedelta(days=7)
     thirty_days = today + timedelta(days=30)
     inst_id = current_user.institution_id
 
-    new_this_week = (await db.execute(
-        select(func.count()).select_from(Opportunity).where(Opportunity.date_discovered >= week_ago)
-    )).scalar()
-
-    high_fit_pending = (await db.execute(
-        select(func.count()).select_from(Opportunity).where(
-            Opportunity.fit_score >= 70, Opportunity.status.in_(["new","needs_review","in_review"])
-        )
-    )).scalar()
+    shortlist = await get_shortlist_stats(db, current_user)
+    new_this_week = shortlist["new_opportunities_this_week"]
+    high_fit_pending = shortlist["high_fit_pending_review"]
 
     # Scope grant queries to institution
     grant_base = select(func.count()).select_from(ActiveGrant)

@@ -1,8 +1,10 @@
 'use client';
-import { useEffect, useState } from 'react';
+import { useEffect, useState, useCallback } from 'react';
 import Link from 'next/link';
+import { usePathname } from 'next/navigation';
 import { ChevronRight } from 'lucide-react';
 import { analytics, opportunities, grants, tasks as tasksApi } from '@/lib/api';
+import { onOpportunitiesChanged } from '@/lib/opportunities-events';
 import { useAuth } from '@/lib/auth';
 import FocusPanel, { type GrantItem, type TaskItem } from '@/components/dashboard/FocusPanel';
 import Scratchpad from '@/components/dashboard/Scratchpad';
@@ -77,6 +79,7 @@ function loadStarredIds(): Set<string> {
 
 export default function DashboardPage() {
   const { user } = useAuth();
+  const pathname = usePathname();
   const userName = user?.name ?? null;
   const [stats, setStats] = useState<DashboardStats | null>(null);
   const [queue, setQueue] = useState<QueueItem[]>([]);
@@ -84,6 +87,21 @@ export default function DashboardPage() {
   const [taskList, setTaskList] = useState<TaskItem[]>([]);
   const [loading, setLoading] = useState(true);
   const [starredIds, setStarredIds] = useState<Set<string>>(new Set());
+
+  const loadDashboard = useCallback(() => {
+    setLoading(true);
+    Promise.all([
+      analytics.dashboard().catch(() => ({ data: null })),
+      opportunities.newOpportunities({ unread_only: true, limit: 10 }).catch(() => ({ data: { items: [] } })),
+      grants.list({ limit: 50 }).catch(() => ({ data: [] })),
+      tasksApi.myTasks().catch(() => ({ data: [] })),
+    ]).then(([statsRes, queueRes, grantsRes, tasksRes]) => {
+      setStats(statsRes.data);
+      setQueue((queueRes.data?.items ?? []) as QueueItem[]);
+      setGrantList(grantsRes.data as GrantItem[]);
+      setTaskList(tasksRes.data as TaskItem[]);
+    }).finally(() => setLoading(false));
+  }, []);
 
   useEffect(() => {
     setStarredIds(loadStarredIds());
@@ -95,18 +113,20 @@ export default function DashboardPage() {
   }, []);
 
   useEffect(() => {
-    Promise.all([
-      analytics.dashboard().catch(() => ({ data: null })),
-      opportunities.queue({ limit: 10 }).catch(() => ({ data: { items: [] } })),
-      grants.list({ limit: 50 }).catch(() => ({ data: [] })),
-      tasksApi.myTasks().catch(() => ({ data: [] })),
-    ]).then(([statsRes, queueRes, grantsRes, tasksRes]) => {
-      setStats(statsRes.data);
-      setQueue((queueRes.data?.items ?? []) as QueueItem[]);
-      setGrantList(grantsRes.data as GrantItem[]);
-      setTaskList(tasksRes.data as TaskItem[]);
-    }).finally(() => setLoading(false));
-  }, []);
+    loadDashboard();
+  }, [loadDashboard, pathname]);
+
+  useEffect(() => {
+    const onVisible = () => {
+      if (document.visibilityState === 'visible') loadDashboard();
+    };
+    document.addEventListener('visibilitychange', onVisible);
+    const unsub = onOpportunitiesChanged(loadDashboard);
+    return () => {
+      document.removeEventListener('visibilitychange', onVisible);
+      unsub();
+    };
+  }, [loadDashboard]);
 
   const statChips = stats ? [
     {
