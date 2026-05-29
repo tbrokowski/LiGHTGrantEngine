@@ -12,12 +12,12 @@ from app.database import get_db
 from app.models.archive import GrantArchive
 from app.models.section import ProposalSection
 from app.models.document import Document, DocumentType, ProcessingStatus
-from app.models.user import User, UserRole
+from app.models.user import User
 from app.routers.auth import get_current_user
 from app.services.archive_ingestion import create_archive_with_files
 from app.workers.celery_app import celery_app
 from app.config import get_settings
-from app.auth.permissions import require_role, has_module_permission
+from app.auth.permissions import require_archive_editor, has_module_permission
 
 router = APIRouter()
 
@@ -42,6 +42,25 @@ class ArchiveCreate(BaseModel):
     notes: Optional[str] = None
 
 
+class ArchiveUpdate(BaseModel):
+    title: Optional[str] = None
+    funder: Optional[str] = None
+    lead_pi: Optional[str] = None
+    call_year: Optional[int] = None
+    submission_date: Optional[date] = None
+    decision_date: Optional[date] = None
+    submitted: Optional[bool] = None
+    outcome: Optional[str] = None
+    requested_amount: Optional[float] = None
+    awarded_amount: Optional[float] = None
+    currency: Optional[str] = None
+    notes: Optional[str] = None
+    lessons_learned: Optional[str] = None
+    reviewer_feedback: Optional[str] = None
+    ai_retrieval_allowed: Optional[bool] = None
+    text_reuse_allowed: Optional[bool] = None
+
+
 _SKIP_COLUMNS = frozenset({"embedding"})
 
 
@@ -58,6 +77,7 @@ def _archive_dict(archive: GrantArchive, section_count: int = 0) -> dict:
     data["style_indexed"] = bool(archive.style_fingerprint)
     data["indexing_status"] = archive.indexing_status
     data["indexing_error"] = archive.indexing_error
+    data["outcome_notes"] = archive.reviewer_feedback
     return data
 
 
@@ -180,7 +200,7 @@ async def get_archive_graph_data(
     }
 
 
-@router.post("/", status_code=201, dependencies=[Depends(require_role(UserRole.GRANT_LEAD))])
+@router.post("/", status_code=201, dependencies=[Depends(require_archive_editor())])
 async def create_archive_entry(
     data: ArchiveCreate,
     db: AsyncSession = Depends(get_db),
@@ -199,11 +219,12 @@ def _check_upload_size(content: bytes, label: str) -> None:
         raise HTTPException(400, f"{label} exceeds maximum size of {max_mb}MB")
 
 
-@router.post("/create-with-document", status_code=201, dependencies=[Depends(require_role(UserRole.GRANT_LEAD))])
+@router.post("/create-with-document", status_code=201, dependencies=[Depends(require_archive_editor())])
 async def create_archive_with_document(
     proposal_file: UploadFile = File(...),
     call_file: Optional[UploadFile] = File(None),
     budget_file: Optional[UploadFile] = File(None),
+    feedback_file: Optional[UploadFile] = File(None),
     title: str = Form(...),
     funder: Optional[str] = Form(None),
     program: Optional[str] = Form(None),
@@ -246,6 +267,14 @@ async def create_archive_with_document(
             _check_upload_size(budget_content, "Budget file")
             budget_filename = budget_file.filename
 
+    feedback_content = None
+    feedback_filename = None
+    if feedback_file and feedback_file.filename:
+        feedback_content = await feedback_file.read()
+        if feedback_content:
+            _check_upload_size(feedback_content, "Reviewer feedback file")
+            feedback_filename = feedback_file.filename
+
     archive_fields = {
         "title": title.strip(),
         "funder": funder,
@@ -277,6 +306,8 @@ async def create_archive_with_document(
             call_filename=call_filename,
             budget_content=budget_content,
             budget_filename=budget_filename,
+            feedback_content=feedback_content,
+            feedback_filename=feedback_filename,
         )
     except ValueError as e:
         raise HTTPException(400, str(e)) from e
@@ -311,10 +342,10 @@ async def get_archive(
     return data
 
 
-@router.patch("/{archive_id}", dependencies=[Depends(require_role(UserRole.GRANT_LEAD))])
+@router.patch("/{archive_id}", dependencies=[Depends(require_archive_editor())])
 async def update_archive(
     archive_id: str,
-    data: dict,
+    data: ArchiveUpdate,
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ):
@@ -322,7 +353,7 @@ async def update_archive(
     archive = result.scalar_one_or_none()
     if not archive:
         raise HTTPException(404, "Archive entry not found")
-    for k, v in data.items():
+    for k, v in data.model_dump(exclude_unset=True).items():
         if hasattr(archive, k):
             setattr(archive, k, v)
     await db.commit()
@@ -334,7 +365,7 @@ class ArchiveIngestRequest(BaseModel):
     submitted_text: Optional[str] = None
 
 
-@router.post("/{archive_id}/ingest", dependencies=[Depends(require_role(UserRole.GRANT_LEAD))])
+@router.post("/{archive_id}/ingest", dependencies=[Depends(require_archive_editor())])
 async def ingest_archive(
     archive_id: str,
     body: ArchiveIngestRequest = ArchiveIngestRequest(),
@@ -391,7 +422,7 @@ async def ingest_archive(
     }
 
 
-@router.post("/{archive_id}/documents", status_code=201, dependencies=[Depends(require_role(UserRole.GRANT_LEAD))])
+@router.post("/{archive_id}/documents", status_code=201, dependencies=[Depends(require_archive_editor())])
 async def add_archive_document(
     archive_id: str,
     file: UploadFile = File(...),
@@ -399,13 +430,13 @@ async def add_archive_document(
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ):
-    """Upload an additional document (proposal, call doc, or budget) to an existing archive entry."""
+    """Upload an additional document to an existing archive entry."""
     result = await db.execute(select(GrantArchive).where(GrantArchive.id == archive_id))
     archive = result.scalar_one_or_none()
     if not archive:
         raise HTTPException(404, "Archive entry not found")
 
-    valid_types = {"full_proposal", "call_document", "budget"}
+    valid_types = {"full_proposal", "call_document", "budget", "review_feedback"}
     if document_type not in valid_types:
         raise HTTPException(400, f"document_type must be one of: {', '.join(sorted(valid_types))}")
 
@@ -416,9 +447,14 @@ async def add_archive_document(
 
     from app.services.archive_ingestion import _store_archive_document
 
-    doc = await _store_archive_document(
-        db, archive, content, file.filename or "document", document_type, current_user.id
-    )
+    try:
+        doc = await _store_archive_document(
+            db, archive, content, file.filename or "document", document_type, current_user.id
+        )
+    except RuntimeError as e:
+        raise HTTPException(503, str(e)) from e
+    except Exception as e:
+        raise HTTPException(500, f"Failed to store document: {e}") from e
     await db.commit()
 
     if document_type == "full_proposal":
@@ -430,7 +466,7 @@ async def add_archive_document(
     return {"id": doc.id, "document_type": document_type, "file_name": doc.file_name}
 
 
-@router.post("/{archive_id}/reindex-style", dependencies=[Depends(require_role(UserRole.GRANT_LEAD))])
+@router.post("/{archive_id}/reindex-style", dependencies=[Depends(require_archive_editor())])
 async def reindex_archive_style_endpoint(
     archive_id: str,
     body: ArchiveIngestRequest = ArchiveIngestRequest(),

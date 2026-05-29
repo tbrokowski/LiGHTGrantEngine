@@ -8,7 +8,7 @@ from typing import AsyncIterator
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.ai.agents.call_analyzer import analyze_call as analyze_call_agent
+from app.ai.agents.call_analyzer import analyze_call as analyze_call_agent, _analysis_has_content
 from app.ai.agents.compliance_checker import check_compliance
 from app.ai.agents.grant_reviewer import review_proposal
 from app.ai.agents.intro_architect import draft_introduction
@@ -60,6 +60,9 @@ class GrantWritingOrchestrator:
             call_url=call_url or grant.call_url or "",
             funder=grant.funder or "",
         )
+        if not _analysis_has_content(result):
+            err = result.get("error") or "Call analysis returned no usable content"
+            raise ValueError(err)
         grant.call_analysis = result
         grant.call_requirements = self._format_call_requirements(result)
         await db.commit()
@@ -520,6 +523,22 @@ class GrantWritingOrchestrator:
             parts.append(f"CALL BRIEF:\n{analysis['narrative_brief']}")
         elif analysis.get("summary"):
             parts.append(f"SUMMARY: {analysis['summary']}")
+
+        for field, label in [
+            ("call_background", "BACKGROUND & CONTEXT"),
+            ("requirements_overview", "WHAT THEY ARE LOOKING FOR"),
+            ("funder_priorities", "FUNDER PRIORITIES"),
+            ("strategic_objectives", "STRATEGIC OBJECTIVES"),
+        ]:
+            if analysis.get(field) and isinstance(analysis[field], list):
+                parts.append(f"{label}:\n" + "\n".join(f"- {item}" for item in analysis[field]))
+
+        if analysis.get("key_focus_areas") and isinstance(analysis["key_focus_areas"], list):
+            lines = ["KEY FOCUS AREAS:"]
+            for area in analysis["key_focus_areas"]:
+                if isinstance(area, dict):
+                    lines.append(f"- {area.get('area', '?')}: {area.get('description', '')}")
+            parts.append("\n".join(lines))
 
         if analysis.get("evaluation_criteria"):
             parts.append("EVALUATION CRITERIA:\n" + "\n".join(f"- {c}" for c in analysis["evaluation_criteria"]))

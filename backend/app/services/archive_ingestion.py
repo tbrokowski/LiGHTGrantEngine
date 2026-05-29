@@ -370,6 +370,8 @@ async def create_archive_with_files(
     call_filename: str | None = None,
     budget_content: bytes | None = None,
     budget_filename: str | None = None,
+    feedback_content: bytes | None = None,
+    feedback_filename: str | None = None,
 ) -> dict:
     """
     Create archive entry and document records; indexing runs in a background worker.
@@ -401,6 +403,12 @@ async def create_archive_with_files(
             db, archive, budget_content, budget_filename, DocumentType.BUDGET, user_id
         )
         document_ids["budget"] = budget_doc.id
+
+    if feedback_content and feedback_filename:
+        feedback_doc = await _store_archive_document(
+            db, archive, feedback_content, feedback_filename, DocumentType.REVIEW_FEEDBACK, user_id
+        )
+        document_ids["feedback"] = feedback_doc.id
 
     await db.commit()
 
@@ -466,6 +474,14 @@ async def run_archive_indexing(db: AsyncSession, archive_id: str) -> dict:
                     "Could not extract text from the submitted proposal. "
                     "The PDF may be scanned/image-only — try a text-based PDF or DOCX."
                 )
+
+        if not (archive.reviewer_feedback or "").strip():
+            feedback_doc = next(
+                (d for d in documents if d.document_type == DocumentType.REVIEW_FEEDBACK),
+                None,
+            )
+            if feedback_doc and (feedback_doc.parsed_text or "").strip():
+                archive.reviewer_feedback = (feedback_doc.parsed_text or "")[:50000]
 
         parsed_text = proposal_doc.parsed_text or ""
 

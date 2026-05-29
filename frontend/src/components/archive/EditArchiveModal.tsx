@@ -18,7 +18,23 @@ const DOC_TYPES = [
   { value: 'full_proposal', label: 'Submitted proposal' },
   { value: 'call_document', label: 'Call / RFP' },
   { value: 'budget', label: 'Budget' },
+  { value: 'review_feedback', label: 'Reviewer feedback' },
 ];
+
+function formatApiError(detail: unknown): string {
+  if (typeof detail === 'string') return detail;
+  if (Array.isArray(detail)) {
+    return detail
+      .map((item) => {
+        if (typeof item === 'object' && item !== null && 'msg' in item) {
+          return String((item as { msg: string }).msg);
+        }
+        return String(item);
+      })
+      .join(' ');
+  }
+  return 'Failed to save changes. Please try again.';
+}
 
 const FILE_ACCEPT = '.pdf,.docx,.txt,application/pdf,application/vnd.openxmlformats-officedocument.wordprocessingml.document';
 const BUDGET_ACCEPT = `${FILE_ACCEPT},.xlsx,.xls,.csv`;
@@ -38,6 +54,7 @@ export interface ArchiveDetailForEdit {
   currency?: string;
   notes?: string;
   lessons_learned?: string;
+  reviewer_feedback?: string;
   outcome_notes?: string;
   ai_retrieval_allowed?: boolean;
   text_reuse_allowed?: boolean;
@@ -57,7 +74,7 @@ interface EditForm {
   currency: string;
   notes: string;
   lessons_learned: string;
-  outcome_notes: string;
+  reviewer_feedback: string;
   ai_retrieval_allowed: boolean;
   text_reuse_allowed: boolean;
 }
@@ -82,7 +99,7 @@ function toFormState(entry: ArchiveDetailForEdit): EditForm {
     currency: entry.currency ?? 'USD',
     notes: entry.notes ?? '',
     lessons_learned: entry.lessons_learned ?? '',
-    outcome_notes: (entry as Record<string, unknown>).outcome_notes as string ?? '',
+    reviewer_feedback: entry.reviewer_feedback ?? entry.outcome_notes ?? '',
     ai_retrieval_allowed: entry.ai_retrieval_allowed ?? true,
     text_reuse_allowed: entry.text_reuse_allowed ?? false,
   };
@@ -158,7 +175,7 @@ export default function EditArchiveModal({ entry, onClose, onSaved }: Props) {
       if (form.currency) payload.currency = form.currency;
       payload.notes = form.notes || null;
       payload.lessons_learned = form.lessons_learned || null;
-      payload.outcome_notes = form.outcome_notes || null;
+      payload.reviewer_feedback = form.reviewer_feedback || null;
 
       await archive.update(entry.id, payload);
 
@@ -169,10 +186,11 @@ export default function EditArchiveModal({ entry, onClose, onSaved }: Props) {
         await archive.uploadDocument(entry.id, fd);
       }
 
+      setSaving(false);
       onSaved();
     } catch (err: unknown) {
-      const detail = (err as { response?: { data?: { detail?: string } } }).response?.data?.detail;
-      setError(typeof detail === 'string' ? detail : 'Failed to save changes. Please try again.');
+      const detail = (err as { response?: { data?: { detail?: unknown } } }).response?.data?.detail;
+      setError(formatApiError(detail));
       setSaving(false);
     }
   }
@@ -333,14 +351,14 @@ export default function EditArchiveModal({ entry, onClose, onSaved }: Props) {
             </div>
           </div>
 
-          {/* Outcome notes */}
+          {/* Reviewer feedback */}
           <div>
-            <label className={labelClass}>Outcome notes</label>
+            <label className={labelClass}>Reviewer feedback / call response</label>
             <textarea
-              rows={2}
-              value={form.outcome_notes}
-              onChange={e => setField('outcome_notes', e.target.value)}
-              placeholder="Details about the decision…"
+              rows={3}
+              value={form.reviewer_feedback}
+              onChange={e => setField('reviewer_feedback', e.target.value)}
+              placeholder="Panel comments, call response letter, or reviewer notes…"
               className={`${inputClass} resize-none`}
             />
           </div>

@@ -24,6 +24,8 @@ from datetime import datetime
 from app.models.user import User
 from app.routers.auth import get_current_user
 from app.services.citation_lookup import search_citations
+from app.services.document_parser import parse_uploaded_bytes
+from app.services import storage as storage_svc
 from app.auth.permissions import grant_access
 
 # Write endpoints require editor access
@@ -207,7 +209,10 @@ async def upload_call_document(
     db.add(workspace_file)
     await db.commit()
 
-    analysis = await orchestrator.analyze_call_document(grant, parsed_text, db, grant.call_url or "")
+    try:
+        analysis = await orchestrator.analyze_call_document(grant, parsed_text, db, grant.call_url or "")
+    except ValueError as e:
+        raise HTTPException(502, str(e)) from e
     await _log_ai_run(db, current_user.id, grant_id, AgentType.CALL_ANALYZER, analysis)
     await db.refresh(grant)
     return {
@@ -220,13 +225,8 @@ async def upload_call_document(
     }
 
 
-@router.post("/{grant_id}/writing/analyze-call")
-async def reanalyze_call(
-    grant_id: str,
-    db: AsyncSession = Depends(get_db),
-    current_user: User = Depends(get_current_user),
-):
-    grant = await _get_grant(grant_id, db)
+async def _resolve_call_text(grant_id: str, grant, db: AsyncSession) -> tuple[str, Document | None]:
+    """Load call document text for analysis, re-parsing from R2 if parsed_text is missing."""
     result = await db.execute(
         select(Document).where(
             Document.grant_id == grant_id,
@@ -234,10 +234,38 @@ async def reanalyze_call(
         ).order_by(Document.uploaded_at.desc())
     )
     doc = result.scalars().first()
-    call_text = (doc.parsed_text if doc else None) or grant.call_requirements or ""
-    if not call_text:
+    call_text = (doc.parsed_text if doc else None) or ""
+    if doc and len(call_text.strip()) < 200:
+        r2_key = storage_svc.resolve_storage_key(doc.notes)
+        if r2_key and storage_svc.object_exists(r2_key):
+            try:
+                raw = storage_svc.download_file(r2_key)
+                call_text = parse_uploaded_bytes(raw, doc.file_name or "call.pdf")
+                doc.parsed_text = call_text
+                doc.processing_status = ProcessingStatus.PROCESSED
+                await db.commit()
+            except Exception:
+                pass
+    if not call_text.strip():
+        call_text = grant.call_requirements or ""
+    return call_text, doc
+
+
+@router.post("/{grant_id}/writing/analyze-call")
+async def reanalyze_call(
+    grant_id: str,
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    grant = await _get_grant(grant_id, db)
+    call_text, _doc = await _resolve_call_text(grant_id, grant, db)
+    if not call_text.strip():
         raise HTTPException(400, "No call document or requirements available")
-    analysis = await orchestrator.analyze_call_document(grant, call_text, db, grant.call_url or "")
+    try:
+        analysis = await orchestrator.analyze_call_document(grant, call_text, db, grant.call_url or "")
+    except ValueError as e:
+        raise HTTPException(502, str(e)) from e
+    await db.refresh(grant)
     return {"call_analysis": analysis, "call_requirements": grant.call_requirements}
 
 

@@ -203,6 +203,23 @@ def require_org_admin() -> Callable:
     return _check
 
 
+def can_edit_archive(user: User) -> bool:
+    """Grant lead (or higher) or organization admin may create/edit archive entries."""
+    return _role_rank(user.role) >= _role_rank(UserRole.GRANT_LEAD) or is_org_admin(user)
+
+
+def require_archive_editor() -> Callable:
+    """Archive write endpoints: grant_lead+ or institution/org admin."""
+    async def _check(current_user: User = Depends(get_current_user)) -> User:
+        if not can_edit_archive(current_user):
+            raise HTTPException(
+                status_code=status.HTTP_403_FORBIDDEN,
+                detail="Requires grant lead role or organization admin privileges.",
+            )
+        return current_user
+    return _check
+
+
 # ---------------------------------------------------------------------------
 # Grant-level access dependency
 # ---------------------------------------------------------------------------

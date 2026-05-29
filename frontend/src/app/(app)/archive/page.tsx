@@ -141,11 +141,13 @@ function NewArchiveModal({ onClose, onCreated }: { onClose: () => void; onCreate
   const [proposalFile, setProposalFile] = useState<File | null>(null);
   const [callFile, setCallFile] = useState<File | null>(null);
   const [budgetFile, setBudgetFile] = useState<File | null>(null);
+  const [feedbackFile, setFeedbackFile] = useState<File | null>(null);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState('');
   const proposalFileRef = useRef<HTMLInputElement>(null);
   const callFileRef = useRef<HTMLInputElement>(null);
   const budgetFileRef = useRef<HTMLInputElement>(null);
+  const feedbackFileRef = useRef<HTMLInputElement>(null);
   const firstRef = useRef<HTMLInputElement>(null);
 
   const FILE_ACCEPT = '.pdf,.docx,.txt,application/pdf,application/vnd.openxmlformats-officedocument.wordprocessingml.document';
@@ -168,6 +170,7 @@ function NewArchiveModal({ onClose, onCreated }: { onClose: () => void; onCreate
       fd.append('proposal_file', proposalFile);
       if (callFile) fd.append('call_file', callFile);
       if (budgetFile) fd.append('budget_file', budgetFile);
+      if (feedbackFile) fd.append('feedback_file', feedbackFile);
       fd.append('title', form.title.trim());
       fd.append('outcome', form.outcome || 'pending');
       fd.append('submitted', 'true');
@@ -184,7 +187,7 @@ function NewArchiveModal({ onClose, onCreated }: { onClose: () => void; onCreate
       if (form.lessons_learned) fd.append('lessons_learned', form.lessons_learned);
 
       await archive.createWithDocument(fd);
-      const docCount = 1 + (callFile ? 1 : 0) + (budgetFile ? 1 : 0);
+      const docCount = 1 + (callFile ? 1 : 0) + (budgetFile ? 1 : 0) + (feedbackFile ? 1 : 0);
       onCreated(
         `Archive entry saved with ${docCount} document${docCount === 1 ? '' : 's'}. ` +
         'AI indexing is running in the background — you can continue working.'
@@ -352,6 +355,14 @@ function NewArchiveModal({ onClose, onCreated }: { onClose: () => void; onCreate
             inputRef={budgetFileRef}
             accept={BUDGET_ACCEPT}
             hint="Optional — PDF, DOCX, or spreadsheet (XLSX/CSV)."
+          />
+          <FileUploadButton
+            label="Reviewer feedback / call response"
+            file={feedbackFile}
+            onPick={setFeedbackFile}
+            inputRef={feedbackFileRef}
+            accept={FILE_ACCEPT}
+            hint="Optional — panel comments, call response letter, or reviewer notes (PDF/DOCX/TXT)."
           />
 
           <div className="flex flex-col gap-2">

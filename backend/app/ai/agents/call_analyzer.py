@@ -16,8 +16,69 @@ document in context natively.
 For very long documents (> 400k chars) the existing chunking logic is preserved.
 """
 import json
+import re
 import asyncio
 from app.ai.client import chat_complete
+
+
+def _parse_llm_json(response: str) -> dict:
+    """Parse JSON from an LLM response, tolerating markdown fences and trailing text."""
+    if not response or not response.strip():
+        return {}
+    text = response.strip()
+    try:
+        return json.loads(text)
+    except json.JSONDecodeError:
+        pass
+    # Extract ```json ... ``` or ``` ... ``` block
+    fence = re.search(r"```(?:json)?\s*([\s\S]*?)```", text, re.IGNORECASE)
+    if fence:
+        try:
+            return json.loads(fence.group(1).strip())
+        except json.JSONDecodeError:
+            pass
+    # First balanced { ... } object
+    start = text.find("{")
+    if start >= 0:
+        depth = 0
+        for i, ch in enumerate(text[start:], start):
+            if ch == "{":
+                depth += 1
+            elif ch == "}":
+                depth -= 1
+                if depth == 0:
+                    try:
+                        return json.loads(text[start : i + 1])
+                    except json.JSONDecodeError:
+                        break
+    return {}
+
+
+def _analysis_has_content(result: dict) -> bool:
+    """True if the analysis dict contains user-visible content."""
+    if not result:
+        return False
+    if result.get("narrative_brief") or result.get("summary"):
+        return True
+    list_fields = (
+        "call_background", "funder_priorities", "strategic_objectives",
+        "requirements_overview", "required_sections", "evaluation_criteria",
+        "eligibility_checklist", "risks", "missing_information", "thematic_areas",
+        "key_phrases", "key_focus_areas",
+    )
+    for field in list_fields:
+        val = result.get(field)
+        if isinstance(val, list) and len(val) > 0:
+            return True
+        if isinstance(val, dict) and len(val) > 0:
+            return True
+    if result.get("section_requirements"):
+        return True
+    scalar_fields = (
+        "budget_constraints", "geographic_eligibility", "award_amount",
+        "submission_portal", "required_partners",
+    )
+    return any(result.get(f) for f in scalar_fields)
 
 SYSTEM_PROMPT = """You are an expert grant analyst.
 Your task is to analyze grant calls and produce a thorough, complete analysis that helps proposal teams
@@ -87,10 +148,7 @@ Return a JSON object with:
         agent_name="call_analyzer",
         json_mode=True,
     )
-    try:
-        return json.loads(response)
-    except json.JSONDecodeError:
-        return {}
+    return _parse_llm_json(response)
 
 
 # ---------------------------------------------------------------------------
@@ -235,10 +293,15 @@ Return a JSON object with these fields. Be THOROUGH and COMPLETE — do not summ
         agent_name="call_analyzer",
         json_mode=True,
     )
-    try:
-        return json.loads(response)
-    except json.JSONDecodeError:
-        return {"raw_response": response, "error": "Failed to parse JSON"}
+    parsed = _parse_llm_json(response)
+    if parsed and _analysis_has_content(parsed):
+        return parsed
+    if parsed:
+        return parsed
+    return {
+        "error": "Failed to parse analysis response from the model",
+        "raw_response": (response or "")[:2000],
+    }
 
 
 # ---------------------------------------------------------------------------
@@ -386,4 +449,20 @@ async def analyze_call(
             )
 
     results = await asyncio.gather(*[analyze_with_sem(i, t) for i, t in enumerate(chunks_text)])
-    return _merge_chunk_results(list(results))
+    merged = _merge_chunk_results(list(results))
+
+    # If merge produced nothing useful, retry once without structure map (simpler prompt path)
+    if not _analysis_has_content(merged) and structure_map is not None:
+        fallback = await _analyze_chunk(
+            call_text[:CHUNK_SIZE],
+            0,
+            1,
+            call_url,
+            funder,
+            extra_instructions,
+            structure_map=None,
+        )
+        if _analysis_has_content(fallback):
+            return fallback
+
+    return merged

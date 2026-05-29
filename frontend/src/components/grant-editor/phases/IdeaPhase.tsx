@@ -34,6 +34,7 @@ interface IdeaPhaseProps {
   grantId: string;
   grantIdea: string;
   callAnalysis: Record<string, unknown>;
+  callRequirementsText?: string;
   stylePreview?: Array<Record<string, unknown>>;
   onIdeaChange: (idea: string) => void;
   onCallAnalysis: (analysis: Record<string, unknown>, requirements?: string) => void;
@@ -85,6 +86,7 @@ export default function IdeaPhase({
   grantId,
   grantIdea,
   callAnalysis,
+  callRequirementsText = '',
   onIdeaChange,
   onCallAnalysis,
   onGenerateSkeleton,
@@ -107,6 +109,7 @@ export default function IdeaPhase({
   const [isDragOver, setIsDragOver] = useState(false);
   const [uploadedDoc, setUploadedDoc] = useState<UploadedCallDoc | null>(null);
   const [reanalyzing, setReanalyzing] = useState(false);
+  const [analysisError, setAnalysisError] = useState<string | null>(null);
 
   // Voice state
   const [listening, setListening] = useState(false);
@@ -119,13 +122,17 @@ export default function IdeaPhase({
 
   const fileRef = useRef<HTMLInputElement>(null);
 
-  const hasExistingAnalysis = callAnalysis && Object.keys(callAnalysis).length > 0;
+  const hasExistingAnalysis =
+    (callAnalysis && Object.keys(callAnalysis).length > 0) ||
+    !!callRequirementsText?.trim();
   const docLinked = !!googleDocId;
   const docSyncBusy = ['linking', 'creating', 'pushing', 'pulling'].includes(docSyncState);
 
   // --- Upload ---
   const handleUpload = async (file: File) => {
     setUploading(true);
+    setAnalysisError(null);
+    setIntelligenceExpanded(true);
     try {
       const { data } = await grantWriting.uploadCall(grantId, file);
       setUploadedDoc({
@@ -135,6 +142,9 @@ export default function IdeaPhase({
         uploaded_at: new Date().toISOString(),
       });
       onCallAnalysis(data.call_analysis || {}, data.call_requirements);
+    } catch (e: unknown) {
+      const detail = (e as { response?: { data?: { detail?: string } } }).response?.data?.detail;
+      setAnalysisError(detail || (e as { message?: string }).message || 'Call analysis failed.');
     } finally {
       setUploading(false);
     }
@@ -142,9 +152,16 @@ export default function IdeaPhase({
 
   const handleReanalyze = async () => {
     setReanalyzing(true);
+    setAnalysisError(null);
+    setIntelligenceExpanded(true);
     try {
       const res = await grantWriting.analyzeCall(grantId);
       onCallAnalysis(res.data.call_analysis || {}, res.data.call_requirements);
+      setAnalysisError(null);
+    } catch (e: unknown) {
+      const detail = (e as { response?: { data?: { detail?: string } } }).response?.data?.detail;
+      const message = detail || (e as { message?: string }).message || 'Call analysis failed. Please try again.';
+      setAnalysisError(message);
     } finally {
       setReanalyzing(false);
     }
@@ -466,8 +483,10 @@ export default function IdeaPhase({
           >
             <CallRequirementsPanel
               callAnalysis={callAnalysis}
+              callRequirementsText={callRequirementsText}
               onReanalyze={handleReanalyze}
               reanalyzing={reanalyzing}
+              analysisError={analysisError}
             />
           </CollapsibleSection>
         )}

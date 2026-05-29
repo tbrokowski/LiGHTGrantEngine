@@ -45,8 +45,30 @@ interface KeyPhrase {
 
 interface CallRequirementsPanelProps {
   callAnalysis: Record<string, unknown>;
+  callRequirementsText?: string;
   onReanalyze?: () => void;
   reanalyzing?: boolean;
+  analysisError?: string | null;
+}
+
+function hasDisplayableContent(analysis: Record<string, unknown>): boolean {
+  if (analysis.narrative_brief || analysis.summary) return true;
+  const listKeys = [
+    'call_background', 'funder_priorities', 'strategic_objectives', 'requirements_overview',
+    'required_sections', 'evaluation_criteria', 'risks', 'missing_information', 'thematic_areas',
+  ];
+  for (const key of listKeys) {
+    const val = analysis[key];
+    if (Array.isArray(val) && val.length > 0) return true;
+  }
+  if (Array.isArray(analysis.key_phrases) && analysis.key_phrases.length > 0) return true;
+  if (Array.isArray(analysis.key_focus_areas) && analysis.key_focus_areas.length > 0) return true;
+  const secReqs = analysis.section_requirements;
+  if (secReqs && typeof secReqs === 'object' && Object.keys(secReqs as object).length > 0) return true;
+  const scalars = [
+    'budget_constraints', 'geographic_eligibility', 'award_amount', 'submission_portal',
+  ];
+  return scalars.some((k) => Boolean(analysis[k]));
 }
 
 // ---------------------------------------------------------------------------
@@ -102,15 +124,54 @@ function BulletList({ items, className = '' }: { items: string[]; className?: st
 // Main component
 // ---------------------------------------------------------------------------
 
-export default function CallRequirementsPanel({ callAnalysis, onReanalyze, reanalyzing }: CallRequirementsPanelProps) {
+export default function CallRequirementsPanel({
+  callAnalysis,
+  callRequirementsText,
+  onReanalyze,
+  reanalyzing,
+  analysisError,
+}: CallRequirementsPanelProps) {
   const [expandedSection, setExpandedSection] = useState<string | null>(null);
   const [expandedFocusArea, setExpandedFocusArea] = useState<string | null>(null);
 
-  if (!callAnalysis || Object.keys(callAnalysis).length === 0) {
+  if (reanalyzing) {
+    return (
+      <div className="flex flex-col items-center justify-center gap-3 py-10 text-center">
+        <RefreshCw className="w-6 h-6 text-indigo-500 animate-spin" />
+        <p className="text-sm text-gray-600">Analyzing call document…</p>
+        <p className="text-xs text-gray-400">This may take 1–3 minutes for long calls</p>
+      </div>
+    );
+  }
+
+  const hasAnalysisObject = callAnalysis && Object.keys(callAnalysis).length > 0;
+  const hasContent = hasAnalysisObject && hasDisplayableContent(callAnalysis);
+
+  if (!hasAnalysisObject && !callRequirementsText?.trim()) {
     return (
       <p className="text-sm text-gray-400 italic">
         Upload a call document to generate a detailed brief.
       </p>
+    );
+  }
+
+  if (!hasAnalysisObject && callRequirementsText?.trim()) {
+    return (
+      <div className="space-y-3">
+        <p className="text-sm font-semibold text-gray-700">Call Requirements</p>
+        <pre className="text-sm text-gray-600 whitespace-pre-wrap font-sans leading-relaxed">
+          {callRequirementsText}
+        </pre>
+        {onReanalyze && (
+          <button
+            type="button"
+            onClick={onReanalyze}
+            className="text-xs font-medium text-indigo-600 hover:text-indigo-800"
+          >
+            Re-analyze for structured intelligence
+          </button>
+        )}
+      </div>
     );
   }
 
@@ -141,7 +202,18 @@ export default function CallRequirementsPanel({ callAnalysis, onReanalyze, reana
   const requirementsOverview = callAnalysis.requirements_overview as string[] | undefined;
 
   // Detect whether the new enhanced fields are present (post-deployment analysis)
-  const isEnhanced = !!(callBackground?.length || requirementsOverview?.length || funderPriorities?.length);
+  const isEnhanced = !!(
+    callBackground?.length ||
+    requirementsOverview?.length ||
+    funderPriorities?.length ||
+    strategicObjectives?.length ||
+    (keyPhrases?.length ?? 0) > 0 ||
+    (keyFocusAreas?.length ?? 0) > 0
+  );
+
+  const analysisErrorMsg =
+    analysisError ||
+    (typeof callAnalysis.error === 'string' ? callAnalysis.error : null);
 
   const primaryDeadline = deadlines?.full_proposal || deadlines?.concept_note || deadlines?.loi;
 
@@ -164,6 +236,21 @@ export default function CallRequirementsPanel({ callAnalysis, onReanalyze, reana
 
   return (
     <div className="space-y-5">
+      {analysisErrorMsg && (
+        <div className="rounded-lg border border-red-200 bg-red-50 px-3 py-2 text-sm text-red-700">
+          {analysisErrorMsg}
+          {onReanalyze && (
+            <button
+              type="button"
+              onClick={onReanalyze}
+              className="ml-2 font-medium underline hover:no-underline"
+            >
+              Try again
+            </button>
+          )}
+        </div>
+      )}
+
       {/* Stats line */}
       {(statParts.length > 0 || foaNumber) && (
         <p className="text-sm text-gray-500">
@@ -197,9 +284,8 @@ export default function CallRequirementsPanel({ callAnalysis, onReanalyze, reana
       )}
 
       {/* ------------------------------------------------------------------ */}
-      {/* Fallback for old analyses: show narrative_brief prominently         */}
-      {/* ------------------------------------------------------------------ */}
-      {!isEnhanced && (narrativeBrief || summary) && (
+      {/* Call brief — show whenever present (legacy or alongside enhanced sections) */}
+      {(narrativeBrief || summary) && !isEnhanced && (
         <div className="space-y-1.5">
           <p className="text-sm font-semibold text-gray-700">Call Brief</p>
           <div className="text-sm text-gray-700 leading-relaxed space-y-2.5">
@@ -210,21 +296,30 @@ export default function CallRequirementsPanel({ callAnalysis, onReanalyze, reana
         </div>
       )}
 
-      {/* Re-analyze nudge for old analyses */}
-      {!isEnhanced && onReanalyze && (
+      {/* Re-analyze nudge only when there is no displayable structured content */}
+      {!hasContent && !analysisErrorMsg && onReanalyze && (
         <div className="flex items-center gap-2 py-2 px-3 rounded-lg bg-indigo-50 border border-indigo-100">
-          <RefreshCw className={`w-3.5 h-3.5 text-indigo-500 flex-shrink-0 ${reanalyzing ? 'animate-spin' : ''}`} />
+          <RefreshCw className="w-3.5 h-3.5 text-indigo-500 flex-shrink-0" />
           <p className="text-xs text-indigo-700 flex-1">
             Re-analyze to get Background, Objectives, Key Phrases and more
           </p>
           <button
+            type="button"
             onClick={onReanalyze}
-            disabled={reanalyzing}
-            className="text-xs font-medium text-indigo-600 hover:text-indigo-800 disabled:opacity-50 whitespace-nowrap"
+            className="text-xs font-medium text-indigo-600 hover:text-indigo-800 whitespace-nowrap"
           >
-            {reanalyzing ? 'Analyzing…' : 'Re-analyze'}
+            Re-analyze
           </button>
         </div>
+      )}
+
+      {/* Fallback: formatted requirements text when JSON has no renderable fields */}
+      {!hasContent && callRequirementsText?.trim() && (
+        <CollapsibleGroup label="Call Requirements" defaultOpen>
+          <pre className="text-sm text-gray-600 whitespace-pre-wrap font-sans leading-relaxed">
+            {callRequirementsText}
+          </pre>
+        </CollapsibleGroup>
       )}
 
       {/* ------------------------------------------------------------------ */}

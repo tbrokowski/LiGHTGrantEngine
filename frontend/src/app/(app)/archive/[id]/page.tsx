@@ -4,6 +4,7 @@ import { useParams } from 'next/navigation';
 import Link from 'next/link';
 import { ChevronDown, ChevronRight, Pencil, X } from 'lucide-react';
 import { archive } from '@/lib/api';
+import { useAuth } from '@/lib/auth';
 import { usePdfViewer } from '@/contexts/PdfViewerContext';
 import EditArchiveModal from '@/components/archive/EditArchiveModal';
 
@@ -53,6 +54,7 @@ interface ArchiveDetail {
   themes?: string[];
   geographies?: string[];
   abstract?: string;
+  reviewer_feedback?: string;
   outcome_notes?: string;
   lessons_learned?: string;
   reuse_approved?: boolean;
@@ -79,6 +81,7 @@ const DOC_TYPE_LABEL: Record<string, string> = {
   call_document: 'Call / RFP',
   full_proposal: 'Submitted proposal',
   budget: 'Budget',
+  review_feedback: 'Reviewer feedback',
 };
 
 const DOC_STATUS_LABEL: Record<string, string> = {
@@ -106,6 +109,8 @@ function sortSections(sections: ProposalSection[]): ProposalSection[] {
 
 export default function ArchiveDetailPage() {
   const { id } = useParams<{ id: string }>();
+  const { user } = useAuth();
+  const canEdit = user?.role === 'admin' || user?.role === 'grant_lead' || user?.institution_role === 'admin';
   const [entry, setEntry] = useState<ArchiveDetail | null>(null);
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
@@ -220,14 +225,16 @@ export default function ArchiveDetailPage() {
           <span>/</span>
           <span className="text-gray-600 truncate">{entry.title}</span>
         </div>
-        <button
-          type="button"
-          onClick={() => setShowEdit(true)}
-          className="shrink-0 flex items-center gap-1.5 text-xs px-3 py-1.5 rounded-lg border border-gray-200 text-gray-600 hover:bg-gray-50 transition-colors"
-        >
-          <Pencil className="w-3.5 h-3.5" />
-          Edit
-        </button>
+        {canEdit && (
+          <button
+            type="button"
+            onClick={() => setShowEdit(true)}
+            className="shrink-0 flex items-center gap-1.5 text-xs px-3 py-1.5 rounded-lg border border-gray-200 text-gray-600 hover:bg-gray-50 transition-colors"
+          >
+            <Pencil className="w-3.5 h-3.5" />
+            Edit
+          </button>
+        )}
       </div>
 
       {/* Header */}
@@ -486,10 +493,12 @@ export default function ArchiveDetailPage() {
             </div>
           </div>
         )}
-        {entry.outcome_notes && (
+        {(entry.reviewer_feedback || entry.outcome_notes) && (
           <div className="bg-white border border-gray-200 rounded-lg p-5">
-            <h3 className="text-xs font-semibold text-gray-500 uppercase tracking-wide mb-2">Outcome Notes</h3>
-            <p className="text-sm text-gray-700 whitespace-pre-wrap leading-relaxed">{entry.outcome_notes}</p>
+            <h3 className="text-xs font-semibold text-gray-500 uppercase tracking-wide mb-2">Reviewer Feedback</h3>
+            <p className="text-sm text-gray-700 whitespace-pre-wrap leading-relaxed">
+              {entry.reviewer_feedback || entry.outcome_notes}
+            </p>
           </div>
         )}
         {entry.lessons_learned && (
