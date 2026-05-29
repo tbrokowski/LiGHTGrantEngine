@@ -239,23 +239,21 @@ def scan_source(self, source_id: str):
 
 def _process_listing(db, listing: dict, source_id: str, source_url: str | None = None) -> str:
     """Process a single raw listing: normalize, deduplicate, persist."""
-    from sqlalchemy import select
-    from app.models.opportunity import Opportunity, DuplicateStatus
+    from app.services.opportunity_dedup import find_existing_duplicate
 
     call_url = (listing.get("url") or "").strip()
     if not call_url:
         return "skipped"
 
-    # Check for URL duplicate
-    existing = db.execute(
-        select(Opportunity).where(Opportunity.opportunity_url == call_url)
-    ).scalar_one_or_none()
+    existing = find_existing_duplicate(db, listing)
     if existing:
         # Re-queue enrichment only if the record was never successfully fetched
         if not existing.parsed_text and existing.opportunity_url:
             from app.workers.enrichment_tasks import enrich_opportunity
             enrich_opportunity.delay(str(existing.id))
         return "duplicate"
+
+    from app.models.opportunity import Opportunity, DuplicateStatus
 
     # Resolve funder logo URL
     funder_logo_url = _get_funder_logo_url(listing.get("funder") or "")

@@ -5,7 +5,8 @@ Fetches open and forthcoming calls from the EU Funding & Tenders Portal
 (Horizon Europe, ERC, EIC, Digital Europe, LIFE, etc.).
 
 Uses the public EC Search API — no registration required.
-Public API key: SEDIA_NONH2020_PROD (passed as ?apiKey= query param)
+Calls/grants API key: SEDIA (passed as ?apiKey= query param)
+Projects API key: SEDIA_NONH2020_PROD — do NOT use for grant calls
 API docs: https://ec.europa.eu/info/funding-tenders/opportunities/portal/screen/support/apis
 
 Two modes:
@@ -30,8 +31,10 @@ _PUBLIC_FALLBACK_URL = (
     "&pageNumber=1&pageSize=50&sortBy=startDate"
 )
 
-# EC Search API public key — no registration required
-_PUBLIC_API_KEY = "SEDIA_NONH2020_PROD"
+# EC Search API keys — no registration required
+# SEDIA = calls for proposals / grant opportunities (topic-details)
+# SEDIA_NONH2020_PROD = funded projects (projects-details) — wrong index for this scraper
+_CALLS_API_KEY = "SEDIA"
 
 # Status codes:  31094501 = Forthcoming,  31094502 = Open
 _OPEN_STATUSES = ["31094501", "31094502"]
@@ -45,20 +48,26 @@ class EUFundingScraper(BaseScraper):
     def fetch(self) -> list[dict]:
         cfg = self.source.scraper_config or {}
         # Allow an optional override API key from scraper_config
-        api_key = cfg.get("api_key") or cfg.get("eu_api_key") or _PUBLIC_API_KEY
+        api_key = cfg.get("api_key") or cfg.get("eu_api_key") or _CALLS_API_KEY
 
         # Determine incremental window: if this source has run before, only
         # fetch grants that started/were posted since that run (minus 1 day buffer).
+        # Force a full scrape when the source has never actually added any grants
+        # (e.g. prior runs succeeded but returned 0 due to a bug).
         since_date: datetime | None = None
         last_run = getattr(self.source, "last_successful_run", None)
-        if last_run:
+        never_added = getattr(self.source, "opportunities_added", 0) == 0
+        if last_run and not never_added:
             since_date = last_run - timedelta(days=1)
             logger.info(
                 "EU scraper: incremental mode",
                 since=since_date.isoformat(),
             )
         else:
-            logger.info("EU scraper: full scrape mode (no prior run)")
+            logger.info(
+                "EU scraper: full scrape mode",
+                reason="no prior run" if not last_run else "no grants added yet",
+            )
 
         results = self._fetch_all_pages(api_key, since_date)
 
@@ -66,6 +75,18 @@ class EUFundingScraper(BaseScraper):
         if not results:
             logger.info("EU API returned no results, trying public fallback")
             results = self._fetch_public()
+
+        # Deduplicate within this run (guards against duplicate pages in the
+        # API response and against multiple EU sources running the same query).
+        from app.services.opportunity_dedup import dedup_listings
+        before = len(results)
+        results = dedup_listings(results)
+        if before != len(results):
+            logger.info(
+                "EU scraper: removed within-run duplicates",
+                before=before,
+                after=len(results),
+            )
 
         logger.info("EU Funding scraper complete", found=len(results))
         return results
