@@ -59,7 +59,7 @@ celery_app.conf.beat_schedule = {
         "schedule": crontab(hour=8, minute=0, day_of_week=1),
     },
     "resurface-missing-institution-opps": {
-        "task": "app.workers.surfacing_tasks.bootstrap_global_pool",
+        "task": "app.workers.surfacing_tasks.surface_missing_institution_links_all",
         "schedule": crontab(hour=3, minute=0),
     },
     "recluster-opportunities": {

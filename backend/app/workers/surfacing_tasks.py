@@ -272,6 +272,19 @@ def llm_rescore_institution(self, institution_id: str) -> dict:
     return {"scored": scored, "failed": failed}
 
 
+@celery_app.task(name="app.workers.surfacing_tasks.surface_missing_institution_links_all")
+def surface_missing_institution_links_all() -> dict:
+    """Backfill InstitutionOpportunity rows for scraped opps missing institution links."""
+    from app.config import get_settings
+    from app.services.grant_bootstrap import surface_missing_for_all_institutions
+
+    settings = get_settings()
+    engine = create_engine(settings.database_url)
+    with Session(engine) as db:
+        surfaced = surface_missing_for_all_institutions(db)
+    return {"surfaced": surfaced}
+
+
 @celery_app.task(name="app.workers.surfacing_tasks.bootstrap_global_pool")
 def bootstrap_global_pool() -> dict:
     from app.services.grant_bootstrap import run_full_bootstrap

@@ -7,7 +7,7 @@ import uuid
 from datetime import date, datetime, timezone
 from pathlib import Path
 
-from sqlalchemy import create_engine, select, text
+from sqlalchemy import create_engine, select, and_, func, text
 from sqlalchemy.orm import Session
 
 from app.config import get_settings
@@ -206,6 +206,50 @@ def surface_opportunity_for_institution(
     return row
 
 
+def surface_opportunity_for_all_institutions(session: Session, opportunity: Opportunity) -> int:
+    """Link one opportunity to every institution (creates InstitutionOpportunity rows)."""
+    institutions = session.execute(select(Institution)).scalars().all()
+    count = 0
+    for inst in institutions:
+        if surface_opportunity_for_institution(session, inst.id, opportunity):
+            count += 1
+    if count:
+        session.commit()
+    return count
+
+
+def surface_missing_institution_links(session: Session, institution_id: str) -> int:
+    """Create InstitutionOpportunity rows for global opps not yet linked to an institution."""
+    missing = session.execute(
+        select(Opportunity)
+        .outerjoin(
+            InstitutionOpportunity,
+            and_(
+                InstitutionOpportunity.opportunity_id == Opportunity.id,
+                InstitutionOpportunity.institution_id == institution_id,
+            ),
+        )
+        .where(Opportunity.status != "duplicate")
+        .where(InstitutionOpportunity.opportunity_id.is_(None))
+    ).scalars().all()
+
+    count = 0
+    for opp in missing:
+        if surface_opportunity_for_institution(session, institution_id, opp):
+            count += 1
+    if count:
+        session.commit()
+    return count
+
+
+def surface_missing_for_all_institutions(session: Session) -> int:
+    institutions = session.execute(select(Institution)).scalars().all()
+    total = 0
+    for inst in institutions:
+        total += surface_missing_institution_links(session, inst.id)
+    return total
+
+
 def bootstrap_institution_feed(session: Session, institution_id: str, *, force: bool = False) -> int:
     """Surface all global opportunities for one institution.
 
@@ -231,14 +275,21 @@ def bootstrap_all_institution_feeds(session: Session, *, force: bool = False) ->
 
 
 def needs_resync(session: Session, institution_id: str) -> bool:
-    """Return True if the institution has opportunities that have no InstitutionOpportunity record."""
-    opp_count = session.execute(select(Opportunity)).scalars().all()
-    io_count = session.execute(
-        select(InstitutionOpportunity).where(
-            InstitutionOpportunity.institution_id == institution_id
+    """Return True if any non-duplicate opportunity lacks an InstitutionOpportunity row."""
+    missing = session.execute(
+        select(func.count())
+        .select_from(Opportunity)
+        .outerjoin(
+            InstitutionOpportunity,
+            and_(
+                InstitutionOpportunity.opportunity_id == Opportunity.id,
+                InstitutionOpportunity.institution_id == institution_id,
+            ),
         )
-    ).scalars().all()
-    return len(opp_count) > 0 and len(io_count) == 0
+        .where(Opportunity.status != "duplicate")
+        .where(InstitutionOpportunity.opportunity_id.is_(None))
+    ).scalar()
+    return (missing or 0) > 0
 
 
 def queue_missing_enrichments(session: Session) -> int:
@@ -269,7 +320,15 @@ def run_full_bootstrap(*, force: bool = False) -> dict:
         # but no InstitutionOpportunity rows (i.e. first boot or after data loss).
         institutions = session.execute(select(Institution)).scalars().all()
         should_force = force or any(needs_resync(session, i.id) for i in institutions)
-        feeds = bootstrap_all_institution_feeds(session, force=should_force)
+        if force:
+            feeds = bootstrap_all_institution_feeds(session, force=True)
+        else:
+            feeds = surface_missing_for_all_institutions(session)
+            if should_force:
+                logger.info(
+                    "Surfaced missing institution_opportunity links for %d institutions",
+                    len(institutions),
+                )
         enrichments_queued = queue_missing_enrichments(session)
     return {
         "sources_added": sources_added,

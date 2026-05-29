@@ -1,3 +1,4 @@
+# Pin to Debian Bookworm — Trixie (slim default) breaks Playwright --with-deps font packages.
 FROM python:3.11-slim-bookworm
 
 WORKDIR /app

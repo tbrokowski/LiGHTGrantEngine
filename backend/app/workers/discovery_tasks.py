@@ -293,11 +293,13 @@ def _process_listing(db, listing: dict, source_id: str, source_url: str | None =
     db.add(opp)
     db.commit()
 
-    # Queue full-page description enrichment; surfacing handled per-institution
+    # Surface to all institutions synchronously so queue works even without a Celery worker.
+    from app.services.grant_bootstrap import surface_opportunity_for_all_institutions
+    surface_opportunity_for_all_institutions(db, opp)
+
+    # Queue full-page description enrichment
     from app.workers.enrichment_tasks import enrich_opportunity
     enrich_opportunity.delay(str(opp.id))
-    from app.workers.surfacing_tasks import surface_opportunity_for_institutions
-    surface_opportunity_for_institutions.delay(str(opp.id))
     return "new"
 
 
