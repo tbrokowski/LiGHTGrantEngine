@@ -2,7 +2,8 @@
 import { useEffect, useState } from 'react';
 import { useSearchParams } from 'next/navigation';
 import { Suspense } from 'react';
-import { sources, auth } from '@/lib/api';
+import { sources, auth, admin } from '@/lib/api';
+import { notifyOpportunitiesChanged } from '@/lib/opportunities-events';
 import { MembersPanel } from '@/components/settings/MembersPanel';
 import { JoinRequestsPanel } from '@/components/settings/JoinRequestsPanel';
 import { InvitePanel } from '@/components/settings/InvitePanel';
@@ -414,6 +415,8 @@ function SettingsPageInner() {
   const [running, setRunning] = useState<string | null>(null);
   const [scanningAll, setScanningAll] = useState(false);
   const [scanAllResult, setScanAllResult] = useState<string | null>(null);
+  const [deduplicating, setDeduplicating] = useState(false);
+  const [dedupResult, setDedupResult] = useState<string | null>(null);
   const [toggling, setToggling] = useState<string | null>(null);
   const [deleting, setDeleting] = useState<string | null>(null);
   const [showAdd, setShowAdd] = useState(false);
@@ -503,6 +506,31 @@ function SettingsPageInner() {
       setTimeout(() => setScanAllResult(null), 6000);
     } finally {
       setScanningAll(false);
+    }
+  }
+
+  async function handleDedup() {
+    setDeduplicating(true);
+    setDedupResult(null);
+    try {
+      await admin.deduplicateOpportunities();
+      setDedupResult('Deduplication running. Duplicates will be removed shortly.');
+      // Refresh the opportunities list once the task has had time to run
+      const refreshAt = (delay: number) =>
+        setTimeout(() => notifyOpportunitiesChanged(), delay);
+      refreshAt(5_000);
+      refreshAt(30_000);
+      setTimeout(() => setDedupResult(null), 60_000);
+    } catch (err: unknown) {
+      const status = (err as { response?: { status?: number } })?.response?.status;
+      if (status === 403) {
+        setDedupResult('Admin access required.');
+      } else {
+        setDedupResult('Failed to queue deduplication. Is the worker running?');
+      }
+      setTimeout(() => setDedupResult(null), 8_000);
+    } finally {
+      setDeduplicating(false);
     }
   }
 
@@ -627,29 +655,56 @@ function SettingsPageInner() {
           <h2 className="text-lg font-semibold text-gray-900">Data Sources</h2>
           <p className="text-sm text-gray-500 mt-1">Manage grant discovery sources</p>
         </div>
-        <div className="flex flex-col items-end gap-1.5">
-          <button
-            onClick={handleScanAll}
-            disabled={scanningAll || sourceList.length === 0}
-            className="flex items-center gap-2 text-sm bg-blue-600 hover:bg-blue-700 text-white px-4 py-2 rounded-lg disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
-          >
-            {scanningAll ? (
-              <>
-                <svg className="animate-spin h-4 w-4" fill="none" viewBox="0 0 24 24">
-                  <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
-                  <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z" />
-                </svg>
-                Scanning…
-              </>
-            ) : (
-              <>
-                <svg className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
-                  <path strokeLinecap="round" strokeLinejoin="round" d="M21 21l-4.35-4.35M17 11A6 6 0 1 0 5 11a6 6 0 0 0 12 0z" />
-                </svg>
-                Scan all sources now
-              </>
-            )}
-          </button>
+        <div className="flex flex-col items-end gap-2">
+          <div className="flex items-center gap-2">
+            <button
+              onClick={handleDedup}
+              disabled={deduplicating}
+              className="flex items-center gap-2 text-sm bg-white hover:bg-gray-50 text-gray-700 border border-gray-300 px-4 py-2 rounded-lg disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
+            >
+              {deduplicating ? (
+                <>
+                  <svg className="animate-spin h-4 w-4 text-gray-500" fill="none" viewBox="0 0 24 24">
+                    <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
+                    <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z" />
+                  </svg>
+                  Deduplicating…
+                </>
+              ) : (
+                <>
+                  <svg className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+                    <path strokeLinecap="round" strokeLinejoin="round" d="M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2m-6 9l2 2 4-4" />
+                  </svg>
+                  Deduplicate opportunities
+                </>
+              )}
+            </button>
+            <button
+              onClick={handleScanAll}
+              disabled={scanningAll || sourceList.length === 0}
+              className="flex items-center gap-2 text-sm bg-blue-600 hover:bg-blue-700 text-white px-4 py-2 rounded-lg disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
+            >
+              {scanningAll ? (
+                <>
+                  <svg className="animate-spin h-4 w-4" fill="none" viewBox="0 0 24 24">
+                    <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
+                    <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z" />
+                  </svg>
+                  Scanning…
+                </>
+              ) : (
+                <>
+                  <svg className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+                    <path strokeLinecap="round" strokeLinejoin="round" d="M21 21l-4.35-4.35M17 11A6 6 0 1 0 5 11a6 6 0 0 0 12 0z" />
+                  </svg>
+                  Scan all sources now
+                </>
+              )}
+            </button>
+          </div>
+          {dedupResult && (
+            <p className="text-xs text-amber-600">{dedupResult}</p>
+          )}
           {scanAllResult && (
             <p className="text-xs text-gray-500">{scanAllResult}</p>
           )}

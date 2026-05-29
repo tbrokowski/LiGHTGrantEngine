@@ -380,6 +380,14 @@ export const sources = {
   summary: () => api.get('/sources/status/summary'),
 };
 
+// ── Admin ─────────────────────────────────────────────────────────────────────
+export const admin = {
+  deduplicateOpportunities: () => api.post('/admin/deduplicate-opportunities'),
+  reindex: () => api.post('/admin/reindex'),
+  resyncFeeds: (institutionId?: string) =>
+    api.post('/admin/resync-feeds', {}, { params: institutionId ? { institution_id: institutionId } : {} }),
+};
+
 // ── Tasks ────────────────────────────────────────────────────────────────────
 export const tasks = {
   myTasks: () => api.get('/tasks/my-tasks'),
