@@ -43,9 +43,12 @@ interface KeyPhrase {
   significance?: string;
 }
 
+type CallAnalysisStatus = 'idle' | 'running' | 'completed' | 'failed';
+
 interface CallRequirementsPanelProps {
   callAnalysis: Record<string, unknown>;
   callRequirementsText?: string;
+  callAnalysisStatus?: CallAnalysisStatus;
   onReanalyze?: () => void;
   reanalyzing?: boolean;
   analysisError?: string | null;
@@ -127,6 +130,7 @@ function BulletList({ items, className = '' }: { items: string[]; className?: st
 export default function CallRequirementsPanel({
   callAnalysis,
   callRequirementsText,
+  callAnalysisStatus = 'idle',
   onReanalyze,
   reanalyzing,
   analysisError,
@@ -134,7 +138,9 @@ export default function CallRequirementsPanel({
   const [expandedSection, setExpandedSection] = useState<string | null>(null);
   const [expandedFocusArea, setExpandedFocusArea] = useState<string | null>(null);
 
-  if (reanalyzing) {
+  const isRunning = reanalyzing || callAnalysisStatus === 'running';
+
+  if (isRunning) {
     return (
       <div className="flex flex-col items-center justify-center gap-3 py-10 text-center">
         <RefreshCw className="w-6 h-6 text-indigo-500 animate-spin" />
@@ -236,10 +242,10 @@ export default function CallRequirementsPanel({
 
   return (
     <div className="space-y-5">
-      {analysisErrorMsg && (
+      {analysisErrorMsg && !isRunning && (
         <div className="rounded-lg border border-red-200 bg-red-50 px-3 py-2 text-sm text-red-700">
           {analysisErrorMsg}
-          {onReanalyze && (
+          {onReanalyze && callAnalysisStatus !== 'running' && (
             <button
               type="button"
               onClick={onReanalyze}
@@ -297,7 +303,7 @@ export default function CallRequirementsPanel({
       )}
 
       {/* Re-analyze nudge only when there is no displayable structured content */}
-      {!hasContent && !analysisErrorMsg && onReanalyze && (
+      {!hasContent && !analysisErrorMsg && !isRunning && onReanalyze && (
         <div className="flex items-center gap-2 py-2 px-3 rounded-lg bg-indigo-50 border border-indigo-100">
           <RefreshCw className="w-3.5 h-3.5 text-indigo-500 flex-shrink-0" />
           <p className="text-xs text-indigo-700 flex-1">

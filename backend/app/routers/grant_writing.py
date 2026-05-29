@@ -7,7 +7,7 @@ import uuid
 from typing import Optional
 
 from fastapi import APIRouter, Depends, File, HTTPException, UploadFile
-from fastapi.responses import StreamingResponse
+from fastapi.responses import JSONResponse, StreamingResponse
 from pydantic import BaseModel
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -131,6 +131,8 @@ async def writing_status(
         "last_review": grant.last_review or {},
         "skeleton_section_count": len(sections),
         "has_call_analysis": bool(grant.call_analysis),
+        "call_analysis_status": getattr(grant, "call_analysis_status", None) or "idle",
+        "call_analysis_error": getattr(grant, "call_analysis_error", None),
         "has_draft": bool(grant.editor_document),
     }
 
@@ -209,20 +211,20 @@ async def upload_call_document(
     db.add(workspace_file)
     await db.commit()
 
-    try:
-        analysis = await orchestrator.analyze_call_document(grant, parsed_text, db, grant.call_url or "")
-    except ValueError as e:
-        raise HTTPException(502, str(e)) from e
-    await _log_ai_run(db, current_user.id, grant_id, AgentType.CALL_ANALYZER, analysis)
     await db.refresh(grant)
-    return {
-        "document_id": doc_id,
-        "file_name": safe_name,
-        "file_url": file_url,
-        "call_analysis": analysis,
-        "call_requirements": grant.call_requirements,
-        "parsed_chars": len(parsed_text),
-    }
+    analysis_payload = await _enqueue_call_analysis(
+        grant, parsed_text, db, current_user.id
+    )
+    return JSONResponse(
+        status_code=202,
+        content={
+            "document_id": doc_id,
+            "file_name": safe_name,
+            "file_url": file_url,
+            "parsed_chars": len(parsed_text),
+            **analysis_payload,
+        },
+    )
 
 
 async def _resolve_call_text(grant_id: str, grant, db: AsyncSession) -> tuple[str, Document | None]:
@@ -251,7 +253,44 @@ async def _resolve_call_text(grant_id: str, grant, db: AsyncSession) -> tuple[st
     return call_text, doc
 
 
-@router.post("/{grant_id}/writing/analyze-call")
+async def _enqueue_call_analysis(
+    grant: ActiveGrant,
+    call_text: str,
+    db: AsyncSession,
+    user_id: str,
+) -> dict:
+    """Mark analysis as running, commit, and queue Celery worker."""
+    from app.workers.celery_app import celery_app
+
+    if (grant.call_analysis_status or "idle") == "running":
+        return {
+            "status": "running",
+            "call_analysis_status": "running",
+            "message": "Call analysis already in progress",
+        }
+
+    grant.call_analysis_status = "running"
+    grant.call_analysis_error = None
+    await db.commit()
+
+    celery_app.send_task(
+        "app.workers.grant_writing_tasks.analyze_grant_call",
+        args=[
+            grant.id,
+            call_text,
+            grant.call_url or "",
+            grant.funder or "",
+            user_id,
+        ],
+    )
+    return {
+        "status": "running",
+        "call_analysis_status": "running",
+        "message": "Call analysis started",
+    }
+
+
+@router.post("/{grant_id}/writing/analyze-call", status_code=202)
 async def reanalyze_call(
     grant_id: str,
     db: AsyncSession = Depends(get_db),
@@ -261,12 +300,8 @@ async def reanalyze_call(
     call_text, _doc = await _resolve_call_text(grant_id, grant, db)
     if not call_text.strip():
         raise HTTPException(400, "No call document or requirements available")
-    try:
-        analysis = await orchestrator.analyze_call_document(grant, call_text, db, grant.call_url or "")
-    except ValueError as e:
-        raise HTTPException(502, str(e)) from e
-    await db.refresh(grant)
-    return {"call_analysis": analysis, "call_requirements": grant.call_requirements}
+    payload = await _enqueue_call_analysis(grant, call_text, db, current_user.id)
+    return JSONResponse(status_code=202, content=payload)
 
 
 @router.post("/{grant_id}/writing/generate-skeleton")

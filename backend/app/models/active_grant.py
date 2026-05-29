@@ -104,6 +104,8 @@ class ActiveGrant(Base):
     # Grant writing studio session state
     grant_idea: Mapped[str | None] = mapped_column(Text)
     call_analysis: Mapped[dict] = mapped_column(JSON, default=dict)
+    call_analysis_status: Mapped[str] = mapped_column(String(20), default="idle", server_default="idle")
+    call_analysis_error: Mapped[str | None] = mapped_column(Text, nullable=True)
     proposal_skeleton: Mapped[dict] = mapped_column(JSON, default=dict)
     style_profile: Mapped[dict] = mapped_column(JSON, default=dict)
     writing_phase: Mapped[str] = mapped_column(String(30), default="idea")

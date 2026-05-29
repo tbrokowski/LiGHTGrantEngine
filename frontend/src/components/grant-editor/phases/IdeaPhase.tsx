@@ -1,11 +1,17 @@
 'use client';
 
-import { useRef, useState, useCallback } from 'react';
+import { useRef, useState, useCallback, useEffect } from 'react';
 import {
   Upload, Mic, MicOff, Loader2, Sparkles, CheckCircle2, ChevronDown,
   ExternalLink, Link2, PlusCircle, CloudUpload, CloudDownload, RefreshCw,
 } from 'lucide-react';
 import { grantWriting, grants as grantsApi } from '@/lib/api';
+import {
+  runCallAnalysisJob,
+  formatAnalysisError,
+  isMarkedAnalyzing,
+  type CallAnalysisStatus,
+} from '@/lib/callAnalysisStore';
 import CallRequirementsPanel from '../CallRequirementsPanel';
 
 interface ISpeechRecognition extends EventTarget {
@@ -35,6 +41,9 @@ interface IdeaPhaseProps {
   grantIdea: string;
   callAnalysis: Record<string, unknown>;
   callRequirementsText?: string;
+  callAnalysisStatus?: CallAnalysisStatus;
+  onCallAnalysisStatusChange?: (status: CallAnalysisStatus, error?: string | null) => void;
+  resumeCallAnalysis?: boolean;
   stylePreview?: Array<Record<string, unknown>>;
   onIdeaChange: (idea: string) => void;
   onCallAnalysis: (analysis: Record<string, unknown>, requirements?: string) => void;
@@ -87,6 +96,9 @@ export default function IdeaPhase({
   grantIdea,
   callAnalysis,
   callRequirementsText = '',
+  callAnalysisStatus = 'idle',
+  onCallAnalysisStatusChange,
+  resumeCallAnalysis = false,
   onIdeaChange,
   onCallAnalysis,
   onGenerateSkeleton,
@@ -121,12 +133,66 @@ export default function IdeaPhase({
   const [docSyncError, setDocSyncError] = useState('');
 
   const fileRef = useRef<HTMLInputElement>(null);
+  const resumePollStarted = useRef(false);
+
+  const isAnalyzing = reanalyzing || uploading || callAnalysisStatus === 'running';
 
   const hasExistingAnalysis =
     (callAnalysis && Object.keys(callAnalysis).length > 0) ||
-    !!callRequirementsText?.trim();
+    !!callRequirementsText?.trim() ||
+    callAnalysisStatus === 'running' ||
+    callAnalysisStatus === 'failed';
+
   const docLinked = !!googleDocId;
   const docSyncBusy = ['linking', 'creating', 'pushing', 'pulling'].includes(docSyncState);
+
+  const applyAnalysisResult = useCallback(
+    (data: { call_analysis?: Record<string, unknown>; call_requirements?: string }) => {
+      if (data.call_analysis && Object.keys(data.call_analysis).length > 0) {
+        onCallAnalysis(data.call_analysis, data.call_requirements);
+      } else if (data.call_requirements) {
+        onCallAnalysis({}, data.call_requirements);
+      }
+      onCallAnalysisStatusChange?.('completed', null);
+      setAnalysisError(null);
+    },
+    [onCallAnalysis, onCallAnalysisStatusChange],
+  );
+
+  const runAnalysis = useCallback(
+    async (trigger: () => Promise<unknown>, opts?: { afterUpload?: (data: Record<string, unknown>) => void }) => {
+      setAnalysisError(null);
+      setIntelligenceExpanded(true);
+      onCallAnalysisStatusChange?.('running', null);
+      setReanalyzing(true);
+      try {
+        const data = await runCallAnalysisJob(grantId, trigger, (progress) => {
+          if (progress.call_analysis_status === 'running') {
+            onCallAnalysisStatusChange?.('running', null);
+          }
+        });
+        opts?.afterUpload?.(data as Record<string, unknown>);
+        applyAnalysisResult(data);
+      } catch (e: unknown) {
+        const message = formatAnalysisError(e);
+        setAnalysisError(message);
+        onCallAnalysisStatusChange?.('failed', message);
+      } finally {
+        setReanalyzing(false);
+      }
+    },
+    [grantId, applyAnalysisResult, onCallAnalysisStatusChange],
+  );
+
+  // Resume polling after page refresh or API container restart (once per mount)
+  useEffect(() => {
+    if (resumePollStarted.current) return;
+    if (!resumeCallAnalysis && !isMarkedAnalyzing(grantId)) return;
+    resumePollStarted.current = true;
+
+    runAnalysis(async () => ({ status: 'running' }));
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
   // --- Upload ---
   const handleUpload = async (file: File) => {
@@ -134,37 +200,34 @@ export default function IdeaPhase({
     setAnalysisError(null);
     setIntelligenceExpanded(true);
     try {
-      const { data } = await grantWriting.uploadCall(grantId, file);
-      setUploadedDoc({
-        document_id: data.document_id,
-        file_name: data.file_name || file.name,
-        file_url: data.file_url || '',
-        uploaded_at: new Date().toISOString(),
-      });
-      onCallAnalysis(data.call_analysis || {}, data.call_requirements);
-    } catch (e: unknown) {
-      const detail = (e as { response?: { data?: { detail?: string } } }).response?.data?.detail;
-      setAnalysisError(detail || (e as { message?: string }).message || 'Call analysis failed.');
+      await runAnalysis(
+        () => grantWriting.uploadCall(grantId, file),
+        {
+          afterUpload: (data) => {
+            const payload = data as {
+              document_id?: string;
+              file_name?: string;
+              file_url?: string;
+            };
+            if (payload.document_id) {
+              setUploadedDoc({
+                document_id: payload.document_id,
+                file_name: payload.file_name || file.name,
+                file_url: payload.file_url || '',
+                uploaded_at: new Date().toISOString(),
+              });
+            }
+          },
+        },
+      );
     } finally {
       setUploading(false);
     }
   };
 
   const handleReanalyze = async () => {
-    setReanalyzing(true);
-    setAnalysisError(null);
-    setIntelligenceExpanded(true);
-    try {
-      const res = await grantWriting.analyzeCall(grantId);
-      onCallAnalysis(res.data.call_analysis || {}, res.data.call_requirements);
-      setAnalysisError(null);
-    } catch (e: unknown) {
-      const detail = (e as { response?: { data?: { detail?: string } } }).response?.data?.detail;
-      const message = detail || (e as { message?: string }).message || 'Call analysis failed. Please try again.';
-      setAnalysisError(message);
-    } finally {
-      setReanalyzing(false);
-    }
+    if (isAnalyzing) return;
+    await runAnalysis(() => grantWriting.analyzeCall(grantId));
   };
 
   const handleDrop = useCallback((e: React.DragEvent) => {
@@ -309,14 +372,14 @@ export default function IdeaPhase({
                   <ExternalLink className="w-3.5 h-3.5" />
                 </a>
               )}
-              <button
-                onClick={handleReanalyze}
-                disabled={reanalyzing}
-                className="flex items-center gap-1 text-sm text-gray-400 hover:text-indigo-600 disabled:opacity-50 transition-colors"
-              >
-                <RefreshCw className={`w-3.5 h-3.5 ${reanalyzing ? 'animate-spin' : ''}`} />
-                Re-analyze
-              </button>
+                <button
+                  onClick={handleReanalyze}
+                  disabled={isAnalyzing}
+                  className="flex items-center gap-1 text-sm text-gray-400 hover:text-indigo-600 disabled:opacity-50 transition-colors"
+                >
+                  <RefreshCw className={`w-3.5 h-3.5 ${isAnalyzing ? 'animate-spin' : ''}`} />
+                  Re-analyze
+                </button>
               <button
                 onClick={() => fileRef.current?.click()}
                 className="flex items-center gap-1 text-sm text-gray-400 hover:text-indigo-600 transition-colors"
@@ -474,18 +537,25 @@ export default function IdeaPhase({
         </CollapsibleSection>
 
         {/* 4. Call Intelligence */}
-        {hasExistingAnalysis && (
+        {(hasExistingAnalysis || isAnalyzing) && (
           <CollapsibleSection
             label="Call Intelligence"
             expanded={intelligenceExpanded}
             onToggle={() => setIntelligenceExpanded(!intelligenceExpanded)}
-            summary={intelligenceExpanded ? '' : 'Analysis ready'}
+            summary={
+              intelligenceExpanded
+                ? ''
+                : callAnalysisStatus === 'running'
+                  ? 'Analyzing…'
+                  : 'Analysis ready'
+            }
           >
             <CallRequirementsPanel
               callAnalysis={callAnalysis}
               callRequirementsText={callRequirementsText}
+              callAnalysisStatus={callAnalysisStatus}
               onReanalyze={handleReanalyze}
-              reanalyzing={reanalyzing}
+              reanalyzing={isAnalyzing}
               analysisError={analysisError}
             />
           </CollapsibleSection>

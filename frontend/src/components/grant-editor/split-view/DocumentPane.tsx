@@ -267,6 +267,9 @@ export default function DocumentPane({
             grantIdea={workspace.grantIdea}
             callAnalysis={workspace.callAnalysis}
             callRequirementsText={workspace.callRequirements}
+            callAnalysisStatus={workspace.callAnalysisStatus}
+            onCallAnalysisStatusChange={workspace.onCallAnalysisStatusChange}
+            resumeCallAnalysis={workspace.resumeCallAnalysis}
             onIdeaChange={workspace.onIdeaChange}
             onCallAnalysis={workspace.onCallAnalysis}
             onGenerateSkeleton={workspace.onGenerateSkeleton}

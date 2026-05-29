@@ -313,11 +313,11 @@ export const grantWriting = {
     form.append('file', file);
     return api.post(`/grants/${grantId}/writing/upload-call`, form, {
       headers: { 'Content-Type': 'multipart/form-data' },
-      timeout: 300_000,
+      timeout: 60_000,
     });
   },
   analyzeCall: (grantId: string) =>
-    api.post(`/grants/${grantId}/writing/analyze-call`, null, { timeout: 300_000 }),
+    api.post(`/grants/${grantId}/writing/analyze-call`, null, { timeout: 60_000 }),
   generateSkeleton: (grantId: string) => api.post(`/grants/${grantId}/writing/generate-skeleton`),
   updateSkeleton: (grantId: string, data: { proposal_skeleton: Record<string, unknown>; writing_phase?: string }) =>
     api.patch(`/grants/${grantId}/writing/skeleton`, data),

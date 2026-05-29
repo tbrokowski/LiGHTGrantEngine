@@ -30,6 +30,9 @@ export interface WorkspaceContextType {
   skeleton: Record<string, unknown>;
   documentHtml: string;
   callRequirements: string;
+  callAnalysisStatus?: 'idle' | 'running' | 'completed' | 'failed';
+  resumeCallAnalysis?: boolean;
+  onCallAnalysisStatusChange?: (status: 'idle' | 'running' | 'completed' | 'failed', error?: string | null) => void;
 
   // Selection / cursor
   selectedText: string;

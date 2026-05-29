@@ -12,6 +12,7 @@ import {
   setWatching,
   isBeingWatched,
 } from '@/lib/skeletonGenerationStore';
+import { isMarkedAnalyzing, type CallAnalysisStatus } from '@/lib/callAnalysisStore';
 import UnifiedWorkspace from './UnifiedWorkspace';
 import AIChatPanel from './AIChatPanel';
 import WorkspaceContext, { type SyncState, type WorkspaceCitation, type CoherenceResult } from './WorkspaceContext';
@@ -57,6 +58,7 @@ export default function GrantEditor({ grant, onGrantUpdate, onHeadingsChange }: 
   const [skeleton, setSkeleton] = useState<Record<string, unknown>>(grant.proposal_skeleton || {});
   const [documentHtml, setDocumentHtml] = useState(grant.editor_document || '');
   const [callRequirements, setCallRequirements] = useState(grant.call_requirements || '');
+  const [callAnalysisStatus, setCallAnalysisStatus] = useState<CallAnalysisStatus>('idle');
   const [selectedText, setSelectedText] = useState('');
   const [activeSection, setActiveSection] = useState('');
   const [wordCount, setWordCount] = useState(0);
@@ -162,6 +164,10 @@ export default function GrantEditor({ grant, onGrantUpdate, onHeadingsChange }: 
         if (d.grant_idea) setGrantIdea(d.grant_idea);
         if (d.call_analysis && Object.keys(d.call_analysis).length) setCallAnalysis(d.call_analysis);
         if (d.call_requirements) setCallRequirements(d.call_requirements);
+        if (d.call_analysis_status) setCallAnalysisStatus(d.call_analysis_status as CallAnalysisStatus);
+        if (d.call_analysis_error && d.call_analysis_status === 'failed') {
+          /* error surfaced in IdeaPhase via status poll */
+        }
         if (d.proposal_skeleton && Object.keys(d.proposal_skeleton).length) setSkeleton(d.proposal_skeleton);
         if (d.last_review && Object.keys(d.last_review).length) setReviewReport(d.last_review);
       }).catch(() => {});
@@ -538,6 +544,12 @@ export default function GrantEditor({ grant, onGrantUpdate, onHeadingsChange }: 
       setCallAnalysis(analysis);
       if (requirements) setCallRequirements(requirements);
     },
+    callAnalysisStatus,
+    onCallAnalysisStatusChange: (status: CallAnalysisStatus) => {
+      setCallAnalysisStatus(status);
+    },
+    resumeCallAnalysis:
+      callAnalysisStatus === 'running' || isMarkedAnalyzing(grant.id),
     onGenerateSkeleton: handleGenerateSkeleton,
     onSkeletonChange: handleSkeletonChange,
     onGenerateDraft: handleGenerateDraft,
