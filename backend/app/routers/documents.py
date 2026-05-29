@@ -1,7 +1,10 @@
 """Document upload and parsing endpoints."""
+import json
 import uuid
 from typing import Optional
+import httpx
 from fastapi import APIRouter, Depends, HTTPException, UploadFile, File, Form
+from fastapi.responses import Response
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 from app.database import get_db
@@ -23,6 +26,36 @@ _CONTENT_TYPES = {
     "xlsx": "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
     "txt": "text/plain",
 }
+
+
+async def _get_document_for_user(
+    doc_id: str,
+    db: AsyncSession,
+    current_user: User,
+    redis: aioredis.Redis,
+) -> Document:
+    result = await db.execute(select(Document).where(Document.id == doc_id))
+    doc = result.scalar_one_or_none()
+    if not doc:
+        raise HTTPException(404, "Document not found")
+    if doc.grant_id and not is_org_admin(current_user):
+        accessible = await get_user_grant_ids(current_user, db, redis)
+        if doc.grant_id not in accessible:
+            raise HTTPException(403, "You do not have access to this document.")
+    return doc
+
+
+def _source_url_from_notes(notes: str | None) -> str | None:
+    if not notes or not notes.startswith("{"):
+        return None
+    try:
+        return json.loads(notes).get("source_url")
+    except (json.JSONDecodeError, TypeError):
+        return None
+
+
+def _inline_filename(doc: Document) -> str:
+    return doc.file_name or "document.pdf"
 
 
 @router.get("/")
@@ -107,25 +140,67 @@ async def serve_document_content(
     redis: aioredis.Redis = Depends(get_redis),
 ):
     """Return a presigned R2 URL. Checks grant/archive membership before serving."""
-    result = await db.execute(select(Document).where(Document.id == doc_id))
-    doc = result.scalar_one_or_none()
-    if not doc:
-        raise HTTPException(404, "Document not found")
-
-    # Access check: archive docs are org-wide; grant docs require membership
-    if doc.grant_id and not is_org_admin(current_user):
-        accessible = await get_user_grant_ids(current_user, db, redis)
-        if doc.grant_id not in accessible:
-            raise HTTPException(403, "You do not have access to this document.")
+    doc = await _get_document_for_user(doc_id, db, current_user, redis)
 
     r2_key = storage.resolve_storage_key(doc.notes)
     if r2_key and storage.object_exists(r2_key):
-        presigned = storage.get_presigned_url(r2_key, expires_in=3600, filename=doc.file_name)
+        ext = (doc.file_format or "").lower()
+        if not ext and doc.file_name and "." in doc.file_name:
+            ext = doc.file_name.rsplit(".", 1)[-1].lower()
+        presigned = storage.get_presigned_url(
+            r2_key, expires_in=3600, filename=doc.file_name, content_type_ext=ext or None
+        )
         return {"url": presigned, "file_name": doc.file_name}
 
     # Fallback: return parsed text if the binary is no longer in storage
     if doc.parsed_text:
         return {"text": doc.parsed_text, "file_name": doc.file_name}
+
+    raise HTTPException(404, "Document content not found")
+
+
+@router.get("/{doc_id}/stream")
+async def stream_document(
+    doc_id: str,
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+    redis: aioredis.Redis = Depends(get_redis),
+):
+    """Stream document bytes for in-app viewing (iframe via blob URL on the client)."""
+    doc = await _get_document_for_user(doc_id, db, current_user, redis)
+    filename = _inline_filename(doc)
+    ext = (doc.file_format or "").lower()
+    if not ext and "." in filename:
+        ext = filename.rsplit(".", 1)[-1].lower()
+    media_type = _CONTENT_TYPES.get(ext, "application/octet-stream")
+
+    r2_key = storage.resolve_storage_key(doc.notes)
+    if r2_key and storage.object_exists(r2_key):
+        try:
+            data = storage.download_file(r2_key)
+        except FileNotFoundError:
+            raise HTTPException(404, "Document content not found") from None
+        return Response(
+            content=data,
+            media_type=media_type,
+            headers={"Content-Disposition": f'inline; filename="{filename}"'},
+        )
+
+    source_url = _source_url_from_notes(doc.notes)
+    if source_url:
+        try:
+            resp = httpx.get(source_url, timeout=60, follow_redirects=True)
+            resp.raise_for_status()
+            data = resp.content
+        except Exception as exc:
+            raise HTTPException(502, f"Could not fetch document from source: {exc}") from exc
+        if ext == "pdf" or filename.lower().endswith(".pdf"):
+            media_type = "application/pdf"
+        return Response(
+            content=data,
+            media_type=media_type,
+            headers={"Content-Disposition": f'inline; filename="{filename}"'},
+        )
 
     raise HTTPException(404, "Document content not found")
 

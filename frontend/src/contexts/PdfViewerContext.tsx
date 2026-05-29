@@ -10,18 +10,17 @@ import {
 import { createPortal } from 'react-dom';
 import PdfViewerModal from '@/components/shared/PdfViewerModal';
 import { api } from '@/lib/api';
+import { extractDocId } from '@/lib/extractDocId';
 
 interface PdfViewerState {
-  url: string;
+  docId: string;
   fileName?: string;
 }
 
 interface PdfViewerContextValue {
-  /** Open a stored document by its document ID. Fetches the presigned URL,
-   *  then shows the PDF in a full-screen modal. Falls back to window.open for
-   *  non-PDF files (DOCX, etc.). */
+  /** Open a stored document by its document ID in a full-screen PDF viewer. */
   openPdfViewer: (docId: string, fileName?: string) => Promise<void>;
-  /** Open a direct URL (presigned or otherwise) directly in the viewer. */
+  /** Open by content URL (extracts doc id) or direct URL for non-internal files. */
   openPdfViewerUrl: (url: string, fileName?: string) => void;
 }
 
@@ -32,7 +31,12 @@ export function PdfViewerProvider({ children }: { children: React.ReactNode }) {
   const portalRoot = useRef<HTMLElement | null>(null);
 
   const openPdfViewerUrl = useCallback((url: string, fileName?: string) => {
-    setViewer({ url, fileName });
+    const docId = extractDocId(url);
+    if (docId) {
+      setViewer({ docId, fileName });
+      return;
+    }
+    window.open(url, '_blank', 'noopener,noreferrer');
   }, []);
 
   const openPdfViewer = useCallback(async (docId: string, fileName?: string) => {
@@ -40,22 +44,18 @@ export function PdfViewerProvider({ children }: { children: React.ReactNode }) {
       const res = await api.get<{ url?: string; text?: string; file_name?: string }>(
         `/documents/${docId}/content`
       );
-      const { url, file_name } = res.data;
-      const resolvedName = file_name ?? fileName;
+      const resolvedName = res.data.file_name ?? fileName;
+      const lower = (resolvedName ?? '').toLowerCase();
+      const isPdf = lower.endsWith('.pdf');
 
-      if (url) {
-        const lower = (resolvedName ?? url).toLowerCase();
-        const isPdf = lower.endsWith('.pdf') || lower.includes('.pdf?');
-        if (isPdf) {
-          setViewer({ url, fileName: resolvedName });
-          return;
-        }
-        // Non-PDF: open in new tab (DOCX, etc.)
-        window.open(url, '_blank', 'noopener,noreferrer');
+      if (res.data.url && isPdf) {
+        setViewer({ docId, fileName: resolvedName });
         return;
       }
-
-      // Text-only fallback
+      if (res.data.url) {
+        window.open(res.data.url, '_blank', 'noopener,noreferrer');
+        return;
+      }
       if (res.data.text) {
         const blob = new Blob([res.data.text], { type: 'text/plain' });
         window.open(URL.createObjectURL(blob), '_blank', 'noopener,noreferrer');
@@ -65,7 +65,6 @@ export function PdfViewerProvider({ children }: { children: React.ReactNode }) {
     }
   }, []);
 
-  // Ensure we have a valid DOM node for the portal (avoids SSR issues)
   if (typeof document !== 'undefined' && !portalRoot.current) {
     portalRoot.current = document.body;
   }
@@ -76,7 +75,7 @@ export function PdfViewerProvider({ children }: { children: React.ReactNode }) {
       {viewer && portalRoot.current &&
         createPortal(
           <PdfViewerModal
-            url={viewer.url}
+            docId={viewer.docId}
             fileName={viewer.fileName}
             onClose={() => setViewer(null)}
           />,

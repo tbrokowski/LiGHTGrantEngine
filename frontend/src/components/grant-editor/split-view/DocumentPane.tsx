@@ -15,6 +15,8 @@ import NewDocumentPane from './NewDocumentPane';
 import CommentsPanel from '../CommentsPanel';
 import { useWorkspace } from '../WorkspaceContext';
 import { grants, api } from '@/lib/api';
+import { extractDocId } from '@/lib/extractDocId';
+import EmbeddedPdfViewer from '@/components/shared/EmbeddedPdfViewer';
 import type { PanelConfig, PanelTab, PanelTabType } from './types';
 
 interface DocumentPaneProps {
@@ -100,7 +102,7 @@ export default function DocumentPane({
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [activeTab?.type, activeTab?.id]);
 
-  // Resolve presigned URL when a workspace-file tab is active
+  // Resolve presigned URL for non-PDF workspace files (PDFs use EmbeddedPdfViewer + /stream)
   useEffect(() => {
     if (activeTab?.type !== 'workspace-file') {
       setResolvedFileUrl(null);
@@ -109,9 +111,16 @@ export default function DocumentPane({
       return;
     }
     const raw = activeTab.meta?.fileUrl ?? '';
+    const label = (activeTab.label ?? '').toLowerCase();
+    const docId = raw ? extractDocId(raw) : null;
+    if (!raw || (label.endsWith('.pdf') && docId)) {
+      setResolvedFileUrl(null);
+      setResolvedFileName(null);
+      setFileError('');
+      return;
+    }
     if (!raw) { setResolvedFileUrl(null); return; }
     // Internal /content endpoints return JSON {"url": presigned, "file_name": "..."} — resolve it.
-    // Normalise to a path (strip host) so axios always routes to the FastAPI base.
     if (raw.includes('/content')) {
       let apiPath = raw;
       try {
@@ -339,7 +348,15 @@ export default function DocumentPane({
         );
 
       case 'workspace-file': {
-        const rawSrc = activeTab.meta?.fileUrl;
+        const rawSrc = activeTab.meta?.fileUrl ?? '';
+        const docId = rawSrc ? extractDocId(rawSrc) : null;
+        const lowerName = activeTab.label.toLowerCase();
+        const isPdf = lowerName.endsWith('.pdf');
+
+        if (isPdf && docId) {
+          return <EmbeddedPdfViewer docId={docId} fileName={activeTab.label} />;
+        }
+
         const src = resolvedFileUrl ?? rawSrc;
 
         if (!src && !fileError) {
@@ -375,35 +392,25 @@ export default function DocumentPane({
           );
         }
 
-        // Detect PDF by resolved filename (most reliable) or URL pattern fallback
-        const lowerName = (resolvedFileName ?? activeTab.label ?? '').toLowerCase();
         const lowerSrc = (src ?? '').toLowerCase();
-        const isPdf =
-          lowerName.endsWith('.pdf') ||
+        const isExternalPdf =
+          isPdf ||
           lowerSrc.includes('.pdf') ||
           lowerSrc.includes('application%2Fpdf') ||
           lowerSrc.includes('content-type=pdf');
         const isGoogleDoc = (src ?? '').includes('docs.google.com') || (src ?? '').includes('drive.google.com');
 
-        if (isPdf && src) {
-          // Use native browser PDF rendering via iframe — no external services needed.
-          // The presigned URL already carries ResponseContentDisposition: inline so the
-          // browser renders it rather than downloading.
+        if (isExternalPdf && src) {
           return (
-            <div className="flex flex-col flex-1 overflow-hidden">
-              <div className="flex-shrink-0 flex items-center justify-between px-3 py-1 bg-gray-50 border-b border-gray-100 text-xs text-gray-500">
-                <span className="truncate max-w-[300px]">{resolvedFileName ?? activeTab.label}</span>
-                <a href={src} target="_blank" rel="noopener noreferrer"
-                  className="flex items-center gap-1 text-indigo-600 hover:underline flex-shrink-0">
-                  <ExternalLink className="w-3 h-3" />
-                  Open / Download
-                </a>
-              </div>
-              <iframe
-                src={src}
-                className="flex-1 w-full h-full border-0"
-                title={resolvedFileName ?? activeTab.label}
-              />
+            <div className="flex flex-col flex-1 overflow-hidden items-center justify-center gap-3 px-6 text-center">
+              <p className="text-sm text-gray-500">
+                This PDF must be opened externally (not stored in the workspace).
+              </p>
+              <a href={src} target="_blank" rel="noopener noreferrer"
+                className="flex items-center gap-1 text-xs px-3 py-1.5 rounded-md bg-indigo-600 text-white hover:bg-indigo-700">
+                <ExternalLink className="w-3 h-3" />
+                Open PDF
+              </a>
             </div>
           );
         }

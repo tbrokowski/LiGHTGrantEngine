@@ -80,7 +80,12 @@ def upload_file(
     return key
 
 
-def get_presigned_url(key: str, expires_in: int = 3600, filename: str | None = None) -> str:
+def get_presigned_url(
+    key: str,
+    expires_in: int = 3600,
+    filename: str | None = None,
+    content_type_ext: str | None = None,
+) -> str:
     """Generate a time-limited presigned GET URL for a stored object.
 
     Default expiry is 1 hour. Use shorter values for sensitive archive docs.
@@ -94,6 +99,14 @@ def get_presigned_url(key: str, expires_in: int = 3600, filename: str | None = N
         "Key": key,
         "ResponseContentDisposition": disposition,
     }
+    _ext_types = {
+        "pdf": "application/pdf",
+        "doc": "application/msword",
+        "docx": "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+        "txt": "text/plain",
+    }
+    if content_type_ext and content_type_ext in _ext_types:
+        params["ResponseContentType"] = _ext_types[content_type_ext]
     return _client().generate_presigned_url(
         "get_object",
         Params=params,

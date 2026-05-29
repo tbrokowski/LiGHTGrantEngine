@@ -8,14 +8,9 @@ import {
 import { WorkspaceFile } from './types';
 import { grants, documents } from '@/lib/api';
 import { usePdfViewer } from '@/contexts/PdfViewerContext';
+import { extractDocId } from '@/lib/extractDocId';
 
 const API_URL = process.env.NEXT_PUBLIC_API_URL ?? '';
-
-/** Extract document ID if url is our internal content endpoint, else null. */
-function extractDocId(url: string): string | null {
-  const m = url.match(/\/documents\/([^/]+)\/content/);
-  return m ? m[1] : null;
-}
 
 interface Props {
   grantId: string;

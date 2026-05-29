@@ -805,17 +805,21 @@ async def convert_to_grant(
         select(Document).where(Document.opportunity_id == opp_id)
     )
     existing_docs = doc_result.scalars().all()
+    from app.config import get_settings
+    api_url = get_settings().api_url.rstrip("/")
     for doc in existing_docs:
+        linked_id = str(uuid.uuid4())
         linked = Document(
-            id=str(uuid.uuid4()),
+            id=linked_id,
             grant_id=grant.id,
             opportunity_id=opp_id,
             file_name=doc.file_name,
-            file_url=doc.file_url,
+            file_url=f"{api_url}/api/v1/documents/{linked_id}/content",
             file_format=doc.file_format,
             document_type=doc.document_type or "call_document",
             processing_status=doc.processing_status,
             parsed_text=doc.parsed_text,
+            notes=doc.notes,
             uploaded_by_id=current_user.id,
         )
         db.add(linked)
