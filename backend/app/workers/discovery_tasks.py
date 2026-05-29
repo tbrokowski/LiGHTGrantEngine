@@ -245,8 +245,11 @@ def _process_listing(db, listing: dict, source_id: str, source_url: str | None =
     if not call_url:
         return "skipped"
 
-    existing = find_existing_duplicate(db, listing)
-    if existing:
+    # Inject source_id into listing so dedup can use it for score-30 check
+    listing_with_source = {**listing, "source_id": source_id}
+    existing, is_definitive = find_existing_duplicate(db, listing_with_source)
+
+    if existing and is_definitive:
         # Re-queue enrichment only if the record was never successfully fetched
         if not existing.parsed_text and existing.opportunity_url:
             from app.workers.enrichment_tasks import enrich_opportunity
@@ -258,11 +261,14 @@ def _process_listing(db, listing: dict, source_id: str, source_url: str | None =
     # Resolve funder logo URL
     funder_logo_url = _get_funder_logo_url(listing.get("funder") or "")
 
+    dup_status = DuplicateStatus.POSSIBLE_DUPLICATE if (existing and not is_definitive) else DuplicateStatus.UNIQUE
+
     opp = Opportunity(
         id=str(uuid.uuid4()),
         title=listing.get("title", "Untitled"),
         funder=listing.get("funder"),
         program_name=listing.get("program_name") or listing.get("program"),
+        opportunity_number=listing.get("opportunity_number"),
         description=listing.get("description"),
         opportunity_url=call_url,
         source_url=source_url,
@@ -270,7 +276,7 @@ def _process_listing(db, listing: dict, source_id: str, source_url: str | None =
         # "active" signals the global record is live. Workflow status
         # (new/needs_review/archived/etc.) lives in institution_opportunities.
         status="active",
-        duplicate_status=DuplicateStatus.UNIQUE,
+        duplicate_status=dup_status,
         raw_text=listing.get("raw_text"),
         funder_logo_url=funder_logo_url,
     )

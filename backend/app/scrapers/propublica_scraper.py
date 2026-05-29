@@ -75,6 +75,7 @@ class ProPublicaScraper(BaseScraper):
                         "funder": name,
                         "deadline": None,
                         "program_name": f"EIN: {ein}",
+                        "opportunity_number": f"EIN:{ein}" if ein else None,
                     }))
 
         except httpx.HTTPStatusError as e:

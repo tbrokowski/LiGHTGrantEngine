@@ -77,6 +77,7 @@ class ThreeSixtyGivingScraper(BaseScraper):
                         "funder": funder_name,
                         "deadline": grant.get("plannedEndDate") or grant.get("awardDate"),
                         "program_name": grant.get("grantProgramme", [{}])[0].get("title") if grant.get("grantProgramme") else None,
+                        "opportunity_number": grant_id or None,
                     }))
 
         except httpx.HTTPStatusError as e:

@@ -89,6 +89,7 @@ class IATIScraper(BaseScraper):
                         "funder": org,
                         "deadline": deadline,
                         "program_name": iati_id,
+                        "opportunity_number": iati_id or None,
                     }))
 
         except httpx.HTTPStatusError as e:

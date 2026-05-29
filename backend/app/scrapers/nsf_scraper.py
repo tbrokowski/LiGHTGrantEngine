@@ -66,6 +66,7 @@ class NSFScraper(BaseScraper):
                         "funder": f"NSF – {award.get('agency', self.source.name)}",
                         "deadline": award.get("expDate"),
                         "program_name": award.get("id"),
+                        "opportunity_number": award_id or None,
                     }))
 
         except httpx.HTTPStatusError as e:

@@ -55,6 +55,7 @@ class SBIRScraper(BaseScraper):
                     "funder": f"SBIR – {agency}",
                     "deadline": close_date,
                     "program_name": sol_number,
+                    "opportunity_number": sol_number or None,
                 }))
 
         except httpx.HTTPStatusError as e:

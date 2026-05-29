@@ -86,6 +86,7 @@ class NIHReporterScraper(BaseScraper):
                         "funder": f"NIH – {item.get('org_name', self.source.name)}",
                         "deadline": item.get("project_end_date"),
                         "program_name": proj_num,
+                        "opportunity_number": proj_num,
                     }))
 
         except httpx.HTTPStatusError as e:

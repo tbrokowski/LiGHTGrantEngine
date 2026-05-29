@@ -79,3 +79,19 @@ async def resync_feeds(
 
     result = await asyncio.get_event_loop().run_in_executor(None, _run_sync)
     return result
+
+
+@router.post("/deduplicate-opportunities")
+async def trigger_dedup(current_user: User = Depends(get_current_user)):
+    """Enqueue a retroactive dedup scan across all opportunities.
+
+    Marks confirmed duplicates (status=duplicate, hidden from UI) and flags
+    possible duplicates (duplicate_status=possible_duplicate, visible but
+    surfaced for review). Safe to run repeatedly — idempotent.
+    """
+    _require_admin(current_user)
+    from app.workers.celery_app import celery_app
+    task = celery_app.send_task(
+        "app.workers.dedup_tasks.deduplicate_existing_opportunities"
+    )
+    return {"message": "Deduplication task queued", "task_id": task.id}

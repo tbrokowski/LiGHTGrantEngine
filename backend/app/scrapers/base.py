@@ -136,5 +136,6 @@ class BaseScraper:
             "funder": raw.get("funder", self.source.name),
             "deadline": raw.get("deadline"),
             "program_name": raw.get("program") or raw.get("program_name"),
+            "opportunity_number": raw.get("opportunity_number"),
             "raw_text": str(raw),
         }

@@ -63,13 +63,19 @@ class GrantsGovScraper(BaseScraper):
                 for item in items:
                     opp = item.get("opportunity", item)
                     summary = opp.get("summary", {})
+                    opp_number = (
+                        opp.get("opportunity_number")
+                        or str(opp.get("opportunity_id", ""))
+                        or None
+                    )
                     results.append(self._normalize({
                         "title": opp.get("opportunity_title") or opp.get("title", ""),
                         "description": summary.get("summary_description") or opp.get("description", ""),
                         "url": f"https://www.grants.gov/search-results-detail/{opp.get('opportunity_id', '')}",
                         "funder": opp.get("agency_name") or self.source.name,
                         "deadline": summary.get("close_date") or opp.get("close_date"),
-                        "program_name": opp.get("program_title") or opp.get("opportunity_number"),
+                        "program_name": opp.get("program_title") or opp_number,
+                        "opportunity_number": opp_number,
                     }))
 
                 # Stop if we got fewer results than a full page
