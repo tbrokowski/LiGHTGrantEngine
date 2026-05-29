@@ -959,6 +959,8 @@ async def _fetch_institution_feed(
     result = await db.execute(q)
     rows = result.all()
 
+    from app.services.opportunity_dedup import dedup_key
+
     items: list[Opportunity] = []
     io_map: dict[str, InstitutionOpportunity] = {}
     for opp, io in rows:
@@ -970,6 +972,24 @@ async def _fetch_institution_feed(
             continue
         items.append(opp)
         io_map[opp.id] = io
+
+    # Collapse display-level duplicates using the same key logic as ingest dedup.
+    # Rows are already sorted by fit_score DESC so the first (highest-scoring)
+    # version of each duplicate group is kept. This handles existing DB rows that
+    # were inserted before the ingest dedup fix was deployed.
+    seen_keys: set[str] = set()
+    deduped_items: list[Opportunity] = []
+    deduped_io: dict[str, InstitutionOpportunity] = {}
+    for opp in items:
+        k = dedup_key(opp)
+        if k and k in seen_keys:
+            continue
+        if k:
+            seen_keys.add(k)
+        deduped_items.append(opp)
+        if opp.id in io_map:
+            deduped_io[opp.id] = io_map[opp.id]
+    items, io_map = deduped_items, deduped_io
 
     read_map = await _load_read_map(db, user.id, [o.id for o in items])
     return items, read_map, io_map

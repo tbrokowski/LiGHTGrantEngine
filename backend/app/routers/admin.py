@@ -92,6 +92,6 @@ async def trigger_dedup(current_user: User = Depends(get_current_user)):
     _require_admin(current_user)
     from app.workers.celery_app import celery_app
     task = celery_app.send_task(
-        "app.workers.dedup_tasks.deduplicate_existing_opportunities"
+        "app.workers.discovery_tasks.deduplicate_opportunity_pool"
     )
     return {"message": "Deduplication task queued", "task_id": task.id}

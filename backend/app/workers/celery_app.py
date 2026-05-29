@@ -88,4 +88,10 @@ celery_app.conf.beat_schedule = {
         "task": "app.workers.partner_tasks.generate_pre_meeting_preps",
         "schedule": crontab(hour=7, minute=0),
     },
+    # Runs nightly to suppress duplicate rows that slipped through ingest dedup.
+    # Safe to re-run (idempotent); already-marked rows are skipped.
+    "nightly-dedup-pool": {
+        "task": "app.workers.discovery_tasks.deduplicate_opportunity_pool",
+        "schedule": crontab(hour=2, minute=0),
+    },
 }

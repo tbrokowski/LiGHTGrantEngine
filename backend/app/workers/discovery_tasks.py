@@ -301,6 +301,83 @@ def _process_listing(db, listing: dict, source_id: str, source_url: str | None =
     return "new"
 
 
+@celery_app.task(name="app.workers.discovery_tasks.deduplicate_opportunity_pool", bind=True, max_retries=1)
+def deduplicate_opportunity_pool(self):
+    """Scan the active opportunity pool and mark lower-quality duplicates.
+
+    Groups all active Opportunity rows by dedup_key() (the same logic used at
+    ingest). Within each duplicate group the most-enriched record is kept
+    (ranked by: has parsed_text > has description > fit_score > date_discovered).
+    All other members of the group have their status set to "duplicate".
+
+    Safe to re-run: already-marked rows are excluded from the scan.
+    """
+    import structlog
+    from collections import defaultdict
+    from sqlalchemy import create_engine, select
+    from sqlalchemy.orm import Session
+    from app.config import get_settings
+    from app.models.opportunity import Opportunity
+    from app.services.opportunity_dedup import dedup_key
+
+    log = structlog.get_logger()
+    settings = get_settings()
+    engine = create_engine(settings.database_url)
+
+    with Session(engine) as db:
+        opps = db.execute(
+            select(Opportunity).where(Opportunity.status != "duplicate")
+        ).scalars().all()
+
+        # Group by dedup key
+        groups: dict[str, list[Opportunity]] = defaultdict(list)
+        no_key: list[Opportunity] = []
+        for opp in opps:
+            k = dedup_key(opp)
+            if k:
+                groups[k].append(opp)
+            else:
+                no_key.append(opp)
+
+        def _quality(o: Opportunity) -> tuple:
+            """Higher tuple = better record to keep."""
+            return (
+                1 if o.parsed_text else 0,
+                1 if (o.description or o.short_summary) else 0,
+                o.fit_score or 0,
+                o.date_discovered.timestamp() if o.date_discovered else 0,
+            )
+
+        marked = 0
+        for key, group in groups.items():
+            if len(group) <= 1:
+                continue
+            # Sort descending — best record first
+            group.sort(key=_quality, reverse=True)
+            keeper = group[0]
+            for dup in group[1:]:
+                dup.status = "duplicate"
+                marked += 1
+                log.info(
+                    "opportunity.marked_duplicate",
+                    kept_id=keeper.id,
+                    dup_id=dup.id,
+                    key=key,
+                )
+
+        if marked:
+            db.commit()
+
+        log.info(
+            "deduplicate_opportunity_pool complete",
+            total_scanned=len(opps),
+            groups=len(groups),
+            marked_duplicate=marked,
+            no_key=len(no_key),
+        )
+        return {"scanned": len(opps), "marked_duplicate": marked}
+
+
 @celery_app.task(name="app.workers.discovery_tasks.score_opportunity")
 def score_opportunity(opportunity_id: str):
     """Score a newly enriched opportunity.
