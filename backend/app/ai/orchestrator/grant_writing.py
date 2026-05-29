@@ -20,6 +20,8 @@ from app.ai.agents.meta_agent import check_narrative_coherence, evaluate_and_imp
 from app.ai.agents.planning_agent import plan_draft_research
 from app.ai.agents.proposal_architect import generate_proposal_outline
 from app.ai.agents.research_agent import gather_section_evidence
+from app.ai.agents.skeleton_planning_agent import plan_skeleton_research
+from app.ai.agents.skeleton_reviewer import review_skeleton
 from app.ai.agents.section_drafter import draft_section
 from app.ai.agents.style_profiler import build_style_profile
 from app.ai.agents.style_reviewer import review_style
@@ -35,6 +37,7 @@ from app.ai.rag.retriever import (
     retrieve_document_structure,
     retrieve_reusable_language,
     retrieve_style_exemplars,
+    retrieve_with_hyde,
 )
 from app.models.active_grant import ActiveGrant
 from app.models.document import Document
@@ -222,7 +225,89 @@ class GrantWritingOrchestrator:
                 pass
         yield _sse({"event": "idea_alignment_complete"})
 
-        # ── Stage 4: Skeleton Synthesis ────────────────────────────────────────
+        # ── Stage 3.5: Skeleton Planning — per-section research plan ──────────────
+        yield _sse({"event": "skeleton_planning_start"})
+        section_research_plan: dict = {}
+        try:
+            section_research_plan = await plan_skeleton_research(
+                opportunity_title=grant.title or "",
+                funder=grant.funder or "",
+                grant_idea=grant.grant_idea or "",
+                call_analysis=call_analysis,
+                call_strategy=call_strategy or {},
+                aligned_concept=aligned_concept or {},
+                call_intelligence=call_intelligence or {},
+                section_constraints=user_section_constraints,
+            )
+        except Exception:
+            pass  # planning is best-effort; pipeline continues without it
+        planned_sections: list[dict] = section_research_plan.get("sections") or []
+        yield _sse({
+            "event": "skeleton_planning_complete",
+            "planned_sections": len(planned_sections),
+        })
+
+        # ── Stage 4: Parallel Per-Section Research ──────────────────────────────
+        # For each planned section: HyDE-enhanced archive RAG + Tavily web + academic citations
+        yield _sse({"event": "skeleton_research_start", "total": len(planned_sections)})
+        section_evidence_bundles: dict[str, dict] = {}
+
+        if planned_sections:
+            semaphore = asyncio.Semaphore(4)  # max 4 concurrent research tasks
+
+            async def _research_one(section_brief: dict) -> tuple[str, dict]:
+                section_name = section_brief.get("section_name") or "Unknown"
+                async with semaphore:
+                    # HyDE: generate hypothetical excerpt then embed for archive retrieval
+                    hyde_prompt = section_brief.get("hyde_prompt") or (
+                        f"Write a 120-word excerpt from the {section_name} section of "
+                        f"a competitive grant proposal about {grant.title}. "
+                        "Include specific methods, outcomes, and evidence."
+                    )
+                    try:
+                        hyde_results = await retrieve_with_hyde(
+                            hyde_prompt=hyde_prompt,
+                            db=db,
+                            funder=grant.funder or None,
+                            section_type=section_brief.get("section_type"),
+                            top_k=5,
+                            current_grant_id=str(grant.id),
+                        )
+                    except Exception:
+                        hyde_results = []
+
+                    # Web + academic + RAG synthesis using existing research_agent
+                    idea_excerpt = section_brief.get("idea_excerpt") or grant.grant_idea or ""
+                    try:
+                        evidence = await gather_section_evidence(
+                            section_name=section_name,
+                            section_content=idea_excerpt[:800],
+                            section_brief=section_brief,
+                            db=db,
+                            funder=grant.funder or "",
+                            section_type=section_brief.get("section_type") or "other",
+                            rag_content_exemplars=hyde_results,
+                        )
+                    except Exception:
+                        evidence = {"rag_content_exemplars": hyde_results}
+
+                    return section_name, evidence
+
+            research_tasks = [_research_one(s) for s in planned_sections]
+            research_results = await asyncio.gather(*research_tasks, return_exceptions=True)
+
+            for result in research_results:
+                if isinstance(result, Exception):
+                    continue
+                sec_name, evidence = result
+                section_evidence_bundles[sec_name] = evidence
+
+        yield _sse({
+            "event": "skeleton_research_complete",
+            "researched": len(section_evidence_bundles),
+        })
+
+        # ── Stage 5: Evidence-Grounded Skeleton Synthesis ─────────────────────
         yield _sse({"event": "skeleton_synthesis_start"})
         try:
             # Build enriched call_requirements text from strategy
@@ -248,7 +333,9 @@ class GrantWritingOrchestrator:
                 call_analysis=call_analysis,
                 similar_grants=content_similar,
                 structure_templates=structure_templates,
-                grant_idea=aligned_concept.get("aligned_framing") or grant.grant_idea or "",
+                # Pass BOTH aligned framing and full idea so the architect has specificity
+                grant_idea=grant.grant_idea or "",
+                aligned_framing=aligned_concept.get("aligned_framing") if aligned_concept else None,
                 style_profile=grant.style_profile or {},
                 call_requirements_text=enriched_requirements,
                 external_deadline=str(grant.external_deadline) if grant.external_deadline else "",
@@ -259,10 +346,33 @@ class GrantWritingOrchestrator:
                 total_word_limit=total_word_limit,
                 total_page_limit=total_page_limit,
                 call_intelligence=call_intelligence or None,
+                section_evidence_bundles=section_evidence_bundles or None,
             )
         except Exception as exc:
             yield _sse({"event": "skeleton_error", "error": str(exc)[:500]})
             return
+
+        # ── Stage 6: Adversarial Alignment Review ──────────────────────────────
+        try:
+            review = await review_skeleton(
+                skeleton_text=skeleton.get("raw_text") or "",
+                call_requirements=grant.call_requirements or "",
+                call_analysis=call_analysis,
+                call_strategy=call_strategy or {},
+                grant_idea=grant.grant_idea or "",
+            )
+            skeleton["review"] = review
+            # Surface compliance gaps and weak sections as top-level fields
+            if review.get("compliance_gaps"):
+                skeleton["compliance_gaps"] = review["compliance_gaps"]
+            if review.get("weak_sections"):
+                existing_flags = skeleton.get("flagged_sections") or []
+                merged = list({*existing_flags, *review["weak_sections"]})
+                skeleton["flagged_sections"] = merged
+            if review.get("alignment_score") is not None:
+                skeleton["alignment_score"] = review["alignment_score"]
+        except Exception:
+            pass  # review is best-effort; never blocks skeleton delivery
 
         # ── TBD scan + RAG fill ────────────────────────────────────────────────
         try:

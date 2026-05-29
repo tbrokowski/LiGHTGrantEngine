@@ -14,7 +14,7 @@ import structlog
 from sqlalchemy import select, text, and_, or_
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.ai.client import get_embedding
+from app.ai.client import get_embedding, chat_complete
 from app.config import get_settings
 from app.models.archive import GrantArchive
 from app.models.document import Document
@@ -449,3 +449,60 @@ async def _keyword_fallback(query: str, db: AsyncSession, filters: list, k: int)
     q = q.limit(k)
     result = await db.execute(q)
     return [_section_to_dict(s, 0.5) for s in result.scalars().all()]
+
+
+# ---------------------------------------------------------------------------
+# HyDE (Hypothetical Document Embedding) retrieval
+# ---------------------------------------------------------------------------
+
+_HYDE_SYSTEM = (
+    "You are a grant writing expert. Write a concise, specific excerpt from a "
+    "high-scoring competitive grant proposal. Use technical language, specific methods, "
+    "measurable outcomes, and evidence-based claims. Write ONLY the excerpt — no preamble."
+)
+
+
+async def retrieve_with_hyde(
+    hyde_prompt: str,
+    db: AsyncSession,
+    funder: Optional[str] = None,
+    section_type: Optional[str] = None,
+    top_k: int = 5,
+    current_grant_id: Optional[str] = None,
+) -> list[dict]:
+    """HyDE-enhanced archive retrieval for a single skeleton section.
+
+    Instead of embedding the raw section name or query, we:
+      1. Ask an LLM to write a ~120-word hypothetical excerpt from a winning proposal
+      2. Embed that hypothetical text (captures domain vocabulary better than a short query)
+      3. Use it to retrieve semantically similar archive sections
+
+    This bridges the vocabulary gap between a section concept and how archive
+    documents actually express that content, significantly improving recall.
+
+    Falls back to a keyword search if HyDE generation fails.
+    """
+    # Step 1: generate the hypothetical excerpt
+    try:
+        hyp_text = await chat_complete(
+            messages=[
+                {"role": "system", "content": _HYDE_SYSTEM},
+                {"role": "user", "content": hyde_prompt},
+            ],
+            agent_name="hyde_expander",
+        )
+        if not hyp_text or not hyp_text.strip():
+            raise ValueError("empty HyDE response")
+    except Exception as exc:
+        logger.warning("HyDE generation failed, falling back to prompt as query", error=str(exc))
+        hyp_text = hyde_prompt  # fall back to using the prompt itself as query
+
+    # Step 2 & 3: embed the hypothetical text and retrieve via existing infrastructure
+    return await retrieve_content_exemplars(
+        query=hyp_text,
+        db=db,
+        section_type=section_type,
+        funder=funder,
+        top_k=top_k,
+        current_grant_id=current_grant_id,
+    )

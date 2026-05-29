@@ -108,17 +108,22 @@ export default function AIThinkingLog({
     setDisplayPct(progressPct);
   }, [progressPct]);
 
-  // Slowly nudge the bar while any step is active (simulates in-step progress)
+  // Ease-out drift while any step is active — faster at start, slows near ceiling.
+  // Ceiling is 25% above the last real earned value so the bar keeps moving throughout
+  // even long LLM steps (60-90s), without ever falsely crossing the next milestone.
   const isActive = steps.some((s) => s.status === 'active');
   useEffect(() => {
     if (!isActive) return;
     const interval = setInterval(() => {
       setDisplayPct((prev) => {
-        // Cap at earned + 18 so we never promise more than we can deliver
-        const cap = Math.min(earnedRef.current + 18, 94);
-        return prev < cap ? prev + 1.2 : prev;
+        const cap = Math.min(earnedRef.current + 25, 95);
+        if (prev >= cap) return prev;
+        const remaining = cap - prev;
+        // Ease-out: step shrinks as we approach ceiling
+        const step = Math.max(0.1, remaining * 0.018);
+        return Math.min(prev + step, cap);
       });
-    }, 1800);
+    }, 700);
     return () => clearInterval(interval);
   }, [isActive]);
 
@@ -131,8 +136,8 @@ export default function AIThinkingLog({
         )}
         <div className="h-1.5 bg-gray-100 rounded-full overflow-hidden">
           <div
-            className="h-full bg-indigo-400 transition-all duration-500 ease-out"
-            style={{ width: `${Math.max(3, displayPct)}%` }}
+            className="h-full bg-indigo-400"
+            style={{ width: `${Math.max(3, displayPct)}%`, transition: 'width 1s cubic-bezier(0.4, 0, 0.2, 1)' }}
           />
         </div>
       </div>

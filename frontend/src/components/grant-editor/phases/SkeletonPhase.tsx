@@ -30,6 +30,15 @@ interface SkeletonPhaseProps {
     sections?: SkeletonSection[];
     total_word_limit?: number | null;
     total_page_limit?: string | null;
+    alignment_score?: number | null;
+    compliance_gaps?: string[];
+    review?: {
+      compliance_gaps?: string[];
+      weak_sections?: string[];
+      missing_call_requirements?: string[];
+      alignment_score?: number | null;
+      alignment_notes?: string;
+    };
   };
   onSkeletonChange: (skeleton: Record<string, unknown>) => void;
   onGenerateDraft: (flaggedSections: string[]) => void;
@@ -69,6 +78,86 @@ function computeSectionWordCounts(rawText: string): Record<string, number> {
   }
   if (currentSection !== null) counts[currentSection] = currentWords;
   return counts;
+}
+
+
+function AlignmentReviewPanel({
+  complianceGaps,
+  review,
+}: {
+  complianceGaps: string[];
+  review?: {
+    compliance_gaps?: string[];
+    weak_sections?: string[];
+    missing_call_requirements?: string[];
+    alignment_score?: number | null;
+    alignment_notes?: string;
+  };
+}) {
+  const [expanded, setExpanded] = useState(false);
+  const weakSections = review?.weak_sections || [];
+  const missingReqs = review?.missing_call_requirements || [];
+  const totalIssues = complianceGaps.length + weakSections.length + missingReqs.length;
+
+  return (
+    <div className="inline-block">
+      <button
+        type="button"
+        onClick={() => setExpanded(v => !v)}
+        className="inline-flex items-center gap-1.5 rounded-full bg-orange-50 border border-orange-200 px-2.5 py-0.5 text-xs font-medium text-orange-700 hover:bg-orange-100 transition-colors"
+      >
+        <svg className="w-3 h-3" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2}><path d="M10.29 3.86L1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z"/><line x1="12" y1="9" x2="12" y2="13"/><line x1="12" y1="17" x2="12.01" y2="17"/></svg>
+        {totalIssues} review flag{totalIssues !== 1 ? 's' : ''}
+        <ChevronDown className={`w-3 h-3 transition-transform ${expanded ? 'rotate-180' : ''}`} />
+      </button>
+      {expanded && (
+        <div className="mt-1.5 rounded-lg border border-orange-100 bg-orange-50 p-3 space-y-2 text-xs max-w-xl">
+          {review?.alignment_notes && (
+            <p className="text-orange-800 italic">{review.alignment_notes}</p>
+          )}
+          {complianceGaps.length > 0 && (
+            <div>
+              <p className="font-semibold text-orange-900 mb-1">Compliance gaps</p>
+              <ul className="space-y-0.5">
+                {complianceGaps.map((g, i) => (
+                  <li key={i} className="flex gap-1.5 text-orange-700">
+                    <span className="text-orange-400 shrink-0">✗</span>
+                    <span>{g}</span>
+                  </li>
+                ))}
+              </ul>
+            </div>
+          )}
+          {weakSections.length > 0 && (
+            <div>
+              <p className="font-semibold text-orange-900 mb-1">Weak sections</p>
+              <ul className="space-y-0.5">
+                {weakSections.map((s, i) => (
+                  <li key={i} className="flex gap-1.5 text-orange-700">
+                    <span className="text-orange-400 shrink-0">⚠</span>
+                    <span>{s}</span>
+                  </li>
+                ))}
+              </ul>
+            </div>
+          )}
+          {missingReqs.length > 0 && (
+            <div>
+              <p className="font-semibold text-orange-900 mb-1">Missing requirements</p>
+              <ul className="space-y-0.5">
+                {missingReqs.map((r, i) => (
+                  <li key={i} className="flex gap-1.5 text-orange-700">
+                    <span className="text-orange-400 shrink-0">·</span>
+                    <span>{r}</span>
+                  </li>
+                ))}
+              </ul>
+            </div>
+          )}
+        </div>
+      )}
+    </div>
+  );
 }
 
 export default function SkeletonPhase({
@@ -205,6 +294,30 @@ export default function SkeletonPhase({
                 </button>
               )}
               <p className="text-xs text-gray-400 mt-0.5">Click title to edit</p>
+            </div>
+          )}
+
+          {/* Alignment score + review badges */}
+          {(skeleton.alignment_score != null || (skeleton.compliance_gaps && skeleton.compliance_gaps.length > 0)) && (
+            <div className="flex items-center gap-2 flex-wrap">
+              {skeleton.alignment_score != null && (
+                <span className={`inline-flex items-center gap-1 rounded-full px-2.5 py-0.5 text-xs font-medium border ${
+                  skeleton.alignment_score >= 75
+                    ? 'bg-green-50 border-green-200 text-green-700'
+                    : skeleton.alignment_score >= 50
+                    ? 'bg-yellow-50 border-yellow-200 text-yellow-700'
+                    : 'bg-red-50 border-red-200 text-red-700'
+                }`}>
+                  <svg className="w-3 h-3" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2}><path d="M22 11.08V12a10 10 0 1 1-5.93-9.14"/><polyline points="22 4 12 14.01 9 11.01"/></svg>
+                  {skeleton.alignment_score}% aligned to call
+                </span>
+              )}
+              {skeleton.compliance_gaps && skeleton.compliance_gaps.length > 0 && (
+                <AlignmentReviewPanel
+                  complianceGaps={skeleton.compliance_gaps}
+                  review={skeleton.review}
+                />
+              )}
             </div>
           )}
 

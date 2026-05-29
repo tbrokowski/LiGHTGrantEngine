@@ -46,6 +46,7 @@ async def generate_proposal_outline(
     internal_deadline: str = "",
     external_deadline: str = "",
     grant_idea: str = "",
+    aligned_framing: str | None = None,
     style_profile: dict | None = None,
     call_requirements_text: str = "",
     call_strategy: dict | None = None,
@@ -54,6 +55,7 @@ async def generate_proposal_outline(
     total_word_limit: int | None = None,
     total_page_limit: str | None = None,
     call_intelligence: dict | None = None,
+    section_evidence_bundles: dict[str, dict] | None = None,
 ) -> dict:
     structure_str = _format_structure_templates(structure_templates or [])
     similar_str = _format_similar_grants(similar_grants or [])
@@ -73,20 +75,26 @@ async def generate_proposal_outline(
         section_constraints, total_word_limit, total_page_limit
     )
 
+    # Format per-section evidence bundles
+    evidence_section = _format_section_evidence_bundles(section_evidence_bundles) if section_evidence_bundles else ''
+
     # Expand CALL ANALYSIS block with full context
     narrative_brief = call_analysis.get("narrative_brief", "")
     thematic_areas = call_analysis.get("thematic_areas") or []
     strategic_objectives = call_analysis.get("strategic_objectives") or []
 
-    user_prompt = f"""Think step by step before writing:
-1. Extract the core specific elements from the GRANT IDEA: what is the specific technology/platform, what problem, what target population/geography, what specific methods, what outcomes claimed?
-2. For each section, identify which specific elements from the idea are most relevant to that section's purpose.
-3. Write 4-7 specific bullet points per section using the team's actual terminology and approach.
-4. Augment with any concrete evidence from REFERENCE DOCUMENTS or ARCHIVE GRANTS (use actual numbers, outcomes, methods from those docs).
-5. Use [TBD: reason] only for genuinely unknown specifics (e.g. "exact sample size", "named implementation partner").
-Then produce the full JSON response with the raw_text as specified.
+    # Build idea block: full idea + aligned framing as a lens
+    idea_block = _format_idea_block(grant_idea, aligned_framing)
 
-IMPORTANT: Every bullet must use specific details from the GRANT IDEA below. Generic bullets that could apply to any proposal will be rejected.
+    user_prompt = f"""Think step by step before writing:
+1. Extract the core specific elements from GRANT IDEA: technology/platform, problem, target population/geography, specific methods, outcomes, metrics.
+2. For each section, identify which specific elements from the idea are most relevant and pull the EXACT terminology, names, and numbers the team uses.
+3. Write 5-8 specific bullet points per section. Each bullet must be grounded in the idea AND augmented by the SECTION EVIDENCE where available.
+4. For each bullet that uses a statistic, finding, or method from the SECTION EVIDENCE, note the source briefly (e.g. "per [web source]" or "as shown in archive grant").
+5. Use [TBD: reason] only for genuinely unknown specifics that are not in the idea or evidence.
+Then produce the full JSON response.
+
+IMPORTANT: Every bullet must use specific details from the GRANT IDEA. Generic bullets that could apply to any proposal will be rejected. If SECTION EVIDENCE is provided for a section, you MUST draw at least 2 bullets from that evidence.
 
 ---
 
@@ -94,14 +102,13 @@ GRANT: {opportunity_title}
 EXTERNAL DEADLINE: {external_deadline or 'Not specified'}
 INTERNAL DEADLINE: {internal_deadline or 'Not specified'}
 
-GRANT IDEA (the team's proposed approach — this is the primary content source):
-{grant_idea or 'Not provided'}
+{idea_block}
 
 CALL REQUIREMENTS:
 {call_requirements_text or 'Not provided — use call_analysis fields below'}
 
 CALL ANALYSIS (coverage guidance — AI-extracted, use as reference):
-Narrative brief: {narrative_brief[:400] if narrative_brief else 'Not available'}
+Narrative brief: {narrative_brief[:600] if narrative_brief else 'Not available'}
 Thematic areas: {thematic_areas[:6]}
 Strategic objectives: {strategic_objectives[:5]}
 Required sections: {call_analysis.get('required_sections', [])}
@@ -110,6 +117,7 @@ Budget constraints: {call_analysis.get('budget_constraints', '')}
 
 {constraints_section}{intelligence_section}{strategy_section}
 {alignment_section}
+{evidence_section}
 {structure_str}
 
 {similar_str}
@@ -123,9 +131,9 @@ Produce a JSON object with the following fields:
 
 - raw_text: a single string containing the full skeleton. Use ## Section Name headings (use exact
   section names from SECTION STRUCTURE AND LIMITS if provided). Under each heading write:
-    - [specific bullet drawn from the team's idea]
-    - [specific bullet with method/evidence]
-    - ... (4-7 bullets per section, all grounded in the grant idea)
+    - [specific bullet drawn from the team's idea — include actual names, methods, populations]
+    - [specific bullet augmented by evidence — cite briefly if from evidence bundle]
+    - ... (5-8 bullets per section, all grounded in the grant idea and evidence)
     [TBD: description] — only if genuinely unknown
     (Target: N words)
   Sections separated by a blank line. No meta-labels (no "Purpose:", "Key arguments:", etc.).
@@ -333,6 +341,89 @@ def _format_call_intelligence(ci: dict) -> str:
     return "\n".join(lines) if lines else ""
 
 
+def _format_idea_block(grant_idea: str, aligned_framing: str | None) -> str:
+    """Format the idea block, showing both full idea and aligned framing lens."""
+    parts = []
+    if grant_idea:
+        parts.append(
+            f"GRANT IDEA (the team's full proposed approach — PRIMARY CONTENT SOURCE; "
+            f"use their exact terminology, technology names, populations, methods, metrics):\n"
+            f"{grant_idea}"
+        )
+    if aligned_framing:
+        parts.append(
+            f"ALIGNED FRAMING (how the idea should be positioned for this call — use as a "
+            f"strategic lens but ground all bullets in the GRANT IDEA above):\n"
+            f"{aligned_framing[:1000]}"
+        )
+    return "\n\n".join(parts) if parts else "GRANT IDEA: Not provided"
+
+
+def _format_section_evidence_bundles(bundles: dict[str, dict]) -> str:
+    """Format per-section evidence bundles for the architect prompt.
+
+    Each section gets its top web evidence, archive excerpts, and academic citations
+    formatted as a concise block. The architect is instructed to anchor at least 2
+    bullets per section in this evidence.
+    """
+    if not bundles:
+        return ""
+    lines = [
+        "PER-SECTION EVIDENCE BUNDLES",
+        "(For each section below, you MUST draw at least 2 bullets from the provided evidence.",
+        " Use specific statistics, methods, and findings — cite the source briefly inline.)\n",
+    ]
+    for section_name, bundle in bundles.items():
+        if not bundle:
+            continue
+        lines.append(f"--- {section_name} ---")
+
+        # Key evidence (synthesised by research_agent)
+        key_evidence = bundle.get("key_evidence") or []
+        if key_evidence:
+            lines.append("Key evidence:")
+            for ev in key_evidence[:3]:
+                claim = ev.get("claim", "")
+                excerpt = ev.get("excerpt", "")
+                source = ev.get("source_title", "")
+                src_type = ev.get("source_type", "")
+                if excerpt:
+                    lines.append(f"  [{src_type or 'source'}] {claim}: \"{excerpt[:200]}\" — {source[:80]}")
+                elif claim:
+                    lines.append(f"  [{src_type or 'source'}] {claim} — {source[:80]}")
+
+        # Summary for drafter (synthesised paragraph)
+        summary = bundle.get("summary_for_drafter", "")
+        if summary:
+            lines.append(f"Evidence summary: {summary[:300]}")
+
+        # Archive RAG excerpts (HyDE-retrieved)
+        rag_items = bundle.get("rag_content_exemplars") or []
+        if rag_items:
+            lines.append("Archive excerpts (awarded grants):")
+            for item in rag_items[:2]:
+                snippet = item.get("text_snippet") or item.get("full_text") or ""
+                grant_title = item.get("grant_title", "")
+                sec_type = item.get("section_type", "")
+                outcome = item.get("outcome", "")
+                if snippet:
+                    lines.append(
+                        f"  [{outcome} grant — {sec_type}] {grant_title}: "
+                        f"\"{snippet[:250]}{'...' if len(snippet) > 250 else ''}\""
+                    )
+
+        # Academic citations
+        citations = bundle.get("suggested_citations") or []
+        if citations:
+            lines.append("Academic citations to consider:")
+            for c in citations[:2]:
+                lines.append(f"  • {c[:200]}")
+
+        lines.append("")
+
+    return "\n".join(lines)
+
+
 def _format_call_strategy(strategy: dict) -> str:
     if not strategy:
         return ""
@@ -363,6 +454,13 @@ def _format_call_strategy(strategy: dict) -> str:
         lines.append("RED FLAGS TO AVOID:")
         for r in strategy["red_flags"][:3]:
             lines.append(f"  - {r}")
+
+    # Wire section_strategy through — previously generated but dropped
+    if strategy.get("section_strategy"):
+        lines.append("PER-SECTION STRATEGIC GUIDANCE:")
+        for sec_name, guidance in list(strategy["section_strategy"].items())[:8]:
+            if isinstance(guidance, str) and guidance:
+                lines.append(f"  {sec_name}: {guidance[:250]}")
 
     return "\n".join(lines)
 

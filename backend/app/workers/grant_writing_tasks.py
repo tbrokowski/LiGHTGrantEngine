@@ -339,59 +339,116 @@ def _update_ai_generation_steps(
 # Skeleton step mapping -------------------------------------------------------
 
 _SKELETON_STEPS_INIT = [
-    {"id": "style",     "label": "Building style profile…",         "status": "active"},
-    {"id": "archive",   "label": "Retrieving similar grants…",      "status": "pending"},
-    {"id": "strategy",  "label": "Synthesizing call strategy…",     "status": "pending"},
-    {"id": "alignment", "label": "Aligning idea to call…",          "status": "pending"},
-    {"id": "synthesis", "label": "Generating proposal skeleton…",   "status": "pending"},
+    {"id": "style",     "label": "Building style profile…",              "status": "active"},
+    {"id": "archive",   "label": "Retrieving similar grants…",           "status": "pending"},
+    {"id": "strategy",  "label": "Synthesizing call strategy…",          "status": "pending"},
+    {"id": "alignment", "label": "Aligning idea to call…",               "status": "pending"},
+    {"id": "planning",  "label": "Planning section research…",           "status": "pending"},
+    {"id": "research",  "label": "Gathering evidence per section…",      "status": "pending"},
+    {"id": "synthesis", "label": "Generating grounded skeleton…",        "status": "pending"},
+    {"id": "review",    "label": "Reviewing alignment…",                 "status": "pending"},
 ]
 
 
 def _map_skeleton_event(event_name: str) -> list | None:
     """Return the full step list after a given SSE event, or None to keep current."""
-    transitions = {
+    done = "done"
+    active = "active"
+    pending = "pending"
+
+    base_done = [
+        {"id": "style",     "label": "Style profile built",              "status": done},
+        {"id": "archive",   "label": "Similar grants retrieved",         "status": done},
+        {"id": "strategy",  "label": "Call strategy synthesized",        "status": done},
+        {"id": "alignment", "label": "Idea aligned to call",             "status": done},
+        {"id": "planning",  "label": "Section research planned",         "status": done},
+        {"id": "research",  "label": "Evidence gathered",                "status": done},
+        {"id": "synthesis", "label": "Proposal skeleton generated",      "status": done},
+        {"id": "review",    "label": "Alignment reviewed",               "status": done},
+    ]
+
+    transitions: dict[str, list] = {
         "skeleton_start": [
-            {"id": "style",     "label": "Building style profile…",        "status": "active"},
-            {"id": "archive",   "label": "Retrieving similar grants…",     "status": "pending"},
-            {"id": "strategy",  "label": "Synthesizing call strategy…",    "status": "pending"},
-            {"id": "alignment", "label": "Aligning idea to call…",         "status": "pending"},
-            {"id": "synthesis", "label": "Generating proposal skeleton…",  "status": "pending"},
+            {"id": "style",     "label": "Building style profile…",          "status": active},
+            {"id": "archive",   "label": "Retrieving similar grants…",       "status": pending},
+            {"id": "strategy",  "label": "Synthesizing call strategy…",      "status": pending},
+            {"id": "alignment", "label": "Aligning idea to call…",           "status": pending},
+            {"id": "planning",  "label": "Planning section research…",       "status": pending},
+            {"id": "research",  "label": "Gathering evidence per section…",  "status": pending},
+            {"id": "synthesis", "label": "Generating grounded skeleton…",    "status": pending},
+            {"id": "review",    "label": "Reviewing alignment…",             "status": pending},
         ],
         "style_profile_complete": [
-            {"id": "style",     "label": "Style profile built",            "status": "done"},
-            {"id": "archive",   "label": "Retrieving similar grants…",     "status": "active"},
-            {"id": "strategy",  "label": "Synthesizing call strategy…",    "status": "pending"},
-            {"id": "alignment", "label": "Aligning idea to call…",         "status": "pending"},
-            {"id": "synthesis", "label": "Generating proposal skeleton…",  "status": "pending"},
+            {"id": "style",     "label": "Style profile built",              "status": done},
+            {"id": "archive",   "label": "Retrieving similar grants…",       "status": active},
+            {"id": "strategy",  "label": "Synthesizing call strategy…",      "status": pending},
+            {"id": "alignment", "label": "Aligning idea to call…",           "status": pending},
+            {"id": "planning",  "label": "Planning section research…",       "status": pending},
+            {"id": "research",  "label": "Gathering evidence per section…",  "status": pending},
+            {"id": "synthesis", "label": "Generating grounded skeleton…",    "status": pending},
+            {"id": "review",    "label": "Reviewing alignment…",             "status": pending},
         ],
         "archive_retrieval_complete": [
-            {"id": "style",     "label": "Style profile built",            "status": "done"},
-            {"id": "archive",   "label": "Similar grants retrieved",       "status": "done"},
-            {"id": "strategy",  "label": "Synthesizing call strategy…",    "status": "active"},
-            {"id": "alignment", "label": "Aligning idea to call…",         "status": "pending"},
-            {"id": "synthesis", "label": "Generating proposal skeleton…",  "status": "pending"},
+            {"id": "style",     "label": "Style profile built",              "status": done},
+            {"id": "archive",   "label": "Similar grants retrieved",         "status": done},
+            {"id": "strategy",  "label": "Synthesizing call strategy…",      "status": active},
+            {"id": "alignment", "label": "Aligning idea to call…",           "status": pending},
+            {"id": "planning",  "label": "Planning section research…",       "status": pending},
+            {"id": "research",  "label": "Gathering evidence per section…",  "status": pending},
+            {"id": "synthesis", "label": "Generating grounded skeleton…",    "status": pending},
+            {"id": "review",    "label": "Reviewing alignment…",             "status": pending},
         ],
         "call_strategy_complete": [
-            {"id": "style",     "label": "Style profile built",            "status": "done"},
-            {"id": "archive",   "label": "Similar grants retrieved",       "status": "done"},
-            {"id": "strategy",  "label": "Call strategy synthesized",      "status": "done"},
-            {"id": "alignment", "label": "Aligning idea to call…",         "status": "active"},
-            {"id": "synthesis", "label": "Generating proposal skeleton…",  "status": "pending"},
+            {"id": "style",     "label": "Style profile built",              "status": done},
+            {"id": "archive",   "label": "Similar grants retrieved",         "status": done},
+            {"id": "strategy",  "label": "Call strategy synthesized",        "status": done},
+            {"id": "alignment", "label": "Aligning idea to call…",           "status": active},
+            {"id": "planning",  "label": "Planning section research…",       "status": pending},
+            {"id": "research",  "label": "Gathering evidence per section…",  "status": pending},
+            {"id": "synthesis", "label": "Generating grounded skeleton…",    "status": pending},
+            {"id": "review",    "label": "Reviewing alignment…",             "status": pending},
         ],
         "idea_alignment_complete": [
-            {"id": "style",     "label": "Style profile built",            "status": "done"},
-            {"id": "archive",   "label": "Similar grants retrieved",       "status": "done"},
-            {"id": "strategy",  "label": "Call strategy synthesized",      "status": "done"},
-            {"id": "alignment", "label": "Idea aligned to call",           "status": "done"},
-            {"id": "synthesis", "label": "Generating proposal skeleton…",  "status": "active"},
+            {"id": "style",     "label": "Style profile built",              "status": done},
+            {"id": "archive",   "label": "Similar grants retrieved",         "status": done},
+            {"id": "strategy",  "label": "Call strategy synthesized",        "status": done},
+            {"id": "alignment", "label": "Idea aligned to call",             "status": done},
+            {"id": "planning",  "label": "Planning section research…",       "status": active},
+            {"id": "research",  "label": "Gathering evidence per section…",  "status": pending},
+            {"id": "synthesis", "label": "Generating grounded skeleton…",    "status": pending},
+            {"id": "review",    "label": "Reviewing alignment…",             "status": pending},
         ],
-        "skeleton_complete": [
-            {"id": "style",     "label": "Style profile built",            "status": "done"},
-            {"id": "archive",   "label": "Similar grants retrieved",       "status": "done"},
-            {"id": "strategy",  "label": "Call strategy synthesized",      "status": "done"},
-            {"id": "alignment", "label": "Idea aligned to call",           "status": "done"},
-            {"id": "synthesis", "label": "Proposal skeleton generated",    "status": "done"},
+        "skeleton_planning_complete": [
+            {"id": "style",     "label": "Style profile built",              "status": done},
+            {"id": "archive",   "label": "Similar grants retrieved",         "status": done},
+            {"id": "strategy",  "label": "Call strategy synthesized",        "status": done},
+            {"id": "alignment", "label": "Idea aligned to call",             "status": done},
+            {"id": "planning",  "label": "Section research planned",         "status": done},
+            {"id": "research",  "label": "Gathering evidence per section…",  "status": active},
+            {"id": "synthesis", "label": "Generating grounded skeleton…",    "status": pending},
+            {"id": "review",    "label": "Reviewing alignment…",             "status": pending},
         ],
+        "skeleton_research_complete": [
+            {"id": "style",     "label": "Style profile built",              "status": done},
+            {"id": "archive",   "label": "Similar grants retrieved",         "status": done},
+            {"id": "strategy",  "label": "Call strategy synthesized",        "status": done},
+            {"id": "alignment", "label": "Idea aligned to call",             "status": done},
+            {"id": "planning",  "label": "Section research planned",         "status": done},
+            {"id": "research",  "label": "Evidence gathered",                "status": done},
+            {"id": "synthesis", "label": "Generating grounded skeleton…",    "status": active},
+            {"id": "review",    "label": "Reviewing alignment…",             "status": pending},
+        ],
+        "skeleton_synthesis_start": [
+            {"id": "style",     "label": "Style profile built",              "status": done},
+            {"id": "archive",   "label": "Similar grants retrieved",         "status": done},
+            {"id": "strategy",  "label": "Call strategy synthesized",        "status": done},
+            {"id": "alignment", "label": "Idea aligned to call",             "status": done},
+            {"id": "planning",  "label": "Section research planned",         "status": done},
+            {"id": "research",  "label": "Evidence gathered",                "status": done},
+            {"id": "synthesis", "label": "Generating grounded skeleton…",    "status": active},
+            {"id": "review",    "label": "Reviewing alignment…",             "status": pending},
+        ],
+        "skeleton_complete": base_done,
     }
     return transitions.get(event_name)
 

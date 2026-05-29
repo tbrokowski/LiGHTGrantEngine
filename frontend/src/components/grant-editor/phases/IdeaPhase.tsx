@@ -832,8 +832,8 @@ export default function IdeaPhase({
         <div className="flex-shrink-0 border-t border-gray-200 px-5 py-3">
           <AIThinkingLog
             steps={skeletonSteps.map((s) => ({ id: s.id, label: s.label, status: s.status, detail: s.detail }))}
-            progressPct={Math.round(5 + (skeletonSteps.filter(s => s.status === 'done').length / Math.max(skeletonSteps.length, 1)) * 90)}
-            title="Generating skeleton…"
+            progressPct={Math.round(5 + (skeletonSteps.filter(s => s.status === 'done').length / Math.max(skeletonSteps.length, 1)) * 88)}
+            title="Generating grounded skeleton…"
           />
         </div>
       )}
