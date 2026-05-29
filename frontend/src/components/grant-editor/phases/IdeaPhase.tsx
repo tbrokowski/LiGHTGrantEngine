@@ -62,9 +62,6 @@ interface IdeaPhaseProps {
   onSelectionChange?: (text: string) => void;
 }
 
-
-}
-
 // Collapsible section wrapper
 function CollapsibleSection({
   label,
