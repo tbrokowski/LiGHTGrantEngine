@@ -41,6 +41,21 @@ async def lifespan(app: FastAPI):
         )
     except Exception as exc:
         logger.warning("Grant pool bootstrap skipped or failed", error=str(exc))
+
+    # Run dedup on every startup so existing duplicates are cleaned on deploy
+    try:
+        from sqlalchemy import create_engine
+        from app.workers.dedup_tasks import run_dedup
+        engine = create_engine(settings.database_url)
+        dedup_result = run_dedup(engine)
+        logger.info(
+            "Startup dedup complete",
+            confirmed=dedup_result.get("confirmed", 0),
+            possible=dedup_result.get("possible", 0),
+        )
+    except Exception as exc:
+        logger.warning("Startup dedup skipped or failed", error=str(exc))
+
     yield
     logger.info("LiGHT Grant System shutting down")
 

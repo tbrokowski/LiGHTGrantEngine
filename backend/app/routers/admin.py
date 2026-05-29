@@ -82,16 +82,27 @@ async def resync_feeds(
 
 
 @router.post("/deduplicate-opportunities")
-async def trigger_dedup(current_user: User = Depends(get_current_user)):
-    """Enqueue a retroactive dedup scan across all opportunities.
+async def run_dedup(current_user: User = Depends(get_current_user)):
+    """Run a synchronous dedup scan across all opportunities.
 
-    Marks confirmed duplicates (status=duplicate, hidden from UI) and flags
-    possible duplicates (duplicate_status=possible_duplicate, visible but
-    surfaced for review). Safe to run repeatedly — idempotent.
+    Marks confirmed duplicates (status=duplicate, hidden from all listing
+    endpoints) and flags medium-confidence matches as POSSIBLE_DUPLICATE.
+    Runs inline — no Celery worker required. Idempotent and safe to re-run.
     """
     _require_admin(current_user)
-    from app.workers.celery_app import celery_app
-    task = celery_app.send_task(
-        "app.workers.discovery_tasks.deduplicate_opportunity_pool"
-    )
-    return {"message": "Deduplication task queued", "task_id": task.id}
+    import asyncio
+    from sqlalchemy import create_engine
+    from app.config import get_settings as gs
+    from app.workers.dedup_tasks import run_dedup as _run_dedup
+
+    def _run_sync():
+        engine = create_engine(gs().database_url)
+        return _run_dedup(engine)
+
+    stats = await asyncio.get_event_loop().run_in_executor(None, _run_sync)
+    return {
+        "message": "Deduplication complete",
+        "confirmed_duplicates_removed": stats["confirmed"],
+        "possible_duplicates_flagged": stats["possible"],
+        "groups_processed": stats["groups_processed"],
+    }

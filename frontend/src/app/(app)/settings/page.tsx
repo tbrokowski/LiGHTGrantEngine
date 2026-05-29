@@ -513,20 +513,25 @@ function SettingsPageInner() {
     setDeduplicating(true);
     setDedupResult(null);
     try {
-      await admin.deduplicateOpportunities();
-      setDedupResult('Deduplication running. Duplicates will be removed shortly.');
-      // Refresh the opportunities list once the task has had time to run
-      const refreshAt = (delay: number) =>
-        setTimeout(() => notifyOpportunitiesChanged(), delay);
-      refreshAt(5_000);
-      refreshAt(30_000);
-      setTimeout(() => setDedupResult(null), 60_000);
+      const res = await admin.deduplicateOpportunities();
+      const confirmed = res.data?.confirmed_duplicates_removed ?? 0;
+      const possible = res.data?.possible_duplicates_flagged ?? 0;
+      setDedupResult(
+        confirmed > 0
+          ? `Done — removed ${confirmed} duplicate${confirmed !== 1 ? 's' : ''}${possible > 0 ? `, flagged ${possible} for review` : ''}.`
+          : possible > 0
+          ? `Done — flagged ${possible} possible duplicate${possible !== 1 ? 's' : ''} for review.`
+          : 'Done — no duplicates found.'
+      );
+      // Refresh opportunities immediately since dedup already ran
+      notifyOpportunitiesChanged();
+      setTimeout(() => setDedupResult(null), 12_000);
     } catch (err: unknown) {
       const status = (err as { response?: { status?: number } })?.response?.status;
       if (status === 403) {
         setDedupResult('Admin access required.');
       } else {
-        setDedupResult('Failed to queue deduplication. Is the worker running?');
+        setDedupResult('Deduplication failed. Check the server logs.');
       }
       setTimeout(() => setDedupResult(null), 8_000);
     } finally {
