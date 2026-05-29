@@ -1,6 +1,6 @@
 'use client';
 
-import { useRef, useState, useCallback, useEffect } from 'react';
+import { useRef, useState, useCallback, useEffect, DragEvent } from 'react';
 import {
   Upload, Mic, MicOff, Loader2, Sparkles, CheckCircle2, ChevronDown,
   ExternalLink, Link2, PlusCircle, CloudUpload, CloudDownload, RefreshCw, X,
@@ -133,6 +133,10 @@ export default function IdeaPhase({
   onSelectionChange,
   callIntelligence,
 }: IdeaPhaseProps) {
+  // Drag-and-drop state for section constraints table
+  const dragIndexRef = useRef<number | null>(null);
+  const [dragOverIdx, setDragOverIdx] = useState<number | null>(null);
+
   // Panel expand state
   const [ideaExpanded, setIdeaExpanded] = useState(true);
   const [docExpanded, setDocExpanded] = useState(true);
@@ -685,6 +689,7 @@ export default function IdeaPhase({
                 <table className="w-full text-xs">
                   <thead>
                     <tr className="bg-gray-50 text-gray-400 font-medium">
+                      <th className="px-2 py-1.5 w-6" />
                       <th className="text-left px-2 py-1.5 w-6">#</th>
                       <th className="text-left px-2 py-1.5">Section</th>
                       <th className="text-left px-2 py-1.5 w-20">Words</th>
@@ -695,8 +700,45 @@ export default function IdeaPhase({
                   </thead>
                   <tbody className="divide-y divide-gray-100">
                     {sectionConstraints.map((sc, idx) => (
-                      <tr key={idx} className="group">
-                        <td className="px-2 py-1 text-gray-400">{sc.order ?? idx + 1}</td>
+                      <tr
+                        key={idx}
+                        draggable
+                        onDragStart={(e: DragEvent) => {
+                          dragIndexRef.current = idx;
+                          e.dataTransfer.effectAllowed = 'move';
+                        }}
+                        onDragOver={(e: DragEvent) => {
+                          e.preventDefault();
+                          e.dataTransfer.dropEffect = 'move';
+                          setDragOverIdx(idx);
+                        }}
+                        onDragLeave={() => setDragOverIdx(null)}
+                        onDrop={(e: DragEvent) => {
+                          e.preventDefault();
+                          const from = dragIndexRef.current;
+                          if (from === null || from === idx) { setDragOverIdx(null); return; }
+                          const updated = [...sectionConstraints];
+                          const [moved] = updated.splice(from, 1);
+                          updated.splice(idx, 0, moved);
+                          setSectionConstraints(updated.map((s, i) => ({ ...s, order: i + 1 })));
+                          dragIndexRef.current = null;
+                          setDragOverIdx(null);
+                        }}
+                        onDragEnd={() => { dragIndexRef.current = null; setDragOverIdx(null); }}
+                        className={`group transition-colors ${dragOverIdx === idx ? 'bg-indigo-50 border-t-2 border-indigo-300' : 'hover:bg-gray-50'}`}
+                      >
+                        {/* Drag handle */}
+                        <td className="px-2 py-1 text-gray-300 cursor-grab active:cursor-grabbing select-none">
+                          <svg className="w-3.5 h-3.5" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2}>
+                            <circle cx="9" cy="6" r="1" fill="currentColor" stroke="none"/>
+                            <circle cx="15" cy="6" r="1" fill="currentColor" stroke="none"/>
+                            <circle cx="9" cy="12" r="1" fill="currentColor" stroke="none"/>
+                            <circle cx="15" cy="12" r="1" fill="currentColor" stroke="none"/>
+                            <circle cx="9" cy="18" r="1" fill="currentColor" stroke="none"/>
+                            <circle cx="15" cy="18" r="1" fill="currentColor" stroke="none"/>
+                          </svg>
+                        </td>
+                        <td className="px-2 py-1 text-gray-400">{idx + 1}</td>
                         <td className="px-2 py-1">
                           <input
                             value={sc.name}
@@ -753,9 +795,10 @@ export default function IdeaPhase({
                           <button
                             type="button"
                             onClick={() => setSectionConstraints(sectionConstraints.filter((_, i) => i !== idx))}
-                            className="opacity-0 group-hover:opacity-100 text-gray-300 hover:text-red-500 transition-opacity"
+                            className="text-gray-300 hover:text-red-500 transition-colors"
+                            title="Remove section"
                           >
-                            <X className="w-3 h-3" />
+                            <X className="w-3.5 h-3.5" />
                           </button>
                         </td>
                       </tr>

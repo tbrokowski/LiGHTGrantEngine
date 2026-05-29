@@ -1,7 +1,7 @@
 'use client';
 
-import { useState, useEffect, useCallback } from 'react';
-import { Loader2, Sparkles, Star, BookOpen, RefreshCw, ImageIcon, AlertTriangle, ChevronDown, Lock, Unlock, PlusCircle, X, ArrowUp, ArrowDown } from 'lucide-react';
+import { useState, useEffect, useCallback, useRef, DragEvent } from 'react';
+import { Loader2, Sparkles, Star, BookOpen, RefreshCw, ImageIcon, AlertTriangle, ChevronDown, Lock, Unlock, PlusCircle, X } from 'lucide-react';
 import { grantWriting } from '@/lib/api';
 import SkeletonEditor from '../SkeletonEditor';
 import MetaAgentPanel from '../MetaAgentPanel';
@@ -97,6 +97,8 @@ export default function SkeletonPhase({
   const [editingTitle, setEditingTitle] = useState(false);
   const [titleDraft, setTitleDraft] = useState(skeleton.title_suggestion || '');
   const [placeholdersExpanded, setPlaceholdersExpanded] = useState(false);
+  const dragIndexRef = useRef<number | null>(null);
+  const [dragOverIdx, setDragOverIdx] = useState<number | null>(null);
 
   // TBD counts
   const tbdCount = (skeleton as Record<string, unknown>).tbd_count as number | undefined;
@@ -168,14 +170,6 @@ export default function SkeletonPhase({
       setConstraintSaving(false);
     }
   }, [grantId, constraintWordLimit, constraintPageLimit, constraintSections, onSkeletonChange]);
-
-  const moveSection = (idx: number, dir: -1 | 1) => {
-    const next = [...constraintSections];
-    const target = idx + dir;
-    if (target < 0 || target >= next.length) return;
-    [next[idx], next[target]] = [next[target], next[idx]];
-    setConstraintSections(next.map((s, i) => ({ ...s, order: i + 1 })));
-  };
 
   const progressPct = (() => {
     if (!draftSteps || draftSteps.length === 0) return 5;
@@ -347,12 +341,13 @@ export default function SkeletonPhase({
                       <table className="w-full text-xs">
                         <thead>
                           <tr className="bg-gray-50 text-gray-400 font-medium">
+                            {constraintsEditing && <th className="px-2 py-1.5 w-6" />}
                             <th className="text-left px-2 py-1.5 w-6">#</th>
                             <th className="text-left px-2 py-1.5">Section</th>
                             <th className="text-right px-2 py-1.5 w-28">Word count</th>
                             <th className="text-right px-2 py-1.5 w-16">Pages</th>
                             <th className="text-left px-2 py-1.5 w-20">Priority</th>
-                            {constraintsEditing && <th className="w-14" />}
+                            {constraintsEditing && <th className="w-8" />}
                           </tr>
                         </thead>
                         <tbody className="divide-y divide-gray-100">
@@ -362,8 +357,46 @@ export default function SkeletonPhase({
                             const overLimit = limit && actual > limit;
                             const nearLimit = limit && !overLimit && actual > limit * 0.85;
                             return (
-                              <tr key={idx} className="group hover:bg-gray-50">
-                                <td className="px-2 py-1.5 text-gray-400">{sc.order ?? idx + 1}</td>
+                              <tr
+                                key={idx}
+                                draggable={constraintsEditing}
+                                onDragStart={constraintsEditing ? (e: DragEvent) => {
+                                  dragIndexRef.current = idx;
+                                  e.dataTransfer.effectAllowed = 'move';
+                                } : undefined}
+                                onDragOver={constraintsEditing ? (e: DragEvent) => {
+                                  e.preventDefault();
+                                  e.dataTransfer.dropEffect = 'move';
+                                  setDragOverIdx(idx);
+                                } : undefined}
+                                onDragLeave={constraintsEditing ? () => setDragOverIdx(null) : undefined}
+                                onDrop={constraintsEditing ? (e: DragEvent) => {
+                                  e.preventDefault();
+                                  const from = dragIndexRef.current;
+                                  if (from === null || from === idx) { setDragOverIdx(null); return; }
+                                  const updated = [...constraintSections];
+                                  const [moved] = updated.splice(from, 1);
+                                  updated.splice(idx, 0, moved);
+                                  setConstraintSections(updated.map((s, i) => ({ ...s, order: i + 1 })));
+                                  dragIndexRef.current = null;
+                                  setDragOverIdx(null);
+                                } : undefined}
+                                onDragEnd={constraintsEditing ? () => { dragIndexRef.current = null; setDragOverIdx(null); } : undefined}
+                                className={`group transition-colors ${constraintsEditing && dragOverIdx === idx ? 'bg-indigo-50 border-t-2 border-indigo-300' : 'hover:bg-gray-50'}`}
+                              >
+                                {constraintsEditing && (
+                                  <td className="px-2 py-1.5 text-gray-300 cursor-grab active:cursor-grabbing select-none">
+                                    <svg className="w-3 h-3" viewBox="0 0 24 24" fill="none">
+                                      <circle cx="9" cy="6" r="1.5" fill="currentColor"/>
+                                      <circle cx="15" cy="6" r="1.5" fill="currentColor"/>
+                                      <circle cx="9" cy="12" r="1.5" fill="currentColor"/>
+                                      <circle cx="15" cy="12" r="1.5" fill="currentColor"/>
+                                      <circle cx="9" cy="18" r="1.5" fill="currentColor"/>
+                                      <circle cx="15" cy="18" r="1.5" fill="currentColor"/>
+                                    </svg>
+                                  </td>
+                                )}
+                                <td className="px-2 py-1.5 text-gray-400">{idx + 1}</td>
                                 <td className="px-2 py-1.5">
                                   {constraintsEditing ? (
                                     <input
@@ -444,22 +477,15 @@ export default function SkeletonPhase({
                                   )}
                                 </td>
                                 {constraintsEditing && (
-                                  <td className="px-1 py-1.5">
-                                    <div className="flex items-center gap-0.5 opacity-0 group-hover:opacity-100 transition-opacity">
-                                      <button type="button" onClick={() => moveSection(idx, -1)} className="text-gray-400 hover:text-gray-600">
-                                        <ArrowUp className="w-3 h-3" />
-                                      </button>
-                                      <button type="button" onClick={() => moveSection(idx, 1)} className="text-gray-400 hover:text-gray-600">
-                                        <ArrowDown className="w-3 h-3" />
-                                      </button>
-                                      <button
-                                        type="button"
-                                        onClick={() => setConstraintSections(constraintSections.filter((_, i) => i !== idx))}
-                                        className="text-gray-300 hover:text-red-500 ml-0.5"
-                                      >
-                                        <X className="w-3 h-3" />
-                                      </button>
-                                    </div>
+                                  <td className="px-1 py-1.5 text-right">
+                                    <button
+                                      type="button"
+                                      onClick={() => setConstraintSections(constraintSections.filter((_, i) => i !== idx))}
+                                      className="text-gray-300 hover:text-red-500 transition-colors"
+                                      title="Remove section"
+                                    >
+                                      <X className="w-3.5 h-3.5" />
+                                    </button>
                                   </td>
                                 )}
                               </tr>

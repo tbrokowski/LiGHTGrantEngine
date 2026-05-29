@@ -7,36 +7,33 @@ directly before generating the full draft.
 import json
 from app.ai.client import chat_complete
 
-SYSTEM_PROMPT = """You are a senior grants strategist and proposal writer with deep expertise in drafting
-competitive research proposals across all domains and funders.
+SYSTEM_PROMPT = """You are a senior grant proposal writer generating a working skeleton for a competitive proposal.
 
-Your task is to produce a STRUCTURED OUTLINE of a proposal — not full prose. Each section should be
-a concise, information-rich outline that the team will expand into full text. The outline must be
-grounded in the applicant's own idea and voice; call requirements guide coverage, not structure.
+A skeleton is NOT a template and NOT a list of meta-labels. It is ACTUAL CONTENT in bullet-point form:
+- Real arguments and claims drawn directly from the team's grant idea
+- Specific methods, technologies, and approaches mentioned in the idea
+- Concrete evidence points and metrics where known
+- The exact framing and terminology the team will use
 
-Document format:
-Use ## Section Name for each section heading (Markdown), then produce a structured outline block:
+Section format — use this ONLY:
+## Section Name
 
-**Purpose:** [One sentence — what this section accomplishes for the reviewer]
-**Key arguments:**
-- [Specific claim grounded in the applicant's idea, using the funder's language where relevant]
-- [Another specific claim or point of differentiation]
-**Evidence / data to include:**
-- [Specific evidence type, metric, or data the evaluation criteria require]
-**Archive reference:** [If archive content was provided for this section type, quote 1-2 directly relevant sentences; otherwise omit]
-**Word count:** [N] words
+- [Real, specific claim from the team's proposal — use their technology names, methods, target populations, outcomes]
+- [Another concrete point about what the team will actually do, demonstrate, or argue]
+- [Evidence or data point — either from the idea, archive, or a specific type of data needed]
+- [Additional claim addressing a key evaluation criterion]
+[TBD: describe what specific information is missing — e.g. "pilot dataset size from MOOVE team"]
+(Target: N words)
 
-Guiding principles:
-- The applicant's idea is the primary source — use their framing, claims, and approach
-- GRANT TYPE CONTEXT (if provided) tells you how this specific call is scored — let it guide emphasis
-- SUGGESTED SECTION BLUEPRINT (if provided) is a starting structure suggestion, not a mandate; adapt based on the idea
-- CALL ANALYSIS tells you what coverage the call requires — treat it as thematic guidance
-- ADVERSARIAL CHALLENGES (if provided) tell you where reviewers will probe — address those in relevant sections
-- GAP QUESTIONS mark areas where the team's plan is unclear — use [TBD: reason] for those spots
-- When REFERENCE DOCUMENTS are provided, use the actual data, results, and descriptions from them — do not use [TBD] for info already in the docs
-- Use [TBD: reason] only for specific figures, names, or details genuinely not yet available
-
-The team will edit the outline and then generate the full draft.
+Rules — follow these strictly:
+1. Every bullet must be SPECIFIC and SUBSTANTIVE — use the team's own terminology, name specific technologies/platforms/methods, reference actual target populations, specific disease areas, specific geographies from their idea
+2. Never write a generic bullet like "We will demonstrate the effectiveness of our approach" — instead write "We will demonstrate X% improvement in [specific metric] for [specific disease] in [specific setting] using [specific method]"
+3. Draw directly from the GRANT IDEA — if they mention MOOVE, write about MOOVE; if they mention SSA, write about SSA; if they mention AI/ML, name the specific technique
+4. Call requirements determine SECTION STRUCTURE and TOPICS TO COVER, not the bullet content
+5. Archive content (if provided) should directly inform bullets — quote or paraphrase specific approaches, outcomes, or evidence from awarded grants
+6. [TBD: reason] only for genuine unknowns (specific numbers, named partners, etc.) — not for strategic content
+7. No meta-labels like "Purpose:", "Key arguments:", "Evidence to include:" — only bullets and [TBD] markers
+8. If you cannot be specific, write [TBD: specific information needed] rather than a vague bullet
 
 Respond with valid JSON."""
 
@@ -81,14 +78,15 @@ async def generate_proposal_outline(
     thematic_areas = call_analysis.get("thematic_areas") or []
     strategic_objectives = call_analysis.get("strategic_objectives") or []
 
-    user_prompt = f"""Think step by step before producing the skeleton outline:
-1. Identify the grant's core narrative: what problem, what solution, what impact — from the grant idea.
-2. Use GRANT TYPE CONTEXT (if provided) to understand how this specific call is scored and what wins.
-3. Use SECTION STRUCTURE AND LIMITS as the authoritative section list — write a structured outline for
-   each entry using exactly those section names as ## headings. Respect word limits.
-4. For each section, produce the structured outline format (Purpose / Key arguments / Evidence / Word count).
-5. Address ADVERSARIAL CHALLENGES in the relevant sections.
-Then produce the full JSON response.
+    user_prompt = f"""Think step by step before writing:
+1. Extract the core specific elements from the GRANT IDEA: what is the specific technology/platform, what problem, what target population/geography, what specific methods, what outcomes claimed?
+2. For each section, identify which specific elements from the idea are most relevant to that section's purpose.
+3. Write 4-7 specific bullet points per section using the team's actual terminology and approach.
+4. Augment with any concrete evidence from REFERENCE DOCUMENTS or ARCHIVE GRANTS (use actual numbers, outcomes, methods from those docs).
+5. Use [TBD: reason] only for genuinely unknown specifics (e.g. "exact sample size", "named implementation partner").
+Then produce the full JSON response with the raw_text as specified.
+
+IMPORTANT: Every bullet must use specific details from the GRANT IDEA below. Generic bullets that could apply to any proposal will be rejected.
 
 ---
 
@@ -123,16 +121,14 @@ Budget constraints: {call_analysis.get('budget_constraints', '')}
 
 Produce a JSON object with the following fields:
 
-- raw_text: a single string containing the full skeleton document. Use ## Section Name headings
-  to introduce each section (use the exact section names from SECTION STRUCTURE AND LIMITS if
-  provided). For each section write the structured outline format:
-    **Purpose:** [one sentence]
-    **Key arguments:**
-    - [specific claim from the idea]
-    **Evidence / data to include:**
-    - [specific evidence needed]
-    **Word count:** [N] words
-  Use [TBD: reason] for specifics not yet available. Sections are separated by a blank line.
+- raw_text: a single string containing the full skeleton. Use ## Section Name headings (use exact
+  section names from SECTION STRUCTURE AND LIMITS if provided). Under each heading write:
+    - [specific bullet drawn from the team's idea]
+    - [specific bullet with method/evidence]
+    - ... (4-7 bullets per section, all grounded in the grant idea)
+    [TBD: description] — only if genuinely unknown
+    (Target: N words)
+  Sections separated by a blank line. No meta-labels (no "Purpose:", "Key arguments:", etc.).
 - sections: list of objects, one per section in the skeleton, in order:
     {{"name": str, "word_limit": int|null, "page_limit": str|null, "priority": "high"|"medium"|"low", "order": int}}
   Use the constraints from SECTION STRUCTURE AND LIMITS if provided, otherwise infer from raw_text.
