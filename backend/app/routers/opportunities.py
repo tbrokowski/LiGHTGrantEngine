@@ -74,6 +74,10 @@ class ReviewCreate(BaseModel):
     follow_up_actions: Optional[str] = None
 
 
+class ScrapePreviewRequest(BaseModel):
+    url: str
+
+
 # ── Endpoints ─────────────────────────────────────────────────────────────────
 @router.get("/")
 async def list_opportunities(
@@ -137,6 +141,25 @@ async def list_opportunities(
         "page": page,
         "page_size": page_size,
         "items": [_opp_summary(o) for o in items],
+    }
+
+
+@router.post("/scrape-preview")
+async def scrape_preview(
+    data: ScrapePreviewRequest,
+    current_user: User = Depends(get_current_user),
+):
+    """Fetch a URL and return extracted grant description/summary for form pre-fill. No DB write."""
+    from app.scrapers.detail_fetcher import DetailPageParser
+    import asyncio
+
+    parser = DetailPageParser(timeout=20)
+    loop = asyncio.get_event_loop()
+    result = await loop.run_in_executor(None, parser.fetch_and_parse, data.url)
+    return {
+        "description": result.get("description"),
+        "short_summary": result.get("short_summary"),
+        "error": result.get("error"),
     }
 
 

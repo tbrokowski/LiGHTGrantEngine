@@ -32,6 +32,7 @@ from .institution_source import InstitutionSource
 from .preseed_run import PreseedRun
 from .email_verification import EmailVerification
 from .org_join_request import OrgJoinRequest
+from .password_reset import PasswordResetToken
 
 __all__ = [
     "Institution", "User", "Source", "SourceRun", "Opportunity", "OpportunityReview",
@@ -45,5 +46,5 @@ __all__ = [
     "GrantActivityLog", "GrantWritingConversation", "GrantCitation",
     "UserOpportunityState", "GrantMember",
     "InstitutionOpportunity", "InstitutionSource", "PreseedRun",
-    "EmailVerification", "OrgJoinRequest",
+    "EmailVerification", "OrgJoinRequest", "PasswordResetToken",
 ]

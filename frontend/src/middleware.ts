@@ -16,7 +16,7 @@ import type { NextRequest } from 'next/server';
  * Public routes (login, register, invite, root) are always accessible.
  */
 
-const PUBLIC_PATHS = ['/login', '/register', '/invite', '/verify-email'];
+const PUBLIC_PATHS = ['/login', '/register', '/invite', '/verify-email', '/forgot-password', '/reset-password'];
 
 export function middleware(request: NextRequest) {
   const { pathname } = request.nextUrl;

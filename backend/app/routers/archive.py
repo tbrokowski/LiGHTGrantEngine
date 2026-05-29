@@ -391,6 +391,45 @@ async def ingest_archive(
     }
 
 
+@router.post("/{archive_id}/documents", status_code=201, dependencies=[Depends(require_role(UserRole.GRANT_LEAD))])
+async def add_archive_document(
+    archive_id: str,
+    file: UploadFile = File(...),
+    document_type: str = Form(...),
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    """Upload an additional document (proposal, call doc, or budget) to an existing archive entry."""
+    result = await db.execute(select(GrantArchive).where(GrantArchive.id == archive_id))
+    archive = result.scalar_one_or_none()
+    if not archive:
+        raise HTTPException(404, "Archive entry not found")
+
+    valid_types = {"full_proposal", "call_document", "budget"}
+    if document_type not in valid_types:
+        raise HTTPException(400, f"document_type must be one of: {', '.join(sorted(valid_types))}")
+
+    content = await file.read()
+    if not content:
+        raise HTTPException(400, "Uploaded file is empty")
+    _check_upload_size(content, "File")
+
+    from app.services.archive_ingestion import _store_archive_document
+
+    doc = await _store_archive_document(
+        db, archive, content, file.filename or "document", document_type, current_user.id
+    )
+    await db.commit()
+
+    if document_type == "full_proposal":
+        archive.indexing_status = "pending"
+        archive.indexing_error = None
+        await db.commit()
+        celery_app.send_task("app.workers.archive_tasks.index_archive", args=[archive_id])
+
+    return {"id": doc.id, "document_type": document_type, "file_name": doc.file_name}
+
+
 @router.post("/{archive_id}/reindex-style", dependencies=[Depends(require_role(UserRole.GRANT_LEAD))])
 async def reindex_archive_style_endpoint(
     archive_id: str,

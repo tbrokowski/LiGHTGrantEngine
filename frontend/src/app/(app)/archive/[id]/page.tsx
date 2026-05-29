@@ -2,9 +2,10 @@
 import { useEffect, useState, useRef, useCallback, useMemo } from 'react';
 import { useParams } from 'next/navigation';
 import Link from 'next/link';
-import { ChevronDown, ChevronRight, X } from 'lucide-react';
+import { ChevronDown, ChevronRight, Pencil, X } from 'lucide-react';
 import { archive } from '@/lib/api';
 import { openDocumentContent } from '@/lib/documents';
+import EditArchiveModal from '@/components/archive/EditArchiveModal';
 
 interface ProposalSection {
   id: string;
@@ -114,6 +115,7 @@ export default function ArchiveDetailPage() {
   const [expandedSections, setExpandedSections] = useState<Record<string, boolean>>({});
   const [textPreviewDoc, setTextPreviewDoc] = useState<ArchiveDocument | null>(null);
   const [openingDocId, setOpeningDocId] = useState<string | null>(null);
+  const [showEdit, setShowEdit] = useState(false);
   const prevSectionCountRef = useRef(0);
 
   const load = useCallback((silent = false) => {
@@ -212,10 +214,20 @@ export default function ArchiveDetailPage() {
 
   return (
     <div className="px-8 py-8 max-w-4xl mx-auto">
-      <div className="text-sm text-gray-400 mb-6 flex items-center gap-2">
-        <Link href="/archive" className="hover:text-gray-700">Archive</Link>
-        <span>/</span>
-        <span className="text-gray-600 truncate">{entry.title}</span>
+      <div className="text-sm text-gray-400 mb-6 flex items-center justify-between gap-2">
+        <div className="flex items-center gap-2 min-w-0">
+          <Link href="/archive" className="hover:text-gray-700 shrink-0">Archive</Link>
+          <span>/</span>
+          <span className="text-gray-600 truncate">{entry.title}</span>
+        </div>
+        <button
+          type="button"
+          onClick={() => setShowEdit(true)}
+          className="shrink-0 flex items-center gap-1.5 text-xs px-3 py-1.5 rounded-lg border border-gray-200 text-gray-600 hover:bg-gray-50 transition-colors"
+        >
+          <Pencil className="w-3.5 h-3.5" />
+          Edit
+        </button>
       </div>
 
       {/* Header */}
@@ -493,6 +505,18 @@ export default function ArchiveDetailPage() {
           </div>
         )}
       </div>
+
+      {/* Edit modal */}
+      {showEdit && (
+        <EditArchiveModal
+          entry={entry}
+          onClose={() => setShowEdit(false)}
+          onSaved={() => {
+            setShowEdit(false);
+            load();
+          }}
+        />
+      )}
 
       {/* Extracted text modal */}
       {textPreviewDoc && (

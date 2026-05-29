@@ -58,6 +58,10 @@ export const auth = {
   verifyEmail: (token: string) => api.get('/auth/verify-email', { params: { token } }),
   googleStart: () => api.get('/auth/google'),
   googleDisconnect: () => api.post('/auth/google/disconnect'),
+  forgotPassword: (email: string) =>
+    api.post('/auth/forgot-password', { email }),
+  resetPassword: (token: string, new_password: string) =>
+    api.post('/auth/reset-password', { token, new_password }),
 };
 
 // ── Users ────────────────────────────────────────────────────────────────────
@@ -141,6 +145,7 @@ export const opportunities = {
   graphData: (params?: Record<string, unknown>) => api.get('/opportunities/graph-data', { params }),
   get: (id: string) => api.get(`/opportunities/${id}`),
   create: (data: Record<string, unknown>) => api.post('/opportunities/', data),
+  scrapePreview: (url: string) => api.post('/opportunities/scrape-preview', { url }),
   update: (id: string, data: Record<string, unknown>) => api.patch(`/opportunities/${id}`, data),
   submitReview: (id: string, data: Record<string, unknown>) => api.post(`/opportunities/${id}/reviews`, data),
   convertToGrant: (id: string) => api.post(`/opportunities/${id}/convert-to-grant`),
@@ -345,6 +350,11 @@ export const archive = {
       timeout: 90_000,
     }),
   update: (id: string, data: Record<string, unknown>) => api.patch(`/archive/${id}`, data),
+  uploadDocument: (archiveId: string, formData: FormData) =>
+    api.post(`/archive/${archiveId}/documents`, formData, {
+      headers: { 'Content-Type': 'multipart/form-data' },
+      timeout: 90_000,
+    }),
   ingest: (archiveId: string, data?: Record<string, unknown>) =>
     api.post(`/archive/${archiveId}/ingest`, data || {}),
   reindexStyle: (archiveId: string, data?: Record<string, unknown>) =>

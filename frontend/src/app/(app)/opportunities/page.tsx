@@ -7,6 +7,7 @@ import FocusReview from '@/components/opportunities/FocusReview';
 import OpportunityFiltersBar from '@/components/opportunities/OpportunityFilters';
 import OpportunityGraphView, { GraphNode, GraphCluster, GraphEdge } from '@/components/opportunities/OpportunityGraphView';
 import GraphFilters, { GraphFilterState } from '@/components/opportunities/GraphFilters';
+import AddToShortlistModal from '@/components/opportunities/AddToShortlistModal';
 import {
   isExpired,
   type Opportunity,
@@ -94,6 +95,7 @@ export default function OpportunitiesPage() {
   const [queueTotal, setQueueTotal] = useState(0);
   const [filters, setFilters] = useState<OpportunityFilters>(EMPTY_FILTERS);
   const [showFilters, setShowFilters] = useState(false);
+  const [showAddModal, setShowAddModal] = useState(false);
   const [pastExpanded, setPastExpanded] = useState(false);
   const [unreadOnly, setUnreadOnly] = useState(true);
   const [focusIndex, setFocusIndex] = useState(0);
@@ -345,6 +347,14 @@ export default function OpportunitiesPage() {
           </p>
         </div>
         <div className="flex items-center gap-2">
+          {activeTab === 'shortlist' && (
+            <button
+              onClick={() => setShowAddModal(true)}
+              className="px-3 py-1.5 text-sm font-medium rounded-lg border border-gray-900 bg-gray-900 text-white hover:bg-gray-700 transition-colors"
+            >
+              + Add
+            </button>
+          )}
           <input
             type="text"
             placeholder="Search…"
@@ -555,6 +565,16 @@ export default function OpportunitiesPage() {
             {loadingMore ? 'Loading…' : `Load more (${queueTotal - queue.length} remaining)`}
           </button>
         </div>
+      )}
+
+      {showAddModal && (
+        <AddToShortlistModal
+          onClose={() => setShowAddModal(false)}
+          onAdded={(opp) => {
+            setShortlist(prev => [opp, ...prev]);
+            setShowAddModal(false);
+          }}
+        />
       )}
     </div>
   );

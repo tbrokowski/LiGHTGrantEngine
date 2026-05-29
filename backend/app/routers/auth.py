@@ -18,6 +18,7 @@ from app.models.user import User, UserRole, InstitutionRole
 from app.models.institution import Institution
 from app.models.org_join_request import OrgJoinRequest, JoinRequestStatus
 from app.models.email_verification import EmailVerification
+from app.models.password_reset import PasswordResetToken
 from app.services.organization_setup import (
     personal_workspace_name,
     invited_member_role,
@@ -464,6 +465,91 @@ async def verify_email(
         user.email_verified = True
     await db.commit()
     return {"message": "Email verified successfully"}
+
+
+# ── Password reset ─────────────────────────────────────────────────────────────
+
+class ForgotPasswordBody(BaseModel):
+    email: str
+
+
+class ResetPasswordBody(BaseModel):
+    token: str
+    new_password: str
+
+
+@router.post("/forgot-password")
+async def forgot_password(
+    body: ForgotPasswordBody,
+    db: AsyncSession = Depends(get_db),
+):
+    """Request a password reset email. Always returns 200 to prevent user enumeration."""
+    result = await db.execute(select(User).where(User.email == body.email))
+    user = result.scalar_one_or_none()
+
+    if user and user.is_active:
+        token = secrets.token_urlsafe(32)
+        expires = datetime.now(timezone.utc) + timedelta(hours=1)
+        reset_token = PasswordResetToken(
+            id=str(uuid.uuid4()),
+            user_id=user.id,
+            token=token,
+            expires_at=expires,
+        )
+        db.add(reset_token)
+        try:
+            await db.commit()
+        except Exception:
+            await db.rollback()
+            return {"message": "If that email is registered, a reset link has been sent."}
+
+        app_url = settings.base_url or "http://localhost:3000"
+        reset_url = f"{app_url}/reset-password?token={token}"
+        html = f"""
+        <p>Hi {user.name},</p>
+        <p>We received a request to reset your password. Click the link below to choose a new one:</p>
+        <p><a href="{reset_url}">{reset_url}</a></p>
+        <p>This link expires in 1 hour.</p>
+        <p>If you did not request a password reset, you can safely ignore this email.</p>
+        """
+        await send_email(
+            to=user.email,
+            subject="Reset your Grant Engine password",
+            html=html,
+            text=f"Reset your password: {reset_url}",
+        )
+
+    return {"message": "If that email is registered, a reset link has been sent."}
+
+
+@router.post("/reset-password")
+async def reset_password(
+    body: ResetPasswordBody,
+    db: AsyncSession = Depends(get_db),
+):
+    """Reset a user's password using a valid reset token."""
+    invalid_exc = HTTPException(400, "Invalid or expired reset token")
+
+    result = await db.execute(
+        select(PasswordResetToken).where(PasswordResetToken.token == body.token)
+    )
+    reset_token = result.scalar_one_or_none()
+    if not reset_token:
+        raise invalid_exc
+    if reset_token.used_at:
+        raise invalid_exc
+    if reset_token.expires_at < datetime.now(timezone.utc):
+        raise invalid_exc
+
+    user_result = await db.execute(select(User).where(User.id == reset_token.user_id))
+    user = user_result.scalar_one_or_none()
+    if not user or not user.is_active:
+        raise invalid_exc
+
+    user.hashed_password = get_password_hash(body.new_password)
+    reset_token.used_at = datetime.now(timezone.utc)
+    await db.commit()
+    return {"message": "Password reset successfully"}
 
 
 # ── Google OAuth ───────────────────────────────────────────────────────────────
