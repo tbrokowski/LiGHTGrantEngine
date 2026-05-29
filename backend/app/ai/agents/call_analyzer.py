@@ -26,36 +26,51 @@ logger = logging.getLogger(__name__)
 
 
 def _parse_llm_json(response: str) -> dict:
-    """Parse JSON from an LLM response, tolerating markdown fences and trailing text."""
+    """Parse JSON from an LLM response, tolerating markdown fences and trailing text.
+
+    Also unwraps single-key wrapper responses like {"analysis": {...}} or
+    {"result": {...}} so callers always see a flat field dict.
+    """
     if not response or not response.strip():
         return {}
     text = response.strip()
+    parsed: dict | None = None
     try:
-        return json.loads(text)
+        parsed = json.loads(text)
     except json.JSONDecodeError:
         pass
-    # Extract ```json ... ``` or ``` ... ``` block
-    fence = re.search(r"```(?:json)?\s*([\s\S]*?)```", text, re.IGNORECASE)
-    if fence:
-        try:
-            return json.loads(fence.group(1).strip())
-        except json.JSONDecodeError:
-            pass
-    # First balanced { ... } object
-    start = text.find("{")
-    if start >= 0:
-        depth = 0
-        for i, ch in enumerate(text[start:], start):
-            if ch == "{":
-                depth += 1
-            elif ch == "}":
-                depth -= 1
-                if depth == 0:
-                    try:
-                        return json.loads(text[start : i + 1])
-                    except json.JSONDecodeError:
+    if parsed is None:
+        # Extract ```json ... ``` or ``` ... ``` block
+        fence = re.search(r"```(?:json)?\s*([\s\S]*?)```", text, re.IGNORECASE)
+        if fence:
+            try:
+                parsed = json.loads(fence.group(1).strip())
+            except json.JSONDecodeError:
+                pass
+    if parsed is None:
+        # First balanced { ... } object
+        start = text.find("{")
+        if start >= 0:
+            depth = 0
+            for i, ch in enumerate(text[start:], start):
+                if ch == "{":
+                    depth += 1
+                elif ch == "}":
+                    depth -= 1
+                    if depth == 0:
+                        try:
+                            parsed = json.loads(text[start : i + 1])
+                        except json.JSONDecodeError:
+                            pass
                         break
-    return {}
+    if not parsed:
+        return {}
+    # Unwrap single-key wrapper responses: {"analysis": {...}} → {...}
+    if len(parsed) == 1:
+        only_val = next(iter(parsed.values()))
+        if isinstance(only_val, dict) and len(only_val) >= 3:
+            return only_val
+    return parsed
 
 
 def _analysis_has_content(result: dict) -> bool:
@@ -194,127 +209,77 @@ async def _analyze_chunk(
     extra_instructions: str = "",
     structure_map: dict | None = None,
 ) -> dict:
-    """Analyze a single chunk of a long call document, guided by the structure map."""
+    """Analyze a single chunk of a long call document, guided by the structure map.
+
+    Prompt structure: schema definition FIRST, then document. This way the model
+    knows exactly what to extract as it reads the content (better recall).
+    """
     chunk_note = (
-        f"(This is chunk {chunk_index + 1} of {total_chunks} from a longer document. "
-        "Extract everything present in this section; a merge pass will unify all chunks.)"
+        f"(Chunk {chunk_index + 1}/{total_chunks} — extract everything in this section; "
+        "a merge pass will unify all chunks.)"
         if total_chunks > 1
         else ""
     )
 
     structure_context = ""
     if structure_map:
-        structure_context = f"""
-DOCUMENT STRUCTURE MAP (from Stage 1 scan — use this to locate and extract information more precisely):
-{json.dumps(structure_map, indent=2)}
+        structure_context = (
+            "DOCUMENT STRUCTURE MAP (use to locate information precisely):\n"
+            + json.dumps(structure_map, indent=2)
+            + "\n\n"
+        )
 
-"""
+    # Schema-first prompt: instructions before content so the model knows
+    # what to look for as it reads the document.
+    user_prompt = f"""You are extracting structured intelligence from a grant call document.
+Return ONLY a valid JSON object with EXACTLY the fields listed below. Do not add wrapper keys.
+Fill every field as completely as possible from the document text.
 
-    user_prompt = f"""Analyze the following grant call text and extract ALL relevant information.
-{chunk_note}
-
-FUNDER: {funder}
-CALL URL: {call_url}
-{f'ADDITIONAL CONTEXT: {extra_instructions}' if extra_instructions else ''}
+FUNDER: {funder or "Unknown"}
+CALL URL: {call_url or "N/A"}
+{f"NOTE: {extra_instructions}" if extra_instructions else ""}{f"NOTE: {chunk_note}" if chunk_note else ""}
 {structure_context}
-CALL TEXT:
+─── REQUIRED JSON FIELDS ──────────────────────────────────────────────────────
+
+summary          string  — 2-3 sentence plain-English overview of what this call funds.
+narrative_brief  string  — 3-4 paragraph synthesis: (1) funder's goal & problem being solved,
+                           (2) what a winning proposal MUST contain/deliver,
+                           (3) eligibility & team requirements, (4) key constraints & pitfalls.
+call_background     list[string]  — 5-8 bullets on background/context/funder motivation.
+funder_priorities   list[string]  — 4-6 strings, highest priority first.
+strategic_objectives list[string] — 4-8 outcome strings the funder wants to achieve.
+key_focus_areas  list[{{"area":str,"description":str,"why_it_matters":str}}]
+key_phrases      list[{{"phrase":str,"context":str,"significance":str}}]  — 5-10 items.
+requirements_overview list[string] — 6-10 bullets on what proposals must include/demonstrate.
+eligibility_checklist list[{{"item":str,"met":true/false/null,"notes":str,"critical":bool}}]
+required_sections    list[string]  — proposal sections required by the call.
+section_requirements object mapping section name → {{"requirements":str,"word_limit":int|null,
+  "page_limit":str|null,"priority":"high"|"medium"|"low","key_asks":[str],
+  "questions_to_address":[str],"evidence_needed":[str]}}
+deadlines        object  — {{"full_proposal":str|null,"loi":str|null,"concept_note":str|null,"questions_due":str|null}}
+budget_constraints   string  — budget rules, limits, indirect costs, sub-awards.
+evaluation_criteria  list[string]  — criteria exactly as stated in the call.
+required_partners    string  — consortium/co-PI/sub-award requirements.
+risks            list[string]  — risks/concerns for our team.
+missing_information  list[string]  — things not stated that we need to find out.
+recommended_next_steps list[string] — numbered immediate actions.
+thematic_areas   list[string]  — themes/topics this call addresses.
+geographic_eligibility string  — geographic scope and restrictions.
+award_amount     string  — funding amount or range.
+project_duration string  — project duration.
+submission_portal    string  — where/how to submit.
+page_limit       string|null
+word_limit       string|null
+format_requirements  string  — formatting rules if stated.
+foa_number       string  — official solicitation/FOA number if present.
+contact_info     string  — program officer, email, Q&A deadline.
+
+─── GRANT CALL DOCUMENT ───────────────────────────────────────────────────────
 {chunk_text}
+───────────────────────────────────────────────────────────────────────────────
 
-Return a JSON object with these fields. Be THOROUGH and COMPLETE — do not summarize or skip details:
+Return the JSON object now. Fill every field. Do not wrap in a parent key."""
 
---- CONTEXT & FRAMING ---
-
-- call_background: list of 5-8 detailed bullet strings describing the background and context of this call.
-  Cover: the problem or challenge being addressed, why this call exists now, relevant program history,
-  the funder's strategic motivation, and the landscape/sector context. Each bullet should be a
-  complete, informative sentence — not a fragment.
-
-- funder_priorities: ordered list of 4-6 strings stating what the funder cares most about,
-  derived from emphasis, repetition, and weighting in the call. First item = highest priority.
-
-- strategic_objectives: list of 4-8 strings, each describing a specific outcome or goal the funder
-  wants to achieve through this funding. These are what "success" looks like from the funder's
-  perspective — concrete and measurable where possible.
-
-- key_focus_areas: list of objects, one per major thematic area or topic the call is centered on:
-    {{"area": str, "description": str, "why_it_matters": str}}
-  description = what proposals in this area should address.
-  why_it_matters = why the funder has prioritized this area.
-
-- key_phrases: list of objects — exact quoted language from the call that signals reviewer priorities:
-    {{"phrase": str, "context": str, "significance": str}}
-  phrase = the exact quoted text (keep it short, 3-15 words).
-  context = one sentence explaining where/how it appears in the call.
-  significance = why a proposal team should pay attention to this phrase.
-  Aim for 5-10 phrases.
-
---- PROPOSAL REQUIREMENTS ---
-
-- requirements_overview: list of 6-10 detailed bullet strings — a comprehensive "what this
-  proposal must include and demonstrate." More expansive than key_asks; each bullet covers
-  a distinct requirement with enough detail to act on.
-
-- narrative_brief: A focused 3-4 paragraph plain-English synthesis for the proposal team:
-    (1) What the funder wants to achieve and the specific problem they are funding a solution for
-    (2) What a winning proposal MUST contain, demonstrate, and deliver — be concrete and specific
-    (3) Team composition, eligibility, and consortium requirements
-    (4) Critical constraints, budget rules, and common pitfalls that disqualify proposals
-  Write as tight, actionable prose only. No generic policy background. No repetition.
-  Each paragraph must give the team something concrete to act on.
-
-- summary: 2-3 sentence executive summary (for UI display and downstream agents)
-
-- eligibility_checklist: list of ALL eligibility requirements, each as:
-    {{"item": str, "met": true/false/null, "notes": str, "critical": true/false}}
-  Flag critical blockers (e.g. institution type, geography, prior award restrictions).
-
-- required_sections: list of proposal sections required by the call
-
-- section_requirements: object mapping section name to:
-    {{
-      "requirements": str,          (one-sentence description of this section's purpose)
-      "word_limit": int|null,
-      "page_limit": str|null,
-      "priority": "high"|"medium"|"low",
-      "key_asks": [str],            (3–6 bullet points of what the funder explicitly asks for in this section — pull from the call text)
-      "questions_to_address": [str], (3–5 strategic questions this section must answer to satisfy reviewers)
-      "evidence_needed": [str]      (2–4 specific data points, proof, or citations the section should include)
-    }}
-
-- deadlines: object with fields: full_proposal, loi, concept_note, questions_due (null if not applicable)
-
-- budget_constraints: full description of budget rules, limits, cost categories, indirect costs, sub-award rules
-
-- evaluation_criteria: complete list of evaluation criteria exactly as stated in the call
-
-- required_partners: description of consortium, co-PI, sub-award, or institutional partner requirements
-
-- risks: list of potential risks or concerns for our team (eligibility gaps, competitive issues, etc.)
-
-- missing_information: things not stated in the call that we need to find out before applying
-
-- recommended_next_steps: numbered list of immediate actions the team should take
-
-- thematic_areas: list of themes, topics, and focus areas the call addresses
-
-- geographic_eligibility: geographic scope and restrictions in full detail
-
-- award_amount: funding amount, range, or description
-
-- project_duration: project duration
-
-- submission_portal: where and how to submit
-
-- page_limit: page limit (null if not stated)
-
-- word_limit: word limit (null if not stated)
-
-- format_requirements: font, margins, spacing, file format, naming conventions if stated
-
-- foa_number: official solicitation, FOA, or call reference number if present
-
-- contact_info: program officer name, email, questions deadline if stated
-"""
     response = await chat_complete(
         messages=[
             {"role": "system", "content": SYSTEM_PROMPT},
@@ -328,20 +293,70 @@ Return a JSON object with these fields. Be THOROUGH and COMPLETE — do not summ
         return parsed
     if parsed:
         logger.warning(
-            "call_analyzer: parsed JSON has no usable content (keys=%s, response_len=%d)",
-            list(parsed.keys())[:15],
+            "call_analyzer _analyze_chunk: content check failed — keys=%s response_len=%d",
+            list(parsed.keys())[:20],
             len(response or ""),
         )
         return parsed
     logger.warning(
-        "call_analyzer: failed to parse JSON response (response_len=%d, preview=%.200s)",
+        "call_analyzer _analyze_chunk: JSON parse failed — response_len=%d preview=%.300s",
         len(response or ""),
-        (response or "")[:200],
+        (response or "")[:300],
     )
     return {
         "error": "Failed to parse analysis response from the model",
         "raw_response": (response or "")[:2000],
     }
+
+
+async def _simple_fallback_analyze(
+    call_text: str,
+    funder: str,
+    call_url: str,
+) -> dict:
+    """Minimal-prompt fallback guaranteed to return at least the core fields.
+
+    Used when the rich extraction produces no usable content. Focuses on the
+    5 most critical fields only so the model can't return an empty response.
+    """
+    user_prompt = f"""You are analyzing a grant call document.
+Return a JSON object with EXACTLY these fields:
+
+summary          — 2-3 sentence overview of what this grant funds.
+narrative_brief  — 3-4 paragraph synthesis for the proposal team covering:
+                   (1) funder goal & problem, (2) what proposals must deliver,
+                   (3) eligibility requirements, (4) key constraints & pitfalls.
+requirements_overview — list of 5-8 bullet strings on key proposal requirements.
+eligibility_checklist — list of eligibility items as {{"item":str,"critical":bool}}.
+deadlines        — object with full_proposal, loi, concept_note (null if unknown).
+call_background  — list of 4-6 bullets on why this call exists / funder context.
+thematic_areas   — list of themes this call addresses.
+award_amount     — funding amount or range.
+
+FUNDER: {funder or "Unknown"}
+URL: {call_url or "N/A"}
+
+DOCUMENT:
+{call_text[:60000]}
+
+Return the JSON object now."""
+
+    response = await chat_complete(
+        messages=[
+            {"role": "system", "content": SYSTEM_PROMPT},
+            {"role": "user", "content": user_prompt},
+        ],
+        agent_name="call_analyzer",
+        json_mode=True,
+        max_tokens=4000,
+    )
+    parsed = _parse_llm_json(response)
+    if parsed:
+        logger.info(
+            "call_analyzer simple fallback succeeded — keys=%s",
+            list(parsed.keys())[:10],
+        )
+    return parsed or {}
 
 
 # ---------------------------------------------------------------------------
@@ -546,8 +561,11 @@ async def analyze_call(
         base3.append({"id": "save", "label": "Saving Call Intelligence…", "status": "active"})
         on_step(base3)
 
-    # If merge produced nothing useful, retry once without structure map (simpler prompt path)
+    # If merge produced nothing useful, retry once without structure map
     if not _analysis_has_content(merged) and structure_map is not None:
+        logger.warning(
+            "call_analyzer: rich extraction produced no content — retrying without structure_map"
+        )
         fallback = await _analyze_chunk(
             text_for_stage2,
             0,
@@ -558,6 +576,24 @@ async def analyze_call(
             structure_map=None,
         )
         if _analysis_has_content(fallback):
+            logger.info("call_analyzer: structure-map-less retry succeeded")
             return fallback
+        merged = fallback  # carry forward even if it's still thin
+
+    # Last resort: guaranteed minimal extraction with a short focused prompt
+    if not _analysis_has_content(merged):
+        logger.warning(
+            "call_analyzer: all rich paths failed — running simple_fallback_analyze"
+        )
+        simple = await _simple_fallback_analyze(call_text, funder, call_url)
+        if simple:
+            # Merge simple results into merged (fill any missing keys)
+            for k, v in simple.items():
+                if not merged.get(k):
+                    merged[k] = v
+            logger.info(
+                "call_analyzer: simple fallback populated keys=%s",
+                [k for k in simple if simple[k]],
+            )
 
     return merged
