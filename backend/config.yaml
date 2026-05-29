@@ -16,6 +16,14 @@ ai:
       model: gpt-4o
       temperature: 0.1
       max_tokens: 16000
+    call_analyzer_scan:
+      model: gpt-4o-mini
+      temperature: 0.1
+      max_tokens: 2000
+    call_analyzer_classifier:
+      model: gpt-4o-mini
+      temperature: 0.0
+      max_tokens: 300
     go_no_go:
       temperature: 0.2
       max_tokens: 1500

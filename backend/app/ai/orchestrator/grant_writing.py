@@ -148,30 +148,29 @@ class GrantWritingOrchestrator:
         """
         yield _sse({"event": "skeleton_start"})
 
-        # ── Stage 1 (parallel): Style profile + Archive retrieval ─────────────
+        # ── Stage 1: Style profile (sequential — AsyncSession is not concurrent-safe) ──
         yield _sse({"event": "style_profile_start"})
-        style_task = asyncio.ensure_future(self.build_style_profile(grant, db))
-        archive_task = asyncio.ensure_future(asyncio.gather(
-            retrieve_document_structure(db, grant.funder, top_k=3),
-            retrieve_content_exemplars(
+        try:
+            await self.build_style_profile(grant, db)
+        except Exception:
+            pass  # style profile is nice-to-have; continue without
+        yield _sse({"event": "style_profile_complete"})
+
+        # ── Stage 1b: Archive retrieval (sequential after style profile commits) ───────
+        try:
+            structure_templates = await retrieve_document_structure(db, grant.funder, top_k=3)
+        except Exception:
+            structure_templates = []
+        try:
+            content_similar = await retrieve_content_exemplars(
                 query=f"{grant.title} {grant.grant_idea or ''}",
                 db=db,
                 funder=grant.funder,
                 top_k=8,
                 current_grant_id=str(grant.id),
-            ),
-        ))
-
-        try:
-            await style_task
+            )
         except Exception:
-            pass  # style profile is nice-to-have; continue without
-        yield _sse({"event": "style_profile_complete"})
-
-        try:
-            structure_templates, content_similar = await archive_task
-        except Exception:
-            structure_templates, content_similar = [], []
+            content_similar = []
         yield _sse({
             "event": "archive_retrieval_complete",
             "templates": len(structure_templates),
