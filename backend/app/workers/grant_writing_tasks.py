@@ -480,7 +480,14 @@ def _map_draft_event(event: dict, current_steps: list) -> list | None:
     soft_time_limit=600,
     time_limit=660,
 )
-def generate_skeleton_task(self, grant_id: str, user_id: str) -> dict:
+def generate_skeleton_task(
+    self,
+    grant_id: str,
+    user_id: str,
+    user_section_constraints: list[dict] | None = None,
+    user_total_word_limit: int | None = None,
+    user_total_page_limit: str | None = None,
+) -> dict:
     """Run skeleton generation in the background; push step updates to DB for UI polling."""
     from app.config import get_settings
 
@@ -505,14 +512,20 @@ def generate_skeleton_task(self, grant_id: str, user_id: str) -> dict:
 
             engine = create_async_engine(async_url, pool_pre_ping=True)
             try:
-                async with AsyncSession(engine) as db:
+                async with AsyncSession(engine, expire_on_commit=False) as db:
                     grant = await db.get(ActiveGrant, grant_id)
                     if not grant:
                         _upd([], "failed", f"Grant {grant_id} not found")
                         return
                     orchestrator = GrantWritingOrchestrator()
                     current_steps: list = list(_SKELETON_STEPS_INIT)
-                    async for chunk in orchestrator.generate_skeleton_stream(grant, db):
+                    async for chunk in orchestrator.generate_skeleton_stream(
+                        grant,
+                        db,
+                        user_section_constraints=user_section_constraints,
+                        user_total_word_limit=user_total_word_limit,
+                        user_total_page_limit=user_total_page_limit,
+                    ):
                         event = _parse_sse_event(chunk)
                         if event:
                             new_steps = _map_skeleton_event(event.get("event", ""))
@@ -584,7 +597,7 @@ def generate_draft_task(
 
             engine = create_async_engine(async_url, pool_pre_ping=True)
             try:
-                async with AsyncSession(engine) as db:
+                async with AsyncSession(engine, expire_on_commit=False) as db:
                     grant = await db.get(ActiveGrant, grant_id)
                     if not grant:
                         _upd([], "failed", f"Grant {grant_id} not found")
@@ -624,3 +637,82 @@ def generate_draft_task(
         logger.exception("generate_draft_task failed for grant %s: %s", grant_id, exc)
         _upd([{"id": "assemble", "label": "Draft generation failed", "status": "error", "detail": msg}], "failed", msg)
         return {"status": "failed", "error": msg}
+
+
+# ── Conversation summarization ────────────────────────────────────────────────
+
+@celery_app.task(
+    bind=True,
+    name="app.workers.grant_writing_tasks.summarize_conversation_task",
+    max_retries=1,
+    default_retry_delay=30,
+    soft_time_limit=120,
+    time_limit=150,
+)
+def summarize_conversation_task(self, grant_id: str) -> dict:
+    """
+    Summarize the conversation history for a grant and store it in conv.summary.
+    This keeps the GrantContextManager context window lean for long conversations.
+    Fired fire-and-forget from writing_chat_stream when len(conv.messages) >= 18.
+    """
+    logger.info("summarize_conversation_task started for grant %s", grant_id)
+    try:
+        settings = get_settings()
+        async_url = settings.database_url.replace("postgresql://", "postgresql+asyncpg://", 1)
+
+        async def _run() -> None:
+            from sqlalchemy.ext.asyncio import create_async_engine, AsyncSession
+            from sqlalchemy import select
+            from app.models.grant_writing import GrantWritingConversation
+            from app.ai.client import chat_complete
+
+            engine = create_async_engine(async_url, pool_pre_ping=True)
+            try:
+                async with AsyncSession(engine, expire_on_commit=False) as db:
+                    result = await db.execute(
+                        select(GrantWritingConversation).where(
+                            GrantWritingConversation.grant_id == grant_id
+                        )
+                    )
+                    conv = result.scalar_one_or_none()
+                    if not conv or not conv.messages:
+                        return
+
+                    messages_text = "\n".join(
+                        f"{m['role'].upper()}: {m['content'][:300]}"
+                        for m in (conv.messages or [])
+                        if isinstance(m, dict) and m.get("content")
+                    )
+
+                    summary = await chat_complete(
+                        messages=[
+                            {
+                                "role": "system",
+                                "content": (
+                                    "You are a grant writing assistant. Summarize the key topics, "
+                                    "decisions, and information from this conversation in ~300 words. "
+                                    "Focus on what is most important for continuing the conversation "
+                                    "about this grant proposal. Be concise and factual."
+                                ),
+                            },
+                            {
+                                "role": "user",
+                                "content": f"Summarize this conversation:\n\n{messages_text[:6000]}",
+                            },
+                        ],
+                        agent_name="call_analyzer_classifier",
+                        max_tokens=400,
+                    )
+
+                    conv.summary = summary
+                    await db.commit()
+                    logger.info("Conversation summarized for grant %s (%d chars)", grant_id, len(summary))
+            finally:
+                await engine.dispose()
+
+        asyncio.run(_run())
+        return {"status": "completed", "grant_id": grant_id}
+
+    except Exception as exc:
+        logger.warning("summarize_conversation_task failed for grant %s: %s", grant_id, exc)
+        return {"status": "failed", "error": str(exc)[:500]}

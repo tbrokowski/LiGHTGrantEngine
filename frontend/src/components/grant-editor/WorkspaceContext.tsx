@@ -83,7 +83,7 @@ export interface WorkspaceContextType {
   // Actions
   onIdeaChange: (idea: string) => void;
   onCallAnalysis: (analysis: Record<string, unknown>, requirements?: string) => void;
-  onGenerateSkeleton: () => void;
+  onGenerateSkeleton: (constraints?: import('./phases/IdeaPhase').SkeletonConstraints) => void;
   onSkeletonChange: (skeleton: Record<string, unknown>) => void;
   onGenerateDraft: (flaggedSections?: string[]) => void;
   onDocumentChange: (html: string, words: number, headings: string[]) => void;

@@ -136,6 +136,9 @@ class GrantWritingOrchestrator:
         self,
         grant: ActiveGrant,
         db: AsyncSession,
+        user_section_constraints: list[dict] | None = None,
+        user_total_word_limit: int | None = None,
+        user_total_page_limit: str | None = None,
     ) -> AsyncIterator[str]:
         """
         Multi-agent skeleton generation pipeline with SSE progress events.
@@ -220,6 +223,16 @@ class GrantWritingOrchestrator:
                 call_analysis,
             )
 
+            # Resolve section constraints: user overrides take precedence, fall back to call_analysis
+            section_constraints, total_word_limit, total_page_limit = (
+                self._resolve_section_constraints(
+                    call_analysis,
+                    user_section_constraints,
+                    user_total_word_limit,
+                    user_total_page_limit,
+                )
+            )
+
             skeleton = await generate_proposal_outline(
                 opportunity_title=grant.title,
                 call_analysis=call_analysis,
@@ -232,6 +245,9 @@ class GrantWritingOrchestrator:
                 internal_deadline=str(grant.internal_deadline) if grant.internal_deadline else "",
                 call_strategy=call_strategy,
                 aligned_concept=aligned_concept,
+                section_constraints=section_constraints,
+                total_word_limit=total_word_limit,
+                total_page_limit=total_page_limit,
             )
         except Exception as exc:
             yield _sse({"event": "skeleton_error", "error": str(exc)[:500]})
@@ -296,6 +312,42 @@ class GrantWritingOrchestrator:
                 parts.append("KEY SECTION ASKS:\n" + "\n".join(req_lines))
 
         return "\n\n".join(parts)
+
+    def _resolve_section_constraints(
+        self,
+        call_analysis: dict,
+        user_section_constraints: list[dict] | None,
+        user_total_word_limit: int | None,
+        user_total_page_limit: str | None,
+    ) -> tuple[list[dict], int | None, str | None]:
+        """Resolve section constraints with user overrides taking precedence over call_analysis."""
+        # User-provided constraints win over auto-extracted ones
+        if user_section_constraints:
+            return (
+                user_section_constraints,
+                user_total_word_limit,
+                user_total_page_limit,
+            )
+
+        # Auto-extract from call_analysis.section_requirements
+        section_reqs = call_analysis.get("section_requirements", {})
+        section_constraints = []
+        for i, (sec_name, details) in enumerate(section_reqs.items()):
+            if not isinstance(details, dict):
+                continue
+            section_constraints.append({
+                "name": sec_name,
+                "word_limit": details.get("word_limit"),
+                "page_limit": details.get("page_limit"),
+                "priority": details.get("priority", "medium"),
+                "order": i + 1,
+            })
+
+        # Parse document-level limits from call_analysis
+        total_word_limit = _parse_int_limit(call_analysis.get("word_limit"))
+        total_page_limit = call_analysis.get("page_limit") or None
+
+        return section_constraints, total_word_limit, total_page_limit
 
     async def generate_draft_stream(
         self,
@@ -911,6 +963,22 @@ class GrantWritingOrchestrator:
 
 def _sse(data: dict) -> str:
     return f"data: {json.dumps(data)}\n\n"
+
+
+def _parse_int_limit(value) -> int | None:
+    """Parse a word/page limit value that may be a string like '15,000 words' or an int."""
+    if value is None:
+        return None
+    if isinstance(value, int):
+        return value
+    import re
+    match = re.search(r"[\d,]+", str(value))
+    if match:
+        try:
+            return int(match.group(0).replace(",", ""))
+        except ValueError:
+            pass
+    return None
 
 
 def _parse_raw_text_sections(raw_text: str) -> list[dict]:

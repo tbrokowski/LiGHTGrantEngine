@@ -3,7 +3,7 @@
 import { useRef, useState, useCallback, useEffect } from 'react';
 import {
   Upload, Mic, MicOff, Loader2, Sparkles, CheckCircle2, ChevronDown,
-  ExternalLink, Link2, PlusCircle, CloudUpload, CloudDownload, RefreshCw,
+  ExternalLink, Link2, PlusCircle, CloudUpload, CloudDownload, RefreshCw, X,
 } from 'lucide-react';
 import { grantWriting, grants as grantsApi } from '@/lib/api';
 import {
@@ -39,6 +39,20 @@ interface UploadedCallDoc {
   uploaded_at?: string;
 }
 
+export interface SectionConstraint {
+  name: string;
+  word_limit?: number | null;
+  page_limit?: string | null;
+  priority?: string;
+  order?: number;
+}
+
+export interface SkeletonConstraints {
+  section_constraints: SectionConstraint[];
+  total_word_limit?: number | null;
+  total_page_limit?: string | null;
+}
+
 interface IdeaPhaseProps {
   grantId: string;
   grantIdea: string;
@@ -50,7 +64,7 @@ interface IdeaPhaseProps {
   stylePreview?: Array<Record<string, unknown>>;
   onIdeaChange: (idea: string) => void;
   onCallAnalysis: (analysis: Record<string, unknown>, requirements?: string) => void;
-  onGenerateSkeleton: () => void;
+  onGenerateSkeleton: (constraints?: SkeletonConstraints) => void;
   generating: boolean;
   skeletonSteps?: AIThinkingStepData[] | null;
   skeletonError?: string | null;
@@ -122,6 +136,35 @@ export default function IdeaPhase({
   const [docExpanded, setDocExpanded] = useState(true);
   const [docsExpanded, setDocsExpanded] = useState(false);
   const [intelligenceExpanded, setIntelligenceExpanded] = useState(true);
+  const [constraintsExpanded, setConstraintsExpanded] = useState(true);
+
+  // Proposal constraints (pre-generation)
+  const [totalWordLimit, setTotalWordLimit] = useState<string>('');
+  const [totalPageLimit, setTotalPageLimit] = useState<string>('');
+  const [sectionConstraints, setSectionConstraints] = useState<SectionConstraint[]>([]);
+
+  // Initialise constraints from call_analysis when it becomes available
+  useEffect(() => {
+    const sectionReqs = (callAnalysis as Record<string, Record<string, unknown>>).section_requirements;
+    if (sectionReqs && typeof sectionReqs === 'object') {
+      const sections: SectionConstraint[] = Object.entries(sectionReqs)
+        .filter(([, d]) => typeof d === 'object' && d !== null)
+        .map(([name, d], i) => ({
+          name,
+          word_limit: (d as Record<string, unknown>).word_limit as number | null ?? null,
+          page_limit: (d as Record<string, unknown>).page_limit as string | null ?? null,
+          priority: (d as Record<string, unknown>).priority as string ?? 'medium',
+          order: i + 1,
+        }));
+      setSectionConstraints(sections);
+    }
+    const wl = (callAnalysis as Record<string, unknown>).word_limit;
+    if (wl) setTotalWordLimit(String(wl));
+    const pl = (callAnalysis as Record<string, unknown>).page_limit;
+    if (pl) setTotalPageLimit(String(pl));
+  // Only seed once when analysis is first populated
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [callAnalysis]);
 
   // Upload state
   const [uploading, setUploading] = useState(false);
@@ -601,12 +644,151 @@ export default function IdeaPhase({
           </CollapsibleSection>
         )}
 
+        {/* 5. Proposal Structure & Limits (pre-generation constraints editor) */}
+        {callAnalysisStatus === 'completed' && sectionConstraints.length > 0 && (
+          <CollapsibleSection
+            label="Proposal Structure & Limits"
+            expanded={constraintsExpanded}
+            onToggle={() => setConstraintsExpanded(!constraintsExpanded)}
+            summary={constraintsExpanded ? '' : `${sectionConstraints.length} sections`}
+          >
+            <div className="space-y-3">
+              {/* Document totals */}
+              <div className="flex items-center gap-4 text-xs">
+                <label className="flex items-center gap-1.5 text-gray-500">
+                  Total word limit
+                  <input
+                    type="text"
+                    value={totalWordLimit}
+                    onChange={(e) => setTotalWordLimit(e.target.value)}
+                    placeholder="e.g. 15000"
+                    className="w-20 border border-gray-200 rounded px-1.5 py-0.5 text-xs focus:outline-none focus:ring-1 focus:ring-indigo-400"
+                  />
+                </label>
+                <label className="flex items-center gap-1.5 text-gray-500">
+                  Total page limit
+                  <input
+                    type="text"
+                    value={totalPageLimit}
+                    onChange={(e) => setTotalPageLimit(e.target.value)}
+                    placeholder="e.g. 25"
+                    className="w-16 border border-gray-200 rounded px-1.5 py-0.5 text-xs focus:outline-none focus:ring-1 focus:ring-indigo-400"
+                  />
+                </label>
+              </div>
+
+              {/* Sections table */}
+              <div className="border border-gray-200 rounded-lg overflow-hidden">
+                <table className="w-full text-xs">
+                  <thead>
+                    <tr className="bg-gray-50 text-gray-400 font-medium">
+                      <th className="text-left px-2 py-1.5 w-6">#</th>
+                      <th className="text-left px-2 py-1.5">Section</th>
+                      <th className="text-left px-2 py-1.5 w-20">Words</th>
+                      <th className="text-left px-2 py-1.5 w-16">Pages</th>
+                      <th className="text-left px-2 py-1.5 w-20">Priority</th>
+                      <th className="w-6" />
+                    </tr>
+                  </thead>
+                  <tbody className="divide-y divide-gray-100">
+                    {sectionConstraints.map((sc, idx) => (
+                      <tr key={idx} className="group">
+                        <td className="px-2 py-1 text-gray-400">{sc.order ?? idx + 1}</td>
+                        <td className="px-2 py-1">
+                          <input
+                            value={sc.name}
+                            onChange={(e) => {
+                              const updated = [...sectionConstraints];
+                              updated[idx] = { ...sc, name: e.target.value };
+                              setSectionConstraints(updated);
+                            }}
+                            className="w-full bg-transparent focus:outline-none focus:bg-indigo-50 rounded px-0.5"
+                          />
+                        </td>
+                        <td className="px-2 py-1">
+                          <input
+                            type="number"
+                            value={sc.word_limit ?? ''}
+                            onChange={(e) => {
+                              const updated = [...sectionConstraints];
+                              updated[idx] = { ...sc, word_limit: e.target.value ? Number(e.target.value) : null };
+                              setSectionConstraints(updated);
+                            }}
+                            placeholder="—"
+                            className="w-full bg-transparent focus:outline-none focus:bg-indigo-50 rounded px-0.5 text-right"
+                          />
+                        </td>
+                        <td className="px-2 py-1">
+                          <input
+                            type="text"
+                            value={sc.page_limit ?? ''}
+                            onChange={(e) => {
+                              const updated = [...sectionConstraints];
+                              updated[idx] = { ...sc, page_limit: e.target.value || null };
+                              setSectionConstraints(updated);
+                            }}
+                            placeholder="—"
+                            className="w-full bg-transparent focus:outline-none focus:bg-indigo-50 rounded px-0.5 text-right"
+                          />
+                        </td>
+                        <td className="px-2 py-1">
+                          <select
+                            value={sc.priority ?? 'medium'}
+                            onChange={(e) => {
+                              const updated = [...sectionConstraints];
+                              updated[idx] = { ...sc, priority: e.target.value };
+                              setSectionConstraints(updated);
+                            }}
+                            className="bg-transparent focus:outline-none text-xs text-gray-500"
+                          >
+                            <option value="high">high</option>
+                            <option value="medium">med</option>
+                            <option value="low">low</option>
+                          </select>
+                        </td>
+                        <td className="px-1 py-1 text-right">
+                          <button
+                            type="button"
+                            onClick={() => setSectionConstraints(sectionConstraints.filter((_, i) => i !== idx))}
+                            className="opacity-0 group-hover:opacity-100 text-gray-300 hover:text-red-500 transition-opacity"
+                          >
+                            <X className="w-3 h-3" />
+                          </button>
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+
+              {/* Add section row */}
+              <button
+                type="button"
+                onClick={() =>
+                  setSectionConstraints([
+                    ...sectionConstraints,
+                    { name: 'New Section', word_limit: null, page_limit: null, priority: 'medium', order: sectionConstraints.length + 1 },
+                  ])
+                }
+                className="flex items-center gap-1 text-xs text-indigo-500 hover:text-indigo-700 transition-colors"
+              >
+                <PlusCircle className="w-3 h-3" />
+                Add section
+              </button>
+            </div>
+          </CollapsibleSection>
+        )}
+
       </div>
 
       {/* Skeleton generation progress */}
       {generating && skeletonSteps && skeletonSteps.length > 0 && (
         <div className="flex-shrink-0 border-t border-gray-200 px-5 py-3">
-          <AIThinkingLog steps={skeletonSteps} title="Generating skeleton…" />
+          <AIThinkingLog
+            steps={skeletonSteps.map((s) => ({ id: s.id, label: s.label, status: s.status, detail: s.detail }))}
+            progressPct={Math.round(5 + (skeletonSteps.filter(s => s.status === 'done').length / Math.max(skeletonSteps.length, 1)) * 90)}
+            title="Generating skeleton…"
+          />
         </div>
       )}
       {skeletonError && !generating && (
@@ -621,7 +803,18 @@ export default function IdeaPhase({
           <p className="text-sm text-gray-400">Generating — you can navigate away and come back</p>
         )}
         <button
-          onClick={onGenerateSkeleton}
+          onClick={() => {
+            const hasConstraints = sectionConstraints.length > 0 || totalWordLimit || totalPageLimit;
+            onGenerateSkeleton(
+              hasConstraints
+                ? {
+                    section_constraints: sectionConstraints.map((sc, i) => ({ ...sc, order: sc.order ?? i + 1 })),
+                    total_word_limit: totalWordLimit ? parseInt(totalWordLimit.replace(/,/g, ''), 10) || null : null,
+                    total_page_limit: totalPageLimit || null,
+                  }
+                : undefined
+            );
+          }}
           disabled={!grantIdea.trim() || generating}
           className="flex items-center gap-2 bg-indigo-600 text-white text-sm px-5 py-2.5 rounded-lg hover:bg-indigo-700 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
         >

@@ -48,6 +48,9 @@ async def generate_proposal_outline(
     call_requirements_text: str = "",
     call_strategy: dict | None = None,
     aligned_concept: dict | None = None,
+    section_constraints: list[dict] | None = None,
+    total_word_limit: int | None = None,
+    total_page_limit: str | None = None,
 ) -> dict:
     structure_str = _format_structure_templates(structure_templates or [])
     similar_str = _format_similar_grants(similar_grants or [])
@@ -59,11 +62,17 @@ async def generate_proposal_outline(
     strategy_section = _format_call_strategy(call_strategy) if call_strategy else ''
     alignment_section = _format_aligned_concept(aligned_concept) if aligned_concept else ''
 
+    # Build section structure block from constraints
+    constraints_section = _format_section_constraints(
+        section_constraints, total_word_limit, total_page_limit
+    )
+
     user_prompt = f"""Think step by step before producing the skeleton:
 1. Identify the grant's core narrative: what problem, what solution, what impact — from the grant idea.
 2. Identify the critical themes and must-demonstrate requirements from the call strategy (if provided).
-3. Design a section structure that best tells this grant's story, ensuring critical themes and winning differentiators are distributed naturally across sections.
-4. Draft 2–4 paragraphs of actual skeleton prose per section, grounded in the aligned idea and the funder's specific priorities.
+3. Use the SECTION STRUCTURE AND LIMITS below as the authoritative section list — write a section for
+   each entry using exactly those section names as ## headings. Respect word limits when drafting.
+4. Draft 2–4 paragraphs of actual skeleton prose per section, grounded in the aligned idea and the funder's priorities.
 Then produce the full JSON response.
 
 ---
@@ -83,7 +92,7 @@ Coverage themes from required sections: {call_analysis.get('required_sections', 
 Evaluation criteria (key thematic priorities): {call_analysis.get('evaluation_criteria', [])}
 Budget constraints: {call_analysis.get('budget_constraints', '')}
 
-{strategy_section}
+{constraints_section}{strategy_section}
 {alignment_section}
 {structure_str}
 
@@ -97,9 +106,15 @@ Budget constraints: {call_analysis.get('budget_constraints', '')}
 Produce a JSON object with the following fields:
 
 - raw_text: a single string containing the full skeleton document. Use ## Section Name headings
-  to introduce each section. Write 2–4 paragraphs of real draft prose per section, grounded in
-  the grant idea. Use [TBD] for specifics not yet known. Sections are separated by a blank line
-  before and after each ## heading. This is the primary field the team will edit.
+  to introduce each section (use the exact section names from SECTION STRUCTURE AND LIMITS if
+  provided). Write 2–4 paragraphs of real draft prose per section, grounded in the grant idea.
+  Respect any stated word limits. Use [TBD] for specifics not yet known. Sections are separated
+  by a blank line before and after each ## heading.
+- sections: list of objects, one per section in the skeleton, in order:
+    {{"name": str, "word_limit": int|null, "page_limit": str|null, "priority": "high"|"medium"|"low", "order": int}}
+  Use the constraints from SECTION STRUCTURE AND LIMITS if provided, otherwise infer from raw_text.
+- total_word_limit: int|null — document-level word limit (from constraints or call)
+- total_page_limit: str|null — document-level page limit
 - title_suggestion: a compelling, specific title for the proposal
 - narrative_arc: one sentence describing the through-line from problem to solution
 - key_messages: list of 3–5 core messages reviewers should take away
@@ -124,7 +139,72 @@ Return valid JSON only."""
     except json.JSONDecodeError:
         return {"error": "Outline generation failed", "raw": response}
 
+    # Ensure sections is always a list — fallback to parsing raw_text headings
+    if not result.get("sections"):
+        result["sections"] = _extract_sections_from_raw_text(
+            result.get("raw_text", ""),
+            section_constraints or [],
+        )
+
+    # Carry forward document-level limits if not returned by model
+    if total_word_limit and not result.get("total_word_limit"):
+        result["total_word_limit"] = total_word_limit
+    if total_page_limit and not result.get("total_page_limit"):
+        result["total_page_limit"] = total_page_limit
+
     return result
+
+
+def _format_section_constraints(
+    section_constraints: list[dict] | None,
+    total_word_limit: int | None,
+    total_page_limit: str | None,
+) -> str:
+    """Format the section structure and limits block for the architect prompt."""
+    if not section_constraints and not total_word_limit and not total_page_limit:
+        return ""
+    lines = ["SECTION STRUCTURE AND LIMITS (authoritative — use these section names exactly):"]
+    if total_word_limit:
+        lines.append(f"Total document word limit: {total_word_limit:,} words")
+    if total_page_limit:
+        lines.append(f"Total document page limit: {total_page_limit}")
+    if section_constraints:
+        lines.append("")
+        for sc in sorted(section_constraints, key=lambda x: x.get("order", 99)):
+            name = sc.get("name", "Unnamed")
+            wl = sc.get("word_limit")
+            pl = sc.get("page_limit")
+            pri = sc.get("priority", "medium")
+            parts = [f"  {sc.get('order', '?')}. {name} [{pri}]"]
+            if wl:
+                parts.append(f"{wl:,} words")
+            if pl:
+                parts.append(f"{pl} pages")
+            lines.append(" — ".join(parts) if len(parts) > 1 else parts[0])
+    return "\n".join(lines) + "\n\n"
+
+
+def _extract_sections_from_raw_text(
+    raw_text: str,
+    section_constraints: list[dict],
+) -> list[dict]:
+    """Parse ## headings from raw_text and merge with any known constraints."""
+    import re
+    constraints_by_name = {
+        sc["name"].lower(): sc for sc in section_constraints if sc.get("name")
+    }
+    sections = []
+    headings = re.findall(r"^##\s+(.+)$", raw_text, re.MULTILINE)
+    for i, heading in enumerate(headings):
+        matched = constraints_by_name.get(heading.strip().lower(), {})
+        sections.append({
+            "name": heading.strip(),
+            "word_limit": matched.get("word_limit"),
+            "page_limit": matched.get("page_limit"),
+            "priority": matched.get("priority", "medium"),
+            "order": i + 1,
+        })
+    return sections
 
 
 def _format_style_profile(profile: dict) -> str:

@@ -331,14 +331,14 @@ export default function GrantEditor({ grant, onGrantUpdate, onHeadingsChange }: 
     }
   }, [grant.id]);
 
-  const handleGenerateSkeleton = async () => {
+  const handleGenerateSkeleton = async (constraints?: import('@/components/grant-editor/phases/IdeaPhase').SkeletonConstraints) => {
     if (generatingSkeleton) return;
     setGeneratingSkeleton(true);
     setSkeletonSteps(null);
     setSkeletonError(null);
     try {
       await grantWriting.saveIdea(grant.id, { grant_idea: grantIdea, writing_phase: 'idea' });
-      await grantWritingApi.enqueueSkeleton(grant.id);
+      await grantWritingApi.enqueueSkeleton(grant.id, constraints);
       startSkeletonGeneration(grant.id);
       runSkeletonPoll();
     } catch (err) {

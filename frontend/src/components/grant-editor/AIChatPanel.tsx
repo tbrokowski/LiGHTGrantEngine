@@ -1,16 +1,29 @@
 'use client';
 import { useState, useRef, useEffect, useCallback } from 'react';
 import { streamEditorChat, streamWritingChat, ai } from '@/lib/api';
+import type { WritingChatEvent, ChatSource } from '@/lib/api';
 import {
   Send, Copy, CheckCheck, Plus, Sparkles, FileText,
   MousePointerClick, ChevronDown, AlertCircle, X, Wand2, Loader2,
+  BookOpen, Search, Database, Quote, FolderSearch, ExternalLink,
 } from 'lucide-react';
+
+// ── Types ─────────────────────────────────────────────────────────────────────
 
 interface ChatMessage {
   id: string;
   role: 'user' | 'assistant';
   content: string;
   isStreaming?: boolean;
+  sources?: ChatSource[];
+  toolActivity?: ToolActivity[];
+}
+
+interface ToolActivity {
+  tool: string;
+  display: string;
+  status: 'running' | 'done';
+  count?: number;
 }
 
 interface AIChatPanelProps {
@@ -25,6 +38,8 @@ interface AIChatPanelProps {
   googleDocUrl?: string | null;
   activeDocLabel?: string;
 }
+
+// ── Quick prompts ─────────────────────────────────────────────────────────────
 
 const QUICK_PROMPTS = [
   { label: 'Draft this section', prompt: 'Please draft the content for this section based on the grant requirements and any relevant prior work from our archive.' },
@@ -41,36 +56,218 @@ function genId() {
   return Math.random().toString(36).slice(2, 10);
 }
 
-function MarkdownText({ text }: { text: string }) {
-  // Simple markdown rendering for chat messages
-  const lines = text.split('\n');
+// ── Tool activity icons ───────────────────────────────────────────────────────
+
+const TOOL_ICONS: Record<string, React.ElementType> = {
+  search_archive: Database,
+  lookup_opportunity: Search,
+  search_citations: BookOpen,
+  find_citation_for_text: Quote,
+  search_org_docs: FolderSearch,
+};
+
+function ToolActivityRow({ activities }: { activities: ToolActivity[] }) {
+  if (!activities.length) return null;
   return (
-    <div className="space-y-1">
-      {lines.map((line, i) => {
-        if (line.startsWith('### ')) return <h3 key={i} className="font-semibold text-gray-800 text-sm mt-2">{line.slice(4)}</h3>;
-        if (line.startsWith('## ')) return <h2 key={i} className="font-bold text-gray-900 text-sm mt-2">{line.slice(3)}</h2>;
-        if (line.startsWith('# ')) return <h1 key={i} className="font-bold text-gray-900 text-sm mt-2">{line.slice(2)}</h1>;
-        if (line.startsWith('- ') || line.startsWith('* ')) return <div key={i} className="flex gap-1.5 text-xs"><span className="text-gray-400 mt-0.5">•</span><span>{renderInline(line.slice(2))}</span></div>;
-        if (line.match(/^\d+\. /)) return <div key={i} className="flex gap-1.5 text-xs"><span className="text-gray-400 font-mono mt-0.5">{line.match(/^\d+/)?.[0]}.</span><span>{renderInline(line.replace(/^\d+\. /, ''))}</span></div>;
-        if (line.startsWith('> ')) return <blockquote key={i} className="border-l-2 border-gray-300 pl-2 text-xs text-gray-600 italic">{renderInline(line.slice(2))}</blockquote>;
-        if (line === '') return <div key={i} className="h-1" />;
-        return <p key={i} className="text-xs leading-relaxed">{renderInline(line)}</p>;
+    <div className="space-y-0.5 mb-1.5">
+      {activities.map((act, i) => {
+        const Icon = TOOL_ICONS[act.tool] || Search;
+        return (
+          <div key={i} className="flex items-center gap-1.5 text-[10px] text-indigo-600 bg-indigo-50 border border-indigo-100 rounded px-2 py-1">
+            {act.status === 'running' ? (
+              <Loader2 className="w-2.5 h-2.5 animate-spin shrink-0" />
+            ) : (
+              <Icon className="w-2.5 h-2.5 shrink-0 text-indigo-500" />
+            )}
+            <span className="truncate flex-1">{act.display}</span>
+            {act.status === 'done' && act.count !== undefined && (
+              <span className="shrink-0 text-indigo-400">{act.count} result{act.count !== 1 ? 's' : ''}</span>
+            )}
+          </div>
+        );
       })}
     </div>
   );
 }
 
-function renderInline(text: string): React.ReactNode {
-  const parts = text.split(/(\*\*.*?\*\*|\*.*?\*|`.*?`|\[CUSTOMIZE:.*?\]|\[VERIFY:.*?\])/g);
+// ── Citation badge (inline [N] references) ────────────────────────────────────
+
+function CitationBadge({ index, source }: { index: number; source: ChatSource | undefined }) {
+  const [open, setOpen] = useState(false);
+  if (!source) {
+    return <span className="text-[10px] text-gray-400">[{index}]</span>;
+  }
+  const typeColors: Record<string, string> = {
+    citation: 'bg-blue-50 text-blue-600 border-blue-200',
+    opportunity: 'bg-green-50 text-green-600 border-green-200',
+    archive: 'bg-purple-50 text-purple-600 border-purple-200',
+    document: 'bg-amber-50 text-amber-600 border-amber-200',
+  };
+  const badgeClass = typeColors[source.type] || 'bg-gray-50 text-gray-600 border-gray-200';
+  return (
+    <span className="relative inline-block">
+      <button
+        type="button"
+        onClick={() => setOpen(!open)}
+        className={`inline-flex items-center text-[10px] border rounded px-1 py-0 cursor-pointer hover:opacity-80 transition-opacity ${badgeClass}`}
+      >
+        [{index}]
+      </button>
+      {open && (
+        <div
+          className="absolute bottom-5 left-0 z-50 w-64 bg-white border border-gray-200 rounded-lg shadow-lg p-2.5 text-xs"
+          onMouseLeave={() => setOpen(false)}
+        >
+          <p className="font-medium text-gray-800 leading-tight mb-0.5 line-clamp-2">{source.title}</p>
+          {source.meta && <p className="text-[10px] text-gray-500 mb-1">{source.meta}</p>}
+          {source.snippet && <p className="text-[10px] text-gray-600 italic line-clamp-3">{source.snippet}</p>}
+          {source.url && (
+            <a
+              href={source.url}
+              target="_blank"
+              rel="noopener noreferrer"
+              className="flex items-center gap-1 text-[10px] text-indigo-600 hover:underline mt-1.5"
+            >
+              <ExternalLink className="w-2.5 h-2.5" />
+              Open source
+            </a>
+          )}
+          {source.formatted_citation && (
+            <p className="text-[10px] text-gray-500 mt-1 border-t border-gray-100 pt-1 leading-relaxed">
+              {source.formatted_citation}
+            </p>
+          )}
+        </div>
+      )}
+    </span>
+  );
+}
+
+// ── Sources panel below assistant messages ────────────────────────────────────
+
+function SourcesPanel({ sources }: { sources: ChatSource[] }) {
+  const [expanded, setExpanded] = useState(false);
+  if (!sources.length) return null;
+
+  const typeIcon: Record<string, React.ElementType> = {
+    citation: BookOpen,
+    opportunity: Search,
+    archive: Database,
+    document: FileText,
+  };
+  const typeLabel: Record<string, string> = {
+    citation: 'Literature',
+    opportunity: 'Opportunity',
+    archive: 'Archive',
+    document: 'Document',
+  };
+
+  return (
+    <div className="mt-1.5 text-[10px]">
+      <button
+        type="button"
+        onClick={() => setExpanded(!expanded)}
+        className="flex items-center gap-1 text-indigo-500 hover:text-indigo-700 transition-colors"
+      >
+        <ChevronDown className={`w-3 h-3 transition-transform ${expanded ? '' : '-rotate-90'}`} />
+        Sources ({sources.length})
+      </button>
+      {expanded && (
+        <div className="mt-1 space-y-1.5 border border-gray-100 rounded-lg p-2 bg-gray-50">
+          {sources.map((s, i) => {
+            const Icon = typeIcon[s.type] || FileText;
+            return (
+              <div key={i} className="flex gap-1.5">
+                <span className="shrink-0 text-gray-400 font-mono pt-0.5">[{i + 1}]</span>
+                <div className="flex-1 min-w-0">
+                  <div className="flex items-center gap-1 flex-wrap">
+                    <Icon className="w-2.5 h-2.5 text-gray-400 shrink-0" />
+                    <span className="font-medium text-gray-700 truncate flex-1">{s.title}</span>
+                    <span className="text-gray-400 shrink-0">{typeLabel[s.type] || s.type}</span>
+                  </div>
+                  {s.meta && <p className="text-gray-400 leading-relaxed">{s.meta}</p>}
+                  {s.snippet && <p className="text-gray-500 italic leading-relaxed line-clamp-2">{s.snippet}</p>}
+                  {s.url && (
+                    <a
+                      href={s.url}
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      className="text-indigo-500 hover:underline inline-flex items-center gap-0.5"
+                    >
+                      <ExternalLink className="w-2 h-2" />
+                      Open
+                    </a>
+                  )}
+                </div>
+              </div>
+            );
+          })}
+        </div>
+      )}
+    </div>
+  );
+}
+
+// ── Markdown + inline citation rendering ──────────────────────────────────────
+
+function MarkdownText({ text, sources }: { text: string; sources?: ChatSource[] }) {
+  const lines = text.split('\n');
+  return (
+    <div className="space-y-1">
+      {lines.map((line, i) => {
+        if (line.startsWith('### ')) return <h3 key={i} className="font-semibold text-gray-800 text-sm mt-2">{renderLineWithCitations(line.slice(4), sources)}</h3>;
+        if (line.startsWith('## ')) return <h2 key={i} className="font-bold text-gray-900 text-sm mt-2">{renderLineWithCitations(line.slice(3), sources)}</h2>;
+        if (line.startsWith('# ')) return <h1 key={i} className="font-bold text-gray-900 text-sm mt-2">{renderLineWithCitations(line.slice(2), sources)}</h1>;
+        if (line.startsWith('- ') || line.startsWith('* ')) return (
+          <div key={i} className="flex gap-1.5 text-xs">
+            <span className="text-gray-400 mt-0.5 shrink-0">•</span>
+            <span>{renderLineWithCitations(line.slice(2), sources)}</span>
+          </div>
+        );
+        if (line.match(/^\d+\. /)) return (
+          <div key={i} className="flex gap-1.5 text-xs">
+            <span className="text-gray-400 font-mono mt-0.5 shrink-0">{line.match(/^\d+/)?.[0]}.</span>
+            <span>{renderLineWithCitations(line.replace(/^\d+\. /, ''), sources)}</span>
+          </div>
+        );
+        if (line.startsWith('> ')) return (
+          <blockquote key={i} className="border-l-2 border-gray-300 pl-2 text-xs text-gray-600 italic">
+            {renderLineWithCitations(line.slice(2), sources)}
+          </blockquote>
+        );
+        if (line === '') return <div key={i} className="h-1" />;
+        return <p key={i} className="text-xs leading-relaxed">{renderLineWithCitations(line, sources)}</p>;
+      })}
+    </div>
+  );
+}
+
+function renderLineWithCitations(text: string, sources?: ChatSource[]): React.ReactNode {
+  // Split on inline patterns: **bold**, *italic*, `code`, [CUSTOMIZE:], [VERIFY:], [N] citation refs
+  const parts = text.split(/(\*\*.*?\*\*|\*.*?\*|`.*?`|\[CUSTOMIZE:.*?\]|\[VERIFY:.*?\]|\[\d+\])/g);
   return parts.map((part, i) => {
     if (part.startsWith('**') && part.endsWith('**')) return <strong key={i}>{part.slice(2, -2)}</strong>;
     if (part.startsWith('*') && part.endsWith('*')) return <em key={i}>{part.slice(1, -1)}</em>;
-    if (part.startsWith('`') && part.endsWith('`')) return <code key={i} className="bg-gray-100 text-purple-700 px-1 rounded text-xs font-mono">{part.slice(1, -1)}</code>;
-    if (part.startsWith('[CUSTOMIZE:')) return <span key={i} className="bg-amber-100 text-amber-700 px-1 rounded text-xs">{part}</span>;
-    if (part.startsWith('[VERIFY:')) return <span key={i} className="bg-red-100 text-red-700 px-1 rounded text-xs">{part}</span>;
+    if (part.startsWith('`') && part.endsWith('`')) return (
+      <code key={i} className="bg-gray-100 text-purple-700 px-1 rounded text-xs font-mono">{part.slice(1, -1)}</code>
+    );
+    if (part.startsWith('[CUSTOMIZE:')) return (
+      <span key={i} className="bg-amber-100 text-amber-700 px-1 rounded text-xs">{part}</span>
+    );
+    if (part.startsWith('[VERIFY:')) return (
+      <span key={i} className="bg-red-100 text-red-700 px-1 rounded text-xs">{part}</span>
+    );
+    // Citation reference like [1], [2], etc.
+    const citMatch = part.match(/^\[(\d+)\]$/);
+    if (citMatch && sources) {
+      const idx = parseInt(citMatch[1], 10);
+      return <CitationBadge key={i} index={idx} source={sources[idx - 1]} />;
+    }
     return part;
   });
 }
+
+// ── Main component ────────────────────────────────────────────────────────────
 
 export default function AIChatPanel({
   grantId,
@@ -88,7 +285,7 @@ export default function AIChatPanel({
     {
       id: 'welcome',
       role: 'assistant',
-      content: `Hi! I'm your grant writing assistant. I have access to:\n\n- **Your full document** as you write\n- **The RAG archive** of past grants and reusable language\n- **The call requirements** you've set\n\nSelect text in any section and I can improve it, or ask me to draft entire sections. What would you like to work on?`,
+      content: `Hi! I'm your grant writing assistant. I can now:\n\n- **Look up any opportunity** by name ("Tell me about MOOVE")\n- **Search the archive** of past funded grants for examples\n- **Find citations** for any highlighted text — just select it and click "Find Citation"\n- **Search academic literature** on any topic\n\nSelect text in any section and I can improve it, find citations, or help draft new content. What would you like to work on?`,
     },
   ]);
   const [input, setInput] = useState('');
@@ -99,6 +296,12 @@ export default function AIChatPanel({
   const [insertingToDoc, setInsertingToDoc] = useState<string | null>(null);
   const [contextMode, setContextMode] = useState<'auto' | 'selection' | 'full'>('auto');
   const [contextChips, setContextChips] = useState<string[]>([]);
+
+  // Active tool activity for the currently streaming message
+  const activeToolsRef = useRef<ToolActivity[]>([]);
+  // Active message ID being streamed
+  const streamingMsgIdRef = useRef<string | null>(null);
+
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const inputRef = useRef<HTMLTextAreaElement>(null);
   const abortRef = useRef<AbortController | null>(null);
@@ -113,83 +316,109 @@ export default function AIChatPanel({
 
     setInput('');
     setShowQuickPrompts(false);
+    activeToolsRef.current = [];
 
     const userMsg: ChatMessage = { id: genId(), role: 'user', content: text };
     const assistantId = genId();
-    const assistantMsg: ChatMessage = { id: assistantId, role: 'assistant', content: '', isStreaming: true };
+    streamingMsgIdRef.current = assistantId;
+    const assistantMsg: ChatMessage = {
+      id: assistantId,
+      role: 'assistant',
+      content: '',
+      isStreaming: true,
+      toolActivity: [],
+      sources: [],
+    };
 
     setMessages(prev => [...prev, userMsg, assistantMsg]);
     setIsStreaming(true);
 
-    // Build context based on mode
     const docContext = contextMode !== 'selection' ? getDocumentContext() : undefined;
     const selText = (contextMode !== 'full' && selectedText) ? selectedText : undefined;
-
     const history = [...messages, userMsg].map(m => ({ role: m.role, content: m.content }));
 
-    abortRef.current = useWritingStudio
-      ? streamWritingChat(
-          grantId,
-          {
-            messages: history,
-            document_context: docContext,
-            selected_text: selText,
-            active_section: activeSection,
-            writing_phase: writingPhase,
-          },
-          (chunk, chips) => {
-            if (chips) setContextChips(chips);
-            setMessages(prev =>
-              prev.map(m => m.id === assistantId ? { ...m, content: m.content + chunk } : m)
-            );
-          },
-          () => {
-            setMessages(prev =>
-              prev.map(m => m.id === assistantId ? { ...m, isStreaming: false } : m)
-            );
-            setIsStreaming(false);
-            abortRef.current = null;
-          },
-          (err) => {
-            setMessages(prev =>
-              prev.map(m => m.id === assistantId
-                ? { ...m, content: `Error: ${err}`, isStreaming: false }
-                : m)
-            );
-            setIsStreaming(false);
-            abortRef.current = null;
-          },
-        )
-      : streamEditorChat(
-          {
-            grant_id: grantId,
-            messages: history,
-            document_context: docContext,
-            selected_text: selText,
-            active_section: activeSection,
-          },
-          (chunk) => {
-            setMessages(prev =>
-              prev.map(m => m.id === assistantId ? { ...m, content: m.content + chunk } : m)
-            );
-          },
-          () => {
-            setMessages(prev =>
-              prev.map(m => m.id === assistantId ? { ...m, isStreaming: false } : m)
-            );
-            setIsStreaming(false);
-            abortRef.current = null;
-          },
-          (err) => {
-            setMessages(prev =>
-              prev.map(m => m.id === assistantId
-                ? { ...m, content: `Error: ${err}`, isStreaming: false }
-                : m)
-            );
-            setIsStreaming(false);
-            abortRef.current = null;
-          },
+    const handleEvent = (event: WritingChatEvent) => {
+      const msgId = streamingMsgIdRef.current;
+      if (!msgId) return;
+
+      if (event.type === 'tool_start') {
+        const newAct: ToolActivity = { tool: event.tool!, display: event.display || event.tool!, status: 'running' };
+        activeToolsRef.current = [...activeToolsRef.current, newAct];
+        setMessages(prev =>
+          prev.map(m => m.id === msgId ? { ...m, toolActivity: [...activeToolsRef.current] } : m)
         );
+      } else if (event.type === 'tool_result') {
+        activeToolsRef.current = activeToolsRef.current.map(a =>
+          a.tool === event.tool ? { ...a, status: 'done', count: event.count } : a
+        );
+        setMessages(prev =>
+          prev.map(m => m.id === msgId ? { ...m, toolActivity: [...activeToolsRef.current] } : m)
+        );
+      } else if (event.type === 'content' && event.content) {
+        setMessages(prev =>
+          prev.map(m => m.id === msgId ? { ...m, content: m.content + event.content! } : m)
+        );
+      } else if (event.type === 'sources' && event.items) {
+        setMessages(prev =>
+          prev.map(m => m.id === msgId ? { ...m, sources: event.items } : m)
+        );
+      } else if (event.type === 'context_chips' && event.chips) {
+        setContextChips(event.chips);
+      }
+    };
+
+    const handleDone = () => {
+      setMessages(prev =>
+        prev.map(m => m.id === streamingMsgIdRef.current
+          ? { ...m, isStreaming: false }
+          : m)
+      );
+      setIsStreaming(false);
+      streamingMsgIdRef.current = null;
+      activeToolsRef.current = [];
+      abortRef.current = null;
+    };
+
+    const handleError = (err: string) => {
+      setMessages(prev =>
+        prev.map(m => m.id === streamingMsgIdRef.current
+          ? { ...m, content: `Error: ${err}`, isStreaming: false }
+          : m)
+      );
+      setIsStreaming(false);
+      streamingMsgIdRef.current = null;
+      abortRef.current = null;
+    };
+
+    if (useWritingStudio) {
+      abortRef.current = streamWritingChat(
+        grantId,
+        {
+          messages: history,
+          document_context: docContext,
+          selected_text: selText,
+          active_section: activeSection,
+          writing_phase: writingPhase,
+        },
+        handleEvent,
+        handleDone,
+        handleError,
+      );
+    } else {
+      // Legacy editor chat (no tools) — adapt to new signature by mapping chunk to content event
+      abortRef.current = streamEditorChat(
+        {
+          grant_id: grantId,
+          messages: history,
+          document_context: docContext,
+          selected_text: selText,
+          active_section: activeSection,
+        },
+        (chunk: string) => handleEvent({ type: 'content', content: chunk }),
+        handleDone,
+        handleError,
+      );
+    }
   }, [input, isStreaming, messages, grantId, selectedText, getDocumentContext, contextMode, activeSection, writingPhase, useWritingStudio]);
 
   const stopStreaming = () => {
@@ -204,14 +433,13 @@ export default function AIChatPanel({
     setTimeout(() => setCopiedId(null), 2000);
   };
 
-  const insertToGoogleDoc = async (msgId: string, content: string) => {
+  const insertToGoogleDoc = async (msgId: string) => {
     if (!googleDocUrl || insertingToDoc) return;
     setInsertingToDoc(msgId);
     try {
       const { grants } = await import('@/lib/api');
       await grants.pushToGoogleDoc(grantId);
     } catch {
-      // If push fails, fall back to opening the doc URL so the user can paste manually
       if (googleDocUrl) window.open(googleDocUrl, '_blank');
     } finally {
       setInsertingToDoc(null);
@@ -253,9 +481,12 @@ export default function AIChatPanel({
     }
   };
 
-  const clearChat = () => {
-    setMessages([]);
+  const handleFindCitation = () => {
+    if (!selectedText || isStreaming) return;
+    sendMessage(`Find academic citations for this text:\n\n"${selectedText.slice(0, 400)}"`);
   };
+
+  const clearChat = () => setMessages([]);
 
   return (
     <div className="flex flex-col h-full bg-white border-l border-gray-200">
@@ -268,7 +499,7 @@ export default function AIChatPanel({
             </div>
             <div>
               <div className="text-xs font-semibold text-gray-800">AI Writing Assistant</div>
-              <div className="text-[10px] text-gray-400">Grant writing assistant</div>
+              <div className="text-[10px] text-gray-400">Tools · RAG · Citations</div>
             </div>
           </div>
           <button onClick={clearChat} className="text-gray-400 hover:text-gray-600 p-1 rounded" title="Clear chat">
@@ -337,6 +568,14 @@ export default function AIChatPanel({
       <div className="flex-1 overflow-y-auto p-3 space-y-3">
         {messages.map(msg => (
           <div key={msg.id} className={`flex flex-col ${msg.role === 'user' ? 'items-end' : 'items-start'}`}>
+            {/* Tool activity rows (above streaming message) */}
+            {msg.role === 'assistant' && msg.toolActivity && msg.toolActivity.length > 0 && (
+              <div className="w-full max-w-[92%]">
+                <ToolActivityRow activities={msg.toolActivity} />
+              </div>
+            )}
+
+            {/* Message bubble */}
             <div className={`max-w-[92%] rounded-xl px-3 py-2 ${
               msg.role === 'user'
                 ? 'bg-blue-600 text-white'
@@ -346,7 +585,7 @@ export default function AIChatPanel({
                 <p className="text-xs whitespace-pre-wrap">{msg.content}</p>
               ) : (
                 <div className="text-xs text-gray-800">
-                  <MarkdownText text={msg.content} />
+                  <MarkdownText text={msg.content} sources={msg.sources} />
                   {msg.isStreaming && (
                     <span className="inline-block w-1.5 h-3.5 bg-purple-500 ml-0.5 animate-pulse rounded-sm" />
                   )}
@@ -354,7 +593,14 @@ export default function AIChatPanel({
               )}
             </div>
 
-            {/* Message actions (for assistant messages that are done) */}
+            {/* Sources panel */}
+            {msg.role === 'assistant' && !msg.isStreaming && msg.sources && msg.sources.length > 0 && (
+              <div className="w-full max-w-[92%]">
+                <SourcesPanel sources={msg.sources} />
+              </div>
+            )}
+
+            {/* Message actions */}
             {msg.role === 'assistant' && !msg.isStreaming && msg.content && msg.id !== 'welcome' && (
               <div className="flex items-center gap-1 mt-1">
                 <button
@@ -375,7 +621,7 @@ export default function AIChatPanel({
                 </button>
                 {googleDocUrl && (
                   <button
-                    onClick={() => insertToGoogleDoc(msg.id, msg.content)}
+                    onClick={() => insertToGoogleDoc(msg.id)}
                     disabled={insertingToDoc === msg.id}
                     className="flex items-center gap-1 text-[10px] text-blue-500 hover:text-blue-700 px-1.5 py-0.5 rounded hover:bg-blue-50 transition-colors disabled:opacity-50"
                     title="Push to Google Doc"
@@ -401,23 +647,34 @@ export default function AIChatPanel({
           <div className="flex items-start gap-2">
             <Wand2 className="w-3.5 h-3.5 text-amber-600 mt-0.5 shrink-0" />
             <div className="flex-1 min-w-0">
-              <div className="text-[10px] font-semibold text-amber-800 mb-1">Text selected</div>
+              <div className="text-[10px] font-semibold text-amber-800 mb-0.5">Text selected</div>
               <div className="text-[10px] text-amber-700 truncate italic">
-                "{selectedText.slice(0, 60)}{selectedText.length > 60 ? '...' : ''}"
+                &ldquo;{selectedText.slice(0, 60)}{selectedText.length > 60 ? '…' : ''}&rdquo;
               </div>
             </div>
           </div>
-          <button
-            onClick={handleImproveSelection}
-            disabled={improveLoading}
-            className="mt-2 w-full text-[10px] bg-amber-600 text-white rounded py-1.5 hover:bg-amber-700 disabled:opacity-50 transition-colors flex items-center justify-center gap-1.5"
-          >
-            {improveLoading ? (
-              <><Loader2 className="w-3 h-3 animate-spin" /> Improving...</>
-            ) : (
-              <><Wand2 className="w-3 h-3" /> Improve selection{input ? ` — "${input.slice(0, 20)}..."` : ''}</>
-            )}
-          </button>
+          <div className="flex gap-1.5 mt-2">
+            <button
+              onClick={handleImproveSelection}
+              disabled={improveLoading}
+              className="flex-1 text-[10px] bg-amber-600 text-white rounded py-1.5 hover:bg-amber-700 disabled:opacity-50 transition-colors flex items-center justify-center gap-1.5"
+            >
+              {improveLoading ? (
+                <><Loader2 className="w-3 h-3 animate-spin" /> Improving…</>
+              ) : (
+                <><Wand2 className="w-3 h-3" /> Improve</>
+              )}
+            </button>
+            <button
+              onClick={handleFindCitation}
+              disabled={isStreaming}
+              className="flex-1 text-[10px] bg-indigo-600 text-white rounded py-1.5 hover:bg-indigo-700 disabled:opacity-50 transition-colors flex items-center justify-center gap-1.5"
+              title="Find academic citations supporting this text"
+            >
+              <BookOpen className="w-3 h-3" />
+              Find Citation
+            </button>
+          </div>
         </div>
       )}
 
@@ -449,7 +706,7 @@ export default function AIChatPanel({
             value={input}
             onChange={e => setInput(e.target.value)}
             onKeyDown={handleKeyDown}
-            placeholder={selectedText ? 'Type an instruction for the selected text...' : 'Ask about the grant, request a draft, or ask for improvements...'}
+            placeholder={selectedText ? 'Type an instruction, or click Find Citation above…' : 'Ask about a grant, look up an opportunity, or request citations…'}
             rows={2}
             disabled={isStreaming && !abortRef.current}
             className="flex-1 text-xs resize-none border-0 bg-transparent p-2.5 focus:outline-none text-gray-800 placeholder-gray-400"

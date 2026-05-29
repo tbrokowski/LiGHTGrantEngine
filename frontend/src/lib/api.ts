@@ -320,10 +320,38 @@ export const grantWriting = {
     api.post(`/grants/${grantId}/writing/analyze-call${force ? '?force=true' : ''}`, null, { timeout: 60_000 }),
   resetCallAnalysis: (grantId: string) =>
     api.post(`/grants/${grantId}/writing/reset-analysis`),
-  enqueueSkeleton: (grantId: string) =>
-    api.post(`/grants/${grantId}/writing/generate-skeleton`),
+  enqueueSkeleton: (
+    grantId: string,
+    body?: {
+      section_constraints?: Array<{
+        name: string;
+        word_limit?: number | null;
+        page_limit?: string | null;
+        priority?: string;
+        order?: number;
+      }>;
+      total_word_limit?: number | null;
+      total_page_limit?: string | null;
+    }
+  ) =>
+    api.post(`/grants/${grantId}/writing/generate-skeleton`, body ?? null),
   resetSkeleton: (grantId: string) =>
     api.post(`/grants/${grantId}/writing/reset-skeleton`),
+  updateSkeletonConstraints: (
+    grantId: string,
+    data: {
+      total_word_limit?: number | null;
+      total_page_limit?: string | null;
+      sections?: Array<{
+        name: string;
+        word_limit?: number | null;
+        page_limit?: string | null;
+        priority?: string;
+        order?: number;
+      }>;
+    }
+  ) =>
+    api.patch(`/grants/${grantId}/writing/skeleton-constraints`, data),
   enqueueDraft: (grantId: string, body?: { flagged_sections?: string[] }) =>
     api.post(`/grants/${grantId}/writing/generate-draft`, body ?? null),
   resetDraft: (grantId: string) =>
@@ -464,6 +492,31 @@ export const partners = {
   extractExpertise: (id: string, docId: string) =>
     api.post(`/partners/${id}/documents/${docId}/extract-expertise`),
   deleteDocument: (id: string, docId: string) => api.delete(`/partners/${id}/documents/${docId}`),
+  // Owner
+  updateOwner: (id: string, owner_id: string | null) => api.patch(`/partners/${id}`, { owner_id }),
+  // Updates (edit/delete)
+  deleteUpdate: (id: string, updateId: string) => api.delete(`/partners/${id}/updates/${updateId}`),
+  editUpdate: (id: string, updateId: string, data: Record<string, unknown>) => api.patch(`/partners/${id}/updates/${updateId}`, data),
+  // Tasks
+  listTasks: (id: string) => api.get(`/partners/${id}/tasks`),
+  createTask: (id: string, data: Record<string, unknown>) => api.post(`/partners/${id}/tasks`, data),
+  updateTask: (id: string, taskId: string, data: Record<string, unknown>) => api.patch(`/partners/${id}/tasks/${taskId}`, data),
+  deleteTask: (id: string, taskId: string) => api.delete(`/partners/${id}/tasks/${taskId}`),
+  completeTask: (id: string, taskId: string) => api.post(`/partners/${id}/tasks/${taskId}/complete`),
+  // Unified activity feed
+  listActivity: (id: string, limit?: number, offset?: number) =>
+    api.get(`/partners/${id}/activity`, { params: { limit, offset } }),
+  // Entity search (for grant linking)
+  entitySearch: (q: string) => api.get('/partners/entity-search', { params: { q } }),
+  // Duplicate detection
+  possibleDuplicates: (id: string) => api.get(`/partners/${id}/possible-duplicates`),
+  mergePartners: (id: string, otherId: string, keepFields: Record<string, string>) =>
+    api.post(`/partners/${id}/merge`, { other_id: otherId, keep_fields: keepFields }),
+  // Bulk operations
+  bulkUpdate: (ids: string[], data: Record<string, unknown>) => api.post('/partners/bulk-update', { ids, ...data }),
+  bulkDelete: (ids: string[]) => api.post('/partners/bulk-delete', { ids }),
+  exportCsv: (params?: Record<string, unknown>) =>
+    api.get('/partners/export', { params: { format: 'csv', ...params }, responseType: 'blob' }),
 };
 
 export const partnerOrgs = {
@@ -600,6 +653,33 @@ export function streamEditorChat(
   return controller;
 }
 
+/** SSE event types emitted by the new agentic writing chat backend. */
+export interface WritingChatEvent {
+  type: 'tool_start' | 'tool_result' | 'content' | 'sources' | 'context_chips' | 'done' | 'error';
+  // tool_start
+  tool?: string;
+  display?: string;
+  // tool_result
+  count?: number;
+  // content
+  content?: string;
+  // sources
+  items?: ChatSource[];
+  // context_chips
+  chips?: string[];
+  // error
+  message?: string;
+}
+
+export interface ChatSource {
+  type: 'opportunity' | 'archive' | 'citation' | 'document';
+  title: string;
+  snippet: string;
+  url: string;
+  meta: string;
+  formatted_citation?: string;
+}
+
 export function streamWritingChat(
   grantId: string,
   data: {
@@ -609,7 +689,7 @@ export function streamWritingChat(
     active_section?: string;
     writing_phase?: string;
   },
-  onChunk: (text: string, contextChips?: string[]) => void,
+  onEvent: (event: WritingChatEvent) => void,
   onDone: () => void,
   onError: (err: string) => void,
 ): AbortController {
@@ -643,10 +723,11 @@ export function streamWritingChat(
           const payload = line.slice(6).trim();
           if (payload === '[DONE]') { onDone(); return; }
           try {
-            const parsed = JSON.parse(payload);
-            if (parsed.error) { onError(parsed.error); return; }
-            if (parsed.content) onChunk(parsed.content, parsed.context_chips);
-          } catch { /* ignore */ }
+            const parsed = JSON.parse(payload) as WritingChatEvent;
+            if (parsed.type === 'error') { onError(parsed.message || 'Stream error'); return; }
+            if (parsed.type === 'done') { onDone(); return; }
+            onEvent(parsed);
+          } catch { /* ignore malformed chunks */ }
         }
       }
       onDone();

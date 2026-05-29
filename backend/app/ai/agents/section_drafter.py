@@ -101,9 +101,12 @@ async def draft_section(
 
     limit_parts = []
     if effective_word_limit:
-        limit_parts.append(f"WORD LIMIT: {effective_word_limit} words (write close to this limit — reviewers expect full use)")
+        limit_parts.append(
+            f"WORD LIMIT: {effective_word_limit} words (hard constraint — do not exceed; "
+            f"write close to this limit to fully use the allowance)"
+        )
     if effective_page_limit:
-        limit_parts.append(f"PAGE LIMIT: {effective_page_limit}")
+        limit_parts.append(f"PAGE LIMIT: {effective_page_limit} (hard constraint — do not exceed)")
     limit_str = "\n".join(limit_parts)
 
     narrative_ctx = narrative_context or {}

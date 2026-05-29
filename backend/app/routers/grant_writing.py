@@ -47,6 +47,26 @@ class SkeletonUpdate(BaseModel):
     writing_phase: Optional[str] = "skeleton"
 
 
+class SectionConstraint(BaseModel):
+    name: str
+    word_limit: Optional[int] = None
+    page_limit: Optional[str] = None
+    priority: Optional[str] = "medium"
+    order: Optional[int] = None
+
+
+class GenerateSkeletonRequest(BaseModel):
+    section_constraints: Optional[list[SectionConstraint]] = None
+    total_word_limit: Optional[int] = None
+    total_page_limit: Optional[str] = None
+
+
+class SkeletonConstraintsUpdate(BaseModel):
+    total_word_limit: Optional[int] = None
+    total_page_limit: Optional[str] = None
+    sections: Optional[list[SectionConstraint]] = None
+
+
 class CitationSearchRequest(BaseModel):
     query: str
     section_title: Optional[str] = None
@@ -350,10 +370,12 @@ async def reset_call_analysis(
 @router.post("/{grant_id}/writing/generate-skeleton", status_code=202)
 async def generate_skeleton(
     grant_id: str,
+    body: GenerateSkeletonRequest = None,
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ):
     """Enqueue skeleton generation as a background Celery task."""
+    body = body or GenerateSkeletonRequest()
     grant = await _get_grant(grant_id, db)
     if not grant.grant_idea:
         raise HTTPException(400, "Grant idea is required before generating skeleton")
@@ -365,9 +387,18 @@ async def generate_skeleton(
     grant.skeleton_error = None
     await db.commit()
 
+    section_constraints = (
+        [sc.model_dump() for sc in body.section_constraints]
+        if body.section_constraints else None
+    )
     celery_app.send_task(
         "app.workers.grant_writing_tasks.generate_skeleton_task",
         args=[grant_id, current_user.id],
+        kwargs={
+            "user_section_constraints": section_constraints,
+            "user_total_word_limit": body.total_word_limit,
+            "user_total_page_limit": body.total_page_limit,
+        },
         queue="call_analysis",
     )
     return JSONResponse(status_code=202, content={"status": "running", "message": "Skeleton generation started"})
@@ -386,6 +417,29 @@ async def reset_skeleton(
     grant.skeleton_error = None
     await db.commit()
     return {"ok": True, "status": "idle"}
+
+
+@router.patch("/{grant_id}/writing/skeleton-constraints")
+async def update_skeleton_constraints(
+    grant_id: str,
+    data: SkeletonConstraintsUpdate,
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    """Merge updated word/page limits and section constraints into proposal_skeleton."""
+    grant = await _get_grant(grant_id, db)
+    skeleton = dict(grant.proposal_skeleton or {})
+
+    if data.total_word_limit is not None:
+        skeleton["total_word_limit"] = data.total_word_limit
+    if data.total_page_limit is not None:
+        skeleton["total_page_limit"] = data.total_page_limit
+    if data.sections is not None:
+        skeleton["sections"] = [s.model_dump() for s in data.sections]
+
+    grant.proposal_skeleton = skeleton
+    await db.commit()
+    return {"proposal_skeleton": skeleton}
 
 
 @router.patch("/{grant_id}/writing/skeleton")
@@ -618,6 +672,28 @@ async def list_citations(
     } for c in citations]
 
 
+# Tool-calling citation intents — if the user message matches these and selected_text
+# is present, we inject "find citation for this text" into the intent.
+_CITATION_INTENT_PATTERNS = [
+    "find citation", "cite this", "find reference", "add citation",
+    "source for this", "reference for this", "back this up",
+]
+
+_TOOL_AGENT_SYSTEM_ADDENDUM = """
+You have access to tools that allow you to retrieve accurate, up-to-date information:
+- search_archive: search past funded grant proposals in the archive
+- lookup_opportunity: look up a specific grant opportunity or programme by name
+- search_citations: search academic literature (OpenAlex + PubMed) for a topic
+- find_citation_for_text: find citations supporting a specific highlighted text passage
+- search_org_docs: search uploaded workspace files and documents
+
+Use these tools proactively when answering questions. When you cite sources retrieved
+from tools, include inline reference markers like [1], [2] in your text. The user will
+see the sources in a panel below your response. Always prefer precise, grounded answers
+with citations over generic advice.
+"""
+
+
 @router.post("/{grant_id}/writing/chat-stream")
 async def writing_chat_stream(
     grant_id: str,
@@ -625,12 +701,33 @@ async def writing_chat_stream(
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ):
-    from app.ai.client import chat_complete_stream
+    """Agentic streaming chat with tool calling, RAG, opportunity lookup, and inline citations."""
+    from app.ai.agents.chat_agent import run_agent_loop
+    from app.ai.tools.chat_tools import CHAT_TOOLS, execute_tool
     from datetime import datetime
 
     grant = await _get_grant(grant_id, db)
     conv = await _get_or_create_conversation(grant_id, db)
     last_user = next((m.content for m in reversed(req.messages) if m.role == "user"), "")
+
+    # Detect citation intent on highlighted text — auto-redirect to find_citation_for_text
+    effective_messages = list(req.messages)
+    if req.selected_text and any(
+        pattern in last_user.lower() for pattern in _CITATION_INTENT_PATTERNS
+    ):
+        effective_messages = [
+            m for m in req.messages if m.role != "user" or m.content != last_user
+        ]
+        effective_messages.append(
+            WritingChatMessage(
+                role="user",
+                content=(
+                    f"Find academic citations to support this text:\n\n"
+                    f'"{req.selected_text[:600]}"'
+                ),
+            )
+        )
+        last_user = effective_messages[-1].content
 
     ctx = await context_mgr.build(
         grant,
@@ -641,39 +738,84 @@ async def writing_chat_stream(
         conversation=conv,
         user=current_user,
     )
-    system_message = context_mgr.to_system_prompt(ctx)
+    system_message = context_mgr.to_system_prompt(ctx) + _TOOL_AGENT_SYSTEM_ADDENDUM
     if req.selected_text:
-        system_message += f"\n\n--- SELECTED TEXT ---\n{req.selected_text}"
+        system_message += f"\n\n--- SELECTED TEXT (user has this highlighted) ---\n{req.selected_text[:1200]}"
 
-    messages = [{"role": "system", "content": system_message}]
-    for m in req.messages:
-        messages.append({"role": m.role, "content": m.content})
+    llm_messages = [{"role": "system", "content": system_message}]
+    for m in effective_messages:
+        llm_messages.append({"role": m.role, "content": m.content})
 
-    # Persist conversation
-    stored = conv.messages or []
-    for m in req.messages[-2:]:
+    # Persist request messages to conversation history
+    stored = list(conv.messages or [])
+    for m in effective_messages[-2:]:
         stored.append({"role": m.role, "content": m.content})
     conv.messages = stored[-20:]
     conv.updated_at = datetime.utcnow()
     await db.commit()
 
+    # Resolve institution_id for opportunity lookup
+    institution_id = getattr(current_user, "institution_id", None)
+
+    async def tool_executor(name: str, args: dict):
+        return await execute_tool(
+            name=name,
+            args=args,
+            db=db,
+            grant_id=grant_id,
+            institution_id=institution_id,
+        )
+
+    context_chips = context_mgr.context_chip_labels(ctx)
+
     async def generate():
-        full_response = []
+        full_response_parts: list[str] = []
         try:
-            async for chunk in chat_complete_stream(messages, agent_name="grant_writer"):
-                full_response.append(chunk)
-                yield f"data: {json.dumps({'content': chunk, 'context_chips': context_mgr.context_chip_labels(ctx)})}\n\n"
-            conv.messages = (conv.messages or []) + [{"role": "assistant", "content": "".join(full_response)}]
-            await db.commit()
+            async for event in run_agent_loop(
+                messages=llm_messages,
+                tools=CHAT_TOOLS,
+                tool_executor=tool_executor,
+                context_chips=context_chips,
+            ):
+                if event.get("type") == "content":
+                    full_response_parts.append(event["content"])
+                yield f"data: {json.dumps(event)}\n\n"
+
+            # Persist assistant response to conversation history
+            if full_response_parts:
+                full_text = "".join(full_response_parts)
+                conv.messages = (conv.messages or []) + [
+                    {"role": "assistant", "content": full_text}
+                ]
+                await db.commit()
+
+            # Trigger background summarization when conversation is long
+            _maybe_trigger_summarization(grant_id, conv)
+
+        except Exception as exc:
+            yield f"data: {json.dumps({'type': 'error', 'message': str(exc)[:300]})}\n\n"
             yield "data: [DONE]\n\n"
-        except Exception as e:
-            yield f"data: {json.dumps({'error': str(e)})}\n\n"
 
     return StreamingResponse(
         generate(),
         media_type="text/event-stream",
         headers={"Cache-Control": "no-cache", "X-Accel-Buffering": "no"},
     )
+
+
+def _maybe_trigger_summarization(grant_id: str, conv) -> None:
+    """Fire-and-forget conversation summarization when history is long."""
+    try:
+        msg_count = len(conv.messages or [])
+        if msg_count >= 18:
+            from app.workers.celery_app import celery_app as _celery
+            _celery.send_task(
+                "app.workers.grant_writing_tasks.summarize_conversation_task",
+                args=[grant_id],
+                queue="call_analysis",
+            )
+    except Exception:
+        pass  # Summarization is non-critical
 
 
 class FigureGenerationRequest(BaseModel):
