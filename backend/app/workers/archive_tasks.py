@@ -192,3 +192,129 @@ def index_archive(self, archive_id: str) -> dict:
             return {"error": "max_retries", "archive_id": archive_id}
     finally:
         redis.delete(lock_key)
+
+
+@celery_app.task(
+    name="app.workers.archive_tasks.index_workspace_document",
+    bind=True,
+    max_retries=5,
+    default_retry_delay=30,
+    soft_time_limit=120,
+    time_limit=150,
+)
+def index_workspace_document(self, document_id: str, grant_id: str) -> dict:
+    """
+    Chunk a workspace-uploaded reference document into ProposalSection rows
+    linked to grant_id so they participate in per-grant RAG retrieval.
+
+    Called automatically after a workspace file is uploaded (when grant_id is set).
+    Retries up to 5 times (30s apart) waiting for parse_and_embed_document to
+    populate parsed_text before chunking.
+    """
+    from sqlalchemy import create_engine, text as sa_text
+    from sqlalchemy.orm import Session
+
+    from app.config import get_settings
+    from app.models.section import ProposalSection
+    from app.services.archive_ingestion import split_text_into_sections, _infer_section_type
+
+    settings = get_settings()
+    engine = create_engine(settings.database_url, pool_pre_ping=True)
+
+    try:
+        with engine.connect() as conn:
+            # Fetch the document
+            row = conn.execute(
+                sa_text("SELECT id, file_name, parsed_text FROM documents WHERE id = :id"),
+                {"id": document_id},
+            ).fetchone()
+
+            if not row:
+                logger.error("index_workspace_document: document %s not found", document_id)
+                return {"error": "not_found", "document_id": document_id}
+
+            parsed_text = row[2]
+            file_name = row[1] or "Reference document"
+
+            # Wait for parsing to complete — retry if text not ready yet
+            if not parsed_text or not parsed_text.strip():
+                logger.info(
+                    "index_workspace_document: parsed_text not ready for %s, retrying",
+                    document_id,
+                )
+                raise self.retry(countdown=30)
+
+            # Delete any previously indexed sections for this document+grant
+            conn.execute(
+                sa_text(
+                    "DELETE FROM proposal_sections WHERE document_id = :doc_id AND grant_id = :grant_id"
+                ),
+                {"doc_id": document_id, "grant_id": grant_id},
+            )
+            conn.commit()
+
+            # Split text into sections
+            raw_sections = split_text_into_sections(parsed_text)
+            if not raw_sections:
+                raw_sections = [("Full Document", parsed_text.strip())]
+
+            # Insert ProposalSection rows
+            section_ids = []
+            for order, (title, body) in enumerate(raw_sections):
+                if not body.strip():
+                    continue
+                sid = str(__import__("uuid").uuid4())
+                conn.execute(
+                    sa_text("""
+                        INSERT INTO proposal_sections
+                          (id, document_id, grant_id, grant_title, section_type, section_title,
+                           section_text, section_order, word_count, ai_retrieval_allowed,
+                           text_reuse_allowed, paraphrase_allowed, created_at)
+                        VALUES
+                          (:id, :document_id, :grant_id, :grant_title, :section_type,
+                           :section_title, :section_text, :section_order, :word_count,
+                           true, true, true, NOW())
+                    """),
+                    {
+                        "id": sid,
+                        "document_id": document_id,
+                        "grant_id": grant_id,
+                        "grant_title": file_name,
+                        "section_type": _infer_section_type(title),
+                        "section_title": title[:500],
+                        "section_text": body,
+                        "section_order": order,
+                        "word_count": len(body.split()),
+                    },
+                )
+                section_ids.append(sid)
+            conn.commit()
+
+            # Queue embeddings for each section
+            for sid in section_ids:
+                celery_app.send_task(
+                    "app.workers.embedding_tasks.embed_section",
+                    args=[sid],
+                )
+
+            logger.info(
+                "index_workspace_document: indexed %d sections for doc %s in grant %s",
+                len(section_ids),
+                document_id,
+                grant_id,
+            )
+            return {"sections_indexed": len(section_ids), "document_id": document_id, "grant_id": grant_id}
+
+    except self.MaxRetriesExceededError:
+        logger.error(
+            "index_workspace_document: max retries exceeded for doc %s", document_id
+        )
+        return {"error": "max_retries", "document_id": document_id}
+    except Exception as exc:
+        logger.error("index_workspace_document failed for %s: %s", document_id, exc)
+        try:
+            raise self.retry(exc=exc, countdown=30) from exc
+        except Exception:
+            return {"error": str(exc), "document_id": document_id}
+    finally:
+        engine.dispose()

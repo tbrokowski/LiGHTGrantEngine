@@ -73,6 +73,9 @@ def _section_to_dict(section: ProposalSection, relevance_score: float) -> dict:
         "reuse_permission": _reuse_label(section),
         "warnings": _build_warnings(section),
         "archive_id": section.archive_id,
+        # Populated for workspace reference docs (no archive_id, but has grant_id)
+        "grant_id": getattr(section, "grant_id", None),
+        "is_reference_doc": section.archive_id is None and getattr(section, "grant_id", None) is not None,
     }
 
 
@@ -225,8 +228,14 @@ async def retrieve_content_exemplars(
     top_k: Optional[int] = None,
     require_ai_retrieval: bool = True,
     accessible_grant_ids: Optional[list[str]] = None,
+    current_grant_id: Optional[str] = None,
 ) -> list[dict]:
-    """Topic-relevant retrieval for substantive content inspiration."""
+    """Topic-relevant retrieval for substantive content inspiration.
+
+    When `current_grant_id` is provided, workspace-uploaded reference documents
+    indexed for that grant are always included in the candidate pool alongside
+    the org-wide archive sections.
+    """
     rag_cfg = settings.rag
     k = top_k or rag_cfg.top_k
 
@@ -239,7 +248,21 @@ async def retrieve_content_exemplars(
         filters.append(ProposalSection.funder.ilike(f"%{funder}%"))
     grant_filter = _grant_access_filter(accessible_grant_ids)
     if grant_filter is not None:
-        filters.append(grant_filter)
+        # Always include per-grant reference sections regardless of access filter
+        if current_grant_id:
+            filters.append(
+                or_(grant_filter, ProposalSection.grant_id == current_grant_id)
+            )
+        else:
+            filters.append(grant_filter)
+    elif current_grant_id:
+        # No access filter, but still scope reference docs to this grant
+        filters.append(
+            or_(
+                ProposalSection.archive_id.isnot(None),
+                ProposalSection.grant_id == current_grant_id,
+            )
+        )
 
     query_embedding = await get_embedding(query)
     query_words = query.split()[:8]
@@ -315,6 +338,7 @@ async def retrieve_similar_sections(
     top_k: Optional[int] = None,
     require_ai_retrieval: bool = True,
     accessible_grant_ids: Optional[list[str]] = None,
+    current_grant_id: Optional[str] = None,
 ) -> list[dict]:
     """Backward-compatible wrapper — delegates to content exemplar retrieval."""
     results = await retrieve_content_exemplars(
@@ -325,6 +349,7 @@ async def retrieve_similar_sections(
         top_k=top_k,
         require_ai_retrieval=require_ai_retrieval,
         accessible_grant_ids=accessible_grant_ids,
+        current_grant_id=current_grant_id,
     )
     if outcome:
         results = [r for r in results if r.get("outcome") == outcome] + [

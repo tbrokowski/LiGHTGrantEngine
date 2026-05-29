@@ -182,4 +182,13 @@ async def upload_document(
 
     from app.workers.celery_app import celery_app
     celery_app.send_task("app.workers.embedding_tasks.parse_and_embed_document", args=[doc_id])
+
+    # Index into proposal_sections for per-grant RAG (workspace reference docs)
+    if grant_id:
+        celery_app.send_task(
+            "app.workers.archive_tasks.index_workspace_document",
+            args=[doc_id, grant_id],
+            countdown=45,  # wait for parse_and_embed_document to populate parsed_text
+        )
+
     return {"id": doc_id, "message": "Upload complete, parsing queued"}

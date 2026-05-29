@@ -1,7 +1,7 @@
 'use client';
 
 import { useState } from 'react';
-import { ChevronDown } from 'lucide-react';
+import { ChevronDown, RefreshCw } from 'lucide-react';
 
 // ---------------------------------------------------------------------------
 // Types
@@ -45,6 +45,8 @@ interface KeyPhrase {
 
 interface CallRequirementsPanelProps {
   callAnalysis: Record<string, unknown>;
+  onReanalyze?: () => void;
+  reanalyzing?: boolean;
 }
 
 // ---------------------------------------------------------------------------
@@ -100,7 +102,7 @@ function BulletList({ items, className = '' }: { items: string[]; className?: st
 // Main component
 // ---------------------------------------------------------------------------
 
-export default function CallRequirementsPanel({ callAnalysis }: CallRequirementsPanelProps) {
+export default function CallRequirementsPanel({ callAnalysis, onReanalyze, reanalyzing }: CallRequirementsPanelProps) {
   const [expandedSection, setExpandedSection] = useState<string | null>(null);
   const [expandedFocusArea, setExpandedFocusArea] = useState<string | null>(null);
 
@@ -137,6 +139,9 @@ export default function CallRequirementsPanel({ callAnalysis }: CallRequirements
   const keyFocusAreas = callAnalysis.key_focus_areas as KeyFocusArea[] | undefined;
   const keyPhrases = callAnalysis.key_phrases as KeyPhrase[] | undefined;
   const requirementsOverview = callAnalysis.requirements_overview as string[] | undefined;
+
+  // Detect whether the new enhanced fields are present (post-deployment analysis)
+  const isEnhanced = !!(callBackground?.length || requirementsOverview?.length || funderPriorities?.length);
 
   const primaryDeadline = deadlines?.full_proposal || deadlines?.concept_note || deadlines?.loi;
 
@@ -189,6 +194,37 @@ export default function CallRequirementsPanel({ callAnalysis }: CallRequirements
         <p className="text-sm text-orange-600 leading-snug">
           ⚠ Eligibility: {geographicEligibility}
         </p>
+      )}
+
+      {/* ------------------------------------------------------------------ */}
+      {/* Fallback for old analyses: show narrative_brief prominently         */}
+      {/* ------------------------------------------------------------------ */}
+      {!isEnhanced && (narrativeBrief || summary) && (
+        <div className="space-y-1.5">
+          <p className="text-sm font-semibold text-gray-700">Call Brief</p>
+          <div className="text-sm text-gray-700 leading-relaxed space-y-2.5">
+            {(narrativeBrief || summary || '').split('\n\n').filter(Boolean).map((para, i) => (
+              <p key={i}>{para}</p>
+            ))}
+          </div>
+        </div>
+      )}
+
+      {/* Re-analyze nudge for old analyses */}
+      {!isEnhanced && onReanalyze && (
+        <div className="flex items-center gap-2 py-2 px-3 rounded-lg bg-indigo-50 border border-indigo-100">
+          <RefreshCw className={`w-3.5 h-3.5 text-indigo-500 flex-shrink-0 ${reanalyzing ? 'animate-spin' : ''}`} />
+          <p className="text-xs text-indigo-700 flex-1">
+            Re-analyze to get Background, Objectives, Key Phrases and more
+          </p>
+          <button
+            onClick={onReanalyze}
+            disabled={reanalyzing}
+            className="text-xs font-medium text-indigo-600 hover:text-indigo-800 disabled:opacity-50 whitespace-nowrap"
+          >
+            {reanalyzing ? 'Analyzing…' : 'Re-analyze'}
+          </button>
+        </div>
       )}
 
       {/* ------------------------------------------------------------------ */}
@@ -456,8 +492,8 @@ export default function CallRequirementsPanel({ callAnalysis }: CallRequirements
         </CollapsibleGroup>
       )}
 
-      {/* Call Brief (narrative_brief fallback — shown collapsed) */}
-      {(narrativeBrief || summary) && (
+      {/* Full Call Brief — collapsed at bottom for enhanced analyses */}
+      {isEnhanced && (narrativeBrief || summary) && (
         <CollapsibleGroup label="Full Call Brief">
           <div className="text-sm text-gray-700 leading-relaxed space-y-2.5">
             {(narrativeBrief || summary || '').split('\n\n').filter(Boolean).map((para, i) => (

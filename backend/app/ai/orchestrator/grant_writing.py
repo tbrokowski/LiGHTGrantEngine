@@ -107,6 +107,7 @@ class GrantWritingOrchestrator:
             db=db,
             funder=grant.funder,
             top_k=8,
+            current_grant_id=str(grant.id),
         )
         skeleton = await generate_proposal_outline(
             opportunity_title=grant.title,

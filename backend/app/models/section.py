@@ -51,6 +51,8 @@ class ProposalSection(Base):
     id: Mapped[str] = mapped_column(String, primary_key=True, default=lambda: str(uuid.uuid4()))
     document_id: Mapped[str | None] = mapped_column(String, ForeignKey("documents.id"))
     archive_id: Mapped[str | None] = mapped_column(String, ForeignKey("grant_archives.id"))
+    # Per-grant workspace reference docs (chunked from uploaded past proposals/reports)
+    grant_id: Mapped[str | None] = mapped_column(String, ForeignKey("active_grants.id", ondelete="CASCADE"), nullable=True, index=True)
 
     grant_title: Mapped[str | None] = mapped_column(String(500))
     funder: Mapped[str | None] = mapped_column(String(300), index=True)

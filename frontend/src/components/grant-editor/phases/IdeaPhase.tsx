@@ -464,7 +464,11 @@ export default function IdeaPhase({
             onToggle={() => setIntelligenceExpanded(!intelligenceExpanded)}
             summary={intelligenceExpanded ? '' : 'Analysis ready'}
           >
-            <CallRequirementsPanel callAnalysis={callAnalysis} />
+            <CallRequirementsPanel
+              callAnalysis={callAnalysis}
+              onReanalyze={handleReanalyze}
+              reanalyzing={reanalyzing}
+            />
           </CollapsibleSection>
         )}
 

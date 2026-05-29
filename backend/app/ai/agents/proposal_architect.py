@@ -27,7 +27,8 @@ Guiding principles:
 - Let the grant idea and award-winning archive structures drive section organization, not the call's exact section list
 - The call's required sections and evaluation criteria inform THEMATIC COVERAGE across sections, not a 1:1 structural mapping
 - Mirror section structures and word distributions from awarded grants shown in the context
-- Use [TBD] as a placeholder for specific data, names, or numbers not yet available
+- When REFERENCE DOCUMENTS are provided, use the actual data, results, project names, and descriptions from them — do not use [TBD] for information that is already present in the reference docs
+- Use [TBD] only for specific data, names, or numbers that are genuinely not available in any provided context
 - Ensure the narrative arc creates a compelling through-line from problem to solution across sections
 
 The team will flag priority sections and further edit the document before generating the full draft.
@@ -149,10 +150,32 @@ def _format_structure_templates(templates: list[dict]) -> str:
 def _format_similar_grants(grants: list[dict]) -> str:
     if not grants:
         return ""
-    lines = ["RELEVANT AWARDED GRANTS (content and structure reference):"]
-    for g in grants[:8]:
+
+    archive_grants = [g for g in grants if not g.get("is_reference_doc")]
+    reference_docs = [g for g in grants if g.get("is_reference_doc")]
+
+    lines = []
+
+    if reference_docs:
         lines.append(
-            f"- {g.get('grant_title', '?')}: {g.get('section_type', '?')} section "
-            f"from {g.get('funder', '?')} ({g.get('outcome', '?')})"
+            "REFERENCE DOCUMENTS — uploaded past proposals and project reports for this grant "
+            "(use to ground specific data, results, methods, and descriptions in the skeleton):"
         )
+        for g in reference_docs[:6]:
+            title = g.get("grant_title") or "Reference document"
+            section_title = g.get("section_title") or g.get("section_type") or "section"
+            snippet = g.get("full_text") or g.get("text_snippet") or ""
+            lines.append(f"\n--- {title} — {section_title} ---")
+            lines.append(snippet[:1200] + ("..." if len(snippet) > 1200 else ""))
+
+    if archive_grants:
+        if lines:
+            lines.append("")
+        lines.append("RELEVANT AWARDED GRANTS (content and structure reference from org archive):")
+        for g in archive_grants[:6]:
+            lines.append(
+                f"- {g.get('grant_title', '?')}: {g.get('section_type', '?')} section "
+                f"from {g.get('funder', '?')} ({g.get('outcome', '?')})"
+            )
+
     return "\n".join(lines)
