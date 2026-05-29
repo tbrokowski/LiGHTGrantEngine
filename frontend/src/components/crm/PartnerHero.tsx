@@ -1,7 +1,11 @@
 'use client';
 import { useState } from 'react';
-import { Zap, RefreshCw, ExternalLink, Linkedin, Globe, Mail, Phone, MapPin, GraduationCap } from 'lucide-react';
+import {
+  Zap, RefreshCw, ExternalLink, Linkedin, Globe, Mail, Phone, MapPin,
+  GraduationCap, Calendar, Link2, ChevronDown, Plus, CheckSquare,
+} from 'lucide-react';
 import { partners as partnersApi } from '@/lib/api';
+import OwnerSelect from './OwnerSelect';
 
 const STAGE_CONFIG: Record<string, { label: string; color: string }> = {
   prospect: { label: 'Prospect', color: 'bg-gray-100 text-gray-600' },
@@ -15,6 +19,12 @@ const STATUS_CONFIG: Record<string, string> = {
   active: 'bg-green-50 text-green-700 border-green-200',
   prospect: 'bg-amber-50 text-amber-700 border-amber-200',
   inactive: 'bg-gray-100 text-gray-500 border-gray-200',
+};
+
+const STATUS_LABELS: Record<string, string> = {
+  active: 'Active',
+  prospect: 'Prospect',
+  inactive: 'Inactive',
 };
 
 interface PartnerHeroProps {
@@ -39,6 +49,9 @@ interface PartnerHeroProps {
     enrichment_status: string;
     last_enriched_at?: string;
     org_info?: { id: string; name: string; org_type: string } | null;
+    owner_id?: string | null;
+    owner_name?: string | null;
+    task_count?: number;
   };
   onEnrich: () => void;
   onLogInteraction: () => void;
@@ -46,6 +59,8 @@ interface PartnerHeroProps {
   onDraftEmail: () => void;
   onAddToGrant: () => void;
   onStageChange: (stage: string) => void;
+  onOwnerChange?: (ownerId: string | null, ownerName: string | null) => void;
+  onAddTask?: () => void;
 }
 
 function InitialsAvatar({ name, size = 'lg' }: { name: string; size?: 'sm' | 'lg' }) {
@@ -67,12 +82,14 @@ export { InitialsAvatar };
 
 export default function PartnerHero({
   partner, onEnrich, onLogInteraction, onScheduleMeeting, onDraftEmail, onAddToGrant, onStageChange,
+  onOwnerChange, onAddTask,
 }: PartnerHeroProps) {
   const [enriching, setEnriching] = useState(false);
   const [showStageMenu, setShowStageMenu] = useState(false);
 
   const stage = STAGE_CONFIG[partner.relationship_stage] || STAGE_CONFIG.prospect;
   const statusCls = STATUS_CONFIG[partner.status] || STATUS_CONFIG.inactive;
+  const statusLabel = STATUS_LABELS[partner.status] || partner.status;
 
   async function handleEnrich() {
     setEnriching(true);
@@ -88,7 +105,7 @@ export default function PartnerHero({
 
   return (
     <div className="bg-white border border-gray-200 rounded-xl overflow-hidden">
-      {/* Top bar — enrichment status */}
+      {/* Top bar */}
       <div className="px-5 py-2 bg-gray-50 border-b border-gray-100 flex items-center justify-between text-xs">
         <span className="text-gray-400">
           {partner.enrichment_status === 'done' && partner.last_enriched_at
@@ -115,7 +132,7 @@ export default function PartnerHero({
             <div className="flex items-center gap-2 flex-wrap">
               <h1 className="text-xl font-semibold text-gray-900">{partner.name}</h1>
               <span className={`text-xs px-2 py-0.5 rounded-full border font-medium ${statusCls}`}>
-                {partner.status}
+                {statusLabel}
               </span>
               {partner.h_index != null && (
                 <span className="flex items-center gap-1 text-xs bg-purple-50 text-purple-700 px-2 py-0.5 rounded-full">
@@ -132,6 +149,22 @@ export default function PartnerHero({
                 {location}
               </div>
             )}
+            {/* Owner + task count row */}
+            <div className="flex items-center gap-3 mt-2">
+              {onOwnerChange && (
+                <OwnerSelect
+                  ownerId={partner.owner_id}
+                  ownerName={partner.owner_name}
+                  onChange={onOwnerChange}
+                />
+              )}
+              {(partner.task_count ?? 0) > 0 && (
+                <span className="flex items-center gap-1 text-xs bg-orange-50 text-orange-600 px-2 py-0.5 rounded-full border border-orange-100">
+                  <CheckSquare className="w-3 h-3" />
+                  {partner.task_count} task{partner.task_count !== 1 ? 's' : ''}
+                </span>
+              )}
+            </div>
           </div>
 
           {/* Stage picker */}
@@ -141,7 +174,7 @@ export default function PartnerHero({
               className={`text-xs px-3 py-1.5 rounded-lg font-medium flex items-center gap-1.5 ${stage.color}`}
             >
               {stage.label}
-              <span className="text-xs opacity-60">▾</span>
+              <ChevronDown className="w-3 h-3 opacity-60" />
             </button>
             {showStageMenu && (
               <div className="absolute right-0 top-full mt-1 bg-white border border-gray-200 rounded-lg shadow-lg z-10 py-1 min-w-[160px]">
@@ -204,11 +237,11 @@ export default function PartnerHero({
         <div className="flex flex-wrap gap-2 pt-3 border-t border-gray-100">
           <button onClick={onLogInteraction}
             className="flex items-center gap-1.5 text-xs px-3 py-1.5 bg-gray-900 text-white rounded-lg hover:bg-gray-700 font-medium">
-            + Log Interaction
+            <Plus className="w-3 h-3" />Log Interaction
           </button>
           <button onClick={onScheduleMeeting}
             className="flex items-center gap-1.5 text-xs px-3 py-1.5 bg-white border border-gray-300 text-gray-700 rounded-lg hover:bg-gray-50 font-medium">
-            📅 Schedule Meeting
+            <Calendar className="w-3 h-3" />Schedule Meeting
           </button>
           <button onClick={onDraftEmail}
             className="flex items-center gap-1.5 text-xs px-3 py-1.5 bg-white border border-gray-300 text-gray-700 rounded-lg hover:bg-gray-50 font-medium">
@@ -216,8 +249,14 @@ export default function PartnerHero({
           </button>
           <button onClick={onAddToGrant}
             className="flex items-center gap-1.5 text-xs px-3 py-1.5 bg-white border border-gray-300 text-gray-700 rounded-lg hover:bg-gray-50 font-medium">
-            🔗 Add to Grant
+            <Link2 className="w-3 h-3" />Add to Grant
           </button>
+          {onAddTask && (
+            <button onClick={onAddTask}
+              className="flex items-center gap-1.5 text-xs px-3 py-1.5 bg-white border border-gray-300 text-gray-700 rounded-lg hover:bg-gray-50 font-medium">
+              <CheckSquare className="w-3 h-3" />Add Task
+            </button>
+          )}
         </div>
       </div>
     </div>

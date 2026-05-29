@@ -23,6 +23,7 @@ async def build_call_strategy(
     call_requirements_text: str = "",
     funder: str = "",
     opportunity_title: str = "",
+    grant_type_context: str = "",
 ) -> dict:
     """
     Synthesize a call strategy brief from the full call_analysis dict.
@@ -41,10 +42,15 @@ async def build_call_strategy(
     # Build a rich summary from the full analysis fields
     analysis_summary = _format_full_analysis(call_analysis)
 
+    call_intelligence_section = (
+        f"\nCALL INTELLIGENCE (from meta-analysis — what wins for this specific call):\n{grant_type_context}"
+        if grant_type_context else ""
+    )
+
     user_prompt = f"""You are building a strategic brief to guide skeleton generation for a grant proposal.
 
 OPPORTUNITY: {opportunity_title}
-FUNDER: {funder}
+FUNDER: {funder}{call_intelligence_section}
 
 FULL CALL ANALYSIS:
 {analysis_summary}

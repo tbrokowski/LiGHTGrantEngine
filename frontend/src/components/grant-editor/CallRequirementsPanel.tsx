@@ -56,6 +56,7 @@ interface CallRequirementsPanelProps {
   reanalyzing?: boolean;
   analysisError?: string | null;
   softTimeout?: boolean;
+  callIntelligence?: Record<string, unknown>;
 }
 
 function hasDisplayableContent(analysis: Record<string, unknown>): boolean {
@@ -141,9 +142,11 @@ export default function CallRequirementsPanel({
   reanalyzing,
   analysisError,
   softTimeout,
+  callIntelligence,
 }: CallRequirementsPanelProps) {
   const [expandedSection, setExpandedSection] = useState<string | null>(null);
   const [expandedFocusArea, setExpandedFocusArea] = useState<string | null>(null);
+  const [adversarialExpanded, setAdversarialExpanded] = useState(false);
 
   const isRunning = reanalyzing || callAnalysisStatus === 'running';
 
@@ -316,8 +319,64 @@ export default function CallRequirementsPanel({
 
   const deadlineEntries = Object.entries(deadlines || {}).filter(([, v]) => v);
 
+  // --- Call intelligence badges ---
+  const ciTypeLabel = callIntelligence?.call_type_label as string | undefined;
+  const ciAdversarial = callIntelligence?.adversarial_challenges as {
+    rejection_risks?: string[];
+    compliance_gaps?: string[];
+  } | undefined;
+  const rejectionRisks = ciAdversarial?.rejection_risks || [];
+  const complianceGaps = ciAdversarial?.compliance_gaps || [];
+  const totalRisks = rejectionRisks.length + complianceGaps.length;
+
   return (
     <div className="space-y-5">
+      {/* Call intelligence summary row */}
+      {(ciTypeLabel || totalRisks > 0) && (
+        <div className="flex flex-wrap items-center gap-2">
+          {ciTypeLabel && (
+            <span className="inline-flex items-center rounded-full bg-indigo-50 border border-indigo-100 px-2.5 py-0.5 text-xs font-medium text-indigo-700">
+              {ciTypeLabel}
+            </span>
+          )}
+          {totalRisks > 0 && (
+            <button
+              type="button"
+              onClick={() => setAdversarialExpanded(v => !v)}
+              className="inline-flex items-center gap-1 rounded-full bg-amber-50 border border-amber-200 px-2.5 py-0.5 text-xs font-medium text-amber-700 hover:bg-amber-100 transition-colors"
+            >
+              <svg className="w-3 h-3" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2}><path d="M12 9v4m0 4h.01M10.29 3.86L1.82 18a2 2 0 001.71 3h16.94a2 2 0 001.71-3L13.71 3.86a2 2 0 00-3.42 0z"/></svg>
+              {totalRisks} reviewer risk{totalRisks !== 1 ? 's' : ''} identified
+              <ChevronDown className={`w-3 h-3 transition-transform ${adversarialExpanded ? 'rotate-180' : ''}`} />
+            </button>
+          )}
+        </div>
+      )}
+      {adversarialExpanded && totalRisks > 0 && (
+        <div className="rounded-lg border border-amber-100 bg-amber-50 p-3 space-y-2.5 text-xs">
+          {rejectionRisks.length > 0 && (
+            <div>
+              <p className="font-semibold text-amber-800 mb-1">Reviewer rejection risks</p>
+              <ul className="space-y-1">
+                {rejectionRisks.map((r, i) => (
+                  <li key={i} className="flex gap-1.5 text-amber-700"><span>⚠</span><span>{r}</span></li>
+                ))}
+              </ul>
+            </div>
+          )}
+          {complianceGaps.length > 0 && (
+            <div>
+              <p className="font-semibold text-amber-800 mb-1">Compliance gaps</p>
+              <ul className="space-y-1">
+                {complianceGaps.map((c, i) => (
+                  <li key={i} className="flex gap-1.5 text-amber-700"><span>✗</span><span>{c}</span></li>
+                ))}
+              </ul>
+            </div>
+          )}
+        </div>
+      )}
+
       {softTimeout && !analysisErrorMsg && !isRunning && (
         <div className="rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-sm text-amber-700">
           Analysis is taking longer than expected. The job is still running in the background — refresh the page later to see results.

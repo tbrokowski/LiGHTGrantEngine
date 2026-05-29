@@ -282,6 +282,7 @@ export default function DocumentPane({
             onDocLinked={workspace.onDocLinked}
             onDocPulled={workspace.onDocPulled}
             onSelectionChange={workspace.onSelectionChange}
+            callIntelligence={workspace.callIntelligence}
           />
         );
 
@@ -292,9 +293,13 @@ export default function DocumentPane({
           title_suggestion?: string;
           narrative_arc?: string;
           key_messages?: string[];
+          sections?: import('../phases/SkeletonPhase').SkeletonSection[];
+          total_word_limit?: number | null;
+          total_page_limit?: string | null;
         };
         return (
           <SkeletonPhase
+            grantId={grantId}
             skeleton={skeletonData}
             onSkeletonChange={workspace.onSkeletonChange}
             onGenerateDraft={workspace.onGenerateDraft}

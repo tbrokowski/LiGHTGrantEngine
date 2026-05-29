@@ -1,9 +1,12 @@
 """CRM Partners endpoints — full contact management, meetings, documents, AI enrichment."""
+import csv
+import io
 import uuid
 from typing import Optional
 from datetime import datetime, timedelta, timezone
 
 from fastapi import APIRouter, Depends, HTTPException, BackgroundTasks
+from fastapi.responses import StreamingResponse
 from pydantic import BaseModel
 from sqlalchemy import select, desc, or_, func, and_
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -38,6 +41,7 @@ class PartnerCreate(BaseModel):
     department: Optional[str] = None
     country: Optional[str] = None
     city: Optional[str] = None
+    owner_id: Optional[str] = None
 
 
 class PartnerUpdateSchema(BaseModel):
@@ -60,6 +64,18 @@ class PartnerUpdateSchema(BaseModel):
     country: Optional[str] = None
     city: Optional[str] = None
     avatar_url: Optional[str] = None
+    owner_id: Optional[str] = None
+
+
+class BulkUpdateSchema(BaseModel):
+    ids: list[str]
+    relationship_stage: Optional[str] = None
+    owner_id: Optional[str] = None
+    status: Optional[str] = None
+
+
+class BulkDeleteSchema(BaseModel):
+    ids: list[str]
 
 
 class ContactLogCreate(BaseModel):
@@ -82,7 +98,11 @@ class StageUpdate(BaseModel):
 
 # ── Helper serializers ────────────────────────────────────────────────────────
 
-def _partner_summary(p: Partner, next_contact_date: datetime | None = None) -> dict:
+def _partner_summary(
+    p: Partner,
+    next_contact_date: datetime | None = None,
+    owner_name: str | None = None,
+) -> dict:
     return {
         "id": p.id,
         "name": p.name,
@@ -106,10 +126,12 @@ def _partner_summary(p: Partner, next_contact_date: datetime | None = None) -> d
         "created_at": str(p.created_at) if p.created_at else None,
         "updated_at": str(p.updated_at) if p.updated_at else None,
         "next_contact_date": str(next_contact_date) if next_contact_date else None,
+        "owner_id": p.owner_id,
+        "owner_name": owner_name,
     }
 
 
-def _partner_full(p: Partner) -> dict:
+def _partner_full(p: Partner, owner_name: str | None = None) -> dict:
     d = {
         "id": p.id,
         "name": p.name,
@@ -136,17 +158,20 @@ def _partner_full(p: Partner) -> dict:
         "enrichment_source": p.enrichment_source,
         "last_enriched_at": str(p.last_enriched_at) if p.last_enriched_at else None,
         "created_by": p.created_by,
+        "owner_id": p.owner_id,
+        "owner_name": owner_name,
         "created_at": str(p.created_at) if p.created_at else None,
         "updated_at": str(p.updated_at) if p.updated_at else None,
     }
     return d
 
 
-def _update_dict(u: PartnerUpdate) -> dict:
+def _update_dict(u: PartnerUpdate, user_name: str | None = None) -> dict:
     return {
         "id": u.id,
         "partner_id": u.partner_id,
         "user_id": u.user_id,
+        "user_name": user_name,
         "content": u.content,
         "update_type": u.update_type,
         "contact_date": str(u.contact_date) if u.contact_date else None,
@@ -349,6 +374,12 @@ async def list_partners(
     status: Optional[str] = None,
     stage: Optional[str] = None,
     organization_id: Optional[str] = None,
+    owner_id: Optional[str] = None,
+    owner_me: Optional[bool] = None,
+    overdue: Optional[bool] = None,
+    days_inactive: Optional[int] = None,
+    sort_by: Optional[str] = None,
+    sort_dir: str = "desc",
     limit: int = 200,
     offset: int = 0,
     db: AsyncSession = Depends(get_db),
@@ -357,6 +388,8 @@ async def list_partners(
     """List and search partners with next_contact_date included."""
     if not has_module_permission(current_user, "can_view_partners"):
         raise HTTPException(status_code=403, detail="No access to partners.")
+
+    now = datetime.now(timezone.utc)
 
     # Subquery for latest next_contact_date per partner
     ncd_subq = (
@@ -380,6 +413,24 @@ async def list_partners(
         stmt = stmt.where(Partner.relationship_stage == stage)
     if organization_id:
         stmt = stmt.where(Partner.organization_id == organization_id)
+    if owner_id:
+        stmt = stmt.where(Partner.owner_id == owner_id)
+    if owner_me:
+        stmt = stmt.where(Partner.owner_id == current_user.id)
+    if overdue:
+        stmt = stmt.where(ncd_subq.c.next_contact_date < now)
+    if days_inactive:
+        cutoff = now - timedelta(days=days_inactive)
+        # Subquery: last interaction date
+        last_active_subq = (
+            select(PartnerUpdate.partner_id, func.max(PartnerUpdate.created_at).label("last_active"))
+            .group_by(PartnerUpdate.partner_id)
+            .subquery()
+        )
+        stmt = stmt.outerjoin(last_active_subq, Partner.id == last_active_subq.c.partner_id)
+        stmt = stmt.where(
+            or_(last_active_subq.c.last_active.is_(None), last_active_subq.c.last_active < cutoff)
+        )
     if q:
         like = f"%{q}%"
         stmt = stmt.where(
@@ -396,9 +447,33 @@ async def list_partners(
     if project_type:
         stmt = stmt.where(Partner.project_types.contains([project_type]))
 
-    stmt = stmt.order_by(desc(Partner.updated_at)).offset(offset).limit(limit)
+    # Sorting
+    sort_col = {
+        "name": Partner.name,
+        "organization": Partner.organization,
+        "stage": Partner.relationship_stage,
+        "last_contact": Partner.updated_at,
+        "next_contact": ncd_subq.c.next_contact_date,
+        "created": Partner.created_at,
+    }.get(sort_by or "last_contact", Partner.updated_at)
+
+    if sort_dir == "asc":
+        stmt = stmt.order_by(sort_col.asc().nullslast())
+    else:
+        stmt = stmt.order_by(sort_col.desc().nullslast())
+
+    stmt = stmt.offset(offset).limit(limit)
     result = await db.execute(stmt)
-    return [_partner_summary(p, next_dt) for p, next_dt in result.all()]
+    rows = result.all()
+
+    # Resolve owner names in bulk
+    owner_ids = list({p.owner_id for p, _ in rows if p.owner_id})
+    owner_name_map: dict[str, str] = {}
+    if owner_ids:
+        users = (await db.execute(select(User).where(User.id.in_(owner_ids)))).scalars().all()
+        owner_name_map = {u.id: u.name for u in users}
+
+    return [_partner_summary(p, ncd, owner_name_map.get(p.owner_id or "")) for p, ncd in rows]
 
 
 @router.post("/", status_code=201)
@@ -465,15 +540,56 @@ async def get_partner(
         if org:
             org_info = {"id": org.id, "name": org.name, "org_type": org.org_type, "country": org.country, "city": org.city}
 
+    # Resolve user names for updates in one query
+    user_ids = list({u.user_id for u in updates if u.user_id})
+    user_name_map: dict[str, str] = {}
+    if user_ids:
+        users = (await db.execute(select(User).where(User.id.in_(user_ids)))).scalars().all()
+        user_name_map = {u.id: u.name for u in users}
+
+    # Resolve owner name
+    owner_name: str | None = None
+    if partner.owner_id:
+        owner = (await db.execute(select(User).where(User.id == partner.owner_id))).scalar_one_or_none()
+        if owner:
+            owner_name = owner.name
+
+    # Resolve grant/opportunity titles for links
+    from app.models.active_grant import ActiveGrant
+    from app.models.opportunity import Opportunity
+
+    grant_ids = [lnk.entity_id for lnk in links if lnk.entity_type == "grant"]
+    opp_ids = [lnk.entity_id for lnk in links if lnk.entity_type == "opportunity"]
+    entity_titles: dict[str, str] = {}
+    if grant_ids:
+        grant_rows = (await db.execute(select(ActiveGrant.id, ActiveGrant.title).where(ActiveGrant.id.in_(grant_ids)))).all()
+        entity_titles.update({r.id: r.title for r in grant_rows})
+    if opp_ids:
+        opp_rows = (await db.execute(select(Opportunity.id, Opportunity.title).where(Opportunity.id.in_(opp_ids)))).all()
+        entity_titles.update({r.id: r.title for r in opp_rows})
+
+    def _link_dict_with_title(lnk: PartnerGrantLink) -> dict:
+        d = _link_dict(lnk)
+        d["entity_title"] = entity_titles.get(lnk.entity_id)
+        return d
+
+    # Task count
+    from app.models.partner_task import PartnerTask
+    task_count = (await db.execute(
+        select(func.count(PartnerTask.id))
+        .where(PartnerTask.partner_id == partner_id, PartnerTask.status.in_(["open", "in_progress"]))
+    )).scalar() or 0
+
     latest_next_contact = max(
         (u.next_contact_date for u in updates if u.next_contact_date),
         default=None,
     )
 
     return {
-        **_partner_full(partner),
-        "updates": [_update_dict(u) for u in updates],
-        "grant_links": [_link_dict(lnk) for lnk in links],
+        **_partner_full(partner, owner_name=owner_name),
+        "task_count": task_count,
+        "updates": [_update_dict(u, user_name_map.get(u.user_id or "")) for u in updates],
+        "grant_links": [_link_dict_with_title(lnk) for lnk in links],
         "meetings": [_meeting_summary(m) for m in meetings],
         "documents": [_document_summary(d) for d in documents],
         "org_info": org_info,
@@ -739,13 +855,19 @@ async def list_partner_updates(
     current_user: User = Depends(get_current_user),
 ):
     await _get_partner_or_404(partner_id, db)
-    q = (
+    updates = (await db.execute(
         select(PartnerUpdate)
         .where(PartnerUpdate.partner_id == partner_id)
         .order_by(desc(PartnerUpdate.created_at))
-    )
-    updates = (await db.execute(q)).scalars().all()
-    return [_update_dict(u) for u in updates]
+    )).scalars().all()
+
+    user_ids = list({u.user_id for u in updates if u.user_id})
+    user_name_map: dict[str, str] = {}
+    if user_ids:
+        users = (await db.execute(select(User).where(User.id.in_(user_ids)))).scalars().all()
+        user_name_map = {u.id: u.name for u in users}
+
+    return [_update_dict(u, user_name_map.get(u.user_id or "")) for u in updates]
 
 
 @router.post("/{partner_id}/updates", status_code=201)
@@ -857,3 +979,362 @@ async def delete_partner_link(
         raise HTTPException(404, "Link not found")
     await db.delete(link)
     await db.commit()
+
+
+# ── Entity search (for grant linking) ─────────────────────────────────────────
+
+@router.get("/entity-search")
+async def entity_search(
+    q: str,
+    limit: int = 20,
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    """Search grants and opportunities by title for the entity link picker."""
+    from app.models.active_grant import ActiveGrant
+    from app.models.opportunity import Opportunity
+
+    like = f"%{q}%"
+    results = []
+
+    # Search active grants
+    grant_rows = (await db.execute(
+        select(ActiveGrant)
+        .where(or_(ActiveGrant.title.ilike(like), ActiveGrant.funder_name.ilike(like)))
+        .order_by(desc(ActiveGrant.updated_at))
+        .limit(limit // 2 + 5)
+    )).scalars().all()
+    for g in grant_rows:
+        results.append({
+            "id": g.id,
+            "type": "grant",
+            "title": g.title,
+            "funder": getattr(g, "funder_name", None),
+            "status": g.status,
+            "deadline": None,
+        })
+
+    # Search opportunities
+    opp_rows = (await db.execute(
+        select(Opportunity)
+        .where(or_(Opportunity.title.ilike(like), Opportunity.funder.ilike(like)))
+        .order_by(desc(Opportunity.updated_at))
+        .limit(limit // 2 + 5)
+    )).scalars().all()
+    for o in opp_rows:
+        results.append({
+            "id": o.id,
+            "type": "opportunity",
+            "title": o.title,
+            "funder": getattr(o, "funder", None),
+            "status": getattr(o, "status", None),
+            "deadline": str(o.deadline) if getattr(o, "deadline", None) else None,
+        })
+
+    return results[:limit]
+
+
+# ── CSV export ─────────────────────────────────────────────────────────────────
+
+@router.get("/export")
+async def export_partners(
+    format: str = "csv",
+    status: Optional[str] = None,
+    stage: Optional[str] = None,
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    """Export partner list as CSV."""
+    stmt = select(Partner)
+    if status:
+        stmt = stmt.where(Partner.status == status)
+    if stage:
+        stmt = stmt.where(Partner.relationship_stage == stage)
+    stmt = stmt.order_by(Partner.name)
+    partners = (await db.execute(stmt)).scalars().all()
+
+    output = io.StringIO()
+    writer = csv.writer(output)
+    writer.writerow([
+        "Name", "Email", "Phone", "Organization", "Title", "Department",
+        "Country", "City", "Stage", "Status", "Tags", "Project Types",
+        "H-Index", "ORCID", "LinkedIn", "Website", "Owner ID", "Created At",
+    ])
+    for p in partners:
+        writer.writerow([
+            p.name, p.email or "", p.phone or "", p.organization or "",
+            p.title or "", p.department or "", p.country or "", p.city or "",
+            p.relationship_stage, p.status,
+            "|".join(p.tags or []), "|".join(p.project_types or []),
+            p.h_index or "", p.orcid or "", p.linkedin_url or "", p.website or "",
+            p.owner_id or "",
+            str(p.created_at) if p.created_at else "",
+        ])
+
+    output.seek(0)
+    return StreamingResponse(
+        iter([output.getvalue()]),
+        media_type="text/csv",
+        headers={"Content-Disposition": "attachment; filename=partners.csv"},
+    )
+
+
+# ── Bulk operations ────────────────────────────────────────────────────────────
+
+@router.post("/bulk-update")
+async def bulk_update_partners(
+    data: BulkUpdateSchema,
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    """Bulk update stage / owner / status for a list of partner IDs."""
+    if not data.ids:
+        return {"updated": 0}
+    partners = (await db.execute(select(Partner).where(Partner.id.in_(data.ids)))).scalars().all()
+    fields = data.model_dump(exclude={"ids"}, exclude_none=True)
+    for p in partners:
+        for k, v in fields.items():
+            setattr(p, k, v)
+    await db.commit()
+    return {"updated": len(partners)}
+
+
+@router.post("/bulk-delete")
+async def bulk_delete_partners(
+    data: BulkDeleteSchema,
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    """Bulk delete partners by ID list."""
+    if not data.ids:
+        return {"deleted": 0}
+    partners = (await db.execute(select(Partner).where(Partner.id.in_(data.ids)))).scalars().all()
+    for p in partners:
+        await db.delete(p)
+    await db.commit()
+    return {"deleted": len(partners)}
+
+
+# ── Update edit/delete ─────────────────────────────────────────────────────────
+
+@router.patch("/{partner_id}/updates/{update_id}")
+async def edit_partner_update(
+    partner_id: str,
+    update_id: str,
+    data: dict,
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    upd = (await db.execute(
+        select(PartnerUpdate).where(PartnerUpdate.id == update_id, PartnerUpdate.partner_id == partner_id)
+    )).scalar_one_or_none()
+    if not upd:
+        raise HTTPException(404, "Update not found")
+    if "content" in data:
+        upd.content = data["content"]
+    await db.commit()
+    return _update_dict(upd)
+
+
+@router.delete("/{partner_id}/updates/{update_id}", status_code=204)
+async def delete_partner_update(
+    partner_id: str,
+    update_id: str,
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    upd = (await db.execute(
+        select(PartnerUpdate).where(PartnerUpdate.id == update_id, PartnerUpdate.partner_id == partner_id)
+    )).scalar_one_or_none()
+    if not upd:
+        raise HTTPException(404, "Update not found")
+    await db.delete(upd)
+    await db.commit()
+
+
+# ── Unified activity feed ──────────────────────────────────────────────────────
+
+@router.get("/{partner_id}/activity")
+async def get_partner_activity(
+    partner_id: str,
+    limit: int = 50,
+    offset: int = 0,
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    """Unified activity feed merging updates, meetings, and documents."""
+    await _get_partner_or_404(partner_id, db)
+    from app.models.partner_meeting import PartnerMeeting
+    from app.models.partner_document import PartnerDocument
+
+    updates = (await db.execute(
+        select(PartnerUpdate).where(PartnerUpdate.partner_id == partner_id)
+    )).scalars().all()
+
+    meetings = (await db.execute(
+        select(PartnerMeeting).where(PartnerMeeting.partner_id == partner_id)
+    )).scalars().all()
+
+    documents = (await db.execute(
+        select(PartnerDocument).where(PartnerDocument.partner_id == partner_id)
+    )).scalars().all()
+
+    # Resolve user names
+    user_ids = list({u.user_id for u in updates if u.user_id})
+    user_name_map: dict[str, str] = {}
+    if user_ids:
+        users = (await db.execute(select(User).where(User.id.in_(user_ids)))).scalars().all()
+        user_name_map = {u.id: u.name for u in users}
+
+    activity: list[dict] = []
+    for u in updates:
+        activity.append({
+            "activity_type": "update",
+            "id": u.id,
+            "type": u.update_type,
+            "content": u.content,
+            "user_id": u.user_id,
+            "user_name": user_name_map.get(u.user_id or ""),
+            "date": (u.contact_date or u.created_at).isoformat() if (u.contact_date or u.created_at) else None,
+            "next_contact_date": str(u.next_contact_date) if u.next_contact_date else None,
+        })
+
+    for m in meetings:
+        activity.append({
+            "activity_type": "meeting",
+            "id": m.id,
+            "title": m.title,
+            "meeting_type": m.meeting_type,
+            "scheduled_at": str(m.scheduled_at) if m.scheduled_at else None,
+            "completed_at": str(m.completed_at) if m.completed_at else None,
+            "date": (m.scheduled_at or m.created_at).isoformat() if (m.scheduled_at or m.created_at) else None,
+        })
+
+    for d in documents:
+        activity.append({
+            "activity_type": "document",
+            "id": d.id,
+            "document_type": d.document_type,
+            "filename": d.filename,
+            "date": d.created_at.isoformat() if d.created_at else None,
+        })
+
+    # Sort by date descending
+    activity.sort(key=lambda x: x.get("date") or "", reverse=True)
+    return activity[offset:offset + limit]
+
+
+# ── Duplicate detection ────────────────────────────────────────────────────────
+
+@router.get("/{partner_id}/possible-duplicates")
+async def find_possible_duplicates(
+    partner_id: str,
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    """Find partners that may be duplicates based on email or name+org similarity."""
+    partner = await _get_partner_or_404(partner_id, db)
+    candidates = []
+
+    # Exact email match (excluding self)
+    if partner.email:
+        email_matches = (await db.execute(
+            select(Partner)
+            .where(Partner.email == partner.email, Partner.id != partner_id)
+        )).scalars().all()
+        for m in email_matches:
+            candidates.append({**_partner_summary(m), "match_reason": "same_email", "confidence": 0.95})
+
+    # Fuzzy name+org match using DB ilike
+    if partner.name:
+        name_parts = partner.name.split()
+        if len(name_parts) >= 2:
+            first = name_parts[0]
+            last = name_parts[-1]
+            name_matches = (await db.execute(
+                select(Partner)
+                .where(
+                    Partner.id != partner_id,
+                    Partner.name.ilike(f"%{first}%"),
+                    Partner.name.ilike(f"%{last}%"),
+                )
+                .limit(5)
+            )).scalars().all()
+            for m in name_matches:
+                if not any(c["id"] == m.id for c in candidates):
+                    same_org = bool(
+                        partner.organization and m.organization and
+                        partner.organization.lower()[:15] in m.organization.lower()
+                    )
+                    candidates.append({
+                        **_partner_summary(m),
+                        "match_reason": "similar_name_and_org" if same_org else "similar_name",
+                        "confidence": 0.75 if same_org else 0.55,
+                    })
+
+    return candidates[:10]
+
+
+@router.post("/{partner_id}/merge")
+async def merge_partners(
+    partner_id: str,
+    data: dict,
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    """Merge another partner into this one, keeping chosen fields."""
+    other_id = data.get("other_id")
+    keep_fields: dict[str, str] = data.get("keep_fields", {})
+
+    if not other_id:
+        raise HTTPException(400, "other_id required")
+
+    primary = await _get_partner_or_404(partner_id, db)
+    other = await _get_partner_or_404(other_id, db)
+
+    # Apply field choices
+    mergeable = ["name", "email", "phone", "organization", "title", "department", "country", "city",
+                 "linkedin_url", "website", "orcid", "google_scholar_id", "h_index", "notes"]
+    for field in mergeable:
+        choice = keep_fields.get(field)
+        if choice == "other":
+            setattr(primary, field, getattr(other, field))
+        elif choice == "primary":
+            pass  # keep as-is
+        else:
+            # Auto-merge: keep non-null value
+            if not getattr(primary, field) and getattr(other, field):
+                setattr(primary, field, getattr(other, field))
+
+    # Merge tags
+    primary.tags = list(set((primary.tags or []) + (other.tags or [])))
+    primary.project_types = list(set((primary.project_types or []) + (other.project_types or [])))
+
+    # Re-parent the other partner's sub-records to primary
+    await db.execute(
+        PartnerUpdate.__table__.update()
+        .where(PartnerUpdate.partner_id == other_id)
+        .values(partner_id=partner_id)
+    )
+    await db.execute(
+        PartnerGrantLink.__table__.update()
+        .where(PartnerGrantLink.partner_id == other_id)
+        .values(partner_id=partner_id)
+    )
+    from app.models.partner_meeting import PartnerMeeting
+    from app.models.partner_document import PartnerDocument
+    await db.execute(
+        PartnerMeeting.__table__.update()
+        .where(PartnerMeeting.partner_id == other_id)
+        .values(partner_id=partner_id)
+    )
+    await db.execute(
+        PartnerDocument.__table__.update()
+        .where(PartnerDocument.partner_id == other_id)
+        .values(partner_id=partner_id)
+    )
+
+    # Delete the duplicate
+    await db.delete(other)
+    await db.commit()
+    return {"merged_into": partner_id, "deleted": other_id}

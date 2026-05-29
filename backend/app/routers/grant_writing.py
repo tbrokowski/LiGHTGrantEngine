@@ -146,6 +146,7 @@ async def writing_status(
         "writing_phase": grant.writing_phase or "idea",
         "grant_idea": grant.grant_idea,
         "call_analysis": grant.call_analysis or {},
+        "call_intelligence": grant.call_intelligence or {},
         "call_requirements": grant.call_requirements,
         "proposal_skeleton": skeleton,
         "style_profile": grant.style_profile or {},

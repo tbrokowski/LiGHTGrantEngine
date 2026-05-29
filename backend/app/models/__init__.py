@@ -20,6 +20,7 @@ from .partner_organization import PartnerOrganization
 from .partner_meeting import PartnerMeeting
 from .partner_document import PartnerDocument
 from .partner_reminder import PartnerReminder
+from .partner_task import PartnerTask
 from .milestone import Milestone
 from .gantt_item import GanttItem
 from .workspace_section import WorkspaceSection
@@ -45,7 +46,7 @@ __all__ = [
     "ArchiveCluster", "ArchiveEdge",
     "ReusableLanguageBlock", "Notification", "AIRun", "Comment", "FunderProfile",
     "Partner", "PartnerUpdate", "PartnerGrantLink",
-    "PartnerOrganization", "PartnerMeeting", "PartnerDocument", "PartnerReminder",
+    "PartnerOrganization", "PartnerMeeting", "PartnerDocument", "PartnerReminder", "PartnerTask",
     "Milestone", "GanttItem", "WorkspaceSection", "ChecklistItem",
     "WorkspaceFile", "WorkspacePartner", "PartnerMaterial", "BudgetTracker",
     "GrantActivityLog", "GrantWritingConversation", "GrantCitation",

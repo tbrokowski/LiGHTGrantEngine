@@ -43,7 +43,8 @@ celery_app.conf.update(
         "app.workers.grant_writing_tasks.analyze_grant_call":    {"queue": "call_analysis"},
         "app.workers.grant_writing_tasks.generate_skeleton_task": {"queue": "call_analysis"},
         "app.workers.grant_writing_tasks.generate_draft_task":        {"queue": "call_analysis"},
-        "app.workers.grant_writing_tasks.summarize_conversation_task": {"queue": "summaries"},
+        "app.workers.grant_writing_tasks.summarize_conversation_task":      {"queue": "summaries"},
+        "app.workers.grant_writing_tasks.synthesize_call_intelligence_task": {"queue": "summaries"},
         "app.workers.enrichment_tasks.generate_ai_summary":            {"queue": "summaries"},
     },
 )

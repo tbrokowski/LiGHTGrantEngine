@@ -118,6 +118,8 @@ class ActiveGrant(Base):
     draft_error: Mapped[str | None] = mapped_column(Text, nullable=True)
     call_strategy: Mapped[dict | None] = mapped_column(JSON, nullable=True)
     aligned_concept: Mapped[dict | None] = mapped_column(JSON, nullable=True)
+    # Meta-synthesizer output: section blueprint + per-section writing guide + gap questions
+    call_intelligence: Mapped[dict | None] = mapped_column(JSON, nullable=True)
     style_profile: Mapped[dict] = mapped_column(JSON, default=dict)
     writing_phase: Mapped[str] = mapped_column(String(30), default="idea")
     last_review: Mapped[dict] = mapped_column(JSON, default=dict)

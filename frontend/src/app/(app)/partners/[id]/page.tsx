@@ -2,6 +2,7 @@
 import { useEffect, useState, useCallback } from 'react';
 import { useParams } from 'next/navigation';
 import Link from 'next/link';
+import { Plus, ExternalLink, AlertTriangle, GitMerge } from 'lucide-react';
 import { partners as partnersApi } from '@/lib/api';
 import PartnerHero from '@/components/crm/PartnerHero';
 import PartnerTimeline from '@/components/crm/PartnerTimeline';
@@ -9,7 +10,11 @@ import PartnerMeetingCard from '@/components/crm/PartnerMeetingCard';
 import PartnerMeetingScheduler from '@/components/crm/PartnerMeetingScheduler';
 import PartnerDocuments from '@/components/crm/PartnerDocuments';
 import PartnerAIInsights from '@/components/crm/PartnerAIInsights';
-import PartnerForm, { PartnerFormData } from '@/components/crm/PartnerForm';
+import TaskPanel from '@/components/crm/TaskPanel';
+import EntitySearchModal from '@/components/crm/EntitySearchModal';
+import ConfirmModal from '@/components/ui/ConfirmModal';
+import { SkeletonDetailPage } from '@/components/ui/SkeletonCard';
+import InlineField from '@/components/crm/InlineField';
 
 interface PartnerDetail {
   id: string;
@@ -36,10 +41,13 @@ interface PartnerDetail {
   enrichment_status: string;
   last_enriched_at?: string;
   org_info?: { id: string; name: string; org_type: string } | null;
+  owner_id?: string | null;
+  owner_name?: string | null;
+  task_count?: number;
   updates: ContactUpdate[];
   grant_links: GrantLink[];
   meetings: Meeting[];
-  documents: Document[];
+  documents: PartnerDocument[];
   next_contact_date?: string;
   created_at?: string;
 }
@@ -51,12 +59,14 @@ interface ContactUpdate {
   contact_date?: string;
   next_contact_date?: string;
   created_at?: string;
+  user_name?: string;
 }
 
 interface GrantLink {
   id: string;
   entity_type: string;
   entity_id: string;
+  entity_title?: string;
   relationship: string;
   notes?: string;
   created_at?: string;
@@ -78,7 +88,7 @@ interface Meeting {
   completed_at?: string;
 }
 
-interface Document {
+interface PartnerDocument {
   id: string;
   document_type: string;
   filename?: string;
@@ -107,14 +117,21 @@ export default function PartnerDetailPage() {
   const [activeTab, setActiveTab] = useState<ActiveTab>('timeline');
   const [showMeetingScheduler, setShowMeetingScheduler] = useState(false);
   const [showLinkForm, setShowLinkForm] = useState(false);
+  const [showEntitySearch, setShowEntitySearch] = useState(false);
   const [linkEntityType, setLinkEntityType] = useState('opportunity');
   const [linkEntityId, setLinkEntityId] = useState('');
+  const [linkEntityTitle, setLinkEntityTitle] = useState('');
   const [linkRelationship, setLinkRelationship] = useState('collaborator');
   const [linkNotes, setLinkNotes] = useState('');
   const [linkSaving, setLinkSaving] = useState(false);
   const [notesValue, setNotesValue] = useState('');
   const [notesSaving, setNotesSaving] = useState(false);
   const [notesDirty, setNotesDirty] = useState(false);
+  const [deleteLinkId, setDeleteLinkId] = useState<string | null>(null);
+  const [taskCount, setTaskCount] = useState(0);
+  const [duplicates, setDuplicates] = useState<PartnerDetail[]>([]);
+  const [showMergeModal, setShowMergeModal] = useState(false);
+  const [mergeTargetId, setMergeTargetId] = useState<string | null>(null);
 
   const fetchPartner = useCallback(async () => {
     try {
@@ -122,10 +139,19 @@ export default function PartnerDetailPage() {
       setPartner(res.data);
       setNotesValue(res.data.notes ?? '');
       setNotesDirty(false);
+      setTaskCount(res.data.task_count ?? 0);
     } finally { setLoading(false); }
   }, [id]);
 
   useEffect(() => { if (id) fetchPartner(); }, [id, fetchPartner]);
+
+  // Check for duplicates after load
+  useEffect(() => {
+    if (!partner?.id) return;
+    partnersApi.possibleDuplicates(partner.id)
+      .then(r => { if (r.data?.length > 0) setDuplicates(r.data); })
+      .catch(() => {});
+  }, [partner?.id]);
 
   async function handleStageChange(stage: string) {
     if (!partner) return;
@@ -133,10 +159,15 @@ export default function PartnerDetailPage() {
     setPartner(p => p ? { ...p, relationship_stage: stage } : p);
   }
 
-  async function handleEditSave(data: PartnerFormData) {
-    await partnersApi.update(id, data as unknown as Record<string, unknown>);
-    setActiveTab('timeline');
-    fetchPartner();
+  async function handleOwnerChange(ownerId: string | null, ownerName: string | null) {
+    if (!partner) return;
+    await partnersApi.update(id, { owner_id: ownerId });
+    setPartner(p => p ? { ...p, owner_id: ownerId, owner_name: ownerName } : p);
+  }
+
+  async function handleInlineSave(field: string, value: string) {
+    await partnersApi.update(id, { [field]: value || null });
+    setPartner(p => p ? { ...p, [field]: value || undefined } : p);
   }
 
   async function handleSaveNotes() {
@@ -158,19 +189,26 @@ export default function PartnerDetailPage() {
         relationship: linkRelationship,
         notes: linkNotes || null,
       });
-      setLinkEntityId(''); setLinkNotes('');
+      setLinkEntityId(''); setLinkEntityTitle(''); setLinkNotes('');
       setShowLinkForm(false);
       fetchPartner();
     } finally { setLinkSaving(false); }
   }
 
   async function handleRemoveLink(linkId: string) {
-    if (!confirm('Remove this link?')) return;
     await partnersApi.deleteLink(id, linkId);
+    fetchPartner();
+    setDeleteLinkId(null);
+  }
+
+  async function handleMerge(otherId: string) {
+    await partnersApi.mergePartners(id, otherId, {});
+    setShowMergeModal(false);
+    setDuplicates([]);
     fetchPartner();
   }
 
-  if (loading) return <div className="flex justify-center py-24 text-sm text-gray-400">Loading…</div>;
+  if (loading) return <SkeletonDetailPage />;
   if (!partner) {
     return (
       <div className="px-8 py-16 text-center text-gray-500 text-sm">
@@ -201,17 +239,35 @@ export default function PartnerDetailPage() {
         <span className="text-gray-600">{partner.name}</span>
       </div>
 
+      {/* Duplicate warning banner */}
+      {duplicates.length > 0 && (
+        <div className="mb-4 bg-amber-50 border border-amber-200 rounded-xl px-4 py-3 flex items-center justify-between gap-3">
+          <div className="flex items-center gap-2 text-sm text-amber-800">
+            <AlertTriangle className="w-4 h-4 shrink-0" />
+            <span>{duplicates.length} possible duplicate record{duplicates.length > 1 ? 's' : ''} found.</span>
+          </div>
+          <button
+            onClick={() => { setMergeTargetId(duplicates[0].id); setShowMergeModal(true); }}
+            className="flex items-center gap-1.5 text-xs px-3 py-1.5 bg-amber-600 text-white rounded-lg hover:bg-amber-700"
+          >
+            <GitMerge className="w-3 h-3" />Review & Merge
+          </button>
+        </div>
+      )}
+
       <div className="grid grid-cols-1 xl:grid-cols-[1fr_340px] gap-5">
         {/* Left: Hero + Tabs */}
         <div className="space-y-4">
           <PartnerHero
-            partner={partner}
+            partner={{ ...partner, task_count: taskCount }}
             onEnrich={fetchPartner}
             onLogInteraction={() => setActiveTab('timeline')}
             onScheduleMeeting={() => setShowMeetingScheduler(true)}
             onDraftEmail={() => setActiveTab('insights')}
             onAddToGrant={() => { setActiveTab('links'); setShowLinkForm(true); }}
             onStageChange={handleStageChange}
+            onOwnerChange={handleOwnerChange}
+            onAddTask={() => {/* TaskPanel handles this inline */}}
           />
 
           {/* Tab bar */}
@@ -243,8 +299,8 @@ export default function PartnerDetailPage() {
                   <div className="flex items-center justify-between mb-4">
                     <h2 className="text-sm font-semibold text-gray-900">Meetings</h2>
                     <button onClick={() => setShowMeetingScheduler(true)}
-                      className="text-sm text-blue-600 border border-blue-200 px-3 py-1.5 rounded-lg hover:bg-blue-50">
-                      + Schedule
+                      className="flex items-center gap-1.5 text-sm text-blue-600 border border-blue-200 px-3 py-1.5 rounded-lg hover:bg-blue-50">
+                      <Plus className="w-3.5 h-3.5" />Schedule
                     </button>
                   </div>
 
@@ -283,7 +339,6 @@ export default function PartnerDetailPage() {
 
               {activeTab === 'research' && (
                 <div>
-                  {/* ORCID / Scholar IDs */}
                   {(partner.orcid || partner.google_scholar_id) && (
                     <div className="flex flex-wrap gap-3 mb-4 text-xs">
                       {partner.orcid && (
@@ -312,23 +367,42 @@ export default function PartnerDetailPage() {
                 <div>
                   <div className="flex items-center justify-between mb-4">
                     <h2 className="text-sm font-semibold text-gray-900">Linked grants and opportunities</h2>
-                    <button onClick={() => setShowLinkForm(!showLinkForm)}
-                      className="text-sm text-blue-600 hover:text-blue-800 border border-blue-200 px-3 py-1.5 rounded-lg hover:bg-blue-50">
-                      {showLinkForm ? 'Cancel' : 'Add link'}
+                    <button
+                      onClick={() => { setShowEntitySearch(true); setShowLinkForm(true); }}
+                      className="flex items-center gap-1.5 text-sm text-blue-600 hover:text-blue-800 border border-blue-200 px-3 py-1.5 rounded-lg hover:bg-blue-50"
+                    >
+                      <Plus className="w-3.5 h-3.5" />Add link
                     </button>
                   </div>
 
-                  {showLinkForm && (
+                  {showLinkForm && !showEntitySearch && (
                     <form onSubmit={handleLinkSubmit} className="mb-4 border border-gray-200 rounded-lg p-4 bg-gray-50 space-y-3">
-                      <div className="grid grid-cols-2 gap-3">
-                        <div>
-                          <label className="block text-xs font-medium text-gray-600 mb-1">Type</label>
-                          <select value={linkEntityType} onChange={e => setLinkEntityType(e.target.value)}
-                            className="w-full border border-gray-300 rounded-md px-2.5 py-1.5 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500">
-                            <option value="opportunity">Opportunity</option>
-                            <option value="grant">Active Grant</option>
-                          </select>
+                      {/* Selected entity display */}
+                      {linkEntityId ? (
+                        <div className="flex items-center justify-between bg-blue-50 border border-blue-200 rounded-lg px-3 py-2">
+                          <div>
+                            <span className="text-xs font-medium text-blue-700 uppercase">{linkEntityType}</span>
+                            <p className="text-sm font-medium text-gray-800">{linkEntityTitle || linkEntityId}</p>
+                          </div>
+                          <button
+                            type="button"
+                            onClick={() => setShowEntitySearch(true)}
+                            className="text-xs text-blue-600 hover:underline"
+                          >
+                            Change
+                          </button>
                         </div>
+                      ) : (
+                        <button
+                          type="button"
+                          onClick={() => setShowEntitySearch(true)}
+                          className="w-full border-2 border-dashed border-gray-300 rounded-lg p-3 text-sm text-gray-400 hover:border-blue-400 hover:text-blue-600 transition-colors text-left"
+                        >
+                          Search for a grant or opportunity to link…
+                        </button>
+                      )}
+
+                      <div className="grid grid-cols-2 gap-3">
                         <div>
                           <label className="block text-xs font-medium text-gray-600 mb-1">Relationship</label>
                           <select value={linkRelationship} onChange={e => setLinkRelationship(e.target.value)}
@@ -336,23 +410,17 @@ export default function PartnerDetailPage() {
                             {RELATIONSHIP_OPTIONS.map(r => <option key={r} value={r}>{r.replace(/_/g, ' ')}</option>)}
                           </select>
                         </div>
-                      </div>
-                      <div>
-                        <label className="block text-xs font-medium text-gray-600 mb-1">Grant / Opportunity ID *</label>
-                        <input value={linkEntityId} onChange={e => setLinkEntityId(e.target.value)} required
-                          placeholder="Paste the ID from the URL"
-                          className="w-full border border-gray-300 rounded-md px-2.5 py-1.5 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500" />
-                      </div>
-                      <div>
-                        <label className="block text-xs font-medium text-gray-600 mb-1">Notes (optional)</label>
-                        <input value={linkNotes} onChange={e => setLinkNotes(e.target.value)}
-                          placeholder="Context or role details"
-                          className="w-full border border-gray-300 rounded-md px-2.5 py-1.5 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500" />
+                        <div>
+                          <label className="block text-xs font-medium text-gray-600 mb-1">Notes (optional)</label>
+                          <input value={linkNotes} onChange={e => setLinkNotes(e.target.value)}
+                            placeholder="Context or role details"
+                            className="w-full border border-gray-300 rounded-md px-2.5 py-1.5 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500" />
+                        </div>
                       </div>
                       <div className="flex gap-2 justify-end">
-                        <button type="button" onClick={() => setShowLinkForm(false)}
+                        <button type="button" onClick={() => { setShowLinkForm(false); setLinkEntityId(''); setLinkEntityTitle(''); }}
                           className="text-sm px-3 py-1.5 border border-gray-200 rounded-md hover:bg-gray-100 text-gray-600">Cancel</button>
-                        <button type="submit" disabled={linkSaving}
+                        <button type="submit" disabled={linkSaving || !linkEntityId}
                           className="text-sm px-4 py-1.5 bg-blue-600 hover:bg-blue-700 text-white rounded-md disabled:opacity-50">
                           {linkSaving ? 'Linking…' : 'Link'}
                         </button>
@@ -365,23 +433,36 @@ export default function PartnerDetailPage() {
                   ) : (
                     <div className="space-y-2">
                       {partner.grant_links.map(lnk => (
-                        <div key={lnk.id} className="border border-gray-100 rounded-lg p-3.5 flex items-start justify-between gap-3">
-                          <div className="min-w-0">
+                        <div key={lnk.id} className="border border-gray-100 rounded-lg p-3.5 flex items-start justify-between gap-3 group">
+                          <div className="min-w-0 flex-1">
                             <div className="flex items-center gap-2 mb-1">
                               <span className="text-xs text-gray-400 uppercase font-semibold">{lnk.entity_type}</span>
                               <span className="text-xs px-1.5 py-0.5 rounded bg-blue-50 text-blue-700 font-medium">
                                 {lnk.relationship.replace(/_/g, ' ')}
                               </span>
                             </div>
-                            <Link
-                              href={`/${lnk.entity_type === 'grant' ? 'grants' : 'opportunities'}/${lnk.entity_id}`}
-                              className="text-sm text-blue-600 hover:underline font-mono text-xs truncate block"
-                            >
-                              {lnk.entity_id}
-                            </Link>
+                            {lnk.entity_title ? (
+                              <Link
+                                href={`/${lnk.entity_type === 'grant' ? 'grants' : 'opportunities'}/${lnk.entity_id}`}
+                                className="text-sm text-blue-600 hover:underline font-medium leading-tight"
+                              >
+                                {lnk.entity_title}
+                                <ExternalLink className="inline w-3 h-3 ml-1 opacity-60" />
+                              </Link>
+                            ) : (
+                              <Link
+                                href={`/${lnk.entity_type === 'grant' ? 'grants' : 'opportunities'}/${lnk.entity_id}`}
+                                className="text-xs text-gray-500 hover:text-blue-600 font-mono truncate block"
+                              >
+                                {lnk.entity_id}
+                              </Link>
+                            )}
                             {lnk.notes && <div className="text-xs text-gray-500 mt-1">{lnk.notes}</div>}
                           </div>
-                          <button onClick={() => handleRemoveLink(lnk.id)} className="text-gray-300 hover:text-red-500 text-lg leading-none shrink-0">×</button>
+                          <button
+                            onClick={() => setDeleteLinkId(lnk.id)}
+                            className="opacity-0 group-hover:opacity-100 text-gray-300 hover:text-red-500 text-lg leading-none shrink-0 transition-opacity"
+                          >×</button>
                         </div>
                       ))}
                     </div>
@@ -400,31 +481,51 @@ export default function PartnerDetailPage() {
               )}
 
               {activeTab === 'edit' && (
-                <PartnerForm
-                  initial={{
-                    name: partner.name,
-                    email: partner.email ?? '',
-                    phone: partner.phone ?? '',
-                    organization: partner.organization ?? '',
-                    title: partner.title ?? '',
-                    linkedin_url: partner.linkedin_url ?? '',
-                    website: partner.website ?? '',
-                    tags: partner.tags,
-                    project_types: partner.project_types,
-                    status: partner.status,
-                    notes: partner.notes ?? '',
-                  }}
-                  onSubmit={handleEditSave}
-                  onCancel={() => setActiveTab('timeline')}
-                  submitLabel="Save changes"
-                />
+                <div className="space-y-4">
+                  <p className="text-xs text-gray-500">Click any field below to edit inline, or use this form for bulk updates.</p>
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                    {[
+                      { field: 'name', label: 'Name', type: 'text' as const },
+                      { field: 'title', label: 'Title', type: 'text' as const },
+                      { field: 'email', label: 'Email', type: 'email' as const },
+                      { field: 'phone', label: 'Phone', type: 'tel' as const },
+                      { field: 'organization', label: 'Organization', type: 'text' as const },
+                      { field: 'department', label: 'Department', type: 'text' as const },
+                      { field: 'city', label: 'City', type: 'text' as const },
+                      { field: 'country', label: 'Country', type: 'text' as const },
+                      { field: 'linkedin_url', label: 'LinkedIn URL', type: 'url' as const },
+                      { field: 'website', label: 'Website', type: 'url' as const },
+                      { field: 'orcid', label: 'ORCID', type: 'text' as const },
+                      { field: 'google_scholar_id', label: 'Google Scholar ID', type: 'text' as const },
+                    ].map(({ field, label, type }) => (
+                      <div key={field}>
+                        <label className="block text-xs font-medium text-gray-500 mb-1">{label}</label>
+                        <InlineField
+                          value={(partner as unknown as Record<string, unknown>)[field] as string}
+                          onSave={(v) => handleInlineSave(field, v)}
+                          type={type}
+                          placeholder={`Add ${label.toLowerCase()}…`}
+                          inputClass="text-sm"
+                          displayClass="text-sm text-gray-800"
+                        />
+                      </div>
+                    ))}
+                  </div>
+                </div>
               )}
             </div>
           </div>
         </div>
 
-        {/* Right: Notes + Info */}
+        {/* Right: Notes + Tasks + Info */}
         <div className="space-y-4">
+          {/* Tasks panel */}
+          <TaskPanel
+            partnerId={id}
+            onTaskCountChange={setTaskCount}
+            defaultOpen={taskCount > 0}
+          />
+
           {/* Notes */}
           <div className="bg-white border border-gray-200 rounded-xl p-4">
             <h3 className="text-sm font-semibold text-gray-700 mb-2">Notes</h3>
@@ -463,6 +564,10 @@ export default function PartnerDetailPage() {
                 <span className="text-gray-400">Documents</span>
                 <span className="font-medium">{partner.documents.length}</span>
               </div>
+              <div className="flex justify-between">
+                <span className="text-gray-400">Open tasks</span>
+                <span className={`font-medium ${taskCount > 0 ? 'text-orange-600' : ''}`}>{taskCount}</span>
+              </div>
               {partner.next_contact_date && (
                 <div className="flex justify-between">
                   <span className="text-gray-400">Next follow-up</span>
@@ -482,7 +587,12 @@ export default function PartnerDetailPage() {
           {partner.org_info && (
             <div className="bg-white border border-gray-200 rounded-xl p-4">
               <h3 className="text-sm font-semibold text-gray-700 mb-2">Organization</h3>
-              <p className="text-sm font-medium text-gray-800">{partner.org_info.name}</p>
+              <Link
+                href={`/partners/organizations/${partner.org_info.id}`}
+                className="text-sm font-medium text-blue-600 hover:underline"
+              >
+                {partner.org_info.name}
+              </Link>
               <p className="text-xs text-gray-400 capitalize mt-0.5">{partner.org_info.org_type?.replace(/_/g, ' ')}</p>
             </div>
           )}
@@ -495,6 +605,40 @@ export default function PartnerDetailPage() {
           partnerName={partner.name}
           onClose={() => setShowMeetingScheduler(false)}
           onCreated={() => { setShowMeetingScheduler(false); setActiveTab('meetings'); fetchPartner(); }}
+        />
+      )}
+
+      {showEntitySearch && (
+        <EntitySearchModal
+          onSelect={entity => {
+            setLinkEntityType(entity.type);
+            setLinkEntityId(entity.id);
+            setLinkEntityTitle(entity.title);
+            setShowEntitySearch(false);
+          }}
+          onClose={() => setShowEntitySearch(false)}
+        />
+      )}
+
+      {deleteLinkId && (
+        <ConfirmModal
+          title="Remove this link?"
+          message="The grant link will be removed from this partner record."
+          confirmLabel="Remove"
+          destructive
+          onConfirm={() => handleRemoveLink(deleteLinkId)}
+          onCancel={() => setDeleteLinkId(null)}
+        />
+      )}
+
+      {showMergeModal && mergeTargetId && (
+        <ConfirmModal
+          title="Merge duplicate partner?"
+          message={`This will merge the duplicate record into ${partner.name}, keeping all interactions and links. The other record will be deleted.`}
+          confirmLabel="Merge"
+          destructive
+          onConfirm={() => handleMerge(mergeTargetId)}
+          onCancel={() => setShowMergeModal(false)}
         />
       )}
     </div>

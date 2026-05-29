@@ -10,28 +10,33 @@ from app.ai.client import chat_complete
 SYSTEM_PROMPT = """You are a senior grants strategist and proposal writer with deep expertise in drafting
 competitive research proposals across all domains and funders.
 
-Your task is to produce a skeleton draft of a proposal as a single flowing document. The document
-should reflect the applicant's own voice and narrative priorities, not be a rigid mapping of the
-call's section list. Think of it as the starting canvas: real draft prose that the team will shape
-into their proposal, with the call requirements serving as coverage guidance they will verify while
-editing.
+Your task is to produce a STRUCTURED OUTLINE of a proposal — not full prose. Each section should be
+a concise, information-rich outline that the team will expand into full text. The outline must be
+grounded in the applicant's own idea and voice; call requirements guide coverage, not structure.
 
 Document format:
-- Use ## Section Name to introduce each section (Markdown-style heading)
-- Write 2–4 paragraphs of actual skeleton prose per section — not requirements lists or bullet points
-- Separate sections with a blank line before and after the ## heading
-- The full document goes in the raw_text field of the JSON response
+Use ## Section Name for each section heading (Markdown), then produce a structured outline block:
+
+**Purpose:** [One sentence — what this section accomplishes for the reviewer]
+**Key arguments:**
+- [Specific claim grounded in the applicant's idea, using the funder's language where relevant]
+- [Another specific claim or point of differentiation]
+**Evidence / data to include:**
+- [Specific evidence type, metric, or data the evaluation criteria require]
+**Archive reference:** [If archive content was provided for this section type, quote 1-2 directly relevant sentences; otherwise omit]
+**Word count:** [N] words
 
 Guiding principles:
-- Base the content on the applicant's grant idea — use their framing, claims, and approach
-- Let the grant idea and award-winning archive structures drive section organization, not the call's exact section list
-- The call's required sections and evaluation criteria inform THEMATIC COVERAGE across sections, not a 1:1 structural mapping
-- Mirror section structures and word distributions from awarded grants shown in the context
-- When REFERENCE DOCUMENTS are provided, use the actual data, results, project names, and descriptions from them — do not use [TBD] for information that is already present in the reference docs
-- Use [TBD] only for specific data, names, or numbers that are genuinely not available in any provided context
-- Ensure the narrative arc creates a compelling through-line from problem to solution across sections
+- The applicant's idea is the primary source — use their framing, claims, and approach
+- GRANT TYPE CONTEXT (if provided) tells you how this specific call is scored — let it guide emphasis
+- SUGGESTED SECTION BLUEPRINT (if provided) is a starting structure suggestion, not a mandate; adapt based on the idea
+- CALL ANALYSIS tells you what coverage the call requires — treat it as thematic guidance
+- ADVERSARIAL CHALLENGES (if provided) tell you where reviewers will probe — address those in relevant sections
+- GAP QUESTIONS mark areas where the team's plan is unclear — use [TBD: reason] for those spots
+- When REFERENCE DOCUMENTS are provided, use the actual data, results, and descriptions from them — do not use [TBD] for info already in the docs
+- Use [TBD: reason] only for specific figures, names, or details genuinely not yet available
 
-The team will flag priority sections and further edit the document before generating the full draft.
+The team will edit the outline and then generate the full draft.
 
 Respond with valid JSON."""
 
@@ -51,6 +56,7 @@ async def generate_proposal_outline(
     section_constraints: list[dict] | None = None,
     total_word_limit: int | None = None,
     total_page_limit: str | None = None,
+    call_intelligence: dict | None = None,
 ) -> dict:
     structure_str = _format_structure_templates(structure_templates or [])
     similar_str = _format_similar_grants(similar_grants or [])
@@ -62,17 +68,26 @@ async def generate_proposal_outline(
     strategy_section = _format_call_strategy(call_strategy) if call_strategy else ''
     alignment_section = _format_aligned_concept(aligned_concept) if aligned_concept else ''
 
+    # Build call_intelligence guidance section
+    intelligence_section = _format_call_intelligence(call_intelligence) if call_intelligence else ''
+
     # Build section structure block from constraints
     constraints_section = _format_section_constraints(
         section_constraints, total_word_limit, total_page_limit
     )
 
-    user_prompt = f"""Think step by step before producing the skeleton:
+    # Expand CALL ANALYSIS block with full context
+    narrative_brief = call_analysis.get("narrative_brief", "")
+    thematic_areas = call_analysis.get("thematic_areas") or []
+    strategic_objectives = call_analysis.get("strategic_objectives") or []
+
+    user_prompt = f"""Think step by step before producing the skeleton outline:
 1. Identify the grant's core narrative: what problem, what solution, what impact — from the grant idea.
-2. Identify the critical themes and must-demonstrate requirements from the call strategy (if provided).
-3. Use the SECTION STRUCTURE AND LIMITS below as the authoritative section list — write a section for
-   each entry using exactly those section names as ## headings. Respect word limits when drafting.
-4. Draft 2–4 paragraphs of actual skeleton prose per section, grounded in the aligned idea and the funder's priorities.
+2. Use GRANT TYPE CONTEXT (if provided) to understand how this specific call is scored and what wins.
+3. Use SECTION STRUCTURE AND LIMITS as the authoritative section list — write a structured outline for
+   each entry using exactly those section names as ## headings. Respect word limits.
+4. For each section, produce the structured outline format (Purpose / Key arguments / Evidence / Word count).
+5. Address ADVERSARIAL CHALLENGES in the relevant sections.
 Then produce the full JSON response.
 
 ---
@@ -81,18 +96,21 @@ GRANT: {opportunity_title}
 EXTERNAL DEADLINE: {external_deadline or 'Not specified'}
 INTERNAL DEADLINE: {internal_deadline or 'Not specified'}
 
-GRANT IDEA (aligned to funder priorities):
+GRANT IDEA (the team's proposed approach — this is the primary content source):
 {grant_idea or 'Not provided'}
 
-CALL REQUIREMENTS AND STRATEGY:
+CALL REQUIREMENTS:
 {call_requirements_text or 'Not provided — use call_analysis fields below'}
 
-CALL ANALYSIS (coverage guidance):
-Coverage themes from required sections: {call_analysis.get('required_sections', [])}
-Evaluation criteria (key thematic priorities): {call_analysis.get('evaluation_criteria', [])}
+CALL ANALYSIS (coverage guidance — AI-extracted, use as reference):
+Narrative brief: {narrative_brief[:400] if narrative_brief else 'Not available'}
+Thematic areas: {thematic_areas[:6]}
+Strategic objectives: {strategic_objectives[:5]}
+Required sections: {call_analysis.get('required_sections', [])}
+Evaluation criteria: {call_analysis.get('evaluation_criteria', [])}
 Budget constraints: {call_analysis.get('budget_constraints', '')}
 
-{constraints_section}{strategy_section}
+{constraints_section}{intelligence_section}{strategy_section}
 {alignment_section}
 {structure_str}
 
@@ -107,9 +125,14 @@ Produce a JSON object with the following fields:
 
 - raw_text: a single string containing the full skeleton document. Use ## Section Name headings
   to introduce each section (use the exact section names from SECTION STRUCTURE AND LIMITS if
-  provided). Write 2–4 paragraphs of real draft prose per section, grounded in the grant idea.
-  Respect any stated word limits. Use [TBD] for specifics not yet known. Sections are separated
-  by a blank line before and after each ## heading.
+  provided). For each section write the structured outline format:
+    **Purpose:** [one sentence]
+    **Key arguments:**
+    - [specific claim from the idea]
+    **Evidence / data to include:**
+    - [specific evidence needed]
+    **Word count:** [N] words
+  Use [TBD: reason] for specifics not yet available. Sections are separated by a blank line.
 - sections: list of objects, one per section in the skeleton, in order:
     {{"name": str, "word_limit": int|null, "page_limit": str|null, "priority": "high"|"medium"|"low", "order": int}}
   Use the constraints from SECTION STRUCTURE AND LIMITS if provided, otherwise infer from raw_text.
@@ -261,12 +284,57 @@ def _format_similar_grants(grants: list[dict]) -> str:
             lines.append("")
         lines.append("RELEVANT AWARDED GRANTS (content and structure reference from org archive):")
         for g in archive_grants[:6]:
-            lines.append(
-                f"- {g.get('grant_title', '?')}: {g.get('section_type', '?')} section "
-                f"from {g.get('funder', '?')} ({g.get('outcome', '?')})"
-            )
+            title = g.get("grant_title", "?")
+            sec_type = g.get("section_type", "?")
+            funder = g.get("funder", "?")
+            outcome = g.get("outcome", "?")
+            lines.append(f"\n- {title}: {sec_type} section from {funder} ({outcome})")
+            snippet = g.get("text_snippet") or g.get("full_text") or ""
+            if snippet:
+                lines.append(f"  Excerpt: {snippet[:500]}{'...' if len(snippet) > 500 else ''}")
 
     return "\n".join(lines)
+
+
+def _format_call_intelligence(ci: dict) -> str:
+    """Format call_intelligence as guidance context for the architect prompt."""
+    if not ci:
+        return ""
+    lines = []
+
+    if ci.get("grant_type_context"):
+        lines.append(f"GRANT TYPE CONTEXT (what wins for this call):\n{ci['grant_type_context']}")
+
+    blueprint = ci.get("section_blueprint") or []
+    if blueprint:
+        lines.append("\nSUGGESTED SECTION BLUEPRINT (from call meta-analysis — adapt based on the grant idea):")
+        for sec in blueprint[:12]:
+            name = sec.get("name", "")
+            purpose = sec.get("purpose", "")
+            wc = sec.get("suggested_word_count")
+            notes = sec.get("writing_notes", "")
+            wc_str = f" (~{wc} words)" if wc else ""
+            lines.append(f"  {sec.get('order', '?')}. {name}{wc_str}: {purpose}")
+            if notes:
+                lines.append(f"     Note: {notes[:150]}")
+
+    adversarial = ci.get("adversarial_challenges") or {}
+    rejection_risks = adversarial.get("rejection_risks") or []
+    compliance_gaps = adversarial.get("compliance_gaps") or []
+    if rejection_risks or compliance_gaps:
+        lines.append("\nADVERSARIAL CHALLENGES (address these in relevant sections):")
+        for r in rejection_risks[:3]:
+            lines.append(f"  ⚠ Reviewer risk: {r}")
+        for c in compliance_gaps[:3]:
+            lines.append(f"  ✗ Compliance gap: {c}")
+
+    gap_questions = ci.get("gap_questions") or []
+    if gap_questions:
+        lines.append("\nGAP QUESTIONS (use [TBD: reason] for these in the skeleton):")
+        for q in gap_questions[:4]:
+            lines.append(f"  ? {q}")
+
+    return "\n".join(lines) if lines else ""
 
 
 def _format_call_strategy(strategy: dict) -> str:

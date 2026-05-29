@@ -69,6 +69,7 @@ interface GrantDetail {
   google_doc_last_synced?: string | null;
   grant_idea?: string | null;
   call_analysis?: Record<string, unknown>;
+  call_intelligence?: Record<string, unknown> | null;
   proposal_skeleton?: Record<string, unknown>;
   style_profile?: Record<string, unknown>;
   writing_phase?: string;
@@ -377,6 +378,7 @@ function GrantDetailContent() {
               google_doc_last_synced: grant.google_doc_last_synced,
               grant_idea: grant.grant_idea ?? null,
               call_analysis: grant.call_analysis ?? {},
+              call_intelligence: grant.call_intelligence ?? null,
               proposal_skeleton: grant.proposal_skeleton ?? {},
               writing_phase: grant.writing_phase ?? null,
               style_profile: grant.style_profile ?? {},

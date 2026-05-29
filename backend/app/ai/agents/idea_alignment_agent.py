@@ -23,6 +23,7 @@ async def align_idea_to_call(
     narrative_brief: str = "",
     funder: str = "",
     opportunity_title: str = "",
+    section_blueprint: list[dict] | None = None,
 ) -> dict:
     """
     Align the grant idea to the call strategy brief.
@@ -38,6 +39,7 @@ async def align_idea_to_call(
       }
     """
     strategy_str = _format_strategy(call_strategy)
+    blueprint_section = _format_section_blueprint(section_blueprint) if section_blueprint else ""
 
     user_prompt = f"""You are helping align a grant idea with a specific funder's priorities.
 
@@ -51,7 +53,7 @@ CALL NARRATIVE BRIEF:
 {narrative_brief[:1500] if narrative_brief else 'Not provided'}
 
 CALL STRATEGY BRIEF (what a winning proposal must do):
-{strategy_str}
+{strategy_str}{blueprint_section}
 
 Produce an alignment analysis in JSON with these fields:
 
@@ -91,6 +93,19 @@ Return valid JSON only."""
         return json.loads(response)
     except (json.JSONDecodeError, TypeError):
         return {}
+
+
+def _format_section_blueprint(blueprint: list[dict]) -> str:
+    if not blueprint:
+        return ""
+    lines = ["\n\nSUGGESTED SECTION BLUEPRINT (from call meta-analysis — use to orient emphasis_areas):"]
+    for sec in blueprint[:10]:
+        name = sec.get("name", "")
+        purpose = sec.get("purpose", "")
+        wc = sec.get("suggested_word_count")
+        wc_str = f" (~{wc} words)" if wc else ""
+        lines.append(f"  - {name}{wc_str}: {purpose}")
+    return "\n".join(lines)
 
 
 def _format_strategy(strategy: dict) -> str:

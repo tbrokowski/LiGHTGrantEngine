@@ -58,6 +58,7 @@ async def draft_section(
     strategic_guidance: str = "",
     emphasis_direction: str = "",
     concept_bundles: list[dict] | None = None,
+    writing_instructions: str = "",
 ) -> dict:
     prior_str = ""
     if retrieved_sections:
@@ -144,6 +145,11 @@ async def draft_section(
         if compliance_guidance else ""
     )
 
+    writing_instructions_block = (
+        f"\nSECTION WRITING GUIDE (call-specific requirements for this section — treat as guidance):\n{writing_instructions}\n"
+        if writing_instructions else ""
+    )
+
     user_prompt = f"""Expand the skeleton content below into a comprehensive, detailed {section_name} section for a grant proposal.
 Your job is to take the team's draft and make it fuller, stronger, and more compelling — preserve their framing and voice.
 
@@ -174,7 +180,7 @@ EVALUATION CRITERIA (ensure these are addressed somewhere in the expanded sectio
 PRIOR SECTIONS SUMMARY (maintain narrative continuity and avoid repetition):
 {prior_sections_summary[:4000] if prior_sections_summary else 'This may be the first section.'}
 
-{f'ADDITIONAL INSTRUCTIONS: {user_instructions}' if user_instructions else ''}
+{writing_instructions_block}{f'ADDITIONAL INSTRUCTIONS: {user_instructions}' if user_instructions else ''}
 {style_str}
 {prior_str}
 {lang_str}

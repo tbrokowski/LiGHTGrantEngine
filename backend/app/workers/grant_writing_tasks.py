@@ -244,6 +244,17 @@ def analyze_grant_call(
         if user_id:
             _log_ai_run_sync(grant_id, user_id, result)
 
+        # Fire-and-forget meta-synthesis to enrich call_intelligence
+        try:
+            celery_app.send_task(
+                "app.workers.grant_writing_tasks.synthesize_call_intelligence_task",
+                args=[grant_id],
+                queue="summaries",
+            )
+            logger.info("synthesize_call_intelligence_task queued for grant %s", grant_id)
+        except Exception as exc:
+            logger.warning("Failed to queue meta-synthesis for grant %s: %s", grant_id, exc)
+
         logger.info("analyze_grant_call completed for grant %s", grant_id)
         return {"status": "completed", "grant_id": grant_id}
 
@@ -715,4 +726,68 @@ def summarize_conversation_task(self, grant_id: str) -> dict:
 
     except Exception as exc:
         logger.warning("summarize_conversation_task failed for grant %s: %s", grant_id, exc)
+        return {"status": "failed", "error": str(exc)[:500]}
+
+
+# ── Grant meta-synthesis ──────────────────────────────────────────────────────
+
+@celery_app.task(
+    bind=True,
+    name="app.workers.grant_writing_tasks.synthesize_call_intelligence_task",
+    max_retries=1,
+    default_retry_delay=30,
+    soft_time_limit=300,
+    time_limit=360,
+)
+def synthesize_call_intelligence_task(self, grant_id: str) -> dict:
+    """
+    Run the Grant Meta-Synthesizer after call analysis completes.
+    Reads call_analysis + grant_idea + existing_skeleton from the grant,
+    produces call_intelligence and writes it back.
+    Fired fire-and-forget from analyze_grant_call.
+    """
+    logger.info("synthesize_call_intelligence_task started for grant %s", grant_id)
+    try:
+        settings = get_settings()
+        async_url = settings.database_url.replace("postgresql://", "postgresql+asyncpg://", 1)
+
+        async def _run() -> None:
+            from sqlalchemy.ext.asyncio import create_async_engine, AsyncSession
+            from app.models.active_grant import ActiveGrant
+            from app.ai.agents.grant_meta_synthesizer import GrantMetaSynthesizer
+
+            engine = create_async_engine(async_url, pool_pre_ping=True)
+            try:
+                async with AsyncSession(engine, expire_on_commit=False) as db:
+                    grant = await db.get(ActiveGrant, grant_id)
+                    if not grant:
+                        logger.warning("synthesize_call_intelligence: grant %s not found", grant_id)
+                        return
+                    if not grant.call_analysis:
+                        logger.warning("synthesize_call_intelligence: no call_analysis for grant %s", grant_id)
+                        return
+
+                    synthesizer = GrantMetaSynthesizer()
+                    call_intelligence = await synthesizer.synthesize(
+                        call_analysis=grant.call_analysis or {},
+                        grant_idea=grant.grant_idea or "",
+                        existing_skeleton=grant.proposal_skeleton or {},
+                        funder=grant.funder or "",
+                        title=grant.title or "",
+                    )
+                    grant.call_intelligence = call_intelligence
+                    await db.commit()
+                    logger.info(
+                        "synthesize_call_intelligence_task completed for grant %s (call_type=%s)",
+                        grant_id,
+                        call_intelligence.get("call_type_label", "?"),
+                    )
+            finally:
+                await engine.dispose()
+
+        asyncio.run(_run())
+        return {"status": "completed", "grant_id": grant_id}
+
+    except Exception as exc:
+        logger.warning("synthesize_call_intelligence_task failed for grant %s: %s", grant_id, exc)
         return {"status": "failed", "error": str(exc)[:500]}

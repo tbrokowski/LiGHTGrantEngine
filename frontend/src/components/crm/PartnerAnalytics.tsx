@@ -1,6 +1,8 @@
 'use client';
 import { useEffect, useState } from 'react';
+import Link from 'next/link';
 import { BarChart, Bar, XAxis, YAxis, Tooltip, ResponsiveContainer, Cell } from 'recharts';
+import { BarChart2 } from 'lucide-react';
 import { partners as partnersApi } from '@/lib/api';
 
 interface Analytics {
@@ -39,7 +41,12 @@ export default function PartnerAnalytics() {
 
   return (
     <div className="bg-white border border-gray-200 rounded-xl p-4 mb-4">
-      <h3 className="text-sm font-semibold text-gray-700 mb-3">Partner Pipeline</h3>
+      <div className="flex items-center justify-between mb-3">
+        <h3 className="text-sm font-semibold text-gray-700">Partner Pipeline</h3>
+        <Link href="/partners/reports" className="flex items-center gap-1 text-xs text-blue-600 hover:underline">
+          <BarChart2 className="w-3 h-3" />Full Report
+        </Link>
+      </div>
 
       {/* Key metrics */}
       <div className="grid grid-cols-4 gap-2 mb-4">

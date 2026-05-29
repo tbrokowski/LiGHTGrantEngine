@@ -83,6 +83,7 @@ class Partner(Base):
 
     # Ownership
     created_by: Mapped[str | None] = mapped_column(String, ForeignKey("users.id"))
+    owner_id: Mapped[str | None] = mapped_column(String, ForeignKey("users.id"), nullable=True, index=True)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
     updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now(), onupdate=func.now())
 
@@ -92,6 +93,7 @@ class Partner(Base):
     meetings: Mapped[list["PartnerMeeting"]] = orm_relationship("PartnerMeeting", back_populates="partner", cascade="all, delete-orphan")  # type: ignore
     documents: Mapped[list["PartnerDocument"]] = orm_relationship("PartnerDocument", back_populates="partner", cascade="all, delete-orphan")  # type: ignore
     reminders: Mapped[list["PartnerReminder"]] = orm_relationship("PartnerReminder", back_populates="partner", cascade="all, delete-orphan")  # type: ignore
+    tasks: Mapped[list["PartnerTask"]] = orm_relationship("PartnerTask", back_populates="partner", cascade="all, delete-orphan")  # type: ignore
     partner_org: Mapped["PartnerOrganization | None"] = orm_relationship("PartnerOrganization", back_populates="partners", foreign_keys=[organization_id])  # type: ignore
 
 

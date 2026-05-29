@@ -38,6 +38,7 @@ interface GrantDetail {
   google_doc_last_synced?: string | null;
   grant_idea?: string | null;
   call_analysis?: Record<string, unknown>;
+  call_intelligence?: Record<string, unknown> | null;
   proposal_skeleton?: Record<string, unknown>;
   style_profile?: Record<string, unknown>;
   writing_phase?: string;
@@ -63,6 +64,7 @@ export default function GrantEditor({ grant, onGrantUpdate, onHeadingsChange }: 
   // ── Core content state ──────────────────────────────────────────────────────
   const [grantIdea, setGrantIdea] = useState(grant.grant_idea || '');
   const [callAnalysis, setCallAnalysis] = useState<Record<string, unknown>>(grant.call_analysis || {});
+  const [callIntelligence, setCallIntelligence] = useState<Record<string, unknown>>(grant.call_intelligence || {});
   const [skeleton, setSkeleton] = useState<Record<string, unknown>>(grant.proposal_skeleton || {});
   const [documentHtml, setDocumentHtml] = useState(grant.editor_document || '');
   const [callRequirements, setCallRequirements] = useState(grant.call_requirements || '');
@@ -494,6 +496,7 @@ export default function GrantEditor({ grant, onGrantUpdate, onHeadingsChange }: 
     grantTitle: grant.title,
     grantIdea,
     callAnalysis,
+    callIntelligence,
     skeleton,
     documentHtml,
     callRequirements,

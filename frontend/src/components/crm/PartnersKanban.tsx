@@ -1,6 +1,7 @@
 'use client';
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import Link from 'next/link';
+import { AlertTriangle, CalendarDays } from 'lucide-react';
 import { DragDropContext, Droppable, Draggable, DropResult } from '@hello-pangea/dnd';
 import { partners as partnersApi } from '@/lib/api';
 import { InitialsAvatar } from './PartnerHero';
@@ -72,7 +73,7 @@ function PartnerCard({ partner, index }: { partner: Partner; index: number }) {
 
           {partner.next_contact_date && (
             <div className={`text-xs flex items-center gap-1 ${isOverdue ? 'text-red-600' : 'text-gray-400'}`}>
-              {isOverdue ? '⚠ Overdue' : '📅'}{' '}
+              {isOverdue ? <AlertTriangle className="w-3 h-3" /> : <CalendarDays className="w-3 h-3" />}
               {new Date(partner.next_contact_date).toLocaleDateString('en-US', { month: 'short', day: 'numeric' })}
             </div>
           )}
@@ -82,17 +83,24 @@ function PartnerCard({ partner, index }: { partner: Partner; index: number }) {
   );
 }
 
-export default function PartnersKanban({ partners, onRefresh }: PartnersKanbanProps) {
-  const [columns, setColumns] = useState(() => {
-    const cols: Record<string, Partner[]> = {};
-    STAGES.forEach(s => { cols[s.key] = []; });
-    partners.forEach(p => {
-      const stage = p.relationship_stage || 'prospect';
-      if (!cols[stage]) cols[stage] = [];
-      cols[stage].push(p);
-    });
-    return cols;
+function buildColumns(partners: Partner[]): Record<string, Partner[]> {
+  const cols: Record<string, Partner[]> = {};
+  STAGES.forEach(s => { cols[s.key] = []; });
+  partners.forEach(p => {
+    const stage = p.relationship_stage || 'prospect';
+    if (!cols[stage]) cols[stage] = [];
+    cols[stage].push(p);
   });
+  return cols;
+}
+
+export default function PartnersKanban({ partners, onRefresh }: PartnersKanbanProps) {
+  const [columns, setColumns] = useState(() => buildColumns(partners));
+
+  // Rebuild columns when partners prop changes (e.g. after refresh)
+  useEffect(() => {
+    setColumns(buildColumns(partners));
+  }, [partners]);
 
   async function onDragEnd(result: DropResult) {
     const { destination, source, draggableId } = result;

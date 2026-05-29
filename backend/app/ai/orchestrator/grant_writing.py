@@ -151,6 +151,11 @@ class GrantWritingOrchestrator:
         """
         yield _sse({"event": "skeleton_start"})
 
+        # ── Read call_intelligence (may still be running, graceful fallback) ──────────
+        call_intelligence: dict = grant.call_intelligence or {}
+        grant_type_context: str = call_intelligence.get("grant_type_context") or ""
+        section_blueprint: list[dict] = call_intelligence.get("section_blueprint") or []
+
         # ── Stage 1: Style profile (sequential — AsyncSession is not concurrent-safe) ──
         yield _sse({"event": "style_profile_start"})
         try:
@@ -160,13 +165,17 @@ class GrantWritingOrchestrator:
         yield _sse({"event": "style_profile_complete"})
 
         # ── Stage 1b: Archive retrieval (sequential after style profile commits) ───────
+        call_analysis = grant.call_analysis or {}
         try:
             structure_templates = await retrieve_document_structure(db, grant.funder, top_k=3)
         except Exception:
             structure_templates = []
         try:
+            # Enrich RAG query with call thematic areas for more targeted archive hits
+            themes = " ".join((call_analysis.get("thematic_areas") or [])[:4])
+            rag_query = f"{grant.title} {themes} {grant.grant_idea or ''}".strip()
             content_similar = await retrieve_content_exemplars(
-                query=f"{grant.title} {grant.grant_idea or ''}",
+                query=rag_query,
                 db=db,
                 funder=grant.funder,
                 top_k=8,
@@ -181,7 +190,6 @@ class GrantWritingOrchestrator:
         })
 
         # ── Stage 2: Call Strategy ─────────────────────────────────────────────
-        call_analysis = grant.call_analysis or {}
         yield _sse({"event": "call_strategy_start"})
         call_strategy: dict = {}
         if call_analysis:
@@ -191,6 +199,7 @@ class GrantWritingOrchestrator:
                     call_requirements_text=grant.call_requirements or "",
                     funder=grant.funder or "",
                     opportunity_title=grant.title or "",
+                    grant_type_context=grant_type_context,
                 )
             except Exception:
                 pass
@@ -207,6 +216,7 @@ class GrantWritingOrchestrator:
                     narrative_brief=call_analysis.get("narrative_brief", ""),
                     funder=grant.funder or "",
                     opportunity_title=grant.title or "",
+                    section_blueprint=section_blueprint or None,
                 )
             except Exception:
                 pass
@@ -248,10 +258,17 @@ class GrantWritingOrchestrator:
                 section_constraints=section_constraints,
                 total_word_limit=total_word_limit,
                 total_page_limit=total_page_limit,
+                call_intelligence=call_intelligence or None,
             )
         except Exception as exc:
             yield _sse({"event": "skeleton_error", "error": str(exc)[:500]})
             return
+
+        # ── TBD scan + RAG fill ────────────────────────────────────────────────
+        try:
+            skeleton = await _scan_and_fill_tbds(skeleton, db, grant.funder or "")
+        except Exception:
+            pass  # TBD filling is best-effort; never block skeleton delivery
 
         grant.proposal_skeleton = skeleton
         grant.writing_phase = "skeleton"
@@ -434,7 +451,12 @@ class GrantWritingOrchestrator:
         yield _sse({"event": "planning_complete", "total": len(sections)})
 
         # ── Phase 1.5: Concept extraction + proactive RAG pre-fetch ───────────
-        concepts = extract_concepts(grant.grant_idea or "", sections)
+        # Enrich concept list with call thematic areas from call_intelligence
+        ci = grant.call_intelligence or {}
+        ci_per_section_guide: dict[str, str] = ci.get("per_section_writing_guide") or {}
+        theme_terms: list[str] = (grant.call_analysis or {}).get("thematic_areas") or []
+        base_concepts = extract_concepts(grant.grant_idea or "", sections)
+        concepts = list(dict.fromkeys(base_concepts + theme_terms[:5]))[:12]
         concept_rag_map: dict[str, list[dict]] = {}
         if concepts:
             yield _sse({"event": "concept_extraction", "concepts": concepts[:8]})
@@ -467,11 +489,15 @@ class GrantWritingOrchestrator:
             brief = section_briefs_map.get(name) or {}
             content = sec.get("content") or ""
 
+            # Enrich RAG query with the section's call-specific writing guide snippet
+            section_guide = ci_per_section_guide.get(name, "")
+            rag_query = f"{name} {content[:100]} {section_guide[:80]} {grant.grant_idea or ''}".strip()
+
             async with _RESEARCH_SEMAPHORE:
                 style_exemplars, content_exemplars, reusable = await asyncio.gather(
                     retrieve_style_exemplars(db=db, section_type=sec_type, funder=grant.funder, top_k=3),
                     retrieve_content_exemplars(
-                        query=f"{name} {content[:150]} {grant.grant_idea or ''}",
+                        query=rag_query,
                         db=db,
                         section_type=sec_type,
                         funder=grant.funder,
@@ -573,6 +599,9 @@ class GrantWritingOrchestrator:
             # Concept bundles: archive docs for concepts mentioned in this section
             concept_bundles = _get_concept_bundles_for_section(skeleton_content)
 
+            # Per-section writing instructions from call_intelligence
+            writing_instructions = ci_per_section_guide.get(name) or ci_per_section_guide.get(name.lower()) or ""
+
             async with _DRAFT_SEMAPHORE:
                 if is_intro:
                     result = await draft_introduction(
@@ -618,6 +647,7 @@ class GrantWritingOrchestrator:
                         strategic_guidance=strategic_guidance,
                         emphasis_direction=emphasis_direction,
                         concept_bundles=concept_bundles,
+                        writing_instructions=writing_instructions,
                     )
 
             # Word count check
@@ -963,6 +993,75 @@ class GrantWritingOrchestrator:
 
 def _sse(data: dict) -> str:
     return f"data: {json.dumps(data)}\n\n"
+
+
+async def _scan_and_fill_tbds(
+    skeleton: dict,
+    db: AsyncSession,
+    funder: str,
+) -> dict:
+    """
+    Scan skeleton raw_text for [TBD: ...] markers.
+    Attempt to fill each with RAG-retrieved reusable language (similarity > 0.7).
+    Remaining unfilled TBDs are collected into skeleton["flagged_sections"].
+    """
+    import re
+
+    raw_text: str = skeleton.get("raw_text") or ""
+    if not raw_text:
+        return skeleton
+
+    # Find all TBD markers with surrounding context (15 words either side)
+    tbd_pattern = re.compile(r"\[TBD:[^\]]*\]")
+    matches = list(tbd_pattern.finditer(raw_text))
+    if not matches:
+        skeleton["flagged_sections"] = []
+        return skeleton
+
+    filled_count = 0
+    flagged: list[str] = []
+    modified_text = raw_text
+
+    for match in reversed(matches):  # reverse so offsets stay valid
+        tbd_token = match.group(0)
+        start = max(0, match.start() - 80)
+        end = min(len(raw_text), match.end() + 80)
+        context = raw_text[start:end].strip()
+
+        try:
+            candidates = await retrieve_reusable_language(
+                query=context,
+                db=db,
+                section_type="other",
+                top_k=1,
+            )
+        except Exception:
+            candidates = []
+
+        if candidates:
+            candidate = candidates[0]
+            similarity = candidate.get("similarity") or 0.0
+            snippet = (candidate.get("full_text") or "")[:300].strip()
+            if similarity >= 0.70 and snippet:
+                modified_text = modified_text[:match.start()] + snippet + modified_text[match.end():]
+                filled_count += 1
+                continue
+
+        # Could not fill — find which section this TBD is in
+        section_heading = ""
+        for line in raw_text[:match.start()].splitlines():
+            if line.startswith("## "):
+                section_heading = line[3:].strip()
+        if section_heading and section_heading not in flagged:
+            flagged.append(section_heading)
+
+    if filled_count > 0:
+        skeleton["raw_text"] = modified_text
+
+    skeleton["flagged_sections"] = flagged
+    skeleton["tbd_count"] = len(matches)
+    skeleton["tbd_filled_count"] = filled_count
+    return skeleton
 
 
 def _parse_int_limit(value) -> int | None:

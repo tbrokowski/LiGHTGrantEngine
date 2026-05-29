@@ -96,6 +96,13 @@ export default function SkeletonPhase({
 }: SkeletonPhaseProps) {
   const [editingTitle, setEditingTitle] = useState(false);
   const [titleDraft, setTitleDraft] = useState(skeleton.title_suggestion || '');
+  const [placeholdersExpanded, setPlaceholdersExpanded] = useState(false);
+
+  // TBD counts
+  const tbdCount = (skeleton as Record<string, unknown>).tbd_count as number | undefined;
+  const tbdFilledCount = (skeleton as Record<string, unknown>).tbd_filled_count as number | undefined;
+  const remainingTbds = tbdCount != null && tbdFilledCount != null ? tbdCount - tbdFilledCount : tbdCount;
+  const flaggedSectionsFromScan: string[] = (skeleton.flagged_sections || []) as string[];
 
   // Document Constraints panel state
   const [constraintsExpanded, setConstraintsExpanded] = useState(true);
@@ -204,6 +211,42 @@ export default function SkeletonPhase({
                 </button>
               )}
               <p className="text-xs text-gray-400 mt-0.5">Click title to edit</p>
+            </div>
+          )}
+
+          {/* TBD badge row */}
+          {remainingTbds != null && remainingTbds > 0 && (
+            <div className="flex items-center gap-2 flex-wrap">
+              <button
+                type="button"
+                onClick={() => setPlaceholdersExpanded(v => !v)}
+                className="inline-flex items-center gap-1.5 rounded-full bg-yellow-50 border border-yellow-200 px-2.5 py-0.5 text-xs font-medium text-yellow-700 hover:bg-yellow-100 transition-colors"
+              >
+                <svg className="w-3 h-3" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2}><rect x="3" y="3" width="18" height="18" rx="2"/><path d="M9 9h6m-6 4h4"/></svg>
+                {remainingTbds} placeholder{remainingTbds !== 1 ? 's' : ''} to complete
+                {tbdFilledCount != null && tbdFilledCount > 0 && (
+                  <span className="text-yellow-500">({tbdFilledCount} auto-filled)</span>
+                )}
+                <ChevronDown className={`w-3 h-3 transition-transform ${placeholdersExpanded ? 'rotate-180' : ''}`} />
+              </button>
+            </div>
+          )}
+
+          {/* Placeholders panel */}
+          {placeholdersExpanded && flaggedSectionsFromScan.length > 0 && (
+            <div className="rounded-lg border border-yellow-100 bg-yellow-50 p-3 space-y-2 text-xs">
+              <p className="font-semibold text-yellow-800">Sections with unfilled placeholders</p>
+              <ul className="space-y-1">
+                {flaggedSectionsFromScan.map((sec, i) => (
+                  <li key={i} className="flex items-center gap-1.5 text-yellow-700">
+                    <span>·</span>
+                    <span>{sec}</span>
+                  </li>
+                ))}
+              </ul>
+              <p className="text-yellow-600 text-xs mt-1">
+                Add the missing information to your grant idea before generating the full draft, or fill in the [TBD:] markers directly in the outline below.
+              </p>
             </div>
           )}
 
