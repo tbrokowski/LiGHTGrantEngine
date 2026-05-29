@@ -34,6 +34,10 @@ _TAG_TO_STYLE: dict[str, str] = {
     "li": "NORMAL_TEXT",
 }
 
+# Bullet presets for ordered vs unordered lists
+_BULLET_PRESET_UNORDERED = "BULLET_DISC_CIRCLE_SQUARE"
+_BULLET_PRESET_ORDERED = "NUMBERED_DECIMAL_ALPHA_ROMAN"
+
 
 # ── Service builders ───────────────────────────────────────────────────────────
 
@@ -56,68 +60,168 @@ def _build_drive_service(access_token: str) -> Any:
 # ── HTML → Docs requests ───────────────────────────────────────────────────────
 
 class _HtmlToParagraphs(HTMLParser):
-    """Parse HTML into a list of (style, text, bold, italic) paragraph tuples."""
+    """Parse HTML into paragraphs, each containing a list of text runs.
+
+    Each paragraph dict has:
+        style: str           — Google Docs namedStyleType or "PAGE_BREAK"
+        runs:  list[dict]    — ordered text runs with inline formatting
+        list_type: str|None  — "BULLET" | "DECIMAL" | None
+        list_depth: int      — 0-based nesting depth
+
+    Each run dict has:
+        text: str
+        bold: bool
+        italic: bool
+        underline: bool
+        strikethrough: bool
+        link: str|None
+    """
 
     def __init__(self) -> None:
         super().__init__()
         self.paragraphs: list[dict[str, Any]] = []
+
+        # paragraph-level state
         self._current_style = "NORMAL_TEXT"
-        self._current_text = ""
+        self._in_block = False
+        self._list_stack: list[str] = []  # stack of "ul"/"ol" as we descend
+
+        # run-level state (flushed whenever any attribute changes)
+        self._run_text = ""
         self._bold = False
         self._italic = False
+        self._underline = False
+        self._strikethrough = False
+        self._link: str | None = None
+
+        # runs accumulated for the current paragraph
+        self._current_runs: list[dict[str, Any]] = []
+
+    # ── helpers ────────────────────────────────────────────────────────────────
+
+    def _current_run_attrs(self) -> dict[str, Any]:
+        return {
+            "bold": self._bold,
+            "italic": self._italic,
+            "underline": self._underline,
+            "strikethrough": self._strikethrough,
+            "link": self._link,
+        }
+
+    def _flush_run(self) -> None:
+        """Append accumulated run text as a run dict if non-empty."""
+        if self._run_text and self._in_block:
+            self._current_runs.append(
+                {
+                    "text": self._run_text,
+                    **self._current_run_attrs(),
+                }
+            )
+        self._run_text = ""
+
+    def _flush_paragraph(self, tag: str) -> None:
+        """Close the current paragraph and append it to self.paragraphs."""
+        self._flush_run()
+        runs = self._current_runs
+        if runs:
+            list_type: str | None = None
+            depth = 0
+            if tag == "li" and self._list_stack:
+                list_type = "DECIMAL" if self._list_stack[-1] == "ol" else "BULLET"
+                depth = len(self._list_stack) - 1
+            self.paragraphs.append(
+                {
+                    "style": self._current_style,
+                    "runs": runs,
+                    "list_type": list_type,
+                    "list_depth": depth,
+                }
+            )
+        self._current_runs = []
+        self._current_style = "NORMAL_TEXT"
         self._in_block = False
-        self._list_depth = 0
+        # reset run-level inline state
+        self._bold = False
+        self._italic = False
+        self._underline = False
+        self._strikethrough = False
+        self._link = None
+        self._run_text = ""
+
+    # ── parser callbacks ───────────────────────────────────────────────────────
 
     def handle_starttag(self, tag: str, attrs: list) -> None:
         tag = tag.lower()
         attr_dict = dict(attrs)
-        # TipTap page-break node → emit a sentinel that becomes \x0C on push
+
+        # TipTap page-break node
         if tag == "div" and attr_dict.get("data-type") == "page-break":
             self.paragraphs.append(
-                {"style": "PAGE_BREAK", "text": "\x0c", "bold": False, "italic": False}
+                {"style": "PAGE_BREAK", "runs": [], "list_type": None, "list_depth": 0}
             )
             return
+
         if tag in _TAG_TO_STYLE:
             self._current_style = _TAG_TO_STYLE[tag]
-            self._current_text = ""
             self._in_block = True
-        elif tag in ("ul", "ol"):
-            self._list_depth += 1
-        elif tag == "strong" or tag == "b":
+            return
+
+        if tag in ("ul", "ol"):
+            self._list_stack.append(tag)
+            return
+
+        # Inline formatting — flush current run before toggling state
+        if tag in ("strong", "b"):
+            self._flush_run()
             self._bold = True
-        elif tag == "em" or tag == "i":
+        elif tag in ("em", "i"):
+            self._flush_run()
             self._italic = True
+        elif tag == "u":
+            self._flush_run()
+            self._underline = True
+        elif tag in ("s", "del", "strike"):
+            self._flush_run()
+            self._strikethrough = True
+        elif tag == "a":
+            self._flush_run()
+            self._link = attr_dict.get("href") or None
         elif tag == "br":
-            self._current_text += "\n"
+            self._run_text += "\n"
 
     def handle_endtag(self, tag: str) -> None:
         tag = tag.lower()
-        if tag in _TAG_TO_STYLE and self._in_block:
-            text = self._current_text.strip()
-            if text:
-                self.paragraphs.append(
-                    {
-                        "style": self._current_style,
-                        "text": text,
-                        "bold": self._bold and tag not in _TAG_TO_STYLE,
-                        "italic": self._italic and tag not in _TAG_TO_STYLE,
-                    }
-                )
-            self._current_text = ""
-            self._current_style = "NORMAL_TEXT"
-            self._in_block = False
-            self._bold = False
-            self._italic = False
-        elif tag in ("ul", "ol"):
-            self._list_depth = max(0, self._list_depth - 1)
-        elif tag in ("strong", "b"):
+
+        if tag in _TAG_TO_STYLE:
+            if self._in_block:
+                self._flush_paragraph(tag)
+            return
+
+        if tag in ("ul", "ol"):
+            if self._list_stack:
+                self._list_stack.pop()
+            return
+
+        # Inline formatting — flush current run before toggling state off
+        if tag in ("strong", "b"):
+            self._flush_run()
             self._bold = False
         elif tag in ("em", "i"):
+            self._flush_run()
             self._italic = False
+        elif tag == "u":
+            self._flush_run()
+            self._underline = False
+        elif tag in ("s", "del", "strike"):
+            self._flush_run()
+            self._strikethrough = False
+        elif tag == "a":
+            self._flush_run()
+            self._link = None
 
     def handle_data(self, data: str) -> None:
         if self._in_block:
-            self._current_text += data
+            self._run_text += data
 
 
 def _html_to_paragraphs(html: str) -> list[dict[str, Any]]:
@@ -127,13 +231,21 @@ def _html_to_paragraphs(html: str) -> list[dict[str, Any]]:
 
 
 def _build_insert_requests(paragraphs: list[dict[str, Any]]) -> list[dict]:
-    """Build Docs API batchUpdate requests to insert all paragraphs."""
+    """Build Docs API batchUpdate requests to insert all paragraphs.
+
+    Emits insertText + updateParagraphStyle for every paragraph, plus
+    updateTextStyle per run (bold/italic/underline/strikethrough/link).
+    List paragraphs collect createParagraphBullets requests appended last
+    so all text is in place before bullet style is applied.
+    """
     requests: list[dict] = []
+    # Defer bullet requests until after all text is inserted so index ranges
+    # are stable and the paragraphs already exist.
+    bullet_requests: list[dict] = []
     index = 1  # Start at beginning of body
 
     for para in paragraphs:
-        # Page-break sentinel: insert form-feed character (\x0C).
-        # Google Docs interprets \x0C as a page break.
+        # Page-break sentinel
         if para["style"] == "PAGE_BREAK":
             requests.append(
                 {
@@ -146,27 +258,87 @@ def _build_insert_requests(paragraphs: list[dict[str, Any]]) -> list[dict]:
             index += 1
             continue
 
-        text = para["text"] + "\n"
+        runs: list[dict[str, Any]] = para.get("runs", [])
+        # Build full paragraph text so we can compute the end index
+        para_text = "".join(r["text"] for r in runs) + "\n"
+
+        para_start = index
+        para_end = index + len(para_text)
+
+        # Insert the full paragraph text in one request
         requests.append(
             {
                 "insertText": {
                     "location": {"index": index},
-                    "text": text,
+                    "text": para_text,
                 }
             }
         )
-        end_index = index + len(text)
+
+        # Paragraph-level style (heading / normal)
         requests.append(
             {
                 "updateParagraphStyle": {
-                    "range": {"startIndex": index, "endIndex": end_index},
+                    "range": {"startIndex": para_start, "endIndex": para_end},
                     "paragraphStyle": {"namedStyleType": para["style"]},
                     "fields": "namedStyleType",
                 }
             }
         )
-        index = end_index
 
+        # Per-run inline text styles
+        run_index = index
+        for run in runs:
+            run_end = run_index + len(run["text"])
+            has_any_style = (
+                run["bold"]
+                or run["italic"]
+                or run["underline"]
+                or run["strikethrough"]
+                or run.get("link")
+            )
+            if has_any_style:
+                text_style: dict[str, Any] = {
+                    "bold": run["bold"],
+                    "italic": run["italic"],
+                    "underline": run["underline"],
+                    "strikethrough": run["strikethrough"],
+                }
+                fields = "bold,italic,underline,strikethrough"
+                if run.get("link"):
+                    text_style["link"] = {"url": run["link"]}
+                    fields += ",link"
+                requests.append(
+                    {
+                        "updateTextStyle": {
+                            "range": {"startIndex": run_index, "endIndex": run_end},
+                            "textStyle": text_style,
+                            "fields": fields,
+                        }
+                    }
+                )
+            run_index = run_end
+
+        # Bullet / numbered list
+        if para.get("list_type"):
+            preset = (
+                _BULLET_PRESET_ORDERED
+                if para["list_type"] == "DECIMAL"
+                else _BULLET_PRESET_UNORDERED
+            )
+            bullet_requests.append(
+                {
+                    "createParagraphBullets": {
+                        "range": {"startIndex": para_start, "endIndex": para_end - 1},
+                        "bulletPreset": preset,
+                    }
+                }
+            )
+
+        index = para_end
+
+    # Append bullet requests after all text insertions
+    requests.extend(bullet_requests)
     return requests
 
 
@@ -278,12 +450,21 @@ def _paragraph_elements_to_html(paragraph: dict, inline_objects: dict) -> str:
             continue
         text = text_run.get("content", "")
         ts = text_run.get("textStyle", {})
-        if ts.get("bold"):
-            text = f"<strong>{text}</strong>"
+
+        # Wrap inline styles from innermost to outermost so nesting is clean
+        if ts.get("strikethrough"):
+            text = f"<s>{text}</s>"
+        if ts.get("underline") and not ts.get("link"):
+            # Google Docs marks linked text as underlined; skip redundant <u>
+            text = f"<u>{text}</u>"
         if ts.get("italic"):
             text = f"<em>{text}</em>"
-        if ts.get("underline"):
-            text = f"<u>{text}</u>"
+        if ts.get("bold"):
+            text = f"<strong>{text}</strong>"
+        link_url = ts.get("link", {}).get("url", "") if isinstance(ts.get("link"), dict) else ""
+        if link_url:
+            text = f'<a href="{link_url}">{text}</a>'
+
         inline_html += text
     return inline_html.rstrip("\n")
 
@@ -306,6 +487,27 @@ def _table_to_html(table: dict, inline_objects: dict) -> str:
     return f"<table style='border-collapse:collapse;width:100%;'>{rows_html}</table>"
 
 
+def _get_list_glyph_type(doc_lists: dict, bullet: dict) -> str:
+    """Return 'ORDERED' or 'UNORDERED' based on the list's glyph type."""
+    list_id = bullet.get("listId", "")
+    nesting = bullet.get("nestingLevel", 0)
+    list_props = (
+        doc_lists.get(list_id, {})
+        .get("listProperties", {})
+        .get("nestingLevels", [{}])
+    )
+    level = list_props[nesting] if nesting < len(list_props) else {}
+    glyph_type = level.get("glyphType", "")
+    # Ordered lists use DECIMAL, ALPHA, ROMAN, etc.; unordered use GLYPH_TYPE_UNSPECIFIED or no glyphType
+    if glyph_type and glyph_type not in ("GLYPH_TYPE_UNSPECIFIED",):
+        return "ORDERED"
+    # Ordered presets also use glyphSymbol sometimes; fall back to bulletAlignment check
+    glyph_symbol = level.get("glyphSymbol", "")
+    if glyph_symbol in ("", "\u25cf", "\u25cb", "\u25aa"):
+        return "UNORDERED"
+    return "ORDERED"
+
+
 def pull_from_doc(
     doc_id: str,
     access_token: str,
@@ -321,12 +523,28 @@ def pull_from_doc(
     body = doc.get("body", {})
     content = body.get("content", [])
     inline_objects = doc.get("inlineObjects", {})
+    doc_lists = doc.get("lists", {})
 
     html_parts: list[str] = []
 
+    # Track open list context: (list_id, nesting_level, "ol"|"ul")
+    # We open/close list tags as list membership changes.
+    _open_list_id: str | None = None
+    _open_list_type: str | None = None  # "ol" or "ul"
+    _open_nesting: int = 0
+
+    def _close_open_list() -> None:
+        nonlocal _open_list_id, _open_list_type, _open_nesting
+        if _open_list_id is not None:
+            html_parts.append(f"</{_open_list_type}>")
+            _open_list_id = None
+            _open_list_type = None
+            _open_nesting = 0
+
     for element in content:
-        # Tables
+        # Tables — close any open list first
         if "table" in element:
+            _close_open_list()
             html_parts.append(_table_to_html(element["table"], inline_objects))
             continue
 
@@ -334,12 +552,35 @@ def pull_from_doc(
         if not paragraph:
             continue
 
-        style = paragraph.get("paragraphStyle", {}).get("namedStyleType", "NORMAL_TEXT")
-        tag = _style_to_tag(style)
-
+        bullet = paragraph.get("bullet")
         inline_html = _paragraph_elements_to_html(paragraph, inline_objects)
-        if inline_html:
-            html_parts.append(f"<{tag}>{inline_html}</{tag}>")
+
+        if bullet:
+            list_id = bullet.get("listId", "")
+            nesting = bullet.get("nestingLevel", 0)
+            glyph_kind = _get_list_glyph_type(doc_lists, bullet)
+            list_tag = "ol" if glyph_kind == "ORDERED" else "ul"
+
+            # Open or switch list context when list_id or type changes
+            if _open_list_id != list_id or _open_list_type != list_tag:
+                _close_open_list()
+                html_parts.append(f"<{list_tag}>")
+                _open_list_id = list_id
+                _open_list_type = list_tag
+                _open_nesting = nesting
+
+            html_parts.append(f"<li>{inline_html}</li>")
+        else:
+            # Non-list paragraph — close any open list
+            _close_open_list()
+
+            style = paragraph.get("paragraphStyle", {}).get("namedStyleType", "NORMAL_TEXT")
+            tag = _style_to_tag(style)
+            if inline_html:
+                html_parts.append(f"<{tag}>{inline_html}</{tag}>")
+
+    # Close any list still open at end of document
+    _close_open_list()
 
     return "\n".join(html_parts)
 
