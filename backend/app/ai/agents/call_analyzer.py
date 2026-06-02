@@ -628,8 +628,11 @@ geographic_eligibility string   — geographic scope and country restrictions, v
 award_amount      string        — exact figures as stated (total, per project, range).
 project_duration  string        — project duration as stated.
 submission_portal string        — submission platform, URL, or system name from the document.
-page_limit        string|null   — overall page limit if stated.
+page_limit        string|null   — overall page limit if stated (entire submission package).
+narrative_page_limit int|null   — main proposal body page limit ONLY if stated separately from annexes.
+annex_page_limit  int|null     — annex/appendix page limit if stated separately.
 word_limit        string|null   — overall word limit if stated.
+For page/word limits: quote the exact source phrase in format_requirements or administrative_requirements.
 format_requirements string      — font, margins, file format, naming conventions if stated.
 foa_number        string        — official solicitation, FOA, topic ID, or call reference number.
 contact_info      string        — program officer name, email, Q&A deadline.

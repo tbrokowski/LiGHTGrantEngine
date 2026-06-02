@@ -330,7 +330,11 @@ async def accept_invite(
 
 @router.get("/me")
 async def me(current_user: User = Depends(get_current_user)):
-    from app.auth.permissions import is_org_admin, _MODULE_PERMISSION_DEFAULTS
+    from app.auth.permissions import (
+        is_org_admin,
+        _MODULE_PERMISSION_DEFAULTS,
+        can_view_finance_module,
+    )
 
     # Build the effective module_permissions dict, merging defaults with stored values.
     # Org admins always have all permissions set to True.
@@ -339,7 +343,11 @@ async def me(current_user: User = Depends(get_current_user)):
     else:
         stored = current_user.module_permissions or {}
         effective_perms = {
-            k: stored.get(k, default)
+            k: (
+                can_view_finance_module(current_user)
+                if k == "can_view_finance"
+                else stored.get(k, default)
+            )
             for k, default in _MODULE_PERMISSION_DEFAULTS.items()
         }
 

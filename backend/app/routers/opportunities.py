@@ -19,6 +19,7 @@ from app.models.user_opportunity_state import UserOpportunityState
 from app.models.user import User
 from app.models.institution import Institution
 from app.models.institution_source import InstitutionSource
+from app.models.source import Source
 from app.models.grant_member import GrantMember, GrantMemberRole, GrantMemberStatus
 from app.routers.auth import get_current_user
 from app.auth.permissions import get_redis, invalidate_permission_cache
@@ -144,10 +145,109 @@ class ScrapePreviewRequest(BaseModel):
 
 
 # ── Endpoints ─────────────────────────────────────────────────────────────────
+@router.get("/filter-options")
+async def get_filter_options(
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+    redis: aioredis.Redis = Depends(get_redis),
+):
+    """Return distinct filter values from the live opportunity pool for building sidebar dropdowns.
+    Results are cached in Redis for 1 hour to avoid repeated full-table scans."""
+    cache_key = "opportunities:filter_options"
+    if redis:
+        try:
+            cached = await redis.get(cache_key)
+            if cached:
+                return _json.loads(cached)
+        except Exception:
+            pass
+
+    base_where = Opportunity.status != "duplicate"
+
+    # Distinct funders (non-null, non-empty)
+    funder_rows = (await db.execute(
+        select(Opportunity.funder, Opportunity.funder_logo_url)
+        .where(base_where, Opportunity.funder.isnot(None), Opportunity.funder != "")
+        .distinct(Opportunity.funder)
+        .order_by(Opportunity.funder)
+        .limit(500)
+    )).all()
+    funders = [{"name": row.funder, "logo_url": row.funder_logo_url} for row in funder_rows]
+
+    # Distinct opportunity types
+    type_rows = (await db.execute(
+        select(Opportunity.opportunity_type)
+        .where(base_where, Opportunity.opportunity_type.isnot(None))
+        .distinct()
+        .order_by(Opportunity.opportunity_type)
+    )).scalars().all()
+    opportunity_types = [t for t in type_rows if t]
+
+    # Distinct geography values (unnest JSON arrays)
+    geo_rows = (await db.execute(
+        sa_text(
+            "SELECT DISTINCT g.value FROM opportunities o, "
+            "jsonb_array_elements_text(o.geography::jsonb) AS g(value) "
+            "WHERE o.status != 'duplicate' AND o.geography IS NOT NULL "
+            "  AND o.geography::text != '[]' "
+            "ORDER BY g.value LIMIT 200"
+        )
+    )).scalars().all()
+    geographies = [g for g in geo_rows if g]
+
+    # Distinct thematic areas (unnest JSON arrays)
+    theme_rows = (await db.execute(
+        sa_text(
+            "SELECT DISTINCT t.value FROM opportunities o, "
+            "jsonb_array_elements_text(o.thematic_areas::jsonb) AS t(value) "
+            "WHERE o.status != 'duplicate' AND o.thematic_areas IS NOT NULL "
+            "  AND o.thematic_areas::text != '[]' "
+            "ORDER BY t.value LIMIT 300"
+        )
+    )).scalars().all()
+    thematic_areas = [t for t in theme_rows if t]
+
+    # Source categories + source list (for source-level filtering)
+    source_rows = (await db.execute(
+        select(Source.id, Source.name, Source.category, Source.logo_url)
+        .where(Source.status != "paused")
+        .order_by(Source.category, Source.name)
+        .limit(500)
+    )).all()
+    sources = [
+        {"id": row.id, "name": row.name, "category": row.category, "logo_url": row.logo_url}
+        for row in source_rows
+    ]
+    source_categories = sorted({row.category for row in source_rows if row.category})
+
+    result = {
+        "funders": funders,
+        "opportunity_types": opportunity_types,
+        "geographies": geographies,
+        "thematic_areas": thematic_areas,
+        "sources": sources,
+        "source_categories": source_categories,
+    }
+
+    if redis:
+        try:
+            await redis.setex(cache_key, 3600, _json.dumps(result))
+        except Exception:
+            pass
+
+    return result
+
+
 @router.get("/")
 async def list_opportunities(
     status: Optional[str] = None,
     funder: Optional[str] = None,
+    opportunity_type: Optional[str] = None,
+    geography: Optional[str] = None,
+    source_id: Optional[str] = None,
+    funder_category: Optional[str] = None,
+    award_min_filter: Optional[float] = None,
+    award_max_filter: Optional[float] = None,
     priority: Optional[str] = None,
     min_fit_score: Optional[float] = None,
     deadline_before: Optional[date] = None,
@@ -202,6 +302,28 @@ async def list_opportunities(
         filters.append(Opportunity.deadline >= deadline_after)
     if theme:
         filters.append(Opportunity.thematic_areas.contains([theme]))
+    if opportunity_type:
+        filters.append(Opportunity.opportunity_type == opportunity_type)
+    if geography:
+        filters.append(Opportunity.geography.contains([geography]))
+    if source_id:
+        filters.append(Opportunity.source_id == source_id)
+    if funder_category:
+        # Join through Source to filter by source category
+        src_subq = select(Source.id).where(
+            Source.category.ilike(f"%{funder_category}%")
+        ).scalar_subquery()
+        filters.append(Opportunity.source_id.in_(src_subq))
+    if award_min_filter is not None:
+        # award_max must be at least as large as the minimum requested
+        filters.append(
+            or_(Opportunity.award_max >= award_min_filter, Opportunity.award_min >= award_min_filter)
+        )
+    if award_max_filter is not None:
+        # award_min must be at most as large as the maximum requested
+        filters.append(
+            or_(Opportunity.award_min <= award_max_filter, Opportunity.award_max <= award_max_filter)
+        )
 
     # Semantic candidate IDs (populated below when search is present)
     semantic_ids: list[str] = []
@@ -973,9 +1095,11 @@ def _opp_summary(
     status = io.status if io else o.status
     return {
         "id": o.id, "title": o.title, "funder": o.funder,
+        "opportunity_type": o.opportunity_type,
         "deadline": str(o.deadline) if o.deadline else None,
         "fit_score": fit_score, "priority": priority,
         "status": status, "thematic_areas": o.thematic_areas,
+        "geography": o.geography,
         "award_min": o.award_min, "award_max": o.award_max, "currency": o.currency,
         "date_discovered": str(o.date_discovered),
         "short_summary": o.short_summary or (io.ai_summary[:300] if io and io.ai_summary else None) or (o.ai_summary[:300] if o.ai_summary else None),
@@ -983,6 +1107,7 @@ def _opp_summary(
         "has_description": bool(o.description or o.parsed_text),
         "funder_logo_url": o.funder_logo_url,
         "opportunity_url": o.opportunity_url,
+        "source_id": o.source_id,
         "is_read": is_read,
         "fit_rationale": io.fit_rationale if io else o.fit_rationale,
         "is_personal_shortlisted": is_personal_shortlisted,
@@ -1058,11 +1183,14 @@ async def _fetch_institution_feed(
     result = await db.execute(q)
     rows = result.all()
 
+    from app.scrapers.base import is_award_record_url
     from app.services.opportunity_dedup import dedup_key, _funder_prefix
 
     items: list[Opportunity] = []
     io_map: dict[str, InstitutionOpportunity] = {}
     for opp, io in rows:
+        if is_award_record_url(opp.opportunity_url or ""):
+            continue
         if enabled_source_ids is not None and opp.source_id and opp.source_id not in enabled_source_ids:
             continue
         if personal_excluded and any(kw in _opp_text(opp) for kw in personal_excluded):

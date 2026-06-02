@@ -92,11 +92,13 @@ def _quality_boost(section: ProposalSection) -> float:
 def _keyword_score(section: ProposalSection, query_words: list[str]) -> float:
     if not query_words:
         return 0.0
+    body_snip = (section.section_text or "")[:2000]
     haystack = " ".join(filter(None, [
         section.section_title or "",
         section.section_type or "",
         section.funder or "",
         section.grant_title or "",
+        body_snip,
     ])).lower()
     hits = sum(1 for w in query_words if w.lower() in haystack)
     return min(1.0, hits / max(len(query_words), 1))
@@ -506,3 +508,74 @@ async def retrieve_with_hyde(
         top_k=top_k,
         current_grant_id=current_grant_id,
     )
+
+
+async def retrieve_entity_mentions(
+    entity: str,
+    db: AsyncSession,
+    funder: Optional[str] = None,
+    top_k: int = 5,
+    current_grant_id: Optional[str] = None,
+) -> list[dict]:
+    """Literal text match in section body for acronyms/program names (MOOVE, DISCO)."""
+    if not entity or len(entity) < 2:
+        return []
+    filters = [ProposalSection.ai_retrieval_allowed == True]
+    if funder:
+        filters.append(ProposalSection.funder.ilike(f"%{funder}%"))
+    grant_filter = _grant_access_filter(None)
+    if current_grant_id:
+        filters.append(
+            or_(
+                ProposalSection.archive_id.isnot(None),
+                ProposalSection.grant_id == current_grant_id,
+            )
+        )
+    q = select(ProposalSection).where(
+        and_(*filters),
+        ProposalSection.section_text.ilike(f"%{entity}%"),
+    ).limit(top_k * 2)
+    result = await db.execute(q)
+    sections = result.scalars().all()
+    out = []
+    for s in sections:
+        out.append(_section_to_dict(s, 0.85))
+        if len(out) >= top_k:
+            break
+    return out
+
+
+async def retrieve_for_concept(
+    concept: str,
+    db: AsyncSession,
+    funder: Optional[str] = None,
+    current_grant_id: Optional[str] = None,
+    top_k: int = 4,
+) -> list[dict]:
+    """Vector + entity retrieval merged for a named concept."""
+    vector_hits = await retrieve_content_exemplars(
+        query=concept,
+        db=db,
+        funder=funder,
+        top_k=top_k,
+        current_grant_id=current_grant_id,
+    )
+    entity_hits = await retrieve_entity_mentions(
+        entity=concept,
+        db=db,
+        funder=funder,
+        top_k=top_k,
+        current_grant_id=current_grant_id,
+    )
+    seen_ids: set[str] = set()
+    merged: list[dict] = []
+    for item in entity_hits + vector_hits:
+        sid = str(item.get("id", ""))
+        if sid and sid in seen_ids:
+            continue
+        if sid:
+            seen_ids.add(sid)
+        merged.append(item)
+        if len(merged) >= top_k:
+            break
+    return merged

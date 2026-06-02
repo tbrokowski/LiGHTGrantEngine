@@ -81,6 +81,8 @@ export interface WritingStatusPayload {
   call_analysis_status?: CallAnalysisStatus;
   call_analysis_error?: string | null;
   call_analysis_steps?: AIThinkingStepData[];
+  call_intelligence?: Record<string, unknown>;
+  document_constraints?: Record<string, unknown>;
   has_call_analysis?: boolean;
   has_draft?: boolean;
   overview_figure_url?: string | null;
@@ -94,6 +96,8 @@ export interface WritingStatusPayload {
   draft_status?: AIGenerationStatus;
   draft_steps?: AIThinkingStepData[];
   draft_error?: string | null;
+  draft_execution_plan?: Record<string, unknown> | null;
+  draft_qa_report?: Record<string, unknown> | null;
   editor_document?: string | null;
 }
 

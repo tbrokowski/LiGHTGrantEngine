@@ -1,7 +1,8 @@
 'use client';
 
-import { useState, useEffect, useRef } from 'react';
+import { useState } from 'react';
 import { ChevronDown } from 'lucide-react';
+import { useAnimatedProgressPct } from './useAnimatedProgressPct';
 
 export interface AIThinkingStep {
   id: string;
@@ -92,40 +93,13 @@ function StepRow({ step }: { step: AIThinkingStep }) {
 
 export default function AIThinkingLog({
   steps,
-  progressPct,
+  progressPct: _progressPct,
   title,
   error,
   className = '',
 }: AIThinkingLogProps) {
-  // Local animated percentage — slowly advances during active steps so the bar
-  // visibly moves even when no step flips to "done" (e.g. during the long LLM call).
-  const [displayPct, setDisplayPct] = useState(progressPct);
-  const earnedRef = useRef(progressPct);
-
-  // Snap to real value whenever a step completes (prop jumps forward)
-  useEffect(() => {
-    earnedRef.current = progressPct;
-    setDisplayPct(progressPct);
-  }, [progressPct]);
-
-  // Ease-out drift while any step is active — faster at start, slows near ceiling.
-  // Ceiling is 25% above the last real earned value so the bar keeps moving throughout
-  // even long LLM steps (60-90s), without ever falsely crossing the next milestone.
-  const isActive = steps.some((s) => s.status === 'active');
-  useEffect(() => {
-    if (!isActive) return;
-    const interval = setInterval(() => {
-      setDisplayPct((prev) => {
-        const cap = Math.min(earnedRef.current + 25, 95);
-        if (prev >= cap) return prev;
-        const remaining = cap - prev;
-        // Ease-out: step shrinks as we approach ceiling
-        const step = Math.max(0.1, remaining * 0.018);
-        return Math.min(prev + step, cap);
-      });
-    }, 700);
-    return () => clearInterval(interval);
-  }, [isActive]);
+  const isRunning = steps.some((s) => s.status === 'active' || s.status === 'pending');
+  const displayPct = useAnimatedProgressPct(steps, isRunning);
 
   return (
     <div className={`space-y-3 ${className}`}>
@@ -137,7 +111,7 @@ export default function AIThinkingLog({
         <div className="h-1.5 bg-gray-100 rounded-full overflow-hidden">
           <div
             className="h-full bg-indigo-400"
-            style={{ width: `${Math.max(3, displayPct)}%`, transition: 'width 1s cubic-bezier(0.4, 0, 0.2, 1)' }}
+            style={{ width: `${Math.max(3, displayPct)}%`, transition: 'width 0.55s cubic-bezier(0.22, 1, 0.36, 1)' }}
           />
         </div>
       </div>
@@ -159,9 +133,4 @@ export default function AIThinkingLog({
   );
 }
 
-// Utility: compute progress % from steps array
-export function stepsToProgressPct(steps: AIThinkingStep[]): number {
-  if (!steps.length) return 5;
-  const done = steps.filter((s) => s.status === 'done').length;
-  return Math.round(5 + (done / steps.length) * 90);
-}
+export { stepsToProgressPct } from './useAnimatedProgressPct';

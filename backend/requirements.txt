@@ -41,6 +41,7 @@ kombu==5.3.5
 # AI / OpenAI-compatible client (works with vLLM/Qwen)
 openai==1.51.0
 tavily-python>=0.3.3
+exa-py>=1.0.0
 tiktoken==0.7.0
 numpy==1.26.4
 

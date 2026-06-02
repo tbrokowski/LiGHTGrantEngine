@@ -39,6 +39,7 @@ interface GrantDetail {
   grant_idea?: string | null;
   call_analysis?: Record<string, unknown>;
   call_intelligence?: Record<string, unknown> | null;
+  document_constraints?: Record<string, unknown> | null;
   proposal_skeleton?: Record<string, unknown>;
   style_profile?: Record<string, unknown>;
   writing_phase?: string;
@@ -65,6 +66,9 @@ export default function GrantEditor({ grant, onGrantUpdate, onHeadingsChange }: 
   const [grantIdea, setGrantIdea] = useState(grant.grant_idea || '');
   const [callAnalysis, setCallAnalysis] = useState<Record<string, unknown>>(grant.call_analysis || {});
   const [callIntelligence, setCallIntelligence] = useState<Record<string, unknown>>(grant.call_intelligence || {});
+  const [documentConstraints, setDocumentConstraints] = useState<Record<string, unknown>>(
+    grant.document_constraints || {},
+  );
   const [skeleton, setSkeleton] = useState<Record<string, unknown>>(grant.proposal_skeleton || {});
   const [documentHtml, setDocumentHtml] = useState(grant.editor_document || '');
   const [callRequirements, setCallRequirements] = useState(grant.call_requirements || '');
@@ -83,6 +87,8 @@ export default function GrantEditor({ grant, onGrantUpdate, onHeadingsChange }: 
   const [generatingDraft, setGeneratingDraft] = useState(false);
   const [draftSteps, setDraftSteps] = useState<AIThinkingStepData[] | null>(null);
   const [draftError, setDraftError] = useState<string | null>(null);
+  const [draftExecutionPlan, setDraftExecutionPlan] = useState<Record<string, unknown> | null>(null);
+  const [draftQaReport, setDraftQaReport] = useState<Record<string, unknown> | null>(null);
   const [wordCountWarnings, setWordCountWarnings] = useState<Record<string, {word_limit: number; actual: number; overage: number}>>({});
   const [missingSections, setMissingSections] = useState<string[]>([]);
   // Figure generation
@@ -188,6 +194,12 @@ export default function GrantEditor({ grant, onGrantUpdate, onHeadingsChange }: 
       if (d.call_analysis && Object.keys(d.call_analysis as object).length) setCallAnalysis(d.call_analysis as Record<string, unknown>);
       if (d.call_requirements) setCallRequirements(d.call_requirements as string);
       if (d.call_analysis_status) setCallAnalysisStatus(d.call_analysis_status as CallAnalysisStatus);
+      if (d.call_intelligence && Object.keys(d.call_intelligence as object).length) {
+        setCallIntelligence(d.call_intelligence as Record<string, unknown>);
+      }
+      if (d.document_constraints && Object.keys(d.document_constraints as object).length) {
+        setDocumentConstraints(d.document_constraints as Record<string, unknown>);
+      }
       if (d.proposal_skeleton && Object.keys(d.proposal_skeleton as object).length) setSkeleton(d.proposal_skeleton as Record<string, unknown>);
       if (d.last_review && Object.keys(d.last_review as object).length) setReviewReport(d.last_review as Record<string, unknown>);
       if (d.editor_document) setDocumentHtml(d.editor_document as string);
@@ -305,6 +317,12 @@ export default function GrantEditor({ grant, onGrantUpdate, onHeadingsChange }: 
   const runDraftPoll = useCallback(async () => {
     try {
       const data = await pollDraftUntilDone(grant.id, (progress) => {
+        if (progress.draft_execution_plan) {
+          setDraftExecutionPlan(progress.draft_execution_plan as Record<string, unknown>);
+        }
+        if (progress.draft_qa_report) {
+          setDraftQaReport(progress.draft_qa_report as Record<string, unknown>);
+        }
         if (progress.draft_steps && progress.draft_steps.length > 0) {
           setDraftSteps(progress.draft_steps as AIThinkingStepData[]);
         }
@@ -497,6 +515,7 @@ export default function GrantEditor({ grant, onGrantUpdate, onHeadingsChange }: 
     grantIdea,
     callAnalysis,
     callIntelligence,
+    documentConstraints,
     skeleton,
     documentHtml,
     callRequirements,
@@ -508,6 +527,8 @@ export default function GrantEditor({ grant, onGrantUpdate, onHeadingsChange }: 
     generatingDraft,
     draftSteps,
     draftError,
+    draftExecutionPlan,
+    draftQaReport,
     wordCountWarnings,
     missingSections,
     overviewFigureUrl,

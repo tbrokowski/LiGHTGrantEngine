@@ -59,6 +59,25 @@ interface SkeletonPhaseProps {
   overviewFigureAlt?: string | null;
   generatingFigure?: boolean;
   onGenerateFigure?: (customInstructions?: string) => void;
+  draftExecutionPlan?: Record<string, unknown> | null;
+  draftQaReport?: Record<string, unknown> | null;
+  documentConstraints?: Record<string, unknown>;
+}
+
+interface ResearchCoverageRow {
+  section?: string;
+  research_tier?: string;
+  exemplar_count?: number;
+  key_evidence_count?: number;
+  degraded?: boolean;
+}
+
+interface EvidenceCoverageRow {
+  section?: string;
+  exemplar_count?: number;
+  verify_count?: number;
+  passed?: boolean;
+  issues?: string[];
 }
 
 
@@ -182,6 +201,9 @@ export default function SkeletonPhase({
   overviewFigureAlt,
   generatingFigure = false,
   onGenerateFigure,
+  draftExecutionPlan,
+  draftQaReport,
+  documentConstraints = {},
 }: SkeletonPhaseProps) {
   const [editingTitle, setEditingTitle] = useState(false);
   const [titleDraft, setTitleDraft] = useState(skeleton.title_suggestion || '');
@@ -217,6 +239,11 @@ export default function SkeletonPhase({
   }, [skeleton.sections, skeleton.total_word_limit, skeleton.total_page_limit]);
 
   const rawText = skeleton.raw_text || '';
+  const constraintsAudit = (skeleton.constraints_audit as Record<string, unknown>) || {};
+  const constraintsConfidence = (documentConstraints?.confidence as string) || '';
+  const sectionWordSum = constraintSections.reduce((sum, s) => sum + (s.word_limit || 0), 0);
+  const totalWordsNum = constraintWordLimit ? parseInt(constraintWordLimit.replace(/,/g, ''), 10) : 0;
+  const sumMismatch = totalWordsNum > 0 && sectionWordSum > 0 && Math.abs(sectionWordSum - totalWordsNum) > totalWordsNum * 0.05;
   const flaggedSections: string[] = (skeleton.flagged_sections as string[]) || [];
   const hasContent = rawText.trim().length > 0;
   const flagCount = flaggedSections.length;
@@ -416,6 +443,15 @@ export default function SkeletonPhase({
 
               {constraintsExpanded && (
                 <div className="p-3 space-y-3">
+                  {constraintsConfidence && constraintsConfidence !== 'high' && (
+                    <p className="text-xs text-amber-700 bg-amber-50 border border-amber-100 rounded px-2 py-1.5">
+                      Limits confidence: <span className="font-medium">{constraintsConfidence}</span>
+                      {Array.isArray(documentConstraints?.verification_notes) &&
+                        (documentConstraints.verification_notes as string[]).slice(0, 2).map((n, i) => (
+                          <span key={i} className="block mt-0.5 text-amber-600">{n}</span>
+                        ))}
+                    </p>
+                  )}
                   {/* Document totals */}
                   <div className="flex items-center gap-4 text-xs">
                     <label className="flex items-center gap-1.5 text-gray-500">
@@ -457,7 +493,8 @@ export default function SkeletonPhase({
                             {constraintsEditing && <th className="px-2 py-1.5 w-6" />}
                             <th className="text-left px-2 py-1.5 w-6">#</th>
                             <th className="text-left px-2 py-1.5">Section</th>
-                            <th className="text-right px-2 py-1.5 w-28">Word count</th>
+                            <th className="text-right px-2 py-1.5 w-24">Target words</th>
+                            <th className="text-right px-2 py-1.5 w-24">Skeleton words</th>
                             <th className="text-right px-2 py-1.5 w-16">Pages</th>
                             <th className="text-left px-2 py-1.5 w-20">Priority</th>
                             {constraintsEditing && <th className="w-8" />}
@@ -539,15 +576,22 @@ export default function SkeletonPhase({
                                       className="w-20 bg-transparent focus:outline-none focus:bg-indigo-50 rounded px-0.5 text-right"
                                     />
                                   ) : (
-                                    <span className={
-                                      overLimit ? 'text-red-600 font-medium' :
-                                      nearLimit ? 'text-amber-600' :
-                                      'text-gray-600'
-                                    }>
-                                      {actual > 0 ? actual.toLocaleString() : '—'}
-                                      {limit ? ` / ${limit.toLocaleString()}` : ''}
+                                    <span className="font-medium text-gray-800">
+                                      {limit ? limit.toLocaleString() : '—'}
                                     </span>
                                   )}
+                                </td>
+                                <td className="px-2 py-1.5 text-right">
+                                  {!constraintsEditing && (
+                                    <span className={
+                                      overLimit ? 'text-red-600' :
+                                      nearLimit ? 'text-amber-600' :
+                                      'text-gray-400'
+                                    } title="Words in skeleton bullets (draft outline, not final target)">
+                                      {actual > 0 ? actual.toLocaleString() : '—'}
+                                    </span>
+                                  )}
+                                  {constraintsEditing && <span className="text-gray-300">—</span>}
                                 </td>
                                 <td className="px-2 py-1.5 text-right">
                                   {constraintsEditing ? (
@@ -606,6 +650,14 @@ export default function SkeletonPhase({
                           })}
                         </tbody>
                       </table>
+                      {!constraintsEditing && totalWordsNum > 0 && (
+                        <p className={`text-xs px-2 py-1.5 border-t border-gray-100 ${sumMismatch ? 'text-amber-700 bg-amber-50' : 'text-gray-500'}`}>
+                          Section targets sum: {sectionWordSum.toLocaleString()}
+                          {' / '}
+                          {totalWordsNum.toLocaleString()} total words
+                          {sumMismatch ? ' — adjust section targets to match document total' : ''}
+                        </p>
+                      )}
                     </div>
                   )}
 
@@ -662,12 +714,35 @@ export default function SkeletonPhase({
 
           {/* Draft progress */}
           {generating && (
-            <div className="pt-4">
+            <div className="pt-4 space-y-3">
               <AIThinkingLog
                 steps={(draftSteps ?? []).map((s) => ({ id: s.id, label: s.label, status: s.status as AIThinkingStep['status'], detail: s.detail }))}
                 progressPct={progressPct}
                 title="Generating draft…"
               />
+              {(() => {
+                const coverage = ((draftExecutionPlan?.research_coverage ?? []) as ResearchCoverageRow[]);
+                if (coverage.length === 0) return null;
+                return (
+                  <div className="rounded-lg border border-gray-200 bg-white px-3 py-2 text-xs">
+                    <div className="font-medium text-gray-700 mb-1.5">Section evidence (live)</div>
+                    <div className="space-y-1 max-h-32 overflow-y-auto">
+                      {coverage.map((row, i) => (
+                        <div key={i} className="flex items-center justify-between gap-2 text-gray-600">
+                          <span className="truncate">{row.section}</span>
+                          <span className="shrink-0 flex items-center gap-1.5">
+                            <span className="text-gray-400">{row.research_tier}</span>
+                            <span>{row.exemplar_count ?? 0} ex / {row.key_evidence_count ?? 0} claims</span>
+                            {row.degraded && (
+                              <span className="text-amber-700 bg-amber-50 px-1 rounded" title="No archive hits">⚠</span>
+                            )}
+                          </span>
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                );
+              })()}
             </div>
           )}
           {draftError && !generating && (
@@ -737,6 +812,83 @@ export default function SkeletonPhase({
         </div>
       </div>
 
+
+          {draftQaReport && !generating && (
+            <div className="rounded-lg border border-slate-200 bg-slate-50/80 px-4 py-3 text-sm space-y-2">
+              <div className="font-medium text-slate-900">Draft quality report</div>
+              {(() => {
+                const research = (draftQaReport.research_coverage ?? []) as ResearchCoverageRow[];
+                const evidence = (draftQaReport.evidence_coverage ?? []) as EvidenceCoverageRow[];
+                const failed = evidence.filter((e) => e.passed === false);
+                return (
+                  <>
+                    {research.length > 0 && (
+                      <div className="text-xs text-gray-600 space-y-0.5 max-h-28 overflow-y-auto">
+                        {research.map((row, i) => (
+                          <div key={i} className="flex justify-between gap-2">
+                            <span>{row.section}</span>
+                            <span>{row.exemplar_count ?? 0} archive · {row.key_evidence_count ?? 0} claims ({row.research_tier})</span>
+                          </div>
+                        ))}
+                      </div>
+                    )}
+                    {failed.length > 0 && (
+                      <ul className="list-disc list-inside text-xs text-amber-800">
+                        {failed.slice(0, 6).map((row, i) => (
+                          <li key={i}>
+                            <strong>{row.section}</strong>: {(row.issues ?? []).join(' ')}
+                          </li>
+                        ))}
+                      </ul>
+                    )}
+                    {failed.length === 0 && evidence.length > 0 && (
+                      <p className="text-xs text-green-700">Evidence coverage checks passed for all sections.</p>
+                    )}
+                    {Array.isArray(draftQaReport.constraints_issues) && (draftQaReport.constraints_issues as string[]).length > 0 && (
+                      <ul className="list-disc list-inside text-xs text-gray-600 mt-1">
+                        {(draftQaReport.constraints_issues as string[]).slice(0, 4).map((issue, i) => (
+                          <li key={i}>{issue}</li>
+                        ))}
+                      </ul>
+                    )}
+                  </>
+                );
+              })()}
+            </div>
+          )}
+
+          {(localDraftPlan || draftExecutionPlan) && !generating && (
+            <div className="rounded-lg border border-indigo-100 bg-indigo-50/50 px-4 py-3 text-sm space-y-2">
+              <div className="font-medium text-indigo-900">Draft execution plan</div>
+              {(() => {
+                const plan = (localDraftPlan || draftExecutionPlan) as Record<string, unknown>;
+                const profile = (plan.document_profile || {}) as Record<string, unknown>;
+                const gaps = (plan.alignment_gaps || []) as string[];
+                const secs = (plan.sections || []) as Array<Record<string, unknown>>;
+                return (
+                  <>
+                    {profile.total_target_words != null && (
+                      <p className="text-indigo-800">Target document: ~{String(profile.total_target_words)} words</p>
+                    )}
+                    {gaps.length > 0 && (
+                      <ul className="list-disc list-inside text-amber-800 text-xs">
+                        {gaps.slice(0, 4).map((g, i) => <li key={i}>{g}</li>)}
+                      </ul>
+                    )}
+                    {secs.length > 0 && (
+                      <div className="text-xs text-gray-600 max-h-24 overflow-y-auto">
+                        {secs.slice(0, 8).map((s, i) => (
+                          <div key={i}>{String(s.section_name)} — {String(s.target_words || '?')} words ({String(s.agent || 'default')})</div>
+                        ))}
+                      </div>
+                    )}
+                  </>
+                );
+              })()}
+            </div>
+          )}
+
+
       {/* Sticky footer */}
       <div className="flex-shrink-0 border-t border-gray-200 px-6 py-3 flex items-center justify-between gap-4">
         <p className="text-sm text-gray-400 flex-1 min-w-0">
@@ -770,6 +922,22 @@ export default function SkeletonPhase({
               {generatingFigure ? 'Generating…' : overviewFigureUrl ? 'Regenerate Figure' : 'Generate Figure'}
             </button>
           )}
+          <button
+            type="button"
+            onClick={async () => {
+              setPreviewingPlan(true);
+              try {
+                const res = await grantWriting.previewDraftPlan(grantId);
+                setLocalDraftPlan((res.data as { draft_execution_plan?: Record<string, unknown> }).draft_execution_plan ?? null);
+              } catch { /* ignore */ }
+              finally { setPreviewingPlan(false); }
+            }}
+            disabled={!hasContent || generating || previewingPlan}
+            className="flex items-center gap-2 border border-indigo-300 text-indigo-700 text-sm px-4 py-2.5 rounded-lg hover:bg-indigo-50 disabled:opacity-50 transition-colors"
+          >
+            {previewingPlan ? <Loader2 className="w-4 h-4 animate-spin" /> : <BookOpen className="w-4 h-4" />}
+            Preview plan
+          </button>
           <button
             onClick={handleGenerateDraft}
             disabled={!hasContent || generating}

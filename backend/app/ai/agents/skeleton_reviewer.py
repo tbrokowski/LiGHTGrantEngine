@@ -47,8 +47,13 @@ SKELETON TO REVIEW:
 
 ---
 
+Also check CONSTRAINTS (if provided): section word limits must sum to document total; targets must be realistic for a competitive proposal.
+
 Return JSON:
 {{
+  "constraints_issues": [
+    "Numeric or structural constraint problems"
+  ],
   "compliance_gaps": [
     "Specific mandatory requirement missing: describe exactly what is missing and where it should appear"
   ],
@@ -80,6 +85,7 @@ async def review_skeleton(
     call_analysis: dict,
     call_strategy: dict,
     grant_idea: str,
+    document_constraints: dict | None = None,
 ) -> dict:
     """
     Run an adversarial compliance review on the generated skeleton.
@@ -106,12 +112,26 @@ async def review_skeleton(
     if required_sections:
         strategy_block += "\nRequired sections: " + ", ".join(required_sections[:10])
 
+    constraints_block = ""
+    if document_constraints:
+        from app.ai.services.constraint_allocator import audit_constraints_compliance
+
+        audit = audit_constraints_compliance(document_constraints)
+        constraints_block = (
+            f"\nDOCUMENT CONSTRAINTS (locked budgets):\n"
+            f"Total words: {document_constraints.get('total_word_limit')}\n"
+            f"Total pages: {document_constraints.get('total_page_limit')}\n"
+            f"Confidence: {document_constraints.get('confidence')}\n"
+            f"Sections: {[(s.get('name'), s.get('word_limit')) for s in (document_constraints.get('sections') or [])[:12]]}\n"
+            f"Automated audit issues: {audit.get('issues')}\n"
+        )
+
     user_prompt = USER_PROMPT_TEMPLATE.format(
         call_requirements=(call_requirements or "Not provided")[:2500],
         strategy_block=strategy_block[:1500],
         grant_idea=(grant_idea or "Not provided")[:1000],
         skeleton_text=skeleton_text[:4000],
-    )
+    ) + constraints_block
 
     try:
         response = await chat_complete(
@@ -124,12 +144,19 @@ async def review_skeleton(
         )
         result = json.loads(response)
         # Normalise fields
+        constraints_issues = result.get("constraints_issues") or []
+        compliance_gaps = list(result.get("compliance_gaps") or [])
+        for issue in constraints_issues:
+            tag = f"[Constraints] {issue}"
+            if tag not in compliance_gaps:
+                compliance_gaps.append(tag)
         return {
-            "compliance_gaps": result.get("compliance_gaps") or [],
+            "compliance_gaps": compliance_gaps,
             "weak_sections": result.get("weak_sections") or [],
             "missing_call_requirements": result.get("missing_call_requirements") or [],
             "alignment_score": result.get("alignment_score"),
             "alignment_notes": result.get("alignment_notes") or "",
+            "constraints_issues": constraints_issues,
         }
     except Exception:
         return {}

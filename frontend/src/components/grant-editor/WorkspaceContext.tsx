@@ -28,6 +28,7 @@ export interface WorkspaceContextType {
   grantIdea: string;
   callAnalysis: Record<string, unknown>;
   callIntelligence: Record<string, unknown>;
+  documentConstraints: Record<string, unknown>;
   skeleton: Record<string, unknown>;
   documentHtml: string;
   callRequirements: string;
@@ -46,6 +47,8 @@ export interface WorkspaceContextType {
   generatingDraft: boolean;
   draftSteps: import('@/lib/callAnalysisStore').AIThinkingStepData[] | null;
   draftError: string | null;
+  draftExecutionPlan: Record<string, unknown> | null;
+  draftQaReport: Record<string, unknown> | null;
   wordCountWarnings: Record<string, { word_limit: number; actual: number; overage: number }>;
   missingSections: string[];
 

@@ -73,7 +73,14 @@ function ActiveGrantWorkspaceContent() {
   const searchParams = useSearchParams();
   const router = useRouter();
   const { user } = useAuth();
-  const initialTab = (searchParams.get('tab') as ActiveTab) ?? 'overview';
+  const tabParam = searchParams.get('tab');
+  useEffect(() => {
+    if (tabParam === 'finance' && id) {
+      router.replace(`/finance/${id}`);
+    }
+  }, [tabParam, id, router]);
+
+  const initialTab = tabParam && TABS.some(t => t.id === tabParam) ? (tabParam as ActiveTab) : 'overview';
 
   const [grant, setGrant] = useState<GrantDetail | null>(null);
   const [loading, setLoading] = useState(true);
@@ -287,8 +294,8 @@ function ActiveGrantWorkspaceContent() {
         </div>
 
         {/* Tab nav */}
-        <div className="max-w-7xl mx-auto">
-          <div className="flex border-b-0">
+        <div className="max-w-7xl mx-auto overflow-x-auto">
+          <div className="flex border-b-0 min-w-max">
             {TABS.map(tab => (
               <button
                 key={tab.id}

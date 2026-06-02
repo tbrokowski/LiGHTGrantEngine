@@ -42,6 +42,12 @@ from app.ai.rag.retriever import (
 from app.models.active_grant import ActiveGrant
 from app.models.document import Document
 from app.services.citation_lookup import search_citations
+from app.ai.orchestrator.adaptive_draft import run_adaptive_draft_stream, wait_for_call_intelligence
+from app.ai.services.document_constraints_builder import (
+    build_document_constraints,
+    enforce_skeleton_constraints,
+)
+from app.ai.services.constraint_allocator import audit_constraints_compliance
 
 
 INTRO_KEYWORDS = ("intro", "background", "problem", "executive", "rationale")
@@ -154,8 +160,9 @@ class GrantWritingOrchestrator:
         """
         yield _sse({"event": "skeleton_start"})
 
-        # ── Read call_intelligence (may still be running, graceful fallback) ──────────
-        call_intelligence: dict = grant.call_intelligence or {}
+        # ── Gate: wait for call_intelligence (blueprint + word budgets) ─────────────
+        yield _sse({"event": "constraints_wait_intelligence"})
+        call_intelligence: dict = await wait_for_call_intelligence(grant, db, timeout_sec=60)
         grant_type_context: str = call_intelligence.get("grant_type_context") or ""
         section_blueprint: list[dict] = call_intelligence.get("section_blueprint") or []
 
@@ -224,6 +231,60 @@ class GrantWritingOrchestrator:
             except Exception:
                 pass
         yield _sse({"event": "idea_alignment_complete"})
+
+        # ── Stage 0: Document constraints (extract → verify → allocate → align) ───
+        call_analysis = grant.call_analysis or {}
+        document_constraints: dict = {}
+        yield _sse({"event": "constraints_extraction_start"})
+        try:
+            document_constraints = await build_document_constraints(
+                call_requirements=grant.call_requirements or "",
+                call_analysis=call_analysis,
+                call_intelligence=call_intelligence,
+                grant_idea=grant.grant_idea or "",
+                aligned_concept=aligned_concept or None,
+                user_section_constraints=user_section_constraints,
+                user_total_word_limit=user_total_word_limit,
+                user_total_page_limit=user_total_page_limit,
+                funder=grant.funder or "",
+                title=grant.title or "",
+            )
+            grant.document_constraints = document_constraints
+            await db.commit()
+            yield _sse({
+                "event": "constraints_verified",
+                "confidence": document_constraints.get("confidence"),
+            })
+            yield _sse({
+                "event": "constraints_allocated",
+                "total_word_limit": document_constraints.get("total_word_limit"),
+                "section_count": len(document_constraints.get("sections") or []),
+            })
+        except Exception as exc:
+            yield _sse({"event": "constraints_error", "error": str(exc)[:300]})
+            document_constraints = grant.document_constraints or {}
+
+        # Entity anchor RAG for skeleton (named programs in idea)
+        skeleton_concept_rag: dict[str, list] = {}
+        try:
+            from app.ai.rag.retriever import retrieve_for_concept
+            sk_concepts = extract_concepts(grant.grant_idea or "", [])
+            if sk_concepts:
+                sk_results = await asyncio.gather(
+                    *[retrieve_for_concept(c, db, grant.funder, str(grant.id)) for c in sk_concepts[:6]],
+                    return_exceptions=True,
+                )
+                for c, r in zip(sk_concepts[:6], sk_results):
+                    if isinstance(r, list) and r:
+                        skeleton_concept_rag[c] = r
+                if skeleton_concept_rag:
+                    ci_tmp = grant.call_intelligence or {}
+                    ci_tmp["skeleton_concept_rag"] = {k: len(v) for k, v in skeleton_concept_rag.items()}
+                    grant.call_intelligence = ci_tmp
+        except Exception:
+            pass
+
+
 
         # ── Stage 3.5: Skeleton Planning — per-section research plan ──────────────
         yield _sse({"event": "skeleton_planning_start"})
@@ -318,13 +379,13 @@ class GrantWritingOrchestrator:
                 call_analysis,
             )
 
-            # Resolve section constraints: user overrides take precedence, fall back to call_analysis
             section_constraints, total_word_limit, total_page_limit = (
                 self._resolve_section_constraints(
                     call_analysis,
                     user_section_constraints,
                     user_total_word_limit,
                     user_total_page_limit,
+                    document_constraints=document_constraints,
                 )
             )
 
@@ -352,6 +413,13 @@ class GrantWritingOrchestrator:
             yield _sse({"event": "skeleton_error", "error": str(exc)[:500]})
             return
 
+        # ── Enforce locked document constraints on skeleton output ─────────────
+        if document_constraints:
+            try:
+                skeleton = enforce_skeleton_constraints(skeleton, document_constraints)
+            except Exception:
+                pass
+
         # ── Stage 6: Adversarial Alignment Review ──────────────────────────────
         try:
             review = await review_skeleton(
@@ -360,8 +428,19 @@ class GrantWritingOrchestrator:
                 call_analysis=call_analysis,
                 call_strategy=call_strategy or {},
                 grant_idea=grant.grant_idea or "",
+                document_constraints=document_constraints,
             )
             skeleton["review"] = review
+            if document_constraints:
+                constraints_audit = audit_constraints_compliance(
+                    document_constraints, skeleton
+                )
+                skeleton["constraints_audit"] = constraints_audit
+                if constraints_audit.get("issues"):
+                    review.setdefault("compliance_gaps", [])
+                    for issue in constraints_audit["issues"][:5]:
+                        if issue not in review["compliance_gaps"]:
+                            review["compliance_gaps"].append(f"[Constraints] {issue}")
             # Surface compliance gaps and weak sections as top-level fields
             if review.get("compliance_gaps"):
                 skeleton["compliance_gaps"] = review["compliance_gaps"]
@@ -382,11 +461,12 @@ class GrantWritingOrchestrator:
 
         grant.proposal_skeleton = skeleton
         grant.writing_phase = "skeleton"
-        # Persist strategy context so the draft pipeline can use it without re-computing
         if call_strategy:
             grant.call_strategy = call_strategy
         if aligned_concept:
             grant.aligned_concept = aligned_concept
+        if document_constraints:
+            grant.document_constraints = document_constraints
         await db.commit()
 
         yield _sse({"event": "skeleton_complete", "proposal_skeleton": skeleton})
@@ -446,9 +526,21 @@ class GrantWritingOrchestrator:
         user_section_constraints: list[dict] | None,
         user_total_word_limit: int | None,
         user_total_page_limit: str | None,
+        document_constraints: dict | None = None,
     ) -> tuple[list[dict], int | None, str | None]:
-        """Resolve section constraints with user overrides taking precedence over call_analysis."""
-        # User-provided constraints win over auto-extracted ones
+        """Resolve section constraints; document_constraints (Stage 0) is authoritative when present."""
+        dc = document_constraints or {}
+        if dc.get("sections"):
+            from app.ai.services.document_constraints_builder import merge_user_section_overrides
+
+            sections, tw, tp = merge_user_section_overrides(
+                dc["sections"],
+                user_section_constraints,
+                user_total_word_limit or dc.get("total_word_limit"),
+                user_total_page_limit or dc.get("total_page_limit"),
+            )
+            return sections, tw, tp
+
         if user_section_constraints:
             return (
                 user_section_constraints,
@@ -456,7 +548,6 @@ class GrantWritingOrchestrator:
                 user_total_page_limit,
             )
 
-        # Auto-extract from call_analysis.section_requirements
         section_reqs = call_analysis.get("section_requirements", {})
         section_constraints = []
         for i, (sec_name, details) in enumerate(section_reqs.items()):
@@ -470,7 +561,6 @@ class GrantWritingOrchestrator:
                 "order": i + 1,
             })
 
-        # Parse document-level limits from call_analysis
         total_word_limit = _parse_int_limit(call_analysis.get("word_limit"))
         total_page_limit = call_analysis.get("page_limit") or None
 
@@ -483,475 +573,18 @@ class GrantWritingOrchestrator:
         flagged_sections: list[str] | None = None,
     ) -> AsyncIterator[str]:
         """
-        Agentic SSE stream — five phases:
-          1.  Planning:          PlanningAgent + call_strategy/aligned_concept context
-          1.5 Concept extraction: Extract named concepts → proactive RAG pre-fetch
-          2.  Research:          ResearchAgent per section (parallel, semaphore 4)
-          3.  Drafting:          SectionDrafter / IntroArchitect with strategy + concept context
-          4.  Assembly:          Meta-agent quality loop → coherence + compliance + word count warnings
-          5.  Bibliography:      Collect all citations → APA References section
+        Adaptive Draft Orchestration (ADO) pipeline.
+        Delegates to run_adaptive_draft_stream for meta-orchestrated, routed drafting.
         """
-        skeleton = grant.proposal_skeleton or {}
-        all_sections = skeleton.get("sections") or []
+        async for chunk in run_adaptive_draft_stream(
+            grant,
+            db,
+            flagged_sections,
+            sse=_sse,
+            parse_raw_sections=_parse_raw_text_sections,
+        ):
+            yield chunk
 
-        # Fall back to raw_text if sections array is empty (legacy / raw-edit skeletons)
-        if not all_sections and skeleton.get("raw_text"):
-            all_sections = _parse_raw_text_sections(skeleton["raw_text"])
-
-        if not all_sections:
-            yield _sse({"error": "No skeleton sections found. Generate skeleton first."})
-            return
-
-        # If specific sections were flagged, draft those first then append the rest
-        flagged_set = set(flagged_sections or skeleton.get("flagged_sections") or [])
-        if flagged_set:
-            priority_secs = [s for s in all_sections if (s.get("name") or s.get("title")) in flagged_set]
-            rest_secs = [s for s in all_sections if (s.get("name") or s.get("title")) not in flagged_set]
-            sections = priority_secs + rest_secs
-        else:
-            sections = all_sections
-
-        # Initialise document HTML scaffold
-        html = skeleton_to_html(skeleton)
-        grant.editor_document = html
-        grant.writing_phase = "draft"
-        await db.commit()
-
-        eval_criteria = (grant.call_analysis or {}).get("evaluation_criteria", [])
-        call_req = grant.call_requirements or ""
-        call_narrative_brief = (grant.call_analysis or {}).get("narrative_brief", "")
-        section_requirements_map = (grant.call_analysis or {}).get("section_requirements") or {}
-        required_sections = (grant.call_analysis or {}).get("required_sections") or []
-
-        # Load persisted call strategy and aligned concept (saved during skeleton phase)
-        call_strategy: dict = grant.call_strategy or {}
-        aligned_concept: dict = grant.aligned_concept or {}
-
-        # Build per-section strategy and emphasis maps from the call strategy
-        strategy_section_map: dict[str, str] = call_strategy.get("section_strategy") or {}
-        emphasis_areas_list: list[dict] = aligned_concept.get("emphasis_areas") or []
-        emphasis_map: dict[str, str] = {
-            ea.get("section", ""): ea.get("emphasis", "")
-            for ea in emphasis_areas_list
-            if isinstance(ea, dict) and ea.get("section")
-        }
-
-        # ── Phase 1: Planning ──────────────────────────────────────────────────
-        yield _sse({"event": "planning_start", "total": len(sections)})
-        try:
-            plan = await plan_draft_research(
-                opportunity_title=grant.title,
-                funder=grant.funder or "",
-                grant_idea=grant.grant_idea or "",
-                skeleton_sections=sections,
-                call_requirements=call_req,
-                flagged_section_names=list(flagged_set) if flagged_set else None,
-                call_strategy=call_strategy or None,
-                aligned_concept=aligned_concept or None,
-            )
-        except Exception:
-            plan = {"narrative_context": {}, "section_briefs": []}
-
-        narrative_context = plan.get("narrative_context") or {}
-        section_briefs_map: dict[str, dict] = {
-            b.get("section_name", ""): b
-            for b in plan.get("section_briefs", [])
-            if b.get("section_name")
-        }
-        yield _sse({"event": "planning_complete", "total": len(sections)})
-
-        # ── Phase 1.5: Concept extraction + proactive RAG pre-fetch ───────────
-        # Enrich concept list with call thematic areas from call_intelligence
-        ci = grant.call_intelligence or {}
-        ci_per_section_guide: dict[str, str] = ci.get("per_section_writing_guide") or {}
-        theme_terms: list[str] = (grant.call_analysis or {}).get("thematic_areas") or []
-        base_concepts = extract_concepts(grant.grant_idea or "", sections)
-        concepts = list(dict.fromkeys(base_concepts + theme_terms[:5]))[:12]
-        concept_rag_map: dict[str, list[dict]] = {}
-        if concepts:
-            yield _sse({"event": "concept_extraction", "concepts": concepts[:8]})
-            try:
-                concept_rag_results = await asyncio.gather(
-                    *[
-                        retrieve_content_exemplars(
-                            query=concept,
-                            db=db,
-                            funder=grant.funder,
-                            top_k=3,
-                            current_grant_id=str(grant.id),
-                        )
-                        for concept in concepts[:8]
-                    ],
-                    return_exceptions=True,
-                )
-                for concept, result in zip(concepts[:8], concept_rag_results):
-                    if isinstance(result, list) and result:
-                        concept_rag_map[concept] = result
-            except Exception:
-                pass
-
-        # ── Phase 2: Research (parallel) ───────────────────────────────────────
-        yield _sse({"event": "research_start", "total": len(sections)})
-
-        async def _research_section(sec: dict) -> tuple[dict, dict]:
-            name = sec.get("name") or sec.get("title") or "Section"
-            sec_type = sec.get("type") or "other"
-            brief = section_briefs_map.get(name) or {}
-            content = sec.get("content") or ""
-
-            # Enrich RAG query with the section's call-specific writing guide snippet
-            section_guide = ci_per_section_guide.get(name, "")
-            rag_query = f"{name} {content[:100]} {section_guide[:80]} {grant.grant_idea or ''}".strip()
-
-            async with _RESEARCH_SEMAPHORE:
-                style_exemplars, content_exemplars, reusable = await asyncio.gather(
-                    retrieve_style_exemplars(db=db, section_type=sec_type, funder=grant.funder, top_k=3),
-                    retrieve_content_exemplars(
-                        query=rag_query,
-                        db=db,
-                        section_type=sec_type,
-                        funder=grant.funder,
-                        top_k=4,
-                        current_grant_id=str(grant.id),
-                    ),
-                    retrieve_reusable_language(
-                        query=(sec.get("requirements") or call_req)[:300],
-                        db=db,
-                        section_type=sec_type,
-                        top_k=3,
-                    ),
-                    return_exceptions=True,
-                )
-
-                evidence_bundle = await gather_section_evidence(
-                    section_name=name,
-                    section_content=content,
-                    section_brief=brief,
-                    db=db,
-                    funder=grant.funder or "",
-                    section_type=sec_type,
-                    rag_style_exemplars=style_exemplars if isinstance(style_exemplars, list) else [],
-                    rag_content_exemplars=content_exemplars if isinstance(content_exemplars, list) else [],
-                    rag_reusable_language=reusable if isinstance(reusable, list) else [],
-                )
-            return sec, evidence_bundle
-
-        research_tasks = [_research_section(sec) for sec in sections]
-        research_results = await asyncio.gather(*research_tasks, return_exceptions=True)
-        # Map section name → (sec dict, evidence_bundle)
-        section_evidence_map: dict[str, tuple[dict, dict]] = {}
-        for res in research_results:
-            if isinstance(res, Exception):
-                continue
-            sec, evidence_bundle = res
-            name = sec.get("name") or sec.get("title") or "Section"
-            section_evidence_map[name] = (sec, evidence_bundle)
-
-        yield _sse({"event": "research_complete", "total": len(sections)})
-
-        # ── Phase 3: Draft (parallel) ──────────────────────────────────────────
-        word_count_warnings: list[dict] = []
-        all_draft_results: list[dict] = []
-
-        def _get_concept_bundles_for_section(section_content: str) -> list[dict]:
-            """Find concept RAG bundles whose concept appears in this section's text."""
-            bundles = []
-            content_upper = section_content.upper()
-            for concept, rag_docs in concept_rag_map.items():
-                if concept.upper() in content_upper:
-                    bundles.extend(rag_docs)
-            return bundles[:6]
-
-        async def _draft_section_task(sec: dict, idx: int) -> tuple[int, str, dict]:
-            name = sec.get("name") or sec.get("title") or f"Section {idx + 1}"
-            sec_type = sec.get("type") or "other"
-            name_lower = name.lower()
-            sec_type_lower = sec_type.lower()
-            is_intro = any(k in name_lower or k in sec_type_lower for k in INTRO_KEYWORDS)
-
-            sec_bundle_tuple = section_evidence_map.get(name)
-            evidence_bundle: dict = sec_bundle_tuple[1] if sec_bundle_tuple else {}
-
-            skeleton_content = sec.get("content") or ""
-            compliance_guidance = sec.get("requirements") or ""
-            evidence_summary = evidence_bundle.get("summary_for_drafter", "")
-            suggested_citations = (
-                evidence_bundle.get("suggested_citations", [])
-                + [r.get("formatted_citation", "") for r in evidence_bundle.get("academic_results", [])[:4]]
-            )
-            rag_style = evidence_bundle.get("rag_style_exemplars") or []
-            rag_content = evidence_bundle.get("rag_content_exemplars") or []
-            rag_reusable = evidence_bundle.get("rag_reusable_language") or []
-
-            word_limit = sec.get("word_limit")
-            sec_specific_req = (
-                section_requirements_map.get(name)
-                or section_requirements_map.get(name.lower())
-                or sec.get("section_requirements")
-            )
-            if isinstance(sec_specific_req, dict):
-                word_limit = sec_specific_req.get("word_limit") or word_limit
-
-            # Format citations for agent
-            all_citations = [{"formatted_citation": c} for c in suggested_citations if c]
-
-            # Per-section strategy + alignment context
-            strategic_guidance = (
-                strategy_section_map.get(name)
-                or strategy_section_map.get(name.lower())
-                or ""
-            )
-            emphasis_direction = (
-                emphasis_map.get(name)
-                or emphasis_map.get(name.lower())
-                or ""
-            )
-            # Concept bundles: archive docs for concepts mentioned in this section
-            concept_bundles = _get_concept_bundles_for_section(skeleton_content)
-
-            # Per-section writing instructions from call_intelligence
-            writing_instructions = ci_per_section_guide.get(name) or ci_per_section_guide.get(name.lower()) or ""
-
-            async with _DRAFT_SEMAPHORE:
-                if is_intro:
-                    result = await draft_introduction(
-                        grant_idea=grant.grant_idea or "",
-                        call_requirements=compliance_guidance or call_req,
-                        evaluation_criteria=eval_criteria,
-                        intro_arc=sec.get("intro_arc"),
-                        style_profile=grant.style_profile,
-                        style_exemplars=rag_style,
-                        retrieved_sections=rag_content,
-                        citations=all_citations,
-                        funder=grant.funder or "",
-                        word_limit=word_limit,
-                        skeleton_content=skeleton_content,
-                        compliance_guidance=compliance_guidance,
-                        evidence_summary=evidence_summary,
-                        narrative_context=narrative_context,
-                        opening_hook=aligned_concept.get("opening_hook", ""),
-                        strategic_framing=call_strategy.get("narrative_framing", ""),
-                        concept_bundles=concept_bundles,
-                    )
-                else:
-                    result = await draft_section(
-                        section_name=name,
-                        section_type=sec_type,
-                        call_requirements=compliance_guidance or call_req,
-                        evaluation_criteria=eval_criteria,
-                        retrieved_sections=rag_content,
-                        style_exemplars=rag_style,
-                        reusable_language=rag_reusable,
-                        word_limit=word_limit,
-                        funder=grant.funder or "",
-                        style_profile=grant.style_profile,
-                        prior_sections_summary="",  # not available in parallel mode
-                        citations=all_citations,
-                        grant_idea=grant.grant_idea or "",
-                        section_specific_requirements=sec_specific_req,
-                        call_narrative_brief=call_narrative_brief,
-                        skeleton_content=skeleton_content,
-                        compliance_guidance=compliance_guidance,
-                        evidence_summary=evidence_summary,
-                        narrative_context=narrative_context,
-                        strategic_guidance=strategic_guidance,
-                        emphasis_direction=emphasis_direction,
-                        concept_bundles=concept_bundles,
-                        writing_instructions=writing_instructions,
-                    )
-
-            # Word count check
-            actual_wc = result.get("word_count") or len((result.get("draft") or "").split())
-            if word_limit and actual_wc > word_limit * 1.1:
-                result["_word_count_warning"] = {
-                    "section": name,
-                    "word_limit": word_limit,
-                    "actual": actual_wc,
-                    "overage": actual_wc - word_limit,
-                }
-
-            return idx, name, result
-
-        draft_tasks = [_draft_section_task(sec, i) for i, sec in enumerate(sections)]
-
-        # Stream section_start events and collect results as they complete
-        section_results: dict[int, tuple[str, dict]] = {}
-        for i, sec in enumerate(sections):
-            name = sec.get("name") or sec.get("title") or f"Section {i + 1}"
-            yield _sse({"event": "section_start", "section": name, "index": i, "total": len(sections)})
-
-        completed_drafts = await asyncio.gather(*draft_tasks, return_exceptions=True)
-        for res in completed_drafts:
-            if isinstance(res, Exception):
-                continue
-            idx, name, result = res
-            section_results[idx] = (name, result)
-            all_draft_results.append(result)
-            # Collect word count warnings from parallel draft phase
-            if result.get("_word_count_warning"):
-                word_count_warnings.append(result["_word_count_warning"])
-                yield _sse({"event": "section_word_count_warning", **result["_word_count_warning"]})
-
-        # ── Phase 4: Assembly + Meta-Agent Quality Loop (sequential, in order) ──
-        all_warnings: list[str] = []
-        collected_questions: list[dict] = []
-        prior_summary = ""
-        final_section_content: dict[str, str] = {}  # section_name → final HTML
-
-        yield _sse({"event": "meta_agent_start", "total": len(sections)})
-
-        for i, sec in enumerate(sections):
-            name = sec.get("name") or sec.get("title") or f"Section {i + 1}"
-            sec_type = sec.get("type") or "other"
-
-            if i not in section_results:
-                continue
-            _, result = section_results[i]
-
-            draft_text = result.get("draft", "")
-            if draft_text and not draft_text.strip().startswith("<"):
-                draft_html = "".join(f"<p>{p.strip()}</p>" for p in draft_text.split("\n\n") if p.strip())
-            else:
-                draft_html = draft_text
-
-            warnings = result.get("warnings", [])
-            all_warnings.extend(warnings)
-
-            # Run meta-agent quality loop on this section
-            improved_html = draft_html
-            try:
-                async for meta_event in evaluate_and_improve_section(
-                    section_name=name,
-                    section_content=draft_html,
-                    section_type=sec_type,
-                    prior_sections_summary=prior_summary,
-                    call_requirements=call_req,
-                    narrative_context=narrative_context,
-                    style_profile=grant.style_profile or {},
-                    db=db,
-                    funder=grant.funder or "",
-                    grant_idea=grant.grant_idea or "",
-                    max_rounds=3,
-                ):
-                    event_type = meta_event.get("event", "")
-                    if event_type == "meta_agent_accepted":
-                        improved_html = meta_event.get("content") or draft_html
-                    elif event_type == "meta_agent_question":
-                        collected_questions.append(meta_event)
-                    yield _sse(meta_event)
-            except Exception:
-                # Never let meta-agent failure block draft assembly
-                pass
-
-            final_section_content[name] = improved_html
-            html = insert_section_content(html, name, improved_html)
-
-            # Update prior_summary for next section's coherence context
-            plain_snippet = improved_html.replace("<p>", "").replace("</p>", "\n").replace("<br>", "\n")
-            prior_summary += f"\n{name}: {plain_snippet[:400]}"
-
-            actual_wc = result.get("word_count", len(draft_text.split()))
-            yield _sse({
-                "event": "section_complete",
-                "section": name,
-                "index": i,
-                "total": len(sections),
-                "word_count": actual_wc,
-                "warnings": warnings,
-                "human_review_required": result.get("human_review_required", False),
-            })
-
-        grant.editor_document = html
-        # Store collected questions on the grant for the refine-draft endpoint
-        skeleton_with_questions = dict(grant.proposal_skeleton or {})
-        if collected_questions:
-            skeleton_with_questions["_meta_agent_questions"] = collected_questions
-            grant.proposal_skeleton = skeleton_with_questions
-        await db.commit()
-
-        # ── Section compliance mapping ─────────────────────────────────────────
-        missing_sections: list[str] = []
-        if required_sections:
-            drafted_names_lower = {(s.get("name") or s.get("title") or "").lower() for s in sections}
-            for req in required_sections:
-                if not any(req.lower() in dn or dn in req.lower() for dn in drafted_names_lower):
-                    missing_sections.append(req)
-            yield _sse({
-                "event": "section_compliance_map",
-                "required": required_sections,
-                "drafted": [s.get("name") or s.get("title") for s in sections],
-                "missing": missing_sections,
-            })
-
-        # ── Narrative coherence check across all sections ─────────────────────
-        coherence_result: dict = {}
-        try:
-            section_dicts = [
-                {
-                    "name": (sec.get("name") or sec.get("title") or ""),
-                    "content": final_section_content.get(sec.get("name") or sec.get("title") or "", ""),
-                }
-                for sec in sections
-            ]
-            coherence_result = await check_narrative_coherence(
-                sections=section_dicts,
-                narrative_context=narrative_context,
-                call_requirements=call_req,
-                grant_idea=grant.grant_idea or "",
-            )
-            yield _sse({
-                "event": "coherence_check",
-                "overall": coherence_result.get("overall", "adequate"),
-                "issues": coherence_result.get("issues", [])[:8],
-                "strengths": coherence_result.get("strengths", [])[:3],
-            })
-        except Exception:
-            pass
-
-        # ── Compliance pass ───────────────────────────────────────────────────
-        compliance_gaps: list[str] = []
-        if call_req:
-            try:
-                plain_text = " ".join(s.plain_text for s in parse_document_sections(html))
-                compliance_result = await check_compliance(plain_text, grant.call_analysis or {})
-                compliance_gaps = compliance_result.get("recommended_fixes", [])
-                yield _sse({
-                    "event": "compliance_pass",
-                    "status": compliance_result.get("overall_status", "unknown"),
-                    "gaps": compliance_gaps[:10],
-                })
-            except Exception:
-                pass
-
-        # ── Phase 5: Bibliography generation ─────────────────────────────────
-        yield _sse({"event": "bibliography_start"})
-        try:
-            bib_result = await generate_bibliography(
-                draft_results=all_draft_results,
-                use_llm_cleanup=False,
-            )
-            if bib_result.get("references_html"):
-                html = html + "\n" + bib_result["references_html"]
-                grant.editor_document = html
-                await db.commit()
-            yield _sse({
-                "event": "bibliography_complete",
-                "citation_count": bib_result.get("citation_count", 0),
-            })
-        except Exception:
-            pass
-
-        yield _sse({
-            "event": "draft_complete",
-            "document_html": html,
-            "total_warnings": len(all_warnings),
-            "compliance_gaps": compliance_gaps[:5],
-            "missing_sections": missing_sections,
-            "word_count_warnings": word_count_warnings,
-            "agent_questions": collected_questions,
-            "agent_questions_count": len(collected_questions),
-            "coherence": coherence_result.get("overall", "adequate"),
-        })
 
     async def run_review(self, grant: ActiveGrant, db: AsyncSession) -> dict:
         draft = grant.editor_document or ""

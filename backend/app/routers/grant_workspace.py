@@ -1934,6 +1934,14 @@ async def get_workspace_summary(
     budget_result = await db.execute(select(BudgetTracker).where(BudgetTracker.grant_id == grant_id))
     budget = budget_result.scalar_one_or_none()
 
+    finance_status = None
+    if grant.grant_stage in ("active", "awarded"):
+        try:
+            from app.services.grant_finance_summary import get_finance_summary
+            finance_status = await get_finance_summary(grant_id, db)
+        except Exception:
+            finance_status = {"enabled": True, "status": "not_setup"}
+
     days_to_external = (grant.external_deadline - today).days if grant.external_deadline else None
     days_to_internal = (grant.internal_deadline - today).days if grant.internal_deadline else None
 
@@ -1963,6 +1971,7 @@ async def get_workspace_summary(
         "pending_partners": pending_partners,
         "upcoming_milestones": upcoming_milestones[:3],
         "budget_status": budget.status if budget else BudgetStatus.NOT_STARTED,
+        "finance_status": finance_status,
     }
 
 

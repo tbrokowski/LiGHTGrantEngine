@@ -115,7 +115,7 @@ export default function ActiveGrantCard({ grant, onStageChange, onDelete, onDead
         style={grant.color ? { borderLeftColor: grant.color, borderLeftWidth: '4px' } : undefined}
       >
         <div className="flex items-start gap-3">
-          <Link href={`/grants/${grant.id}`} className="flex-1 min-w-0 cursor-pointer">
+          <Link href={`/grants/${grant.id}/workspace`} className="flex-1 min-w-0 cursor-pointer">
             <div className="flex items-center gap-2 mb-1.5">
               <span className="text-xs font-medium text-emerald-700 bg-emerald-100 border border-emerald-200 px-2 py-0.5 rounded-full">
                 Active

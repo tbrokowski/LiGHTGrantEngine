@@ -39,6 +39,9 @@ WEB SEARCH RESULTS:
 ACADEMIC CITATIONS:
 {academic_results}
 
+ARCHIVE EXCERPTS (prior awarded grants — prioritize for named programs):
+{archive_results}
+
 Select and synthesise the most useful evidence. Return JSON:
 {{
   "key_evidence": [
@@ -110,6 +113,7 @@ async def gather_section_evidence(
         key_claims=section_brief.get("key_claims_to_support") or [],
         web_results=web_results,
         academic_results=academic_results,
+        rag_content_exemplars=rag_content_exemplars,
     )
 
     return {
@@ -147,13 +151,15 @@ async def _synthesise_evidence(
     key_claims: list[str],
     web_results: list[dict],
     academic_results: list[dict],
+    rag_content_exemplars: list[dict] | None = None,
 ) -> dict:
     """Use LLM to select and synthesise the most relevant evidence."""
-    if not web_results and not academic_results:
+    if not web_results and not academic_results and not rag_content_exemplars:
         return {"key_evidence": [], "summary_for_drafter": "", "suggested_citations": []}
 
     web_str = _format_web_results(web_results[:6])
     academic_str = _format_academic_results(academic_results[:8])
+    archive_str = _format_archive_results((rag_content_exemplars or [])[:6])
 
     user_prompt = SYNTHESIS_USER_PROMPT.format(
         section_name=section_name,
@@ -161,6 +167,7 @@ async def _synthesise_evidence(
         key_claims=", ".join(key_claims[:5]) or "General support needed",
         web_results=web_str or "None found",
         academic_results=academic_str or "None found",
+        archive_results=archive_str or "None found",
     )
 
     response = await chat_complete(
@@ -177,6 +184,16 @@ async def _synthesise_evidence(
     except (json.JSONDecodeError, TypeError):
         return {"key_evidence": [], "summary_for_drafter": "", "suggested_citations": []}
 
+
+
+
+def _format_archive_results(results: list[dict]) -> str:
+    lines = []
+    for i, r in enumerate(results or [], 1):
+        title = r.get("grant_title", "?")
+        snippet = (r.get("full_text") or r.get("text_snippet") or "")[:500]
+        lines.append(f"{i}. [{title}] ({r.get('outcome','?')})\n   {snippet}")
+    return "\n\n".join(lines)
 
 def _format_web_results(results: list[dict]) -> str:
     lines = []

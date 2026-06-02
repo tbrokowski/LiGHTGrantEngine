@@ -75,6 +75,7 @@ interface IdeaPhaseProps {
   onDocPulled?: (html: string) => void;
   onSelectionChange?: (text: string) => void;
   callIntelligence?: Record<string, unknown>;
+  documentConstraints?: Record<string, unknown>;
 }
 
 // Collapsible section wrapper
@@ -132,6 +133,7 @@ export default function IdeaPhase({
   onDocPulled,
   onSelectionChange,
   callIntelligence,
+  documentConstraints = {},
 }: IdeaPhaseProps) {
   // Drag-and-drop state for section constraints table
   const dragIndexRef = useRef<number | null>(null);
@@ -149,8 +151,21 @@ export default function IdeaPhase({
   const [totalPageLimit, setTotalPageLimit] = useState<string>('');
   const [sectionConstraints, setSectionConstraints] = useState<SectionConstraint[]>([]);
 
-  // Initialise constraints from call_analysis when it becomes available
+  const constraintsConfidence = (documentConstraints?.confidence as string) || '';
+
+  // Seed constraints from document_constraints (Stage 0) or call_analysis
   useEffect(() => {
+    const dcSections = documentConstraints?.sections as SectionConstraint[] | undefined;
+    if (dcSections && dcSections.length > 0) {
+      setSectionConstraints(dcSections.map((s, i) => ({ ...s, order: s.order ?? i + 1 })));
+      if (documentConstraints.total_word_limit != null) {
+        setTotalWordLimit(String(documentConstraints.total_word_limit));
+      }
+      if (documentConstraints.total_page_limit != null) {
+        setTotalPageLimit(String(documentConstraints.total_page_limit));
+      }
+      return;
+    }
     const sectionReqs = (callAnalysis as Record<string, Record<string, unknown>>).section_requirements;
     if (sectionReqs && typeof sectionReqs === 'object') {
       const sections: SectionConstraint[] = Object.entries(sectionReqs)
@@ -168,9 +183,8 @@ export default function IdeaPhase({
     if (wl) setTotalWordLimit(String(wl));
     const pl = (callAnalysis as Record<string, unknown>).page_limit;
     if (pl) setTotalPageLimit(String(pl));
-  // Only seed once when analysis is first populated
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [callAnalysis]);
+  }, [callAnalysis, documentConstraints]);
 
   // Upload state
   const [uploading, setUploading] = useState(false);
@@ -660,6 +674,19 @@ export default function IdeaPhase({
             summary={constraintsExpanded ? '' : `${sectionConstraints.length} sections`}
           >
             <div className="space-y-3">
+              {constraintsConfidence && constraintsConfidence !== 'high' && (
+                <div className="rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-xs text-amber-800">
+                  <span className="font-medium">Limits confidence: {constraintsConfidence}</span>
+                  {Array.isArray(documentConstraints?.verification_notes) &&
+                    (documentConstraints.verification_notes as string[]).length > 0 && (
+                    <ul className="mt-1 list-disc pl-4 space-y-0.5">
+                      {(documentConstraints.verification_notes as string[]).slice(0, 3).map((n, i) => (
+                        <li key={i}>{n}</li>
+                      ))}
+                    </ul>
+                  )}
+                </div>
+              )}
               {/* Document totals */}
               <div className="flex items-center gap-4 text-xs">
                 <label className="flex items-center gap-1.5 text-gray-500">
@@ -865,6 +892,9 @@ export default function IdeaPhase({
       <div className="flex-shrink-0 border-t border-gray-200 px-5 py-3 flex items-center justify-end gap-3">
         {generating && (!skeletonSteps || skeletonSteps.length === 0) && (
           <p className="text-sm text-gray-400">Generating — you can navigate away and come back</p>
+        )}
+        {constraintsConfidence === 'low' && (
+          <p className="text-xs text-amber-600">Review page/word limits before generating — extraction confidence is low.</p>
         )}
         <button
           onClick={() => {

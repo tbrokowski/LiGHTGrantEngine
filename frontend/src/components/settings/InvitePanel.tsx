@@ -1,6 +1,7 @@
 'use client';
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { organizations } from '@/lib/api';
+import { roleEligibleForFinance } from '@/lib/auth';
 
 const ROLES = [
   { value: 'grant_lead', label: 'Grant Lead' },
@@ -29,6 +30,12 @@ const MODULE_PERMISSIONS = [
     description: 'Can view and manage partner contacts',
     default: true,
   },
+  {
+    key: 'can_view_finance',
+    label: 'Access Finance',
+    description: 'Requires Operations Manager or Grant Lead role (org admins always have access)',
+    default: false,
+  },
 ];
 
 export function InvitePanel({ institutionId }: { institutionId: string }) {
@@ -39,7 +46,16 @@ export function InvitePanel({ institutionId }: { institutionId: string }) {
     can_view_grants: false,
     can_view_archive: true,
     can_view_partners: true,
+    can_view_finance: false,
   });
+
+  useEffect(() => {
+    if (isOrgAdmin) return;
+    setPerms(p => ({
+      ...p,
+      can_view_finance: roleEligibleForFinance(inviteRole),
+    }));
+  }, [inviteRole, isOrgAdmin]);
   const [inviteLoading, setInviteLoading] = useState(false);
   const [inviteSuccess, setInviteSuccess] = useState('');
   const [inviteError, setInviteError] = useState('');
@@ -65,7 +81,7 @@ export function InvitePanel({ institutionId }: { institutionId: string }) {
       setInviteEmail('');
       setIsOrgAdmin(false);
       setInviteRole('contributor');
-      setPerms({ can_view_grants: false, can_view_archive: true, can_view_partners: true });
+      setPerms({ can_view_grants: false, can_view_archive: true, can_view_partners: true, can_view_finance: false });
     } catch (err: unknown) {
       const msg = (err as { response?: { data?: { detail?: string } } })?.response?.data?.detail;
       setInviteError(msg || 'Failed to send invite.');
@@ -157,14 +173,18 @@ export function InvitePanel({ institutionId }: { institutionId: string }) {
             <div className="border border-gray-200 rounded-lg p-4 space-y-3">
               <p className="text-xs font-medium text-gray-700 mb-1">Module Access</p>
               {MODULE_PERMISSIONS.map(({ key, label, description, default: def }) => {
-                const checked = perms[key] ?? def;
+                const financeLocked = key === 'can_view_finance' && !roleEligibleForFinance(inviteRole);
+                const checked = key === 'can_view_finance' && financeLocked
+                  ? false
+                  : (perms[key] ?? def);
                 return (
-                  <label key={key} className="flex items-start gap-3 cursor-pointer">
+                  <label key={key} className={`flex items-start gap-3 ${financeLocked ? 'opacity-60 cursor-not-allowed' : 'cursor-pointer'}`}>
                     <button
                       type="button"
                       role="switch"
                       aria-checked={checked}
-                      onClick={() => setPerms(p => ({ ...p, [key]: !checked }))}
+                      disabled={financeLocked}
+                      onClick={() => !financeLocked && setPerms(p => ({ ...p, [key]: !checked }))}
                       className={`mt-0.5 relative inline-flex h-4 w-7 flex-shrink-0 rounded-full border-2 border-transparent transition-colors focus:outline-none ${
                         checked ? 'bg-gray-800' : 'bg-gray-300'
                       }`}

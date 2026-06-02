@@ -24,6 +24,9 @@ class NotificationType(str, Enum):
     SCRAPER_FAILED = "scraper_failed"
     OPPORTUNITY_PAGE_UPDATED = "opportunity_page_updated"
     GRANT_OUTCOME_RECORDED = "grant_outcome_recorded"
+    FINANCE_OVERSPEND_WARNING = "finance_overspend_warning"
+    FINANCE_OVERSPEND_CRITICAL = "finance_overspend_critical"
+    FUND_REQUEST_PENDING = "fund_request_pending"
 
 
 class NotificationChannel(str, Enum):

@@ -28,6 +28,8 @@ from .checklist_item import ChecklistItem
 from .workspace_file import WorkspaceFile
 from .workspace_partner import WorkspacePartner, PartnerMaterial
 from .budget_tracker import BudgetTracker
+from .grant_ledger import GrantLedger, LedgerCategory, FundRequest, Expenditure, FundRequestStatus
+from .slack_config import SlackGrantConfig
 from .activity_log import GrantActivityLog
 from .grant_writing import GrantWritingConversation, GrantCitation
 from .user_opportunity_state import UserOpportunityState
@@ -49,6 +51,8 @@ __all__ = [
     "PartnerOrganization", "PartnerMeeting", "PartnerDocument", "PartnerReminder", "PartnerTask",
     "Milestone", "GanttItem", "WorkspaceSection", "ChecklistItem",
     "WorkspaceFile", "WorkspacePartner", "PartnerMaterial", "BudgetTracker",
+    "GrantLedger", "LedgerCategory", "FundRequest", "Expenditure", "FundRequestStatus",
+    "SlackGrantConfig",
     "GrantActivityLog", "GrantWritingConversation", "GrantCitation",
     "UserOpportunityState", "GrantMember",
     "InstitutionOpportunity", "InstitutionSource", "PreseedRun",

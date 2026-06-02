@@ -177,6 +177,8 @@ def scan_source(self, source_id: str):
         source = db.get(Source, source_id)
         if not source:
             return {"error": "Source not found"}
+        if source.status == "paused":
+            return {"skipped": True, "reason": "source paused", "source": source.name}
 
         run = SourceRun(
             id=str(uuid.uuid4()),
@@ -199,7 +201,9 @@ def scan_source(self, source_id: str):
             dup_count = 0
 
             for listing in raw_listings:
-                result = _process_listing(db, listing, source_id, source.url)
+                result = _process_listing(
+                    db, listing, source_id, source.url, source_type=source.source_type
+                )
                 if result == "new":
                     new_count += 1
                 elif result == "updated":
@@ -237,12 +241,21 @@ def scan_source(self, source_id: str):
             raise self.retry(exc=e, countdown=300)
 
 
-def _process_listing(db, listing: dict, source_id: str, source_url: str | None = None) -> str:
+def _process_listing(
+    db,
+    listing: dict,
+    source_id: str,
+    source_url: str | None = None,
+    source_type: str | None = None,
+) -> str:
     """Process a single raw listing: normalize, deduplicate, persist."""
+    from app.scrapers.base import is_award_record_url, is_award_source_type
     from app.services.opportunity_dedup import find_existing_duplicate
 
     call_url = (listing.get("url") or "").strip()
     if not call_url:
+        return "skipped"
+    if is_award_source_type(source_type) or is_award_record_url(call_url):
         return "skipped"
 
     # Inject source_id into listing so dedup can use it for score-30 check
@@ -265,6 +278,14 @@ def _process_listing(db, listing: dict, source_id: str, source_url: str | None =
 
     dup_status = DuplicateStatus.POSSIBLE_DUPLICATE if (existing and not is_definitive) else DuplicateStatus.UNIQUE
 
+    # Validate opportunity_type against allowed values
+    _VALID_OPP_TYPES = frozenset({
+        "grant", "fellowship", "scholarship", "residency", "open_call",
+        "prize", "bursary", "commission", "other",
+    })
+    raw_opp_type = (listing.get("opportunity_type") or "").strip().lower()
+    opp_type = raw_opp_type if raw_opp_type in _VALID_OPP_TYPES else None
+
     opp = Opportunity(
         id=str(uuid.uuid4()),
         title=listing.get("title", "Untitled"),
@@ -275,6 +296,7 @@ def _process_listing(db, listing: dict, source_id: str, source_url: str | None =
         opportunity_url=call_url,
         source_url=source_url,
         source_id=source_id,
+        opportunity_type=opp_type,
         # "active" signals the global record is live. Workflow status
         # (new/needs_review/archived/etc.) lives in institution_opportunities.
         status="active",
@@ -473,3 +495,217 @@ def check_source_health():
         db.commit()
 
     return {"stale_sources": len(stale)}
+
+
+@celery_app.task(name="app.workers.discovery_tasks.backfill_opportunity_types", bind=True, max_retries=1)
+def backfill_opportunity_types(self, batch_size: int = 200):
+    """One-time admin task: LLM-classify opportunity_type for all existing records that lack it.
+
+    Processes in batches of `batch_size`. Safe to re-run (idempotent — skips
+    opportunities that already have a type). Trigger via admin API or Celery shell.
+    """
+    import structlog
+    import asyncio
+    from sqlalchemy import create_engine, select
+    from sqlalchemy.orm import Session
+    from app.config import get_settings
+    from app.models.opportunity import Opportunity
+
+    log = structlog.get_logger()
+    settings = get_settings()
+    engine = create_engine(settings.database_url)
+
+    _VALID_TYPES = frozenset({
+        "grant", "fellowship", "scholarship", "residency", "open_call",
+        "prize", "bursary", "commission", "other",
+    })
+
+    _CLASSIFY_SYSTEM = (
+        "Classify the funding opportunity into exactly one type. "
+        "Reply with ONLY a JSON object: {\"opportunity_type\": \"<type>\"}. "
+        "Choose from: grant, fellowship, scholarship, residency, open_call, "
+        "prize, bursary, commission, other. "
+        "Use 'open_call' for open calls for projects/submissions. "
+        "Use 'grant' when uncertain."
+    )
+
+    async def _classify(title: str, description: str, funder: str) -> str:
+        from app.ai.client import chat_complete
+        import json
+        prompt = f"Title: {title}\nFunder: {funder}\nDescription: {description[:800]}"
+        raw = await chat_complete(
+            messages=[
+                {"role": "system", "content": _CLASSIFY_SYSTEM},
+                {"role": "user", "content": prompt},
+            ],
+            temperature=0.0,
+            max_tokens=64,
+            agent_name="backfill_types",
+            json_mode=True,
+        )
+        try:
+            parsed = json.loads(raw)
+            t = (parsed.get("opportunity_type") or "").strip().lower()
+            return t if t in _VALID_TYPES else "grant"
+        except Exception:
+            return "grant"
+
+    with Session(engine) as db:
+        opps = db.execute(
+            select(Opportunity).where(
+                Opportunity.opportunity_type.is_(None),
+                Opportunity.status != "duplicate",
+            ).limit(batch_size)
+        ).scalars().all()
+
+        if not opps:
+            log.info("backfill_opportunity_types: nothing to process")
+            return {"classified": 0}
+
+        classified = 0
+        for opp in opps:
+            text = opp.description or opp.parsed_text or opp.short_summary or ""
+            try:
+                opp_type = asyncio.run(_classify(opp.title or "", text, opp.funder or ""))
+                opp.opportunity_type = opp_type
+                classified += 1
+            except Exception as e:
+                log.warning("backfill_opportunity_types: classify failed", opp_id=opp.id, error=str(e))
+
+        db.commit()
+        log.info("backfill_opportunity_types: done", classified=classified, remaining="unknown")
+        return {"classified": classified}
+
+
+@celery_app.task(name="app.workers.discovery_tasks.discover_new_sources", bind=True, max_retries=1)
+def discover_new_sources(self, n_queries: int | None = None):
+    """
+    Agentic source discovery using Exa.ai neural search.
+
+    For each run:
+    1. Pulls known source domains from the DB.
+    2. Generates n_queries diverse queries (Redis-rotated to avoid repeats).
+    3. Searches Exa.ai, deduplicates by domain, LLM-evaluates candidates.
+    4. confidence >= auto_approve_confidence → Source(status="active"), queued for scan.
+    5. confidence 50-69 → Source(status="under_review") for human review.
+    6. Scan dispatches are staggered by 15s gaps to avoid hammering new portals.
+    """
+    import structlog
+    import uuid
+    import asyncio
+    import redis as redis_lib
+    from sqlalchemy import create_engine, select
+    from sqlalchemy.orm import Session
+    from app.config import get_settings
+    from app.models.source import Source
+    from app.scrapers.source_discovery import discover_portal_candidates, generate_queries, domain_key
+
+    log = structlog.get_logger()
+    settings = get_settings()
+    cfg = settings.source_discovery
+
+    if not cfg.enabled:
+        log.info("discover_new_sources: disabled in config")
+        return {"skipped": True}
+
+    if not settings.exa_api_key:
+        log.warning("discover_new_sources: EXA_API_KEY not set — skipping")
+        return {"skipped": True, "reason": "no_exa_key"}
+
+    n = n_queries or cfg.n_queries_per_run
+    engine = create_engine(settings.database_url)
+
+    # Redis client for query rotation
+    try:
+        redis_client = redis_lib.from_url(settings.redis_url)
+    except Exception:
+        redis_client = None
+
+    with Session(engine) as db:
+        # Get all known source domains
+        existing_sources = db.execute(select(Source)).scalars().all()
+        known_domains: set[str] = set()
+        for src in existing_sources:
+            dk = domain_key(src.url or "")
+            if dk:
+                known_domains.add(dk)
+
+        queries = generate_queries(n, redis_client)
+        log.info("discover_new_sources: starting", n_queries=len(queries), known_domains=len(known_domains))
+
+        try:
+            portals = asyncio.run(
+                discover_portal_candidates(
+                    queries,
+                    known_domains,
+                    min_confidence=50,  # collect both auto-approve and under_review tiers
+                )
+            )
+        except Exception as e:
+            log.error("discover_new_sources: discovery failed", error=str(e))
+            raise self.retry(exc=e, countdown=300)
+
+        auto_threshold = cfg.auto_approve_confidence
+        created_active = 0
+        created_review = 0
+        scan_countdown = 0
+
+        for portal in portals[:cfg.max_candidates_per_run]:
+            confidence = portal.get("confidence", 0)
+            url = portal.get("url", "")
+            if not url:
+                continue
+
+            # Skip if domain appeared in DB since we started
+            dk = domain_key(url)
+            if dk in known_domains:
+                continue
+            known_domains.add(dk)
+
+            scraper_type = portal.get("scraper_type") or "ai_scraper"
+            status = "active" if confidence >= auto_threshold else "under_review"
+            source_name = portal.get("source_name") or portal.get("funder_name") or dk
+            category = portal.get("category") or "Other"
+
+            source = Source(
+                id=str(uuid.uuid4()),
+                name=source_name,
+                url=url,
+                source_type=scraper_type,
+                category=category,
+                status=status,
+                scraper_config={
+                    "use_playwright": True,
+                    "crawl_depth": 1,
+                    "_discovery_confidence": confidence,
+                    "_discovery_notes": portal.get("notes", ""),
+                },
+                is_high_priority=False,
+            )
+            db.add(source)
+            db.flush()
+
+            if status == "active":
+                created_active += 1
+                from app.workers.discovery_tasks import scan_source
+                scan_source.apply_async(
+                    args=[source.id],
+                    countdown=scan_countdown,
+                )
+                scan_countdown += 15
+            else:
+                created_review += 1
+
+        db.commit()
+
+    log.info(
+        "discover_new_sources: done",
+        queries_run=len(queries),
+        sources_active=created_active,
+        sources_under_review=created_review,
+    )
+    return {
+        "queries_run": len(queries),
+        "sources_active": created_active,
+        "sources_under_review": created_review,
+    }

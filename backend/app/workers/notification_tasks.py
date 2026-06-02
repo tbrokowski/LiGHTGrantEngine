@@ -290,3 +290,87 @@ def send_pending_slack():
 
         db.commit()
     return {"sent": sent}
+
+
+@celery_app.task(name="app.workers.notification_tasks.check_finance_overspend")
+def check_finance_overspend():
+    """Alert grant leads when ledger categories exceed 80% or 100% utilization."""
+    from sqlalchemy import select, create_engine, func
+    from sqlalchemy.orm import Session
+    from app.config import get_settings
+    from app.models.active_grant import ActiveGrant
+    from app.models.grant_ledger import GrantLedger, LedgerCategory, FundRequest, FundRequestStatus, Expenditure
+    from app.models.notification import Notification, NotificationType, NotificationStatus, NotificationChannel
+    from app.models.grant_member import GrantMember, GrantMemberRole
+
+    settings = get_settings()
+    engine = create_engine(settings.database_url)
+    COMMITTED = (
+        FundRequestStatus.PENDING.value,
+        FundRequestStatus.UNDER_REVIEW.value,
+        FundRequestStatus.APPROVED.value,
+    )
+
+    with Session(engine) as db:
+        grants = db.execute(
+            select(ActiveGrant).where(ActiveGrant.grant_stage.in_(["active", "awarded"]))
+        ).scalars().all()
+        alerts_created = 0
+        for grant in grants:
+            ledger = db.execute(
+                select(GrantLedger).where(GrantLedger.grant_id == grant.id)
+            ).scalar_one_or_none()
+            if not ledger:
+                continue
+            categories = db.execute(
+                select(LedgerCategory).where(LedgerCategory.ledger_id == ledger.id)
+            ).scalars().all()
+            for cat in categories:
+                approved = float(cat.approved_amount or 0)
+                if approved <= 0:
+                    continue
+                spent = db.execute(
+                    select(func.coalesce(func.sum(Expenditure.amount), 0)).where(
+                        Expenditure.category_id == cat.id
+                    )
+                ).scalar() or 0
+                committed = db.execute(
+                    select(func.coalesce(func.sum(FundRequest.amount), 0)).where(
+                        FundRequest.category_id == cat.id,
+                        FundRequest.status.in_(COMMITTED),
+                    )
+                ).scalar() or 0
+                util = (float(spent) + float(committed)) / approved * 100
+                notif_type = None
+                if util >= 100:
+                    notif_type = NotificationType.FINANCE_OVERSPEND_CRITICAL
+                elif util >= 80:
+                    notif_type = NotificationType.FINANCE_OVERSPEND_WARNING
+                if not notif_type:
+                    continue
+                members = db.execute(
+                    select(GrantMember).where(
+                        GrantMember.grant_id == grant.id,
+                        GrantMember.role.in_([GrantMemberRole.OWNER.value, GrantMemberRole.EDITOR.value]),
+                    )
+                ).scalars().all()
+                member_ids = [m.user_id for m in members]
+                if not member_ids and grant.internal_lead_id:
+                    member_ids = [grant.internal_lead_id]
+                msg = (
+                    f"Grant '{grant.title}': category '{cat.name}' is at {util:.0f}% "
+                    f"({settings.base_url}/finance/{grant.id})"
+                )
+                for uid in member_ids:
+                    db.add(Notification(
+                        user_id=uid,
+                        notification_type=notif_type.value,
+                        entity_type="ledger_category",
+                        entity_id=cat.id,
+                        message=msg,
+                        channel=NotificationChannel.IN_APP.value,
+                        status=NotificationStatus.PENDING,
+                    ))
+                    alerts_created += 1
+        db.commit()
+    return {"alerts_created": alerts_created}

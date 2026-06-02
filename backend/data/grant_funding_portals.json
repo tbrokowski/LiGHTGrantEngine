@@ -30,6 +30,48 @@
       "notes": "RESTful API; key obtained from account settings on simpler.grants.gov"
     },
     {
+      "name": "NIH Open FOAs (Grants.gov)",
+      "category": "US Federal Government",
+      "url": "https://simpler.grants.gov",
+      "source_type": "grants_gov",
+      "api_endpoint": "https://api.simpler.grants.gov/v1/opportunities/search",
+      "scraper_config": {
+        "query": "health artificial intelligence digital clinical research",
+        "agencies": [
+          "NIH"
+        ],
+        "page_size": 100,
+        "max_pages": 3
+      },
+      "refresh_frequency": "daily",
+      "is_high_priority": true,
+      "logo_url": "/logos/nih.svg",
+      "status": "active",
+      "relevant_themes": [],
+      "notes": "Open NIH funding opportunities via Grants.gov Simpler API. Filters to posted/forecasted FOAs only — not RePORTER award records."
+    },
+    {
+      "name": "NSF Open Solicitations (Grants.gov)",
+      "category": "US Federal Government",
+      "url": "https://simpler.grants.gov",
+      "source_type": "grants_gov",
+      "api_endpoint": "https://api.simpler.grants.gov/v1/opportunities/search",
+      "scraper_config": {
+        "query": "artificial intelligence health digital machine learning",
+        "agencies": [
+          "NSF"
+        ],
+        "page_size": 100,
+        "max_pages": 3
+      },
+      "refresh_frequency": "daily",
+      "is_high_priority": true,
+      "logo_url": "/logos/nsf.svg",
+      "status": "active",
+      "relevant_themes": [],
+      "notes": "Open NSF solicitations via Grants.gov Simpler API. Filters to posted/forecasted opportunities only — not NSF Award Search records."
+    },
+    {
       "name": "SAM.gov – Contract & Grant Opportunities",
       "category": "US Federal Government",
       "url": "https://simpler.grants.gov/search?utm_source=Grants.gov",
@@ -60,12 +102,12 @@
         "url_field": "opportunity_number",
         "deadline_field": "fiscal_year"
       },
-      "refresh_frequency": "daily",
-      "is_high_priority": true,
+      "refresh_frequency": "weekly",
+      "is_high_priority": false,
       "logo_url": "/logos/nih.svg",
-      "status": "active",
+      "status": "paused",
       "relevant_themes": [],
-      "notes": "POST-only endpoint (returns 405 on GET). Send JSON body with criteria object. Limit ~1 req/sec; v2 API active. API docs at api.reporter.nih.gov/?urls.primaryName=V2.0. Federal Reporter also at api.federalreporter.nih.gov"
+      "notes": "PAUSED: RePORTER returns funded project awards, not open FOAs. Use NIH Open FOAs (Grants.gov) for solicitations. Award registry may be repurposed for prior-art search later."
     },
     {
       "name": "NSF Award Search",
@@ -84,12 +126,12 @@
         "url_field": "id",
         "deadline_field": "expDate"
       },
-      "refresh_frequency": "daily",
-      "is_high_priority": true,
+      "refresh_frequency": "weekly",
+      "is_high_priority": false,
       "logo_url": "/logos/nsf.svg",
-      "status": "active",
+      "status": "paused",
       "relevant_themes": [],
-      "notes": "Public API; no key needed. Also see NSF Developer Resources at nsf.gov/digital/developer"
+      "notes": "PAUSED: NSF Award Search returns past awards, not open solicitations. Use NSF Open Solicitations (Grants.gov) for funding calls. Award registry may be repurposed for prior-art search later."
     },
     {
       "name": "SBIR.gov – Small Business Innovation Research",
@@ -153,7 +195,13 @@
       "is_high_priority": true,
       "logo_url": null,
       "status": "active",
-      "relevant_themes": ["health", "AI", "biomedical", "digital health", "research"],
+      "relevant_themes": [
+        "health",
+        "AI",
+        "biomedical",
+        "digital health",
+        "research"
+      ],
       "notes": "Advanced Research Projects Agency for Health (ARPA-H); ISOs, programs, SBIR/STTR, and initiative opportunities listed on rolling basis"
     },
     {
@@ -170,7 +218,13 @@
       "is_high_priority": true,
       "logo_url": null,
       "status": "active",
-      "relevant_themes": ["AI", "defense", "biotech", "computing", "research"],
+      "relevant_themes": [
+        "AI",
+        "defense",
+        "biotech",
+        "computing",
+        "research"
+      ],
       "notes": "Primary vehicle is Broad Agency Announcements (BAAs); posted to SAM.gov and DARPA site. Primarily contracts/cooperative agreements/OTs rather than traditional grants. BAOs accepted on rolling basis."
     },
     {
@@ -187,7 +241,12 @@
       "is_high_priority": true,
       "logo_url": null,
       "status": "active",
-      "relevant_themes": ["health", "clinical research", "patient outcomes", "comparative effectiveness"],
+      "relevant_themes": [
+        "health",
+        "clinical research",
+        "patient outcomes",
+        "comparative effectiveness"
+      ],
       "notes": "Independent non-profit authorized by Congress; funds CER and D&I research. Three cycles per year; up to $120M per Broad Pragmatic Studies PFA cycle. No API; scraping required."
     },
     {
@@ -204,7 +263,13 @@
       "is_high_priority": false,
       "logo_url": null,
       "status": "active",
-      "relevant_themes": ["agriculture", "food", "rural development", "AI", "health"],
+      "relevant_themes": [
+        "agriculture",
+        "food",
+        "rural development",
+        "AI",
+        "health"
+      ],
       "notes": "Applications via Grants.gov. Funds competitive, capacity, and noncompetitive grants for research, education, and extension. NIFA Grant Funding Dashboard available at nifa.usda.gov."
     },
     {
@@ -221,7 +286,14 @@
       "is_high_priority": false,
       "logo_url": null,
       "status": "active",
-      "relevant_themes": ["energy", "physics", "AI", "computing", "climate", "research"],
+      "relevant_themes": [
+        "energy",
+        "physics",
+        "AI",
+        "computing",
+        "climate",
+        "research"
+      ],
       "notes": "Uses PAMS (Portfolio Analysis and Management System) for applications; FOAs posted on Grants.gov and science.osti.gov. Award search at pamspublic.science.energy.gov."
     },
     {
@@ -238,7 +310,12 @@
       "is_high_priority": false,
       "logo_url": null,
       "status": "active",
-      "relevant_themes": ["humanities", "culture", "education", "digital humanities"],
+      "relevant_themes": [
+        "humanities",
+        "culture",
+        "education",
+        "digital humanities"
+      ],
       "notes": "Funded Projects Query Form at apps.neh.gov/publicquery provides abstracts back to 1980. Grants posted on Grants.gov. No dedicated REST API."
     },
     {
@@ -255,7 +332,12 @@
       "is_high_priority": false,
       "logo_url": null,
       "status": "active",
-      "relevant_themes": ["libraries", "museums", "digital access", "education"],
+      "relevant_themes": [
+        "libraries",
+        "museums",
+        "digital access",
+        "education"
+      ],
       "notes": "Award abstracts back to 1997 at imls.gov/grants. Applications via Grants.gov. Free public API for award data: api.imls.gov."
     },
     {
@@ -556,7 +638,12 @@
       "is_high_priority": false,
       "logo_url": null,
       "status": "active",
-      "relevant_themes": ["science", "environment", "health", "data science"],
+      "relevant_themes": [
+        "science",
+        "environment",
+        "health",
+        "data science"
+      ],
       "notes": "No public API; scraping required. $11.4B endowment; distributed $401.8M in 2024 across 952 grants. Focus areas: Environmental Conservation, Science, Bay Area. Also in Candid FDO."
     },
     {
@@ -573,7 +660,13 @@
       "is_high_priority": false,
       "logo_url": null,
       "status": "active",
-      "relevant_themes": ["children", "family", "racial equity", "health", "education"],
+      "relevant_themes": [
+        "children",
+        "family",
+        "racial equity",
+        "health",
+        "education"
+      ],
       "notes": "No public API; scraping required. $8.2B endowment; focuses on children, families, communities, and racial equity. Also accessible via Candid FDO and ProPublica 990."
     },
     {
@@ -590,7 +683,13 @@
       "is_high_priority": false,
       "logo_url": null,
       "status": "active",
-      "relevant_themes": ["education", "environment", "global development", "performing arts", "philanthropy"],
+      "relevant_themes": [
+        "education",
+        "environment",
+        "global development",
+        "performing arts",
+        "philanthropy"
+      ],
       "notes": "No public API; scraping required. Awarded >$450M in grants. Programs include education, global development & population, performing arts, environment, effective philanthropy. Also in Candid FDO."
     },
     {
@@ -607,7 +706,13 @@
       "is_high_priority": false,
       "logo_url": null,
       "status": "active",
-      "relevant_themes": ["health", "environment", "civic engagement", "science", "research"],
+      "relevant_themes": [
+        "health",
+        "environment",
+        "civic engagement",
+        "science",
+        "research"
+      ],
       "notes": "No public API; scraping required. $1.35B+ in assets. Operates as both a foundation and public charity. Does not typically accept unsolicited applications; proactive grantmaking model. Also in Candid FDO."
     },
     {
@@ -624,7 +729,13 @@
       "is_high_priority": false,
       "logo_url": null,
       "status": "active",
-      "relevant_themes": ["education", "democracy", "peace", "security", "international"],
+      "relevant_themes": [
+        "education",
+        "democracy",
+        "peace",
+        "security",
+        "international"
+      ],
       "notes": "No public API; scraping required. $4.1B endowment. Focus: education, democracy, peace and security. Does not typically accept unsolicited proposals. Also accessible via Candid FDO and ProPublica 990."
     },
     {
@@ -641,7 +752,13 @@
       "is_high_priority": true,
       "logo_url": null,
       "status": "active",
-      "relevant_themes": ["biomedical", "science education", "AI", "life sciences", "health"],
+      "relevant_themes": [
+        "biomedical",
+        "science education",
+        "AI",
+        "life sciences",
+        "health"
+      ],
       "notes": "One of the largest private biomedical research funders in the US; $27.1B endowment. Announced $245M for AI-driven life sciences projects. Investigator Program for established researchers; Science Education programs open competitively. No API; scraping required. Also in Candid FDO."
     },
     {
@@ -658,7 +775,13 @@
       "is_high_priority": false,
       "logo_url": null,
       "status": "active",
-      "relevant_themes": ["biomedical", "health", "early career", "infectious disease", "pharmacology"],
+      "relevant_themes": [
+        "biomedical",
+        "health",
+        "early career",
+        "infectious disease",
+        "pharmacology"
+      ],
       "notes": "No public API; scraping required. Focuses on early-career biomedical scientists and underfunded areas of science. Partners with HHMI on Medical Research Fellows Program. Also in Candid FDO."
     },
     {
@@ -675,7 +798,13 @@
       "is_high_priority": false,
       "logo_url": null,
       "status": "active",
-      "relevant_themes": ["children", "health", "nutrition", "climate", "global development"],
+      "relevant_themes": [
+        "children",
+        "health",
+        "nutrition",
+        "climate",
+        "global development"
+      ],
       "notes": "No public API; scraping required. Disbursed $468M in 2021. Offices in London, Nairobi, Addis Ababa, Beijing, New Delhi. Does not solicit unsolicited proposals; identifies grantees through own research. Also in Candid FDO."
     },
     {
@@ -692,7 +821,13 @@
       "is_high_priority": false,
       "logo_url": null,
       "status": "active",
-      "relevant_themes": ["Africa", "education", "financial inclusion", "youth", "economic development"],
+      "relevant_themes": [
+        "Africa",
+        "education",
+        "financial inclusion",
+        "youth",
+        "economic development"
+      ],
       "notes": "No public API; scraping required. One of the world's largest foundations; headquartered in Toronto. Focuses on young people in Africa and Indigenous youth in Canada. Does not typically accept unsolicited proposals. Also in Candid FDO."
     },
     {
@@ -706,7 +841,13 @@
       "is_high_priority": true,
       "logo_url": "/logos/horizon-europe.svg",
       "status": "active",
-      "relevant_themes": ["health", "AI", "digital", "research", "innovation"],
+      "relevant_themes": [
+        "health",
+        "AI",
+        "digital",
+        "research",
+        "innovation"
+      ],
       "notes": "Canonical EC SEDIA API source (apiKey=SEDIA). Fetches all open/forthcoming calls across Horizon, ERC, EIC, LIFE, Digital Europe and more. All other eu_funding sources are paused to avoid duplicates."
     },
     {
@@ -720,7 +861,12 @@
       "is_high_priority": false,
       "logo_url": "/logos/horizon-europe.svg",
       "status": "paused",
-      "relevant_themes": ["health", "AI", "digital", "research"],
+      "relevant_themes": [
+        "health",
+        "AI",
+        "digital",
+        "research"
+      ],
       "notes": "Redundant — covered by EU Funding & Tenders Portal (Horizon, LIFE, etc.) via the same SEDIA API. Paused to prevent duplicate grants."
     },
     {
@@ -796,7 +942,13 @@
       "is_high_priority": false,
       "logo_url": "/logos/horizon-europe.svg",
       "status": "paused",
-      "relevant_themes": ["health", "AI", "digital", "research", "innovation"],
+      "relevant_themes": [
+        "health",
+        "AI",
+        "digital",
+        "research",
+        "innovation"
+      ],
       "notes": "Redundant — Horizon programmes are fully covered by the canonical EU Funding & Tenders Portal source. Paused to prevent duplicates."
     },
     {
@@ -813,7 +965,13 @@
       "is_high_priority": false,
       "logo_url": null,
       "status": "active",
-      "relevant_themes": ["science", "research", "health", "AI", "engineering"],
+      "relevant_themes": [
+        "science",
+        "research",
+        "health",
+        "AI",
+        "engineering"
+      ],
       "notes": "GEPRIS database (gepris.dfg.de) covers all DFG-funded projects since early 2000s with full-text search. REST API available for GEPRIS. Funding programmes page lists all current calls. Major bilateral agreements with CIHR, NSERC, SSHRC and others."
     },
     {
@@ -830,7 +988,13 @@
       "is_high_priority": false,
       "logo_url": null,
       "status": "active",
-      "relevant_themes": ["research", "science", "health", "AI", "humanities"],
+      "relevant_themes": [
+        "research",
+        "science",
+        "health",
+        "AI",
+        "humanities"
+      ],
       "notes": "Applications via the SNSF Portal (portal.snf.ch). P3 database for funded projects (p3.snf.ch). Active 2026 joint call with NHMRC Australia for AI in healthcare research. Also partners with Tri-Agency Canada and DFG Germany."
     },
     {
@@ -1486,7 +1650,14 @@
       "is_high_priority": true,
       "logo_url": null,
       "status": "active",
-      "relevant_themes": ["AI", "health", "digital", "climate", "education", "racial equity"],
+      "relevant_themes": [
+        "AI",
+        "health",
+        "digital",
+        "climate",
+        "education",
+        "racial equity"
+      ],
       "notes": "No public API; monitor for open calls on google.org. Active Impact Challenges include AI for Science ($30M global call for health/life sciences and climate AI) and AI for Government Innovation ($1-3M per awardee). Digital Futures Fund >$35M committed globally. Scraping feasible."
     },
     {
@@ -1503,7 +1674,14 @@
       "is_high_priority": false,
       "logo_url": null,
       "status": "active",
-      "relevant_themes": ["AI", "health", "climate", "humanitarian", "accessibility", "cultural heritage"],
+      "relevant_themes": [
+        "AI",
+        "health",
+        "climate",
+        "humanitarian",
+        "accessibility",
+        "cultural heritage"
+      ],
       "notes": "No public API; programs include AI for Health, AI for Earth, AI for Humanitarian Action, AI for Cultural Heritage, AI for Accessibility. Grants and Azure credits awarded to nonprofits and researchers. Open calls vary. Also see Microsoft Philanthropies at microsoft.com/en-us/philanthropies."
     },
     {
@@ -1520,7 +1698,13 @@
       "is_high_priority": true,
       "logo_url": null,
       "status": "active",
-      "relevant_themes": ["climate", "AI", "nature", "biodiversity", "food security"],
+      "relevant_themes": [
+        "climate",
+        "AI",
+        "nature",
+        "biodiversity",
+        "food security"
+      ],
       "notes": "No public API; scraping required. $10B committed to climate and nature. AI for Climate and Nature Grand Challenge: up to $100M total; Phase II awardees receive up to $2M each. Active partnership with AI2050 and other climate AI initiatives. Monitor for open calls."
     },
     {
@@ -1537,7 +1721,14 @@
       "is_high_priority": false,
       "logo_url": null,
       "status": "active",
-      "relevant_themes": ["AI", "science", "research", "innovation", "climate", "humanities"],
+      "relevant_themes": [
+        "AI",
+        "science",
+        "research",
+        "innovation",
+        "climate",
+        "humanities"
+      ],
       "notes": "No public API; competitive RFPs at schmidtsciences.smapply.io; does not accept unsolicited proposals. $1.59B in assets; $228.7M in giving in FY2024. Active programs: AI2050 fellowships, carbon cycle research, HAVI institute. Rebranded from Schmidt Futures in 2024."
     },
     {
@@ -1554,7 +1745,13 @@
       "is_high_priority": false,
       "logo_url": null,
       "status": "active",
-      "relevant_themes": ["health", "climate", "governance", "racial justice", "social enterprise"],
+      "relevant_themes": [
+        "health",
+        "climate",
+        "governance",
+        "racial justice",
+        "social enterprise"
+      ],
       "notes": "No public API; does not accept unsolicited proposals; selects grantees through internal process and community recommendations. Funds social entrepreneurs in health/pandemics, climate change, inclusive economies, effective governance, racial justice. Also in Candid FDO."
     },
     {
@@ -1876,7 +2073,13 @@
       "is_high_priority": false,
       "logo_url": null,
       "status": "active",
-      "relevant_themes": ["health", "biomedical", "clinical research", "AI", "digital health"],
+      "relevant_themes": [
+        "health",
+        "biomedical",
+        "clinical research",
+        "AI",
+        "digital health"
+      ],
       "notes": "Canada's primary health research funder. Funding Decisions Database at webapps.cihr-irsc.gc.ca. Applies via ResearchNet (researchnet-recherchenet.ca). Part of Canadian Tri-Agency (CIHR, NSERC, SSHRC). Interagency calendar at canada.ca for all Canadian federal programs."
     },
     {
@@ -1893,7 +2096,13 @@
       "is_high_priority": false,
       "logo_url": null,
       "status": "active",
-      "relevant_themes": ["science", "engineering", "AI", "research", "innovation"],
+      "relevant_themes": [
+        "science",
+        "engineering",
+        "AI",
+        "research",
+        "innovation"
+      ],
       "notes": "Canada's federal funding agency for natural sciences and engineering research. Applications via Research Portal (portal-portail.nserc-crsng.gc.ca). Part of Tri-Agency with CIHR and SSHRC. Active joint calls with DFG, ANR, and other international partners. No public REST API for opportunity discovery."
     },
     {
@@ -1910,7 +2119,15 @@
       "is_high_priority": false,
       "logo_url": null,
       "status": "active",
-      "relevant_themes": ["global development", "health", "climate", "AI", "digital", "Africa", "research"],
+      "relevant_themes": [
+        "global development",
+        "health",
+        "climate",
+        "AI",
+        "digital",
+        "Africa",
+        "research"
+      ],
       "notes": "Canadian Crown corporation funding applied research in developing countries. Partners with NRF South Africa, African Academy of Sciences, and others. Active open calls for proposals published on idrc-crdi.ca. Also participates in Science Granting Councils Initiative (SGCI). No public REST API."
     },
     {
@@ -1927,7 +2144,13 @@
       "is_high_priority": false,
       "logo_url": null,
       "status": "active",
-      "relevant_themes": ["research", "science", "humanities", "AI", "innovation"],
+      "relevant_themes": [
+        "research",
+        "science",
+        "humanities",
+        "AI",
+        "innovation"
+      ],
       "notes": "Australia's primary competitive research funder (excluding health/medical). Uses RMS (Research Management System) for grant submission. New opportunities under NCGP (National Competitive Grants Program) schemes announced regularly. GrantConnect (grants.gov.au) lists Australian government grants. No public REST API."
     },
     {
@@ -1944,7 +2167,13 @@
       "is_high_priority": false,
       "logo_url": null,
       "status": "active",
-      "relevant_themes": ["health", "biomedical", "AI", "clinical research", "public health"],
+      "relevant_themes": [
+        "health",
+        "biomedical",
+        "AI",
+        "clinical research",
+        "public health"
+      ],
       "notes": "Australia's primary health and medical research funder. Applications via Sapphire portal. Active 2026 joint call with Swiss National Science Foundation (SNSF) for AI in healthcare research (deadline May 28, 2026). Also see GrantConnect (grants.gov.au) for all Australian government grants. No public REST API."
     },
     {
@@ -1961,7 +2190,13 @@
       "is_high_priority": false,
       "logo_url": null,
       "status": "active",
-      "relevant_themes": ["research", "science", "health", "Africa", "innovation"],
+      "relevant_themes": [
+        "research",
+        "science",
+        "health",
+        "Africa",
+        "innovation"
+      ],
       "notes": "South Africa's primary research funding agency, supported by the Department of Science and Innovation (DSI). Partners with IDRC Canada, African Academy of Sciences, and others through the Science Granting Councils Initiative (SGCI). No public REST API; scraping required."
     },
     {
@@ -2063,10 +2298,17 @@
       "is_high_priority": false,
       "logo_url": null,
       "status": "active",
-      "relevant_themes": ["arts", "culture", "design", "music", "performing arts", "visual arts", "innovation"],
+      "relevant_themes": [
+        "arts",
+        "culture",
+        "design",
+        "music",
+        "performing arts",
+        "visual arts",
+        "innovation"
+      ],
       "notes": "Swiss federal foundation supporting artists and cultural projects; offers grants, residencies, and co-production support internationally"
     },
-
     {
       "name": "NEA – National Endowment for the Arts",
       "category": "US Federal Government",
@@ -2081,7 +2323,12 @@
       "is_high_priority": false,
       "logo_url": null,
       "status": "active",
-      "relevant_themes": ["arts", "culture", "humanities", "education"],
+      "relevant_themes": [
+        "arts",
+        "culture",
+        "humanities",
+        "education"
+      ],
       "notes": "Only federal arts funder serving all 50 states. Uses its own Applicant Portal (AP) at apps.arts.gov for some categories and Grants.gov for others. Grant search at grantsearch.nea.gov. FY 2026 Grants for Arts Projects active; Challenge America canceled for FY2026."
     },
     {
@@ -2098,7 +2345,14 @@
       "is_high_priority": true,
       "logo_url": null,
       "status": "active",
-      "relevant_themes": ["energy", "climate", "AI", "innovation", "research", "technology"],
+      "relevant_themes": [
+        "energy",
+        "climate",
+        "AI",
+        "innovation",
+        "research",
+        "technology"
+      ],
       "notes": "ARPA-E eXCHANGE is the mandatory submission portal for all ARPA-E Notices of Intent, Concept Papers, Full Applications, and Replies. ~$400M annual budget; awards $500K–$10M over 2–3 years. DARPA-inspired high-risk/high-reward model. Also see ARPA-E homepage at arpa-e.energy.gov."
     },
     {
@@ -2115,7 +2369,14 @@
       "is_high_priority": true,
       "logo_url": null,
       "status": "active",
-      "relevant_themes": ["space", "earth science", "AI", "computing", "research", "STEM"],
+      "relevant_themes": [
+        "space",
+        "earth science",
+        "AI",
+        "computing",
+        "research",
+        "STEM"
+      ],
       "notes": "NASA's official research solicitation and proposal management system. Organizations must register in SAM.gov before registering in NSPIRES. ROSES-26 (Research Opportunities in Space and Earth Science) releases July 2026. Also see NASA grant opportunities at nasa.gov/grants. Awarded project data also on research.gov."
     },
     {
@@ -2132,7 +2393,14 @@
       "is_high_priority": false,
       "logo_url": null,
       "status": "active",
-      "relevant_themes": ["defense", "AI", "computing", "biotech", "engineering", "research"],
+      "relevant_themes": [
+        "defense",
+        "AI",
+        "computing",
+        "biotech",
+        "engineering",
+        "research"
+      ],
       "notes": "Three main DoD basic research offices: Office of Naval Research (onr.navy.mil), Army Research Office (arl.devcom.army.mil), Air Force Office of Scientific Research (afrl.af.mil/afosr). All BAAs submitted via Grants.gov/SAM.gov. Major annual programs include DURIP (research instrumentation) and MURI (multidisciplinary university research). FY2026 MURI ~$170M total across ONR, ARO, AFOSR."
     },
     {
@@ -2149,7 +2417,12 @@
       "is_high_priority": false,
       "logo_url": null,
       "status": "active",
-      "relevant_themes": ["health", "clinical quality", "patient safety", "health services research"],
+      "relevant_themes": [
+        "health",
+        "clinical quality",
+        "patient safety",
+        "health services research"
+      ],
       "notes": "HHS agency with ~$380M annual budget; smallest HHS research agency. Funds health services research, patient safety, and healthcare quality improvement (not biomedical research). Notice of Funding Opportunities at ahrq.gov/funding/fund-opps. Uses eRA Commons for NIH-adjacent grants; RFAs issued for priority research areas. Also see GOLD database for funded grants."
     },
     {
@@ -2166,7 +2439,12 @@
       "is_high_priority": false,
       "logo_url": null,
       "status": "active",
-      "relevant_themes": ["public health", "disease prevention", "health infrastructure", "epidemiology"],
+      "relevant_themes": [
+        "public health",
+        "disease prevention",
+        "health infrastructure",
+        "epidemiology"
+      ],
       "notes": "CDC Office of Financial Resources manages eligibility and grant opportunities. ~$8–9B in grants annually. Opportunities posted on Grants.gov. Award tracking via HHS TAGGS (taggs.hhs.gov). Uses eRA Commons for grant proposals. Key programs: PPHF, public health infrastructure, prevention research, global health security."
     },
     {
@@ -2183,7 +2461,12 @@
       "is_high_priority": false,
       "logo_url": null,
       "status": "active",
-      "relevant_themes": ["community health", "rural health", "health workforce", "maternal health"],
+      "relevant_themes": [
+        "community health",
+        "rural health",
+        "health workforce",
+        "maternal health"
+      ],
       "notes": "HHS agency with ~$12.2B in FY2024 grants. Focus: community health centers, rural health, health workforce programs. Applications via Grants.gov; award data via HHS TAGGS. Key programs: FQHC, Rural Health Outreach, Health Center Program, National Health Service Corps."
     },
     {
@@ -2200,7 +2483,12 @@
       "is_high_priority": false,
       "logo_url": null,
       "status": "active",
-      "relevant_themes": ["mental health", "substance use", "behavioral health", "crisis services"],
+      "relevant_themes": [
+        "mental health",
+        "substance use",
+        "behavioral health",
+        "crisis services"
+      ],
       "notes": "HHS agency with ~$6–7B annual grants. SAMHSA Grants Dashboard (samhsa.gov/grants/grants-dashboard) lists open, current, and past grants from 2014 to present including NOFO forecasts. FY2026 Cooperative Agreement for 988 Suicide and Crisis Lifeline: $231.5M award ceiling from $1B total program. Applications via Grants.gov."
     },
     {
@@ -2217,7 +2505,14 @@
       "is_high_priority": false,
       "logo_url": null,
       "status": "active",
-      "relevant_themes": ["research", "science", "AI", "health", "innovation", "humanities"],
+      "relevant_themes": [
+        "research",
+        "science",
+        "AI",
+        "health",
+        "innovation",
+        "humanities"
+      ],
       "notes": "France's national research funding agency under Ministry of Higher Education and Research. Funds basic and applied research across all disciplines. Active bilateral programs with NSERC, DFG, NWO and others. Part of FLAG-ERA consortium for Future and Emerging Technologies. Applications via ANR's online portal. Member of Open Research Europe consortium."
     },
     {
@@ -2234,7 +2529,14 @@
       "is_high_priority": false,
       "logo_url": null,
       "status": "active",
-      "relevant_themes": ["research", "science", "health", "AI", "social sciences", "humanities"],
+      "relevant_themes": [
+        "research",
+        "science",
+        "health",
+        "AI",
+        "social sciences",
+        "humanities"
+      ],
       "notes": "National research council of the Netherlands; funds 5000+ scientists annually. Apply directly when a call is published on nwo.nl. Includes Dutch Research Agenda (NWA) programs. Member of Open Research Europe and FLAG-ERA consortia. Also accessible via TRIMIS (EC transport research). No bulk API; scraping required."
     },
     {
@@ -2251,7 +2553,14 @@
       "is_high_priority": false,
       "logo_url": null,
       "status": "active",
-      "relevant_themes": ["research", "science", "health", "humanities", "social sciences", "AI"],
+      "relevant_themes": [
+        "research",
+        "science",
+        "health",
+        "humanities",
+        "social sciences",
+        "AI"
+      ],
       "notes": "Sweden's largest governmental research funding body; distributes funds for basic research of the highest scientific quality in all fields. Participates in NordForsk Nordic cooperation. Part of Open Research Europe consortium. Applications via Swedish Research Council's online application system. No public REST API."
     },
     {
@@ -2268,7 +2577,15 @@
       "is_high_priority": false,
       "logo_url": null,
       "status": "active",
-      "relevant_themes": ["research", "science", "health", "energy", "AI", "ocean", "innovation"],
+      "relevant_themes": [
+        "research",
+        "science",
+        "health",
+        "energy",
+        "AI",
+        "ocean",
+        "innovation"
+      ],
       "notes": "Norway's government research policy advisor and primary funding body; allocates NOK 10Bn annually for research and innovation. Participates in NordForsk Nordic cooperation. Applications via Research Council of Norway's portal (prosjektbanken.forskningsradet.no for open project data). No public bulk API."
     },
     {
@@ -2285,7 +2602,15 @@
       "is_high_priority": false,
       "logo_url": null,
       "status": "active",
-      "relevant_themes": ["Nordic", "research", "health", "humanities", "social sciences", "AI", "innovation"],
+      "relevant_themes": [
+        "Nordic",
+        "research",
+        "health",
+        "humanities",
+        "social sciences",
+        "AI",
+        "innovation"
+      ],
       "notes": "Organisation under Nordic Council of Ministers; provides funding for Nordic research cooperation. Funding partners include the research councils of Denmark, Finland, Iceland, Norway, and Sweden. Applications via NordForsk Application Portal (online). 2026 active call: Nordic exploratory networks in humanities/social sciences (NOK 33M total). No public REST API."
     },
     {
@@ -2302,7 +2627,14 @@
       "is_high_priority": false,
       "logo_url": null,
       "status": "active",
-      "relevant_themes": ["research", "science", "health", "AI", "humanities", "social sciences"],
+      "relevant_themes": [
+        "research",
+        "science",
+        "health",
+        "AI",
+        "humanities",
+        "social sciences"
+      ],
       "notes": "Austria's primary research funding agency; DFG partner organisation in Austria. Part of Open Research Europe consortium. Applications via FWF's online portal (elane.fwf.ac.at). Open data on funded projects at fwf.ac.at/en/research-funding/fwf-funded-projects. No public REST API."
     },
     {
@@ -2319,7 +2651,13 @@
       "is_high_priority": false,
       "logo_url": null,
       "status": "active",
-      "relevant_themes": ["research", "science", "health", "AI", "innovation"],
+      "relevant_themes": [
+        "research",
+        "science",
+        "health",
+        "AI",
+        "innovation"
+      ],
       "notes": "Portugal's main funding agency for research and scientific-technological development. Part of Open Research Europe consortium. Applications via MyFCT portal. Funded projects accessible via FCT's open data portal. No public REST API."
     },
     {
@@ -2336,7 +2674,14 @@
       "is_high_priority": false,
       "logo_url": null,
       "status": "active",
-      "relevant_themes": ["research", "science", "health", "AI", "humanities", "social sciences"],
+      "relevant_themes": [
+        "research",
+        "science",
+        "health",
+        "AI",
+        "humanities",
+        "social sciences"
+      ],
       "notes": "Finland's primary research funding body; participates in NordForsk Nordic cooperation. Part of Open Research Europe consortium. Applications via Academy of Finland's online service (at.aka.fi). Funded projects accessible via open data portal. No public REST API."
     },
     {
@@ -2353,7 +2698,14 @@
       "is_high_priority": true,
       "logo_url": null,
       "status": "active",
-      "relevant_themes": ["biomedical", "health", "AI", "data science", "sustainability", "life sciences"],
+      "relevant_themes": [
+        "biomedical",
+        "health",
+        "AI",
+        "data science",
+        "sustainability",
+        "life sciences"
+      ],
       "notes": "As of Feb 2026, the wealthiest charitable foundation in the world (~$220B net worth). Awarded US$1.83B in grants in 2024. Applications via 'NORMA' online application system. Active 2026 programs include NNF Laureate Research Grant and NERD Programme (New Exploratory Research and Discovery). Major 2026 grants include €736M to BioInnovation Institute and DKK 5.5B to elevate Danish/European innovation. Also co-funds with Lundbeck Foundation."
     },
     {
@@ -2370,7 +2722,12 @@
       "is_high_priority": false,
       "logo_url": null,
       "status": "active",
-      "relevant_themes": ["research", "science", "health", "humanities"],
+      "relevant_themes": [
+        "research",
+        "science",
+        "health",
+        "humanities"
+      ],
       "notes": "Consolidated Danish grant database aggregating data from Carlsberg Foundation, Independent Research Fund Denmark (DFF), Lundbeck Foundation, Novo Nordisk Foundation, VELUX FOUNDATION, and Villum Foundation. Central search interface for Danish philanthropic and research grants. No public REST API; scraping feasible."
     },
     {
@@ -2387,7 +2744,14 @@
       "is_high_priority": false,
       "logo_url": null,
       "status": "active",
-      "relevant_themes": ["research", "science", "humanities", "social sciences", "AI", "innovation"],
+      "relevant_themes": [
+        "research",
+        "science",
+        "humanities",
+        "social sciences",
+        "AI",
+        "innovation"
+      ],
       "notes": "Major German private science foundation; supports humanities, social sciences, science, and technology. Applications via the Foundation's Funding Platform (online). Active 2026 programs: Lichtenberg Endowed Professorships (deadline Jun 20, 2026), Opus Magnum Scholarship (deadline Nov 18, 2026), Challenges for Europe. Granted €10.6M for 8 'Challenges for Europe' projects. No public REST API."
     },
     {
@@ -2404,7 +2768,13 @@
       "is_high_priority": false,
       "logo_url": null,
       "status": "active",
-      "relevant_themes": ["education", "health", "social cohesion", "international", "Europe"],
+      "relevant_themes": [
+        "education",
+        "health",
+        "social cohesion",
+        "international",
+        "Europe"
+      ],
       "notes": "One of the major foundations in Europe, associated with Robert Bosch GmbH. Supports education, health, social affairs, and civic engagement. Continuous application process via central online portal for project partners. Targets nonprofits and educational institutions. No public REST API; scraping required."
     },
     {
@@ -2421,7 +2791,14 @@
       "is_high_priority": false,
       "logo_url": null,
       "status": "active",
-      "relevant_themes": ["science", "research", "health", "AI", "humanities", "Japan"],
+      "relevant_themes": [
+        "science",
+        "research",
+        "health",
+        "AI",
+        "humanities",
+        "Japan"
+      ],
       "notes": "Japan's leading research funding agency; KAKENHI (Grants-in-Aid for Scientific Research) is Japan's primary competitive grant program. Categories include Scientific Research (A/B/C), Challenging Research, Early-Career Scientists. Applications via JSPS Electronic Application System (e-Rad) through affiliated institutions. Annual cycle: applications open July, close September. Active bilateral programs with NRF Korea, NRF South Africa, CIHR Canada, and others. KAKEN database at nii.ac.jp provides funded project data."
     },
     {
@@ -2438,7 +2815,14 @@
       "is_high_priority": false,
       "logo_url": null,
       "status": "active",
-      "relevant_themes": ["science", "research", "health", "AI", "innovation", "Korea"],
+      "relevant_themes": [
+        "science",
+        "research",
+        "health",
+        "AI",
+        "innovation",
+        "Korea"
+      ],
       "notes": "South Korea's primary research funding body. Active bilateral programs with JSPS Japan (Korea-Japan Basic Scientific Cooperation Program, 2026 call active), NRF South Africa, and others. Application portal at ernd.nrf.re.kr. No public bulk API; scraping required."
     },
     {
@@ -2455,7 +2839,14 @@
       "is_high_priority": false,
       "logo_url": null,
       "status": "active",
-      "relevant_themes": ["biotech", "health", "AI", "life sciences", "India", "research"],
+      "relevant_themes": [
+        "biotech",
+        "health",
+        "AI",
+        "life sciences",
+        "India",
+        "research"
+      ],
       "notes": "India's federal biotechnology research funder under Ministry of Science and Technology. Funds biotech research, fellowships, and industry programs. Applications via DBT-BIO-CARe and other DBT portals. See also BIRAC (Biotechnology Industry Research Assistance Council) for industry grants. Also see DST (dstindia.gov.in) for broader science and technology grants."
     },
     {
@@ -2472,7 +2863,14 @@
       "is_high_priority": false,
       "logo_url": null,
       "status": "active",
-      "relevant_themes": ["social sciences", "humanities", "AI", "education", "policy", "Canada"],
+      "relevant_themes": [
+        "social sciences",
+        "humanities",
+        "AI",
+        "education",
+        "policy",
+        "Canada"
+      ],
       "notes": "Canada's federal funding agency for social sciences and humanities. Part of Canadian Tri-Agency (CIHR, NSERC, SSHRC) with shared application via ResearchNet. Key 2026 programs: Connection Grants, Insight Grants, Insight Development Grants, Partnership Grants. Launched pilot Policy Innovation Partnership Grants program in 2026. Interagency program calendar at canada.ca. No public REST API."
     },
     {
@@ -2489,7 +2887,14 @@
       "is_high_priority": false,
       "logo_url": null,
       "status": "active",
-      "relevant_themes": ["research infrastructure", "science", "health", "AI", "climate", "Canada"],
+      "relevant_themes": [
+        "research infrastructure",
+        "science",
+        "health",
+        "AI",
+        "climate",
+        "Canada"
+      ],
       "notes": "Canadian Crown corporation investing in state-of-the-art facilities and equipment at universities, colleges, research hospitals, and nonprofit research institutions. In March 2026, Government of Canada invested >$552M via CFI for research infrastructure. CFI Innovation Fund (CFI-IF) is the major competitive program. Applications via CFI's online portal. No public REST API."
     },
     {
@@ -2506,7 +2911,15 @@
       "is_high_priority": false,
       "logo_url": null,
       "status": "active",
-      "relevant_themes": ["environment", "science", "health", "children", "ocean", "climate", "conservation"],
+      "relevant_themes": [
+        "environment",
+        "science",
+        "health",
+        "children",
+        "ocean",
+        "climate",
+        "conservation"
+      ],
       "notes": "Major US private foundation; grants database shows last 5 years of grantmaking (1,197+ grantees). Focus areas: Conservation and Science, Population and Reproductive Health, Children's Health and Development. Proactive grantmaking; does not generally accept unsolicited proposals. Also accessible via Candid FDO and ProPublica 990."
     },
     {
@@ -2523,7 +2936,14 @@
       "is_high_priority": false,
       "logo_url": null,
       "status": "active",
-      "relevant_themes": ["education", "workforce", "democracy", "environment", "gun violence", "arts"],
+      "relevant_themes": [
+        "education",
+        "workforce",
+        "democracy",
+        "environment",
+        "gun violence",
+        "arts"
+      ],
       "notes": "Chicago-based private foundation focusing on the Great Lakes region. Searchable grants database at joycefdn.org/grants-database. Focus: education, employment, environment, democracy, gun violence prevention, arts. Does not accept unsolicited proposals for most programs. Also accessible via Candid FDO and ProPublica 990."
     },
     {
@@ -2540,7 +2960,15 @@
       "is_high_priority": false,
       "logo_url": null,
       "status": "active",
-      "relevant_themes": ["journalism", "media", "democracy", "arts", "community", "technology", "AI"],
+      "relevant_themes": [
+        "journalism",
+        "media",
+        "democracy",
+        "arts",
+        "community",
+        "technology",
+        "AI"
+      ],
       "notes": "Focuses on informed and engaged communities through journalism, arts, and informed civic life. Searchable grants database at knightfoundation.org/grants. Also active in technology and AI for democracy. Invitation-only model for most programs; some open challenge competitions. Also accessible via Candid FDO."
     },
     {
@@ -2557,7 +2985,12 @@
       "is_high_priority": false,
       "logo_url": null,
       "status": "active",
-      "relevant_themes": ["education", "research", "learning", "equity"],
+      "relevant_themes": [
+        "education",
+        "research",
+        "learning",
+        "equity"
+      ],
       "notes": "Invests in education research that cultivates learning and transforms lives. Funds large research grants, small research grants, and field-initiated research. Open LOI/application cycles published on website. In 2026 partners with William T. Grant, Annie E. Casey, and Doris Duke on $2.6M Institutional Challenge Grants. Also accessible via Candid FDO."
     },
     {
@@ -2574,7 +3007,13 @@
       "is_high_priority": false,
       "logo_url": null,
       "status": "active",
-      "relevant_themes": ["entrepreneurship", "education", "economic mobility", "innovation", "research"],
+      "relevant_themes": [
+        "entrepreneurship",
+        "education",
+        "economic mobility",
+        "innovation",
+        "research"
+      ],
       "notes": "Focus: equitable economic mobility through entrepreneurship and education. Research grant opportunities opening in summer 2026. Does not accept unsolicited proposals for most programs. Current grantees listed at kauffman.org/grants/current-grantees. Also accessible via Candid FDO and ProPublica 990."
     },
     {
@@ -2591,7 +3030,14 @@
       "is_high_priority": false,
       "logo_url": null,
       "status": "active",
-      "relevant_themes": ["youth", "inequality", "education", "research", "policy", "social science"],
+      "relevant_themes": [
+        "youth",
+        "inequality",
+        "education",
+        "research",
+        "policy",
+        "social science"
+      ],
       "notes": "Focuses on reducing inequality in youth outcomes and improving use of research evidence in policy and practice. Active 2026 programs: William T. Grant Scholars ($425K for early-career scholars), Institutional Challenge Grant (up to $650K, partnering with Annie E. Casey, Bezos Family, Doris Duke, Spencer). Open LOI submissions. Also accessible via Candid FDO."
     },
     {
@@ -2608,7 +3054,13 @@
       "is_high_priority": false,
       "logo_url": null,
       "status": "active",
-      "relevant_themes": ["global development", "safe water", "homelessness", "foster care", "Catholic sisters"],
+      "relevant_themes": [
+        "global development",
+        "safe water",
+        "homelessness",
+        "foster care",
+        "Catholic sisters"
+      ],
       "notes": "US foundation with ~$7.36B in assets (Dec 2023). Programs: safe water access, homelessness, foster care youth, Catholic sisters, substance use prevention. Annual Hilton Humanitarian Prize (2026 nominations open May 2025 – April 2026). Does not typically accept unsolicited proposals. Also accessible via Candid FDO and ProPublica 990."
     },
     {
@@ -2625,7 +3077,15 @@
       "is_high_priority": false,
       "logo_url": null,
       "status": "active",
-      "relevant_themes": ["global development", "health", "education", "rural development", "civil society", "Africa", "South Asia"],
+      "relevant_themes": [
+        "global development",
+        "health",
+        "education",
+        "rural development",
+        "civil society",
+        "Africa",
+        "South Asia"
+      ],
       "notes": "Part of the Aga Khan Development Network (AKDN). Active in health, education, rural development, and civil society. International Scholarship Programme open for 2026–2027 cycle. Aga Khan Foundation Canada (AKFC) Global Leadership Program 2026 open for mid-career Canadian professionals (deadline May 19, 2026). Works in Sub-Saharan Africa and South Asia. No public REST API."
     },
     {
@@ -2642,7 +3102,13 @@
       "is_high_priority": false,
       "logo_url": null,
       "status": "active",
-      "relevant_themes": ["medical research", "arts", "environment", "child well-being", "wildlife"],
+      "relevant_themes": [
+        "medical research",
+        "arts",
+        "environment",
+        "child well-being",
+        "wildlife"
+      ],
       "notes": "Formerly Doris Duke Charitable Foundation. Focus: arts, environmental conservation, medical research, and child well-being. Participates in 2026 Institutional Challenge Grants with William T. Grant, Annie E. Casey, and Spencer Foundations. Grant resources at dorisduke.org/grants. Also accessible via Candid FDO and ProPublica 990."
     },
     {
@@ -2659,7 +3125,14 @@
       "is_high_priority": false,
       "logo_url": null,
       "status": "active",
-      "relevant_themes": ["children", "youth", "families", "racial equity", "community development", "poverty"],
+      "relevant_themes": [
+        "children",
+        "youth",
+        "families",
+        "racial equity",
+        "community development",
+        "poverty"
+      ],
       "notes": "Major US foundation focused on vulnerable children, youth, and families. Proactive grantmaking; does not accept unsolicited proposals for most programs. Partners with William T. Grant, Spencer, Bezos Family, and Doris Duke on 2026 Institutional Challenge Grants. Grant info at aecf.org/grant-making. Also accessible via Candid FDO and ProPublica 990."
     },
     {
@@ -2676,7 +3149,13 @@
       "is_high_priority": false,
       "logo_url": null,
       "status": "active",
-      "relevant_themes": ["Alzheimer's", "dementia", "neuroscience", "health", "clinical research"],
+      "relevant_themes": [
+        "Alzheimer's",
+        "dementia",
+        "neuroscience",
+        "health",
+        "clinical research"
+      ],
       "notes": "Funds research to advance understanding of Alzheimer's, identify treatments, and improve care. Open to US and international researchers. Multiple 2026 active calls: AARGA (LOI Feb 23, Application Apr 21), HSR-ADRD (LOI May 6, Application Jul 22), VCID-UMD Strategic Fund. Applications submitted via Grants.gov or foundation portal. Also accessible via Candid."
     },
     {
@@ -2693,7 +3172,13 @@
       "is_high_priority": false,
       "logo_url": null,
       "status": "active",
-      "relevant_themes": ["cancer", "biomedical", "clinical research", "health", "oncology"],
+      "relevant_themes": [
+        "cancer",
+        "biomedical",
+        "clinical research",
+        "health",
+        "oncology"
+      ],
       "notes": "Major US cancer research funder. Grant types include Research Scholar Grants, Postdoctoral Fellowships, and mission-specific grants. Electronic application deadlines June 1 and December 1 each year. 2026 application via ProposalCentral platform. Joint calls with Cancer Research UK (CRUK); US PI budget due June 11, 2026. Policies effective March 2026 updated grant terms."
     },
     {
@@ -2710,7 +3195,13 @@
       "is_high_priority": false,
       "logo_url": null,
       "status": "active",
-      "relevant_themes": ["cardiovascular", "stroke", "heart disease", "health", "biomedical"],
+      "relevant_themes": [
+        "cardiovascular",
+        "stroke",
+        "heart disease",
+        "health",
+        "biomedical"
+      ],
       "notes": "Major US health research funder for cardiovascular and stroke research. Multiple active 2026 programs including Innovative Project Award and Predoctoral Fellowship. Applications submitted via ProposalCentral (research.americanheart.org). Also funds council awards and other recognitions via ProposalCentral."
     },
     {
@@ -2727,7 +3218,13 @@
       "is_high_priority": false,
       "logo_url": null,
       "status": "active",
-      "relevant_themes": ["diabetes", "type 1 diabetes", "health", "biomedical", "clinical research"],
+      "relevant_themes": [
+        "diabetes",
+        "type 1 diabetes",
+        "health",
+        "biomedical",
+        "clinical research"
+      ],
       "notes": "International nonprofit dedicated to T1D research and cures. Funds basic research, clinical trials, and industry partnerships. Applications submitted via JDRF's online grant portal (jdrf.org/research). Does not accept unsolicited letters of inquiry for most programs; contact grants@jdrf.org. Also accessible via Candid FDO."
     },
     {
@@ -2744,7 +3241,13 @@
       "is_high_priority": false,
       "logo_url": null,
       "status": "active",
-      "relevant_themes": ["cystic fibrosis", "rare disease", "health", "biomedical", "clinical research"],
+      "relevant_themes": [
+        "cystic fibrosis",
+        "rare disease",
+        "health",
+        "biomedical",
+        "clinical research"
+      ],
       "notes": "Funds CF research through multiple grant types. Applications via awards.cff.org portal by 5pm ET. Two annual cycles (spring and fall); applicants may submit only one Research Grant application per year in 2026. Also accessible via ProposalCentral for some programs."
     },
     {
@@ -2761,7 +3264,12 @@
       "is_high_priority": false,
       "logo_url": null,
       "status": "active",
-      "relevant_themes": ["health", "biomedical", "research", "nonprofits"],
+      "relevant_themes": [
+        "health",
+        "biomedical",
+        "research",
+        "nonprofits"
+      ],
       "notes": "E-grantmaking platform hosting grant opportunities for hundreds of organizations including American Heart Association, American Cancer Society, Cystic Fibrosis Foundation, American Association for Cancer Research, PhRMA, Huntington's Disease Society of America, and others. Lists all current open opportunities at proposalcentral.com/GrantOpportunities.asp. No formal public API but grant listings are scrapeable."
     },
     {
@@ -2778,7 +3286,14 @@
       "is_high_priority": false,
       "logo_url": null,
       "status": "active",
-      "relevant_themes": ["climate", "environment", "energy", "AI", "adaptation", "resilience"],
+      "relevant_themes": [
+        "climate",
+        "environment",
+        "energy",
+        "AI",
+        "adaptation",
+        "resilience"
+      ],
       "notes": "Global platform for philanthropy to scale high-impact climate solutions. Since 2008, granted >$2B to 850+ grantees in 50 countries. Grants range $5K–$10M, most <$500K. Application by invitation only or selective calls for proposals—no open rolling applications. Leads Adaptation and Resilience Fund (with Laudes Foundation, Rockefeller, Howden, Quadrature Climate). No public REST API."
     },
     {
@@ -2795,7 +3310,13 @@
       "is_high_priority": false,
       "logo_url": null,
       "status": "active",
-      "relevant_themes": ["climate", "environment", "energy", "EU policy", "sustainability"],
+      "relevant_themes": [
+        "climate",
+        "environment",
+        "energy",
+        "EU policy",
+        "sustainability"
+      ],
       "notes": "Major philanthropic initiative working with 700+ partners to catalyse climate action in Europe and globally. Funded by major international foundations. Does not have open grant calls; proactive partnership model with select grantees. Monitor europeanclimate.org for open RFPs and partner calls. No public REST API."
     },
     {
@@ -2812,7 +3333,15 @@
       "is_high_priority": true,
       "logo_url": null,
       "status": "active",
-      "relevant_themes": ["AI", "health", "climate", "education", "social impact", "digital", "neuroscience"],
+      "relevant_themes": [
+        "AI",
+        "health",
+        "climate",
+        "education",
+        "social impact",
+        "digital",
+        "neuroscience"
+      ],
       "notes": "Boston-based foundation channeling AI and technology into positive social impact. In Dec 2024 announced $73.5M toward AI for Humanity supporting 144 organizations. Work spans digital health, climate change, IT, neuroscience, education, and empowering vulnerable communities. One of 10 founding funders of the Humanity AI initiative ($500M over 5 years). No public API; monitor for open RFPs."
     },
     {
@@ -2829,7 +3358,14 @@
       "is_high_priority": false,
       "logo_url": null,
       "status": "active",
-      "relevant_themes": ["AI", "internet health", "privacy", "open web", "technology", "digital rights"],
+      "relevant_themes": [
+        "AI",
+        "internet health",
+        "privacy",
+        "open web",
+        "technology",
+        "digital rights"
+      ],
       "notes": "Funds organizations and individuals working on trustworthy AI, internet health, privacy, and open technology. Founding funder of Humanity AI initiative with Omidyar Network and Patrick J. McGovern Foundation. Active programs include Mozilla Technology Fund and Awards. Some open calls; primarily invitation-based. No public REST API."
     },
     {
@@ -2846,7 +3382,14 @@
       "is_high_priority": false,
       "logo_url": null,
       "status": "active",
-      "relevant_themes": ["AI", "technology", "democracy", "journalism", "media", "economic development"],
+      "relevant_themes": [
+        "AI",
+        "technology",
+        "democracy",
+        "journalism",
+        "media",
+        "economic development"
+      ],
       "notes": "Impact investment and philanthropy firm by Pierre and Pam Omidyar. Does not accept unsolicited grant proposals. Grantmaking addresses role of technology in society, global and economic development, democracy, journalism, media. Co-founder of Humanity AI initiative ($500M). Also in Candid FDO."
     },
     {
@@ -2863,7 +3406,14 @@
       "is_high_priority": false,
       "logo_url": null,
       "status": "active",
-      "relevant_themes": ["research", "humanities", "science", "arts", "education", "UK"],
+      "relevant_themes": [
+        "research",
+        "humanities",
+        "science",
+        "arts",
+        "education",
+        "UK"
+      ],
       "notes": "Major UK research funder supporting research and education across all subject areas except medical research. Emphasis on individuals and innovation. Online Grant Management System at grants.leverhulme.ac.uk for applications and award management. Outline applications paused; full applications to be accepted in new grants management system in autumn 2026. Grant listings at leverhulme.ac.uk/listings."
     },
     {
@@ -2880,7 +3430,13 @@
       "is_high_priority": false,
       "logo_url": null,
       "status": "active",
-      "relevant_themes": ["education", "social welfare", "law", "research", "UK"],
+      "relevant_themes": [
+        "education",
+        "social welfare",
+        "law",
+        "research",
+        "UK"
+      ],
       "notes": "UK foundation funding research, analysis, and student programmes to advance educational opportunity and social well-being across the UK. Also funds Nuffield Council on Bioethics and Nuffield Department of Medicine. Open application cycles published on website. No public REST API; scraping feasible."
     },
     {
@@ -2897,7 +3453,13 @@
       "is_high_priority": false,
       "logo_url": null,
       "status": "active",
-      "relevant_themes": ["poverty", "inequality", "housing", "social policy", "UK"],
+      "relevant_themes": [
+        "poverty",
+        "inequality",
+        "housing",
+        "social policy",
+        "UK"
+      ],
       "notes": "UK foundation working to unlock the UK from poverty. Funds research and programme partners. Also manages Joseph Rowntree Housing Trust and Joseph Rowntree Charitable Trust. Open calls published at jrf.org.uk/funding. No public REST API; scraping feasible."
     },
     {
@@ -2914,7 +3476,14 @@
       "is_high_priority": false,
       "logo_url": null,
       "status": "active",
-      "relevant_themes": ["arts", "children", "environment", "food", "social change", "UK"],
+      "relevant_themes": [
+        "arts",
+        "children",
+        "environment",
+        "food",
+        "social change",
+        "UK"
+      ],
       "notes": "UK foundation improving quality of life through arts, children and young people, environment, food, and social change. Open application process; apply via online portal on the website. Data accessible via 360Giving. No public REST API."
     },
     {
@@ -2931,7 +3500,15 @@
       "is_high_priority": false,
       "logo_url": null,
       "status": "active",
-      "relevant_themes": ["neuroscience", "plant science", "education", "Africa", "public policy", "arts", "UK"],
+      "relevant_themes": [
+        "neuroscience",
+        "plant science",
+        "education",
+        "Africa",
+        "public policy",
+        "arts",
+        "UK"
+      ],
       "notes": "UK charitable foundation active in plant science, neuroscience, education, Africa, public policy, and arts. Primarily proactive grantmaking; does not typically accept unsolicited applications. Some open calls via partner organizations. Data accessible via 360Giving. No public REST API."
     },
     {
@@ -2948,7 +3525,13 @@
       "is_high_priority": false,
       "logo_url": null,
       "status": "active",
-      "relevant_themes": ["research", "science", "health", "humanities", "social sciences"],
+      "relevant_themes": [
+        "research",
+        "science",
+        "health",
+        "humanities",
+        "social sciences"
+      ],
       "notes": "Grant database published by InfoEd Global containing 8,000+ current funding opportunities including grants, fellowships, and support programs from 10,000+ sponsors (~40,000 opportunities on any given day). Updated almost daily. Provided via institutional subscriptions to InfoEd Electronic Research Administration (ERA) Suite. Used by Yale, Penn, UNC, and other major research universities."
     },
     {
@@ -2965,8 +3548,1809 @@
       "is_high_priority": false,
       "logo_url": null,
       "status": "active",
-      "relevant_themes": ["research", "science", "health", "humanities", "social sciences"],
+      "relevant_themes": [
+        "research",
+        "science",
+        "health",
+        "humanities",
+        "social sciences"
+      ],
       "notes": "Subscription-based funding opportunity aggregator using specialized data-crawling technology. Database covers 30,000+ sponsors and thousands of grant opportunities across most disciplines. Every opportunity analyzed and verified by a team of specialists. Used by many research universities. Includes sponsor-level profiles (e.g., William T. Grant Foundation, HHMI). Formerly known as GrantFinder."
+    },
+    {
+      "name": "Mondriaan Fund – Dutch Arts",
+      "category": "International Arts & Culture",
+      "url": "https://www.mondriaanfonds.nl/en/",
+      "source_type": "ai_scraper",
+      "api_endpoint": null,
+      "scraper_config": {
+        "use_playwright": true,
+        "crawl_depth": 1
+      },
+      "refresh_frequency": "weekly",
+      "is_high_priority": true,
+      "logo_url": "https://www.google.com/s2/favicons?domain=mondriaanfonds.nl&sz=64",
+      "status": "active",
+      "relevant_themes": [
+        "visual art",
+        "design",
+        "architecture"
+      ],
+      "notes": "Netherlands arts funder — visual art, design, architecture grants"
+    },
+    {
+      "name": "Prince Claus Fund",
+      "category": "International Arts & Culture",
+      "url": "https://www.princeclausfund.org/programmes",
+      "source_type": "ai_scraper",
+      "api_endpoint": null,
+      "scraper_config": {
+        "use_playwright": true,
+        "crawl_depth": 1
+      },
+      "refresh_frequency": "weekly",
+      "is_high_priority": true,
+      "logo_url": "https://www.google.com/s2/favicons?domain=princeclausfund.org&sz=64",
+      "status": "active",
+      "relevant_themes": [
+        "contemporary art",
+        "culture",
+        "international"
+      ],
+      "notes": "Supports artists in contexts where cultural freedom is restricted"
+    },
+    {
+      "name": "Goethe-Institut – Cultural Funding",
+      "category": "International Arts & Culture",
+      "url": "https://www.goethe.de/en/kul/bku.html",
+      "source_type": "ai_scraper",
+      "api_endpoint": null,
+      "scraper_config": {
+        "use_playwright": true,
+        "crawl_depth": 1
+      },
+      "refresh_frequency": "weekly",
+      "is_high_priority": false,
+      "logo_url": "https://www.google.com/s2/favicons?domain=goethe.de&sz=64",
+      "status": "active",
+      "relevant_themes": [
+        "German culture",
+        "international exchange",
+        "arts"
+      ],
+      "notes": "German cultural institute — international cultural exchange programs"
+    },
+    {
+      "name": "Arts Council England – Grants",
+      "category": "International Arts & Culture",
+      "url": "https://www.artscouncil.org.uk/our-open-funds",
+      "source_type": "ai_scraper",
+      "api_endpoint": null,
+      "scraper_config": {
+        "use_playwright": true,
+        "crawl_depth": 1
+      },
+      "refresh_frequency": "weekly",
+      "is_high_priority": true,
+      "logo_url": "https://www.google.com/s2/favicons?domain=artscouncil.org.uk&sz=64",
+      "status": "active",
+      "relevant_themes": [
+        "arts",
+        "culture",
+        "creative",
+        "UK"
+      ],
+      "notes": "National arts funder for England"
+    },
+    {
+      "name": "Creative Scotland – Funding",
+      "category": "International Arts & Culture",
+      "url": "https://www.creativescotland.com/funding",
+      "source_type": "ai_scraper",
+      "api_endpoint": null,
+      "scraper_config": {
+        "use_playwright": true,
+        "crawl_depth": 1
+      },
+      "refresh_frequency": "weekly",
+      "is_high_priority": false,
+      "logo_url": "https://www.google.com/s2/favicons?domain=creativescotland.com&sz=64",
+      "status": "active",
+      "relevant_themes": [
+        "arts",
+        "culture",
+        "Scotland"
+      ],
+      "notes": "Supports arts, screen, and creative industries in Scotland"
+    },
+    {
+      "name": "Arts Council of Ireland – Funding",
+      "category": "International Arts & Culture",
+      "url": "https://www.artscouncil.ie/Funds/",
+      "source_type": "ai_scraper",
+      "api_endpoint": null,
+      "scraper_config": {
+        "use_playwright": true,
+        "crawl_depth": 1
+      },
+      "refresh_frequency": "weekly",
+      "is_high_priority": false,
+      "logo_url": "https://www.google.com/s2/favicons?domain=artscouncil.ie&sz=64",
+      "status": "active",
+      "relevant_themes": [
+        "arts",
+        "culture",
+        "Ireland"
+      ],
+      "notes": ""
+    },
+    {
+      "name": "Nordic Culture Fund",
+      "category": "International Arts & Culture",
+      "url": "https://www.nordiskkulturfond.org/en/",
+      "source_type": "ai_scraper",
+      "api_endpoint": null,
+      "scraper_config": {
+        "use_playwright": true,
+        "crawl_depth": 1
+      },
+      "refresh_frequency": "weekly",
+      "is_high_priority": false,
+      "logo_url": "https://www.google.com/s2/favicons?domain=nordiskkulturfond.org&sz=64",
+      "status": "active",
+      "relevant_themes": [
+        "Nordic",
+        "arts",
+        "culture"
+      ],
+      "notes": "Supports Nordic cultural cooperation"
+    },
+    {
+      "name": "Institut français – Cultural Grants (AFAA)",
+      "category": "International Arts & Culture",
+      "url": "https://www.institutfrancais.com/en/resources/grants",
+      "source_type": "ai_scraper",
+      "api_endpoint": null,
+      "scraper_config": {
+        "use_playwright": true,
+        "crawl_depth": 1
+      },
+      "refresh_frequency": "weekly",
+      "is_high_priority": false,
+      "logo_url": "https://www.google.com/s2/favicons?domain=institutfrancais.com&sz=64",
+      "status": "active",
+      "relevant_themes": [
+        "French culture",
+        "international exchange"
+      ],
+      "notes": "French cultural institute — international cooperation grants"
+    },
+    {
+      "name": "Robert Bosch Stiftung – Grants",
+      "category": "International Arts & Culture",
+      "url": "https://www.bosch-stiftung.de/en/projects-and-programmes",
+      "source_type": "ai_scraper",
+      "api_endpoint": null,
+      "scraper_config": {
+        "use_playwright": true,
+        "crawl_depth": 1
+      },
+      "refresh_frequency": "weekly",
+      "is_high_priority": false,
+      "logo_url": "https://www.google.com/s2/favicons?domain=bosch-stiftung.de&sz=64",
+      "status": "active",
+      "relevant_themes": [
+        "culture",
+        "civic society",
+        "international"
+      ],
+      "notes": "German foundation with significant arts and culture programs"
+    },
+    {
+      "name": "Leenaards Foundation",
+      "category": "International Arts & Culture",
+      "url": "https://www.leenaards.ch/en/grants",
+      "source_type": "ai_scraper",
+      "api_endpoint": null,
+      "scraper_config": {
+        "use_playwright": true,
+        "crawl_depth": 1
+      },
+      "refresh_frequency": "weekly",
+      "is_high_priority": false,
+      "logo_url": "https://www.google.com/s2/favicons?domain=leenaards.ch&sz=64",
+      "status": "active",
+      "relevant_themes": [
+        "arts",
+        "medicine",
+        "Swiss Romande"
+      ],
+      "notes": "Swiss Romande foundation supporting arts and medical research"
+    },
+    {
+      "name": "Fondazione Compagnia di San Paolo",
+      "category": "International Arts & Culture",
+      "url": "https://www.compagniadisanpaolo.it/eng/Grant-making",
+      "source_type": "ai_scraper",
+      "api_endpoint": null,
+      "scraper_config": {
+        "use_playwright": true,
+        "crawl_depth": 1
+      },
+      "refresh_frequency": "weekly",
+      "is_high_priority": false,
+      "logo_url": "https://www.google.com/s2/favicons?domain=compagniadisanpaolo.it&sz=64",
+      "status": "active",
+      "relevant_themes": [
+        "arts",
+        "culture",
+        "Italy"
+      ],
+      "notes": "Major Italian foundation — arts, culture, welfare"
+    },
+    {
+      "name": "Fondazione Cariplo – Grants",
+      "category": "International Arts & Culture",
+      "url": "https://www.fondazionecariplo.it/en/grants/index.html",
+      "source_type": "ai_scraper",
+      "api_endpoint": null,
+      "scraper_config": {
+        "use_playwright": true,
+        "crawl_depth": 1
+      },
+      "refresh_frequency": "weekly",
+      "is_high_priority": false,
+      "logo_url": "https://www.google.com/s2/favicons?domain=fondazionecariplo.it&sz=64",
+      "status": "active",
+      "relevant_themes": [
+        "arts",
+        "environment",
+        "social",
+        "Italy"
+      ],
+      "notes": "Milan-based foundation supporting arts, environment, social welfare"
+    },
+    {
+      "name": "Sundance Institute – Grants",
+      "category": "International Arts & Culture",
+      "url": "https://www.sundance.org/programs/artist-programs",
+      "source_type": "ai_scraper",
+      "api_endpoint": null,
+      "scraper_config": {
+        "use_playwright": true,
+        "crawl_depth": 1
+      },
+      "refresh_frequency": "weekly",
+      "is_high_priority": true,
+      "logo_url": "https://www.google.com/s2/favicons?domain=sundance.org&sz=64",
+      "status": "active",
+      "relevant_themes": [
+        "film",
+        "documentary",
+        "screenwriting",
+        "theatre"
+      ],
+      "notes": "Supports independent storytellers in film, theatre, digital"
+    },
+    {
+      "name": "Tribeca Foundation – Grants",
+      "category": "International Arts & Culture",
+      "url": "https://www.tribecafilm.com/foundation",
+      "source_type": "ai_scraper",
+      "api_endpoint": null,
+      "scraper_config": {
+        "use_playwright": true,
+        "crawl_depth": 1
+      },
+      "refresh_frequency": "weekly",
+      "is_high_priority": false,
+      "logo_url": "https://www.google.com/s2/favicons?domain=tribecafilm.com&sz=64",
+      "status": "active",
+      "relevant_themes": [
+        "film",
+        "documentary",
+        "storytelling"
+      ],
+      "notes": ""
+    },
+    {
+      "name": "International Documentary Association – IDA Grants",
+      "category": "International Arts & Culture",
+      "url": "https://www.documentary.org/funding-opportunities",
+      "source_type": "ai_scraper",
+      "api_endpoint": null,
+      "scraper_config": {
+        "use_playwright": true,
+        "crawl_depth": 1
+      },
+      "refresh_frequency": "weekly",
+      "is_high_priority": false,
+      "logo_url": "https://www.google.com/s2/favicons?domain=documentary.org&sz=64",
+      "status": "active",
+      "relevant_themes": [
+        "documentary",
+        "film"
+      ],
+      "notes": ""
+    },
+    {
+      "name": "Creative Capital",
+      "category": "International Arts & Culture",
+      "url": "https://creative-capital.org/award/",
+      "source_type": "ai_scraper",
+      "api_endpoint": null,
+      "scraper_config": {
+        "use_playwright": true,
+        "crawl_depth": 1
+      },
+      "refresh_frequency": "weekly",
+      "is_high_priority": true,
+      "logo_url": "https://www.google.com/s2/favicons?domain=creative-capital.org&sz=64",
+      "status": "active",
+      "relevant_themes": [
+        "contemporary art",
+        "visual art",
+        "performance"
+      ],
+      "notes": "US artist support org — multi-year financial and advisory support"
+    },
+    {
+      "name": "United States Artists – Fellowships",
+      "category": "International Arts & Culture",
+      "url": "https://www.unitedstatesartists.org/usa-fellows/",
+      "source_type": "ai_scraper",
+      "api_endpoint": null,
+      "scraper_config": {
+        "use_playwright": true,
+        "crawl_depth": 1
+      },
+      "refresh_frequency": "weekly",
+      "is_high_priority": true,
+      "logo_url": "https://www.google.com/s2/favicons?domain=unitedstatesartists.org&sz=64",
+      "status": "active",
+      "relevant_themes": [
+        "visual art",
+        "music",
+        "theatre",
+        "film",
+        "craft"
+      ],
+      "notes": "$50K unrestricted fellowships for US artists"
+    },
+    {
+      "name": "Artadia – Grants",
+      "category": "International Arts & Culture",
+      "url": "https://artadia.org/awards/",
+      "source_type": "ai_scraper",
+      "api_endpoint": null,
+      "scraper_config": {
+        "use_playwright": true,
+        "crawl_depth": 1
+      },
+      "refresh_frequency": "weekly",
+      "is_high_priority": false,
+      "logo_url": "https://www.google.com/s2/favicons?domain=artadia.org&sz=64",
+      "status": "active",
+      "relevant_themes": [
+        "visual art",
+        "contemporary art"
+      ],
+      "notes": "City-based visual art awards across US cities"
+    },
+    {
+      "name": "MAP Fund – Performing Arts",
+      "category": "International Arts & Culture",
+      "url": "https://mapfund.org/grants/",
+      "source_type": "ai_scraper",
+      "api_endpoint": null,
+      "scraper_config": {
+        "use_playwright": true,
+        "crawl_depth": 1
+      },
+      "refresh_frequency": "weekly",
+      "is_high_priority": false,
+      "logo_url": "https://www.google.com/s2/favicons?domain=mapfund.org&sz=64",
+      "status": "active",
+      "relevant_themes": [
+        "performance",
+        "theatre",
+        "dance",
+        "music"
+      ],
+      "notes": ""
+    },
+    {
+      "name": "Foundation for Contemporary Arts",
+      "category": "International Arts & Culture",
+      "url": "https://www.foundationforcontemporaryarts.org/grants/",
+      "source_type": "ai_scraper",
+      "api_endpoint": null,
+      "scraper_config": {
+        "use_playwright": true,
+        "crawl_depth": 1
+      },
+      "refresh_frequency": "weekly",
+      "is_high_priority": false,
+      "logo_url": "https://www.google.com/s2/favicons?domain=foundationforcontemporaryarts.org&sz=64",
+      "status": "active",
+      "relevant_themes": [
+        "contemporary art",
+        "experimental",
+        "performance"
+      ],
+      "notes": "Supports risk-taking contemporary art"
+    },
+    {
+      "name": "Jerome Foundation – Grants",
+      "category": "International Arts & Culture",
+      "url": "https://www.jeromefdn.org/apply",
+      "source_type": "ai_scraper",
+      "api_endpoint": null,
+      "scraper_config": {
+        "use_playwright": true,
+        "crawl_depth": 1
+      },
+      "refresh_frequency": "weekly",
+      "is_high_priority": false,
+      "logo_url": "https://www.google.com/s2/favicons?domain=jeromefdn.org&sz=64",
+      "status": "active",
+      "relevant_themes": [
+        "arts",
+        "emerging artists",
+        "Minnesota",
+        "New York"
+      ],
+      "notes": "Supports emerging artists in MN and NYC"
+    },
+    {
+      "name": "Creative Time – Grants",
+      "category": "International Arts & Culture",
+      "url": "https://creativetime.org/",
+      "source_type": "ai_scraper",
+      "api_endpoint": null,
+      "scraper_config": {
+        "use_playwright": true,
+        "crawl_depth": 1
+      },
+      "refresh_frequency": "weekly",
+      "is_high_priority": false,
+      "logo_url": "https://www.google.com/s2/favicons?domain=creativetime.org&sz=64",
+      "status": "active",
+      "relevant_themes": [
+        "public art",
+        "contemporary art"
+      ],
+      "notes": ""
+    },
+    {
+      "name": "Franklin Furnace Archive",
+      "category": "International Arts & Culture",
+      "url": "https://www.franklinfurnace.org/research/",
+      "source_type": "ai_scraper",
+      "api_endpoint": null,
+      "scraper_config": {
+        "use_playwright": true,
+        "crawl_depth": 1
+      },
+      "refresh_frequency": "weekly",
+      "is_high_priority": false,
+      "logo_url": "https://www.google.com/s2/favicons?domain=franklinfurnace.org&sz=64",
+      "status": "active",
+      "relevant_themes": [
+        "performance",
+        "experimental art"
+      ],
+      "notes": ""
+    },
+    {
+      "name": "Lower Manhattan Cultural Council – Grants",
+      "category": "International Arts & Culture",
+      "url": "https://lmcc.net/resources/grants/",
+      "source_type": "ai_scraper",
+      "api_endpoint": null,
+      "scraper_config": {
+        "use_playwright": true,
+        "crawl_depth": 1
+      },
+      "refresh_frequency": "weekly",
+      "is_high_priority": false,
+      "logo_url": "https://www.google.com/s2/favicons?domain=lmcc.net&sz=64",
+      "status": "active",
+      "relevant_themes": [
+        "arts",
+        "New York"
+      ],
+      "notes": ""
+    },
+    {
+      "name": "New England Foundation for the Arts",
+      "category": "International Arts & Culture",
+      "url": "https://www.nefa.org/grants_programs/",
+      "source_type": "ai_scraper",
+      "api_endpoint": null,
+      "scraper_config": {
+        "use_playwright": true,
+        "crawl_depth": 1
+      },
+      "refresh_frequency": "weekly",
+      "is_high_priority": false,
+      "logo_url": "https://www.google.com/s2/favicons?domain=nefa.org&sz=64",
+      "status": "active",
+      "relevant_themes": [
+        "arts",
+        "New England"
+      ],
+      "notes": ""
+    },
+    {
+      "name": "Mid Atlantic Arts – Grants",
+      "category": "International Arts & Culture",
+      "url": "https://www.midatlanticarts.org/grants-programs/",
+      "source_type": "ai_scraper",
+      "api_endpoint": null,
+      "scraper_config": {
+        "use_playwright": true,
+        "crawl_depth": 1
+      },
+      "refresh_frequency": "weekly",
+      "is_high_priority": false,
+      "logo_url": "https://www.google.com/s2/favicons?domain=midatlanticarts.org&sz=64",
+      "status": "active",
+      "relevant_themes": [
+        "arts",
+        "Mid-Atlantic US"
+      ],
+      "notes": ""
+    },
+    {
+      "name": "FACE Foundation – French-American Cultural",
+      "category": "International Arts & Culture",
+      "url": "https://www.facefoundation.org/programs/",
+      "source_type": "ai_scraper",
+      "api_endpoint": null,
+      "scraper_config": {
+        "use_playwright": true,
+        "crawl_depth": 1
+      },
+      "refresh_frequency": "weekly",
+      "is_high_priority": false,
+      "logo_url": "https://www.google.com/s2/favicons?domain=facefoundation.org&sz=64",
+      "status": "active",
+      "relevant_themes": [
+        "French-American",
+        "arts",
+        "education"
+      ],
+      "notes": ""
+    },
+    {
+      "name": "Ars Electronica – Open Calls",
+      "category": "International Arts & Culture",
+      "url": "https://www.ars.electronica.art/news/calls/",
+      "source_type": "ai_scraper",
+      "api_endpoint": null,
+      "scraper_config": {
+        "use_playwright": true,
+        "crawl_depth": 1
+      },
+      "refresh_frequency": "weekly",
+      "is_high_priority": false,
+      "logo_url": "https://www.google.com/s2/favicons?domain=ars.electronica.art&sz=64",
+      "status": "active",
+      "relevant_themes": [
+        "digital art",
+        "media art",
+        "technology"
+      ],
+      "notes": ""
+    },
+    {
+      "name": "Eurimages – Film Grants",
+      "category": "International Arts & Culture",
+      "url": "https://www.coe.int/en/web/eurimages/funds",
+      "source_type": "ai_scraper",
+      "api_endpoint": null,
+      "scraper_config": {
+        "use_playwright": true,
+        "crawl_depth": 1
+      },
+      "refresh_frequency": "weekly",
+      "is_high_priority": false,
+      "logo_url": "https://www.google.com/s2/favicons?domain=coe.int&sz=64",
+      "status": "active",
+      "relevant_themes": [
+        "film",
+        "European co-production"
+      ],
+      "notes": "Council of Europe film co-production fund"
+    },
+    {
+      "name": "British Council – Arts Grants",
+      "category": "International Arts & Culture",
+      "url": "https://www.britishcouncil.org/arts/funding",
+      "source_type": "ai_scraper",
+      "api_endpoint": null,
+      "scraper_config": {
+        "use_playwright": true,
+        "crawl_depth": 1
+      },
+      "refresh_frequency": "weekly",
+      "is_high_priority": false,
+      "logo_url": "https://www.google.com/s2/favicons?domain=britishcouncil.org&sz=64",
+      "status": "active",
+      "relevant_themes": [
+        "arts",
+        "international",
+        "UK"
+      ],
+      "notes": ""
+    },
+    {
+      "name": "Jan Michalski Foundation – Fellowships",
+      "category": "International Arts & Culture",
+      "url": "https://www.fondation-janmichalski.com/en/",
+      "source_type": "ai_scraper",
+      "api_endpoint": null,
+      "scraper_config": {
+        "use_playwright": true,
+        "crawl_depth": 1
+      },
+      "refresh_frequency": "weekly",
+      "is_high_priority": false,
+      "logo_url": "https://www.google.com/s2/favicons?domain=fondation-janmichalski.com&sz=64",
+      "status": "active",
+      "relevant_themes": [
+        "literature",
+        "writing"
+      ],
+      "notes": "Swiss foundation for writers"
+    },
+    {
+      "name": "Guggenheim Fellowship",
+      "category": "Fellowships & Scholarships",
+      "url": "https://www.gf.org/applicants/",
+      "source_type": "ai_scraper",
+      "api_endpoint": null,
+      "scraper_config": {
+        "use_playwright": true,
+        "crawl_depth": 1
+      },
+      "refresh_frequency": "weekly",
+      "is_high_priority": true,
+      "logo_url": "https://www.google.com/s2/favicons?domain=gf.org&sz=64",
+      "status": "active",
+      "relevant_themes": [
+        "arts",
+        "scholarship",
+        "research",
+        "fellowship"
+      ],
+      "notes": "Prestigious annual fellowships for scholars, artists, scientists"
+    },
+    {
+      "name": "American Academy in Rome – Rome Prize",
+      "category": "Fellowships & Scholarships",
+      "url": "https://www.aarome.org/apply/rome-prize",
+      "source_type": "ai_scraper",
+      "api_endpoint": null,
+      "scraper_config": {
+        "use_playwright": true,
+        "crawl_depth": 1
+      },
+      "refresh_frequency": "weekly",
+      "is_high_priority": true,
+      "logo_url": "https://www.google.com/s2/favicons?domain=aarome.org&sz=64",
+      "status": "active",
+      "relevant_themes": [
+        "visual art",
+        "design",
+        "architecture",
+        "humanities"
+      ],
+      "notes": "11-month residential fellowships in Rome"
+    },
+    {
+      "name": "Whiting Foundation – Grants & Fellowships",
+      "category": "Fellowships & Scholarships",
+      "url": "https://www.whiting.org/writers/whiting-award",
+      "source_type": "ai_scraper",
+      "api_endpoint": null,
+      "scraper_config": {
+        "use_playwright": true,
+        "crawl_depth": 1
+      },
+      "refresh_frequency": "weekly",
+      "is_high_priority": false,
+      "logo_url": "https://www.google.com/s2/favicons?domain=whiting.org&sz=64",
+      "status": "active",
+      "relevant_themes": [
+        "writing",
+        "literature",
+        "nonfiction"
+      ],
+      "notes": ""
+    },
+    {
+      "name": "ACLS – Fellowships & Grants",
+      "category": "Fellowships & Scholarships",
+      "url": "https://www.acls.org/programs/",
+      "source_type": "ai_scraper",
+      "api_endpoint": null,
+      "scraper_config": {
+        "use_playwright": true,
+        "crawl_depth": 1
+      },
+      "refresh_frequency": "weekly",
+      "is_high_priority": true,
+      "logo_url": "https://www.google.com/s2/favicons?domain=acls.org&sz=64",
+      "status": "active",
+      "relevant_themes": [
+        "humanities",
+        "social sciences",
+        "scholarship"
+      ],
+      "notes": "American Council of Learned Societies — major humanities fellowships"
+    },
+    {
+      "name": "MacArthur Foundation – Fellowships",
+      "category": "Fellowships & Scholarships",
+      "url": "https://www.macfound.org/programs/awards/fellows/",
+      "source_type": "ai_scraper",
+      "api_endpoint": null,
+      "scraper_config": {
+        "use_playwright": true,
+        "crawl_depth": 1
+      },
+      "refresh_frequency": "weekly",
+      "is_high_priority": true,
+      "logo_url": "https://www.google.com/s2/favicons?domain=macfound.org&sz=64",
+      "status": "active",
+      "relevant_themes": [
+        "interdisciplinary",
+        "social change",
+        "creativity"
+      ],
+      "notes": "No-strings 'genius grant' — $800K over 5 years"
+    },
+    {
+      "name": "Pulitzer Center – Grants",
+      "category": "Fellowships & Scholarships",
+      "url": "https://pulitzercenter.org/grants-and-fellowships",
+      "source_type": "ai_scraper",
+      "api_endpoint": null,
+      "scraper_config": {
+        "use_playwright": true,
+        "crawl_depth": 1
+      },
+      "refresh_frequency": "weekly",
+      "is_high_priority": false,
+      "logo_url": "https://www.google.com/s2/favicons?domain=pulitzercenter.org&sz=64",
+      "status": "active",
+      "relevant_themes": [
+        "journalism",
+        "documentary",
+        "international reporting"
+      ],
+      "notes": ""
+    },
+    {
+      "name": "Nieman Foundation – Fellowships",
+      "category": "Fellowships & Scholarships",
+      "url": "https://nieman.harvard.edu/fellowships/",
+      "source_type": "ai_scraper",
+      "api_endpoint": null,
+      "scraper_config": {
+        "use_playwright": true,
+        "crawl_depth": 1
+      },
+      "refresh_frequency": "weekly",
+      "is_high_priority": false,
+      "logo_url": "https://www.google.com/s2/favicons?domain=nieman.harvard.edu&sz=64",
+      "status": "active",
+      "relevant_themes": [
+        "journalism",
+        "media"
+      ],
+      "notes": "Harvard journalism fellowships"
+    },
+    {
+      "name": "Thomas J. Watson Fellowship",
+      "category": "Fellowships & Scholarships",
+      "url": "https://watson.foundation/fellowships/tj",
+      "source_type": "ai_scraper",
+      "api_endpoint": null,
+      "scraper_config": {
+        "use_playwright": true,
+        "crawl_depth": 1
+      },
+      "refresh_frequency": "weekly",
+      "is_high_priority": false,
+      "logo_url": "https://www.google.com/s2/favicons?domain=watson.foundation&sz=64",
+      "status": "active",
+      "relevant_themes": [
+        "international",
+        "independent study"
+      ],
+      "notes": "One year of independent exploration abroad for graduating seniors"
+    },
+    {
+      "name": "DAAD – German Academic Exchange Scholarships",
+      "category": "Fellowships & Scholarships",
+      "url": "https://www.daad.de/en/find-funding/",
+      "source_type": "ai_scraper",
+      "api_endpoint": null,
+      "scraper_config": {
+        "use_playwright": true,
+        "crawl_depth": 1
+      },
+      "refresh_frequency": "weekly",
+      "is_high_priority": true,
+      "logo_url": "https://www.google.com/s2/favicons?domain=daad.de&sz=64",
+      "status": "active",
+      "relevant_themes": [
+        "academic",
+        "Germany",
+        "scholarship"
+      ],
+      "notes": "German government academic exchange — hundreds of programs"
+    },
+    {
+      "name": "Chevening Scholarships",
+      "category": "Fellowships & Scholarships",
+      "url": "https://www.chevening.org/scholarships/",
+      "source_type": "ai_scraper",
+      "api_endpoint": null,
+      "scraper_config": {
+        "use_playwright": true,
+        "crawl_depth": 1
+      },
+      "refresh_frequency": "weekly",
+      "is_high_priority": true,
+      "logo_url": "https://www.google.com/s2/favicons?domain=chevening.org&sz=64",
+      "status": "active",
+      "relevant_themes": [
+        "scholarship",
+        "UK",
+        "postgraduate"
+      ],
+      "notes": "UK government scholarships for future leaders"
+    },
+    {
+      "name": "Commonwealth Scholarships",
+      "category": "Fellowships & Scholarships",
+      "url": "https://www.hesa.ac.uk/information/commonwealth",
+      "source_type": "ai_scraper",
+      "api_endpoint": null,
+      "scraper_config": {
+        "use_playwright": true,
+        "crawl_depth": 1
+      },
+      "refresh_frequency": "weekly",
+      "is_high_priority": false,
+      "logo_url": "https://www.google.com/s2/favicons?domain=cscuk.fcdo.gov.uk&sz=64",
+      "status": "active",
+      "relevant_themes": [
+        "scholarship",
+        "Commonwealth",
+        "postgraduate"
+      ],
+      "notes": ""
+    },
+    {
+      "name": "Swiss Government Excellence Scholarships",
+      "category": "Fellowships & Scholarships",
+      "url": "https://www.sbfi.admin.ch/sbfi/en/home/education/scholarships-and-grants/swiss-government-excellence-scholarships.html",
+      "source_type": "ai_scraper",
+      "api_endpoint": null,
+      "scraper_config": {
+        "use_playwright": true,
+        "crawl_depth": 0
+      },
+      "refresh_frequency": "weekly",
+      "is_high_priority": false,
+      "logo_url": "https://www.google.com/s2/favicons?domain=sbfi.admin.ch&sz=64",
+      "status": "active",
+      "relevant_themes": [
+        "scholarship",
+        "Switzerland",
+        "postgraduate"
+      ],
+      "notes": "Swiss federal scholarships for foreign researchers and artists"
+    },
+    {
+      "name": "Rotary Peace Fellowship",
+      "category": "Fellowships & Scholarships",
+      "url": "https://www.rotary.org/en/our-programs/peace-fellowships",
+      "source_type": "ai_scraper",
+      "api_endpoint": null,
+      "scraper_config": {
+        "use_playwright": true,
+        "crawl_depth": 0
+      },
+      "refresh_frequency": "weekly",
+      "is_high_priority": false,
+      "logo_url": "https://www.google.com/s2/favicons?domain=rotary.org&sz=64",
+      "status": "active",
+      "relevant_themes": [
+        "peace",
+        "conflict resolution",
+        "international"
+      ],
+      "notes": ""
+    },
+    {
+      "name": "Open Society Foundations – Fellowships",
+      "category": "Fellowships & Scholarships",
+      "url": "https://www.opensocietyfoundations.org/grants",
+      "source_type": "ai_scraper",
+      "api_endpoint": null,
+      "scraper_config": {
+        "use_playwright": true,
+        "crawl_depth": 1
+      },
+      "refresh_frequency": "weekly",
+      "is_high_priority": true,
+      "logo_url": "https://www.google.com/s2/favicons?domain=opensocietyfoundations.org&sz=64",
+      "status": "active",
+      "relevant_themes": [
+        "democracy",
+        "human rights",
+        "journalism",
+        "education"
+      ],
+      "notes": "Soros-backed foundation — major international grants"
+    },
+    {
+      "name": "Gates Cambridge Scholarships",
+      "category": "Fellowships & Scholarships",
+      "url": "https://www.gatescambridge.org/apply/",
+      "source_type": "ai_scraper",
+      "api_endpoint": null,
+      "scraper_config": {
+        "use_playwright": true,
+        "crawl_depth": 0
+      },
+      "refresh_frequency": "weekly",
+      "is_high_priority": false,
+      "logo_url": "https://www.google.com/s2/favicons?domain=gatescambridge.org&sz=64",
+      "status": "active",
+      "relevant_themes": [
+        "scholarship",
+        "Cambridge",
+        "postgraduate"
+      ],
+      "notes": ""
+    },
+    {
+      "name": "Mellon Foundation – Grants",
+      "category": "Fellowships & Scholarships",
+      "url": "https://www.mellon.org/grants",
+      "source_type": "ai_scraper",
+      "api_endpoint": null,
+      "scraper_config": {
+        "use_playwright": true,
+        "crawl_depth": 1
+      },
+      "refresh_frequency": "weekly",
+      "is_high_priority": true,
+      "logo_url": "https://www.google.com/s2/favicons?domain=mellon.org&sz=64",
+      "status": "active",
+      "relevant_themes": [
+        "humanities",
+        "arts",
+        "higher education",
+        "diversity"
+      ],
+      "notes": "Largest funder of humanities in US"
+    },
+    {
+      "name": "Fulbright Program – US Scholar",
+      "category": "Fellowships & Scholarships",
+      "url": "https://www.cies.org/programs",
+      "source_type": "ai_scraper",
+      "api_endpoint": null,
+      "scraper_config": {
+        "use_playwright": true,
+        "crawl_depth": 1
+      },
+      "refresh_frequency": "weekly",
+      "is_high_priority": true,
+      "logo_url": "https://www.google.com/s2/favicons?domain=cies.org&sz=64",
+      "status": "active",
+      "relevant_themes": [
+        "academic",
+        "international exchange",
+        "research"
+      ],
+      "notes": "US government flagship international exchange program"
+    },
+    {
+      "name": "Wellcome Trust – Open Calls",
+      "category": "Science & Research Specific",
+      "url": "https://wellcome.org/grant-funding",
+      "source_type": "ai_scraper",
+      "api_endpoint": null,
+      "scraper_config": {
+        "use_playwright": true,
+        "crawl_depth": 1
+      },
+      "refresh_frequency": "weekly",
+      "is_high_priority": true,
+      "logo_url": "https://www.google.com/s2/favicons?domain=wellcome.org&sz=64",
+      "status": "active",
+      "relevant_themes": [
+        "biomedical",
+        "health",
+        "global health",
+        "humanities"
+      ],
+      "notes": "One of the largest biomedical funders globally — £16B endowment"
+    },
+    {
+      "name": "Leverhulme Trust – Research Grants",
+      "category": "Science & Research Specific",
+      "url": "https://www.leverhulme.ac.uk/funding",
+      "source_type": "ai_scraper",
+      "api_endpoint": null,
+      "scraper_config": {
+        "use_playwright": true,
+        "crawl_depth": 1
+      },
+      "refresh_frequency": "weekly",
+      "is_high_priority": false,
+      "logo_url": "https://www.google.com/s2/favicons?domain=leverhulme.ac.uk&sz=64",
+      "status": "active",
+      "relevant_themes": [
+        "research",
+        "humanities",
+        "science",
+        "UK"
+      ],
+      "notes": "Major UK research funder across all disciplines"
+    },
+    {
+      "name": "Nuffield Foundation – Grants",
+      "category": "Science & Research Specific",
+      "url": "https://www.nuffieldfoundation.org/funding",
+      "source_type": "ai_scraper",
+      "api_endpoint": null,
+      "scraper_config": {
+        "use_playwright": true,
+        "crawl_depth": 1
+      },
+      "refresh_frequency": "weekly",
+      "is_high_priority": false,
+      "logo_url": "https://www.google.com/s2/favicons?domain=nuffieldfoundation.org&sz=64",
+      "status": "active",
+      "relevant_themes": [
+        "social science",
+        "education",
+        "law",
+        "UK"
+      ],
+      "notes": ""
+    },
+    {
+      "name": "Alfred P. Sloan Foundation – Grants",
+      "category": "Science & Research Specific",
+      "url": "https://sloan.org/programs",
+      "source_type": "ai_scraper",
+      "api_endpoint": null,
+      "scraper_config": {
+        "use_playwright": true,
+        "crawl_depth": 1
+      },
+      "refresh_frequency": "weekly",
+      "is_high_priority": false,
+      "logo_url": "https://www.google.com/s2/favicons?domain=sloan.org&sz=64",
+      "status": "active",
+      "relevant_themes": [
+        "science",
+        "technology",
+        "economics",
+        "public understanding"
+      ],
+      "notes": ""
+    },
+    {
+      "name": "Esmée Fairbairn Foundation – Grants",
+      "category": "UK Private Foundation",
+      "url": "https://esmeefairbairn.org.uk/our-grants/",
+      "source_type": "ai_scraper",
+      "api_endpoint": null,
+      "scraper_config": {
+        "use_playwright": true,
+        "crawl_depth": 1
+      },
+      "refresh_frequency": "weekly",
+      "is_high_priority": false,
+      "logo_url": "https://www.google.com/s2/favicons?domain=esmeefairbairn.org.uk&sz=64",
+      "status": "active",
+      "relevant_themes": [
+        "arts",
+        "environment",
+        "food",
+        "social"
+      ],
+      "notes": "One of the largest UK grant-makers"
+    },
+    {
+      "name": "Paul Hamlyn Foundation – Grants",
+      "category": "UK Private Foundation",
+      "url": "https://phf.org.uk/funds/",
+      "source_type": "ai_scraper",
+      "api_endpoint": null,
+      "scraper_config": {
+        "use_playwright": true,
+        "crawl_depth": 1
+      },
+      "refresh_frequency": "weekly",
+      "is_high_priority": false,
+      "logo_url": "https://www.google.com/s2/favicons?domain=phf.org.uk&sz=64",
+      "status": "active",
+      "relevant_themes": [
+        "arts",
+        "education",
+        "India"
+      ],
+      "notes": ""
+    },
+    {
+      "name": "Schmidt Futures – Grants",
+      "category": "Tech / Corporate Foundation",
+      "url": "https://www.schmidtfutures.com/our-work/grants/",
+      "source_type": "ai_scraper",
+      "api_endpoint": null,
+      "scraper_config": {
+        "use_playwright": true,
+        "crawl_depth": 1
+      },
+      "refresh_frequency": "weekly",
+      "is_high_priority": false,
+      "logo_url": "https://www.google.com/s2/favicons?domain=schmidtfutures.com&sz=64",
+      "status": "active",
+      "relevant_themes": [
+        "AI",
+        "science",
+        "talent"
+      ],
+      "notes": ""
+    },
+    {
+      "name": "Heinrich Böll Stiftung – Scholarships",
+      "category": "International / Regional",
+      "url": "https://www.boell.de/en/scholarships",
+      "source_type": "ai_scraper",
+      "api_endpoint": null,
+      "scraper_config": {
+        "use_playwright": true,
+        "crawl_depth": 1
+      },
+      "refresh_frequency": "weekly",
+      "is_high_priority": false,
+      "logo_url": "https://www.google.com/s2/favicons?domain=boell.de&sz=64",
+      "status": "active",
+      "relevant_themes": [
+        "ecology",
+        "democracy",
+        "feminism",
+        "international"
+      ],
+      "notes": "German Green foundation — international scholarships and grants"
+    },
+    {
+      "name": "Friedrich Ebert Stiftung – Scholarships",
+      "category": "International / Regional",
+      "url": "https://www.fes.de/en/scholarships",
+      "source_type": "ai_scraper",
+      "api_endpoint": null,
+      "scraper_config": {
+        "use_playwright": true,
+        "crawl_depth": 1
+      },
+      "refresh_frequency": "weekly",
+      "is_high_priority": false,
+      "logo_url": "https://www.google.com/s2/favicons?domain=fes.de&sz=64",
+      "status": "active",
+      "relevant_themes": [
+        "democracy",
+        "social justice",
+        "international"
+      ],
+      "notes": "German Social Democrat foundation scholarships"
+    },
+    {
+      "name": "Konrad Adenauer Stiftung – Scholarships",
+      "category": "International / Regional",
+      "url": "https://www.kas.de/en/scholarship-programs",
+      "source_type": "ai_scraper",
+      "api_endpoint": null,
+      "scraper_config": {
+        "use_playwright": true,
+        "crawl_depth": 1
+      },
+      "refresh_frequency": "weekly",
+      "is_high_priority": false,
+      "logo_url": "https://www.google.com/s2/favicons?domain=kas.de&sz=64",
+      "status": "active",
+      "relevant_themes": [
+        "political science",
+        "international",
+        "democracy"
+      ],
+      "notes": ""
+    },
+    {
+      "name": "Volkswagen Stiftung – Funding",
+      "category": "International / Regional",
+      "url": "https://www.volkswagenstiftung.de/en/funding",
+      "source_type": "ai_scraper",
+      "api_endpoint": null,
+      "scraper_config": {
+        "use_playwright": true,
+        "crawl_depth": 1
+      },
+      "refresh_frequency": "weekly",
+      "is_high_priority": false,
+      "logo_url": "https://www.google.com/s2/favicons?domain=volkswagenstiftung.de&sz=64",
+      "status": "active",
+      "relevant_themes": [
+        "science",
+        "humanities",
+        "interdisciplinary"
+      ],
+      "notes": ""
+    },
+    {
+      "name": "Mercator Stiftung – Funding",
+      "category": "International / Regional",
+      "url": "https://www.stiftung-mercator.de/en/",
+      "source_type": "ai_scraper",
+      "api_endpoint": null,
+      "scraper_config": {
+        "use_playwright": true,
+        "crawl_depth": 1
+      },
+      "refresh_frequency": "weekly",
+      "is_high_priority": false,
+      "logo_url": "https://www.google.com/s2/favicons?domain=stiftung-mercator.de&sz=64",
+      "status": "active",
+      "relevant_themes": [
+        "education",
+        "climate",
+        "integration",
+        "Europe"
+      ],
+      "notes": ""
+    },
+    {
+      "name": "Comic Relief – Grants",
+      "category": "International / Regional",
+      "url": "https://www.comicrelief.com/our-grants",
+      "source_type": "ai_scraper",
+      "api_endpoint": null,
+      "scraper_config": {
+        "use_playwright": true,
+        "crawl_depth": 1
+      },
+      "refresh_frequency": "weekly",
+      "is_high_priority": false,
+      "logo_url": "https://www.google.com/s2/favicons?domain=comicrelief.com&sz=64",
+      "status": "active",
+      "relevant_themes": [
+        "poverty",
+        "UK",
+        "international development"
+      ],
+      "notes": ""
+    },
+    {
+      "name": "Porticus Foundation – Grants",
+      "category": "International / Regional",
+      "url": "https://www.porticus.com/",
+      "source_type": "ai_scraper",
+      "api_endpoint": null,
+      "scraper_config": {
+        "use_playwright": true,
+        "crawl_depth": 1
+      },
+      "refresh_frequency": "weekly",
+      "is_high_priority": false,
+      "logo_url": "https://www.google.com/s2/favicons?domain=porticus.com&sz=64",
+      "status": "active",
+      "relevant_themes": [
+        "social justice",
+        "education",
+        "sustainability"
+      ],
+      "notes": "Brenninkmeijer family foundation — global grantmaker"
+    },
+    {
+      "name": "Rosa Luxemburg Stiftung – Scholarships",
+      "category": "International / Regional",
+      "url": "https://www.rosalux.de/en/scholarships",
+      "source_type": "ai_scraper",
+      "api_endpoint": null,
+      "scraper_config": {
+        "use_playwright": true,
+        "crawl_depth": 1
+      },
+      "refresh_frequency": "weekly",
+      "is_high_priority": false,
+      "logo_url": "https://www.google.com/s2/favicons?domain=rosalux.de&sz=64",
+      "status": "active",
+      "relevant_themes": [
+        "social justice",
+        "left politics",
+        "international"
+      ],
+      "notes": ""
+    },
+    {
+      "name": "Pew Charitable Trusts – Grants",
+      "category": "Major Private Foundation",
+      "url": "https://www.pewtrusts.org/en/grants",
+      "source_type": "ai_scraper",
+      "api_endpoint": null,
+      "scraper_config": {
+        "use_playwright": true,
+        "crawl_depth": 1
+      },
+      "refresh_frequency": "weekly",
+      "is_high_priority": false,
+      "logo_url": "https://www.google.com/s2/favicons?domain=pewtrusts.org&sz=64",
+      "status": "active",
+      "relevant_themes": [
+        "environment",
+        "health",
+        "arts",
+        "civic"
+      ],
+      "notes": ""
+    },
+    {
+      "name": "Joyce Foundation – Grants",
+      "category": "Major Private Foundation",
+      "url": "https://www.joycefdn.org/grants/",
+      "source_type": "ai_scraper",
+      "api_endpoint": null,
+      "scraper_config": {
+        "use_playwright": true,
+        "crawl_depth": 1
+      },
+      "refresh_frequency": "weekly",
+      "is_high_priority": false,
+      "logo_url": "https://www.google.com/s2/favicons?domain=joycefdn.org&sz=64",
+      "status": "active",
+      "relevant_themes": [
+        "arts",
+        "education",
+        "environment",
+        "Midwest US"
+      ],
+      "notes": ""
+    },
+    {
+      "name": "Res Artis – Worldwide Residency Network",
+      "category": "International Arts & Culture",
+      "url": "https://www.resartis.org/opportunities/",
+      "source_type": "ai_scraper",
+      "api_endpoint": null,
+      "scraper_config": {
+        "use_playwright": true,
+        "crawl_depth": 1
+      },
+      "refresh_frequency": "weekly",
+      "is_high_priority": true,
+      "logo_url": "https://www.google.com/s2/favicons?domain=resartis.org&sz=64",
+      "status": "active",
+      "relevant_themes": [
+        "residency",
+        "visual art",
+        "international"
+      ],
+      "notes": "Global network of 700+ artist residencies — listing open calls"
+    },
+    {
+      "name": "TransArtists – Residency Database",
+      "category": "International Arts & Culture",
+      "url": "https://www.transartists.org/",
+      "source_type": "ai_scraper",
+      "api_endpoint": null,
+      "scraper_config": {
+        "use_playwright": true,
+        "crawl_depth": 1
+      },
+      "refresh_frequency": "weekly",
+      "is_high_priority": false,
+      "logo_url": "https://www.google.com/s2/favicons?domain=transartists.org&sz=64",
+      "status": "active",
+      "relevant_themes": [
+        "residency",
+        "international"
+      ],
+      "notes": "Dutch-based global residency database"
+    },
+    {
+      "name": "Alliance of Artists Communities – Residencies",
+      "category": "International Arts & Culture",
+      "url": "https://www.artistcommunities.org/residencies",
+      "source_type": "ai_scraper",
+      "api_endpoint": null,
+      "scraper_config": {
+        "use_playwright": true,
+        "crawl_depth": 1
+      },
+      "refresh_frequency": "weekly",
+      "is_high_priority": false,
+      "logo_url": "https://www.google.com/s2/favicons?domain=artistcommunities.org&sz=64",
+      "status": "active",
+      "relevant_themes": [
+        "residency",
+        "US",
+        "arts"
+      ],
+      "notes": ""
+    },
+    {
+      "name": "Kunsthaus Zürich – Open Calls",
+      "category": "International Arts & Culture",
+      "url": "https://www.kunsthaus.ch/",
+      "source_type": "ai_scraper",
+      "api_endpoint": null,
+      "scraper_config": {
+        "use_playwright": true,
+        "crawl_depth": 1
+      },
+      "refresh_frequency": "weekly",
+      "is_high_priority": false,
+      "logo_url": "https://www.google.com/s2/favicons?domain=kunsthaus.ch&sz=64",
+      "status": "active",
+      "relevant_themes": [
+        "visual art",
+        "Switzerland"
+      ],
+      "notes": ""
+    },
+    {
+      "name": "e-flux – Open Calls",
+      "category": "International Arts & Culture",
+      "url": "https://www.e-flux.com/announcements/",
+      "source_type": "ai_scraper",
+      "api_endpoint": null,
+      "scraper_config": {
+        "use_playwright": true,
+        "crawl_depth": 0
+      },
+      "refresh_frequency": "weekly",
+      "is_high_priority": true,
+      "logo_url": "https://www.google.com/s2/favicons?domain=e-flux.com&sz=64",
+      "status": "active",
+      "relevant_themes": [
+        "contemporary art",
+        "open call",
+        "residency",
+        "prize"
+      ],
+      "notes": "Major art world announcements hub — open calls, grants, residencies"
+    },
+    {
+      "name": "Artforum – Opportunities Listings",
+      "category": "International Arts & Culture",
+      "url": "https://www.artforum.com/announcements",
+      "source_type": "ai_scraper",
+      "api_endpoint": null,
+      "scraper_config": {
+        "use_playwright": true,
+        "crawl_depth": 0
+      },
+      "refresh_frequency": "weekly",
+      "is_high_priority": false,
+      "logo_url": "https://www.google.com/s2/favicons?domain=artforum.com&sz=64",
+      "status": "active",
+      "relevant_themes": [
+        "contemporary art",
+        "open call"
+      ],
+      "notes": ""
+    },
+    {
+      "name": "Serpentine Galleries – Open Calls",
+      "category": "International Arts & Culture",
+      "url": "https://www.serpentinegalleries.org/",
+      "source_type": "ai_scraper",
+      "api_endpoint": null,
+      "scraper_config": {
+        "use_playwright": true,
+        "crawl_depth": 1
+      },
+      "refresh_frequency": "weekly",
+      "is_high_priority": false,
+      "logo_url": "https://www.google.com/s2/favicons?domain=serpentinegalleries.org&sz=64",
+      "status": "active",
+      "relevant_themes": [
+        "contemporary art",
+        "architecture",
+        "UK"
+      ],
+      "notes": ""
+    },
+    {
+      "name": "Culture Moves Europe – Mobility Grants",
+      "category": "EU / European",
+      "url": "https://culturemoveseurope.eu/funding/",
+      "source_type": "ai_scraper",
+      "api_endpoint": null,
+      "scraper_config": {
+        "use_playwright": true,
+        "crawl_depth": 1
+      },
+      "refresh_frequency": "weekly",
+      "is_high_priority": true,
+      "logo_url": "https://www.google.com/s2/favicons?domain=culturemoveseurope.eu&sz=64",
+      "status": "active",
+      "relevant_themes": [
+        "arts",
+        "culture",
+        "mobility",
+        "Europe"
+      ],
+      "notes": "EU mobility grants for artists and culture professionals"
+    },
+    {
+      "name": "European Cultural Foundation – Grants",
+      "category": "EU / European",
+      "url": "https://www.culturalfoundation.eu/grants",
+      "source_type": "ai_scraper",
+      "api_endpoint": null,
+      "scraper_config": {
+        "use_playwright": true,
+        "crawl_depth": 1
+      },
+      "refresh_frequency": "weekly",
+      "is_high_priority": false,
+      "logo_url": "https://www.google.com/s2/favicons?domain=culturalfoundation.eu&sz=64",
+      "status": "active",
+      "relevant_themes": [
+        "arts",
+        "culture",
+        "Europe",
+        "democracy"
+      ],
+      "notes": ""
+    },
+    {
+      "name": "Erasmus+ – EU Education & Youth Grants",
+      "category": "EU / European",
+      "url": "https://erasmus-plus.ec.europa.eu/opportunities",
+      "source_type": "ai_scraper",
+      "api_endpoint": null,
+      "scraper_config": {
+        "use_playwright": true,
+        "crawl_depth": 1
+      },
+      "refresh_frequency": "weekly",
+      "is_high_priority": true,
+      "logo_url": "https://www.google.com/s2/favicons?domain=erasmus-plus.ec.europa.eu&sz=64",
+      "status": "active",
+      "relevant_themes": [
+        "education",
+        "youth",
+        "Europe",
+        "mobility"
+      ],
+      "notes": "EU's flagship education/training/youth/sport program"
+    },
+    {
+      "name": "MSCA Marie Curie – Individual Fellowships",
+      "category": "EU / European",
+      "url": "https://marie-sklodowska-curie-actions.ec.europa.eu/actions",
+      "source_type": "ai_scraper",
+      "api_endpoint": null,
+      "scraper_config": {
+        "use_playwright": true,
+        "crawl_depth": 1
+      },
+      "refresh_frequency": "weekly",
+      "is_high_priority": true,
+      "logo_url": "https://www.google.com/s2/favicons?domain=marie-sklodowska-curie-actions.ec.europa.eu&sz=64",
+      "status": "active",
+      "relevant_themes": [
+        "research",
+        "fellowship",
+        "Europe",
+        "postdoctoral"
+      ],
+      "notes": "EU research fellowship program for early and experienced researchers"
+    },
+    {
+      "name": "UNESCO – Grants & Prizes",
+      "category": "UN / Multilateral Agency",
+      "url": "https://www.unesco.org/en/prizes-grants",
+      "source_type": "ai_scraper",
+      "api_endpoint": null,
+      "scraper_config": {
+        "use_playwright": true,
+        "crawl_depth": 1
+      },
+      "refresh_frequency": "weekly",
+      "is_high_priority": true,
+      "logo_url": "https://www.google.com/s2/favicons?domain=unesco.org&sz=64",
+      "status": "active",
+      "relevant_themes": [
+        "education",
+        "science",
+        "culture",
+        "communication"
+      ],
+      "notes": "UNESCO prizes, fellowships, and grants across all mandate areas"
+    },
+    {
+      "name": "UNHCR – Innovation Fund",
+      "category": "UN / Multilateral Agency",
+      "url": "https://www.unhcr.org/innovation/fund/",
+      "source_type": "ai_scraper",
+      "api_endpoint": null,
+      "scraper_config": {
+        "use_playwright": true,
+        "crawl_depth": 1
+      },
+      "refresh_frequency": "weekly",
+      "is_high_priority": false,
+      "logo_url": "https://www.google.com/s2/favicons?domain=unhcr.org&sz=64",
+      "status": "active",
+      "relevant_themes": [
+        "refugees",
+        "innovation",
+        "humanitarian"
+      ],
+      "notes": ""
+    },
+    {
+      "name": "UN Women – Fund for Gender Equality",
+      "category": "UN / Multilateral Agency",
+      "url": "https://www.unwomen.org/en/trust-funds/fund-for-gender-equality",
+      "source_type": "ai_scraper",
+      "api_endpoint": null,
+      "scraper_config": {
+        "use_playwright": true,
+        "crawl_depth": 1
+      },
+      "refresh_frequency": "weekly",
+      "is_high_priority": false,
+      "logo_url": "https://www.google.com/s2/favicons?domain=unwomen.org&sz=64",
+      "status": "active",
+      "relevant_themes": [
+        "gender equality",
+        "women",
+        "international development"
+      ],
+      "notes": ""
+    },
+    {
+      "name": "Mozilla Foundation – Awards",
+      "category": "Tech / Corporate Foundation",
+      "url": "https://foundation.mozilla.org/en/fellowships/",
+      "source_type": "ai_scraper",
+      "api_endpoint": null,
+      "scraper_config": {
+        "use_playwright": true,
+        "crawl_depth": 1
+      },
+      "refresh_frequency": "weekly",
+      "is_high_priority": false,
+      "logo_url": "https://www.google.com/s2/favicons?domain=foundation.mozilla.org&sz=64",
+      "status": "active",
+      "relevant_themes": [
+        "digital rights",
+        "open internet",
+        "technology"
+      ],
+      "notes": "Mozilla fellowships for tech policy, open source, privacy"
+    },
+    {
+      "name": "Rhizome – Digital Art Commissions",
+      "category": "International Arts & Culture",
+      "url": "https://rhizome.org/commissions/",
+      "source_type": "ai_scraper",
+      "api_endpoint": null,
+      "scraper_config": {
+        "use_playwright": true,
+        "crawl_depth": 1
+      },
+      "refresh_frequency": "weekly",
+      "is_high_priority": false,
+      "logo_url": "https://www.google.com/s2/favicons?domain=rhizome.org&sz=64",
+      "status": "active",
+      "relevant_themes": [
+        "digital art",
+        "net art",
+        "new media"
+      ],
+      "notes": ""
+    },
+    {
+      "name": "Eyebeam – Residency & Grants",
+      "category": "International Arts & Culture",
+      "url": "https://www.eyebeam.org/residency/",
+      "source_type": "ai_scraper",
+      "api_endpoint": null,
+      "scraper_config": {
+        "use_playwright": true,
+        "crawl_depth": 1
+      },
+      "refresh_frequency": "weekly",
+      "is_high_priority": false,
+      "logo_url": "https://www.google.com/s2/favicons?domain=eyebeam.org&sz=64",
+      "status": "active",
+      "relevant_themes": [
+        "digital art",
+        "technology",
+        "social practice"
+      ],
+      "notes": ""
+    },
+    {
+      "name": "Wellcome Leap – Research Challenges",
+      "category": "Science & Research Specific",
+      "url": "https://wellcomeleap.org/programs/",
+      "source_type": "ai_scraper",
+      "api_endpoint": null,
+      "scraper_config": {
+        "use_playwright": true,
+        "crawl_depth": 1
+      },
+      "refresh_frequency": "weekly",
+      "is_high_priority": false,
+      "logo_url": "https://www.google.com/s2/favicons?domain=wellcomeleap.org&sz=64",
+      "status": "active",
+      "relevant_themes": [
+        "health",
+        "biomedical",
+        "research challenges"
+      ],
+      "notes": "Wellcome's ARPA-style research challenge programs"
+    },
+    {
+      "name": "Luminos Fund – Grants",
+      "category": "International / Regional",
+      "url": "https://luminosfund.org/",
+      "source_type": "ai_scraper",
+      "api_endpoint": null,
+      "scraper_config": {
+        "use_playwright": true,
+        "crawl_depth": 1
+      },
+      "refresh_frequency": "weekly",
+      "is_high_priority": false,
+      "logo_url": "https://www.google.com/s2/favicons?domain=luminosfund.org&sz=64",
+      "status": "active",
+      "relevant_themes": [
+        "education",
+        "out-of-school children"
+      ],
+      "notes": ""
+    },
+    {
+      "name": "Children's Investment Fund Foundation",
+      "category": "International / Regional",
+      "url": "https://ciff.org/funding-opportunities/",
+      "source_type": "ai_scraper",
+      "api_endpoint": null,
+      "scraper_config": {
+        "use_playwright": true,
+        "crawl_depth": 1
+      },
+      "refresh_frequency": "weekly",
+      "is_high_priority": false,
+      "logo_url": "https://www.google.com/s2/favicons?domain=ciff.org&sz=64",
+      "status": "active",
+      "relevant_themes": [
+        "child health",
+        "climate",
+        "education"
+      ],
+      "notes": ""
     }
   ]
 }

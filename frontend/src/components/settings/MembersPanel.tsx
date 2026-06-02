@@ -1,7 +1,7 @@
 'use client';
 import { useEffect, useState, useCallback } from 'react';
 import { organizations } from '@/lib/api';
-import { useAuth } from '@/lib/auth';
+import { useAuth, roleEligibleForFinance, canViewFinanceForMember } from '@/lib/auth';
 
 // ── Types ─────────────────────────────────────────────────────────────────────
 
@@ -45,6 +45,7 @@ const DEFAULT_PERMS: Record<string, boolean> = {
   can_view_grants: false,
   can_view_archive: true,
   can_view_partners: true,
+  can_view_finance: false,
 };
 
 // ── Small helpers ─────────────────────────────────────────────────────────────
@@ -125,9 +126,17 @@ function MemberAccordion({
 
   async function handleRoleChange(role: string) {
     setSavingField('role');
+    const nextPerms = { ...perms };
+    if (!roleEligibleForFinance(role)) {
+      nextPerms.can_view_finance = false;
+    }
     try {
-      await organizations.updateMember(institutionId, member.id, { role, institution_role: member.institution_role });
-      onUpdate({ role });
+      await organizations.updateMember(institutionId, member.id, {
+        role,
+        institution_role: member.institution_role,
+        module_permissions: nextPerms,
+      });
+      onUpdate({ role, module_permissions: nextPerms });
     } catch { alert('Failed to update role.'); }
     finally { setSavingField(null); }
   }
@@ -147,6 +156,7 @@ function MemberAccordion({
   }
 
   async function handleModuleToggle(key: string, val: boolean) {
+    if (key === 'can_view_finance' && !roleEligibleForFinance(member.role)) return;
     setSavingField(key);
     const next = { ...perms, [key]: val };
     try {
@@ -222,20 +232,39 @@ function MemberAccordion({
       {/* Module access */}
       <div>
         <SectionLabel>Module Access</SectionLabel>
+        <p className="text-xs text-gray-400 mb-2">
+          Controls which top-level modules appear in the sidebar. Finance requires Operations Manager or Grant Lead (org admins always have access).
+        </p>
         <div className="flex flex-wrap gap-x-6 gap-y-2.5">
           {[
             { key: 'can_view_archive', label: 'Archive' },
             { key: 'can_view_partners', label: 'Partners' },
-          ].map(({ key, label }) => (
+            { key: 'can_view_finance', label: 'Finance' },
+          ].map(({ key, label }) => {
+            const financeLocked = key === 'can_view_finance' && (
+              member.institution_role === 'admin' || !roleEligibleForFinance(member.role)
+            );
+            const financeEffective = key === 'can_view_finance'
+              ? canViewFinanceForMember(member)
+              : (perms[key] ?? false);
+            return (
             <div key={key} className="flex items-center gap-2">
               <Toggle
-                value={perms[key] ?? false}
-                disabled={savingField === key}
+                value={financeEffective}
+                disabled={savingField === key || financeLocked}
                 onChange={v => handleModuleToggle(key, v)}
               />
-              <span className="text-xs text-gray-700">{label}</span>
+              <span className={`text-xs ${financeLocked && key === 'can_view_finance' ? 'text-gray-400' : 'text-gray-700'}`}>
+                {label}
+                {financeLocked && key === 'can_view_finance' && (
+                  <span className="text-gray-400 ml-1">
+                    {member.institution_role === 'admin' ? '(admin)' : '(role required)'}
+                  </span>
+                )}
+              </span>
             </div>
-          ))}
+            );
+          })}
         </div>
       </div>
 

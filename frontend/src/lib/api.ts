@@ -138,6 +138,7 @@ export const users = {
 // ── Opportunities ────────────────────────────────────────────────────────────
 export const opportunities = {
   list: (params?: Record<string, unknown>) => api.get('/opportunities/', { params }),
+  filterOptions: () => api.get('/opportunities/filter-options'),
   newOpportunities: (params?: { unread_only?: boolean; limit?: number; offset?: number }) =>
     api.get('/opportunities/new-opportunities', { params }),
   newOpportunitiesCounts: () => api.get('/opportunities/new-opportunities/counts'),
@@ -303,6 +304,56 @@ export const grants = {
     api.delete(`/grants/${grantId}/members/${memberId}`),
 };
 
+// ── Grant Finance (active grants) ───────────────────────────────────────────
+export const finance = {
+  portfolio: () => api.get('/finance/portfolio'),
+  listAllFundRequests: (status?: 'all' | string) =>
+    api.get('/finance/fund-requests', { params: status ? { status } : {} }),
+  getLedger: (grantId: string) => api.get(`/grants/${grantId}/finance/ledger`),
+  updateLedger: (grantId: string, data: Record<string, unknown>) =>
+    api.patch(`/grants/${grantId}/finance/ledger`, data),
+  createCategory: (grantId: string, data: Record<string, unknown>) =>
+    api.post(`/grants/${grantId}/finance/ledger/categories`, data),
+  updateCategory: (grantId: string, categoryId: string, data: Record<string, unknown>) =>
+    api.patch(`/grants/${grantId}/finance/ledger/categories/${categoryId}`, data),
+  deleteCategory: (grantId: string, categoryId: string) =>
+    api.delete(`/grants/${grantId}/finance/ledger/categories/${categoryId}`),
+  importSpreadsheet: (grantId: string, file: File) => {
+    const form = new FormData();
+    form.append('file', file);
+    return api.post(`/grants/${grantId}/finance/ledger/import-spreadsheet`, form, {
+      headers: { 'Content-Type': 'multipart/form-data' },
+    });
+  },
+  exportCsv: (grantId: string) =>
+    api.get(`/grants/${grantId}/finance/export`, { responseType: 'blob' }),
+  listFundRequests: (grantId: string, status?: string) =>
+    api.get(`/grants/${grantId}/finance/fund-requests`, { params: status ? { status } : {} }),
+  createFundRequest: (grantId: string, data: Record<string, unknown>) =>
+    api.post(`/grants/${grantId}/finance/fund-requests`, data),
+  updateFundRequest: (grantId: string, requestId: string, data: Record<string, unknown>) =>
+    api.patch(`/grants/${grantId}/finance/fund-requests/${requestId}`, data),
+  approveFundRequest: (grantId: string, requestId: string) =>
+    api.post(`/grants/${grantId}/finance/fund-requests/${requestId}/approve`),
+  rejectFundRequest: (grantId: string, requestId: string, rejection_reason?: string) =>
+    api.post(`/grants/${grantId}/finance/fund-requests/${requestId}/reject`, { rejection_reason }),
+  listExpenditures: (grantId: string) => api.get(`/grants/${grantId}/finance/expenditures`),
+  createExpenditure: (grantId: string, data: Record<string, unknown>) =>
+    api.post(`/grants/${grantId}/finance/expenditures`, data),
+  deleteExpenditure: (grantId: string, expenditureId: string) =>
+    api.delete(`/grants/${grantId}/finance/expenditures/${expenditureId}`),
+  getSlackConfig: (grantId: string) => api.get(`/grants/${grantId}/finance/slack`),
+  upsertSlackConfig: (grantId: string, data: Record<string, unknown>) =>
+    api.put(`/grants/${grantId}/finance/slack`, data),
+  getSummary: (grantId: string) => api.get(`/grants/${grantId}/finance/summary`),
+  aiVariance: (grantId: string) => api.post(`/grants/${grantId}/finance/ai/variance`),
+  aiForecast: (grantId: string) => api.post(`/grants/${grantId}/finance/ai/forecast`),
+  aiCategorize: (grantId: string, data: Record<string, unknown>) =>
+    api.post(`/grants/${grantId}/finance/ai/categorize`, data),
+  aiCompliance: (grantId: string, data: Record<string, unknown>) =>
+    api.post(`/grants/${grantId}/finance/ai/compliance`, data),
+};
+
 // ── Grant Writing Studio ─────────────────────────────────────────────────────
 export const grantWriting = {
   status: (grantId: string) => api.get(`/grants/${grantId}/writing/status`),
@@ -349,6 +400,7 @@ export const grantWriting = {
         priority?: string;
         order?: number;
       }>;
+      document_constraints?: Record<string, unknown>;
     }
   ) =>
     api.patch(`/grants/${grantId}/writing/skeleton-constraints`, data),

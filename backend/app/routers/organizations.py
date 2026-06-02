@@ -56,7 +56,7 @@ class OrgInviteRequest(BaseModel):
     email: str
     role: str = UserRole.CONTRIBUTOR
     institution_role: str = "member"  # "admin" | "member"
-    module_permissions: dict = {}  # e.g. {"can_view_grants": true, "can_view_archive": true}
+    module_permissions: dict = {}  # e.g. can_view_grants, can_view_archive, can_view_partners, can_view_finance
 
 
 class GrantProfileUpdate(BaseModel):

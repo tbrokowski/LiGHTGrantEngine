@@ -20,6 +20,79 @@ export interface WorkspaceSummary {
   pending_partners: number;
   upcoming_milestones: Milestone[];
   budget_status: string;
+  finance_status?: {
+    enabled: boolean;
+    status?: string;
+    utilization_pct?: number;
+    total_available?: number;
+    pending_requests?: number;
+    currency?: string;
+  } | null;
+}
+
+export interface LedgerCategoryRow {
+  id: string;
+  ledger_id: string;
+  name: string;
+  approved_amount: number;
+  description?: string | null;
+  display_order: number;
+  spent_amount: number;
+  committed_amount: number;
+  available_amount: number;
+  utilization_pct: number;
+}
+
+export interface GrantLedgerResponse {
+  ledger: {
+    id: string;
+    grant_id: string;
+    total_awarded: number | null;
+    currency: string;
+    start_date?: string | null;
+    end_date?: string | null;
+    notes?: string | null;
+  };
+  categories: LedgerCategoryRow[];
+  summary: {
+    total_approved: number;
+    total_spent: number;
+    total_committed: number;
+    total_available: number;
+    utilization_pct: number;
+  };
+}
+
+export interface FundRequestRow {
+  id: string;
+  grant_id: string;
+  category_id: string | null;
+  requested_by_id: string;
+  title: string;
+  description: string | null;
+  vendor: string | null;
+  amount: number;
+  currency: string;
+  status: string;
+  approved_by_id: string | null;
+  approved_at: string | null;
+  rejection_reason: string | null;
+  created_at: string;
+}
+
+export interface ExpenditureRow {
+  id: string;
+  grant_id: string;
+  category_id: string | null;
+  fund_request_id: string | null;
+  amount: number;
+  currency: string;
+  expense_date: string | null;
+  vendor: string | null;
+  description: string | null;
+  receipt_url: string | null;
+  recorded_by_id: string;
+  created_at: string;
 }
 
 export interface Task {

@@ -7,9 +7,15 @@ then asks the LLM to parse out grant/funding opportunities as structured JSON.
 No per-site CSS selector configuration required — just a URL.
 
 scraper_config keys:
-  crawl_depth    (int, 0 or 1, default 0)  — follow listing links to detail pages
-  link_filter    (str, optional regex)      — restrict which detail links to follow
-  use_playwright (bool, default True)       — False forces plain httpx (no JS rendering)
+  crawl_depth    (int, 0–2, default 0)      — 0: listing only; 1: follow detail links;
+                                               2: discover category links then detail links
+  link_filter    (str, optional regex)       — restrict which links to follow
+  use_playwright (bool, default True)        — False forces plain httpx (no JS rendering)
+  site_sections  (list[str], optional)       — sub-paths to crawl as independent roots
+  paginate       (bool, default False)       — follow next-page links (up to max_pages)
+  max_pages      (int, default 5)            — max pagination depth when paginate=True
+  max_section_links (int, default 10)        — cap on category/section links at depth=2
+  max_detail_links_per_section (int, def 5) — cap on detail links per category at depth=2
 """
 import re
 import json
@@ -25,6 +31,11 @@ _STRIP_TAGS = [
     "noscript", "iframe", "form", "button", "svg",
 ]
 
+_OPPORTUNITY_TYPE_VALUES = (
+    "grant", "fellowship", "scholarship", "residency", "open_call",
+    "prize", "bursary", "commission", "other"
+)
+
 _EXTRACTION_SYSTEM = """\
 You are a grant discovery assistant. Given the text content of a webpage, \
 extract every grant or funding opportunity mentioned.
@@ -38,7 +49,8 @@ Return a JSON object in exactly this shape:
       "description": "...",
       "url": "...",
       "deadline": "...",
-      "program": "..."
+      "program": "...",
+      "opportunity_type": "..."
     }
   ]
 }
@@ -51,10 +63,84 @@ Rules:
 - If the specific call URL cannot be determined, set url to null.
 - If no grants are found, return {"opportunities": []}.
 - Do not include any prose or markdown outside the JSON.
+- opportunity_type MUST be exactly one of: grant, fellowship, scholarship,
+  residency, open_call, prize, bursary, commission, other.
+  Use "open_call" for open calls for projects/submissions/entries.
+  Use "grant" when the type is ambiguous.
 """
 
 _MAX_PAGE_CHARS = 100_000  # GPT-4o 128k context window handles full grant pages
 _MAX_DETAIL_LINKS = 10   # cap detail pages per run to avoid long task times
+
+_SECTION_LINK_SYSTEM = """\
+You are a funding portal navigator. Given the text and links from a grant-funder homepage or \
+program index, identify links that lead to individual funding program or grant category pages \
+(NOT news articles, NOT the homepage itself, NOT external sites).
+
+Return ONLY a JSON object in this shape:
+{"section_links": ["https://...", "https://...", ...]}
+
+Rules:
+- Include only URLs that are sub-pages listing specific grant programs or funding areas.
+- Exclude: news/blog/press, about/contact/staff pages, social media, login, external links.
+- Maximum 15 links. If no suitable links exist, return {"section_links": []}.
+"""
+
+
+async def _llm_extract_section_links(
+    page_text: str,
+    page_links: list[tuple[str, str]],
+) -> list[str]:
+    """Depth-2 helper: ask the LLM which links on a listing page are sub-category pages."""
+    from app.ai.client import chat_complete
+
+    link_lines = "\n".join(f"- {text}: {href}" for text, href in page_links[:80])
+    prompt = f"Page text (first 2000 chars):\n{page_text[:2000]}\n\nLinks:\n{link_lines}"
+    try:
+        raw = await chat_complete(
+            messages=[
+                {"role": "system", "content": _SECTION_LINK_SYSTEM},
+                {"role": "user", "content": prompt},
+            ],
+            temperature=0.0,
+            max_tokens=512,
+            agent_name="ai_scraper_depth2",
+            json_mode=True,
+        )
+        parsed = json.loads(raw)
+        return [u for u in (parsed.get("section_links") or []) if isinstance(u, str)]
+    except Exception:
+        return []
+
+
+def _detect_next_page(soup, base_url: str) -> str | None:
+    """Return the URL of the next page if pagination is detected, else None."""
+    from urllib.parse import urljoin
+
+    # rel="next" link tag
+    next_tag = soup.find("link", rel=lambda v: v and "next" in v)
+    if next_tag and next_tag.get("href"):
+        return urljoin(base_url, next_tag["href"])
+
+    # Anchor with aria-label="Next" or text "Next"
+    for a in soup.find_all("a", href=True):
+        label = (a.get("aria-label") or "").lower()
+        text = a.get_text(strip=True).lower()
+        if label in ("next", "next page") or text in ("next", "next page", "›", "»"):
+            return urljoin(base_url, a["href"])
+
+    # ?page=N pattern — look for highest page number anchor beyond current
+    import re as _re
+    page_anchors = []
+    for a in soup.find_all("a", href=True):
+        m = _re.search(r"[?&]page=(\d+)", a["href"])
+        if m:
+            page_anchors.append((int(m.group(1)), urljoin(base_url, a["href"])))
+    if page_anchors:
+        page_anchors.sort(key=lambda x: x[0])
+        return page_anchors[-1][1]
+
+    return None
 
 
 def _extract_page_links(soup, base_url: str) -> list[tuple[str, str]]:
@@ -176,10 +262,35 @@ class AIScraper(BaseScraper):
 
         cfg = self.source.scraper_config or {}
         use_playwright: bool = cfg.get("use_playwright", True)
-        crawl_depth: int = min(int(cfg.get("crawl_depth", 0)), 1)
+        crawl_depth: int = min(int(cfg.get("crawl_depth", 0)), 2)
         link_filter: str | None = cfg.get("link_filter")
+        site_sections: list[str] = cfg.get("site_sections") or []
+        paginate: bool = bool(cfg.get("paginate", False))
+        max_pages: int = int(cfg.get("max_pages", 5))
+        max_section_links: int = int(cfg.get("max_section_links", 10))
+        max_detail_per_section: int = int(cfg.get("max_detail_links_per_section", 5))
 
-        # Fetch and extract from the primary listing page
+        results: list[dict] = []
+
+        # ── site_sections: delegate to SiteSectionCrawler and return early ──
+        if site_sections:
+            from app.scrapers.site_section_crawler import crawl_sections
+            raw_items = crawl_sections(
+                self.source.url,
+                site_sections,
+                self.source.name,
+                use_playwright=use_playwright,
+                link_filter=link_filter,
+            )
+            for item in raw_items:
+                normalized = self._normalize(item)
+                if normalized.get("url") or normalized.get("title"):
+                    results.append(normalized)
+            logger.info("AIScraper (site_sections) complete",
+                        source=self.source.name, found=len(results))
+            return results
+
+        # ── Standard fetch: listing page ──────────────────────────────────
         try:
             page_text, page_links = _fetch_page_text(self.source.url, use_playwright)
         except Exception as e:
@@ -188,16 +299,52 @@ class AIScraper(BaseScraper):
             return []
 
         self._page_links = page_links
+        pattern = re.compile(link_filter, re.I) if link_filter else None
 
+        # ── Pagination: collect additional listing pages ───────────────────
+        all_page_texts = [(page_text, page_links)]
+        if paginate:
+            from bs4 import BeautifulSoup
+            import httpx as _httpx
+            visited_pages = {self.source.url}
+            current_html_text = page_text
+            current_links = page_links
+            for _ in range(max_pages - 1):
+                try:
+                    # Re-fetch raw HTML for next-page detection
+                    resp = _httpx.get(
+                        self.source.url, timeout=30, follow_redirects=True,
+                        headers={"User-Agent": "LiGHT Grant System/1.0"},
+                    )
+                    soup = BeautifulSoup(resp.text, "lxml")
+                    next_url = _detect_next_page(soup, self.source.url)
+                    if not next_url or next_url in visited_pages:
+                        break
+                    visited_pages.add(next_url)
+                    next_text, next_links = _fetch_page_text(next_url, use_playwright)
+                    all_page_texts.append((next_text, next_links))
+                except Exception:
+                    break
+
+        # ── Extract from all listing pages ────────────────────────────────
         loop = asyncio.new_event_loop()
         try:
-            listings = loop.run_until_complete(
-                _llm_extract(page_text, self.source.name, page_links)
-            )
+            async def _extract_all():
+                tasks = [
+                    _llm_extract(txt, self.source.name, lnks)
+                    for txt, lnks in all_page_texts
+                ]
+                nested = await asyncio.gather(*tasks, return_exceptions=True)
+                items = []
+                for batch in nested:
+                    if isinstance(batch, list):
+                        items.extend(batch)
+                return items
+
+            listings = loop.run_until_complete(_extract_all())
         finally:
             loop.close()
 
-        results = []
         for item in listings:
             if not item.get("title"):
                 continue
@@ -205,9 +352,8 @@ class AIScraper(BaseScraper):
             if normalized.get("url"):
                 results.append(normalized)
 
-        # depth=1: follow individual grant detail links and enrich
-        if crawl_depth >= 1 and page_links:
-            pattern = re.compile(link_filter, re.I) if link_filter else None
+        # ── depth=1: follow individual grant detail links ─────────────────
+        if crawl_depth >= 1:
             candidates = [
                 href for _, href in page_links
                 if (pattern.search(href) if pattern else True)
@@ -234,6 +380,56 @@ class AIScraper(BaseScraper):
                     logger.warning("AIScraper: detail page failed",
                                    url=link, error=str(e))
 
+        # ── depth=2: discover category links, then follow detail links ────
+        if crawl_depth >= 2:
+            d2_loop = asyncio.new_event_loop()
+            try:
+                async def _depth2():
+                    section_urls = await _llm_extract_section_links(page_text, page_links)
+                    section_urls = section_urls[:max_section_links]
+                    depth2_results = []
+                    for section_url in section_urls:
+                        try:
+                            sec_text, sec_links = await asyncio.to_thread(
+                                _fetch_page_text, section_url, use_playwright
+                            )
+                        except Exception:
+                            continue
+                        sec_items = await _llm_extract(sec_text, self.source.name, sec_links)
+                        for item in sec_items:
+                            if item.get("title"):
+                                depth2_results.append(item)
+
+                        # Follow detail links within the section
+                        detail_candidates = [
+                            href for _, href in sec_links
+                            if (pattern.search(href) if pattern else True)
+                            and href.rstrip("/") != section_url.rstrip("/")
+                        ][:max_detail_per_section]
+
+                        for detail_url in detail_candidates:
+                            try:
+                                det_text, det_links = await asyncio.to_thread(
+                                    _fetch_page_text, detail_url, use_playwright
+                                )
+                                det_items = await _llm_extract(det_text, self.source.name, det_links)
+                                for item in det_items:
+                                    item["url"] = item.get("url") or detail_url
+                                    if item.get("title"):
+                                        depth2_results.append(item)
+                            except Exception:
+                                pass
+                    return depth2_results
+
+                d2_items = d2_loop.run_until_complete(_depth2())
+            finally:
+                d2_loop.close()
+
+            for item in d2_items:
+                normalized = self._normalize(item)
+                if normalized.get("url"):
+                    results.append(normalized)
+
         logger.info("AIScraper complete",
-                    source=self.source.name, found=len(results))
+                    source=self.source.name, depth=crawl_depth, found=len(results))
         return results

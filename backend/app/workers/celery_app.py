@@ -108,4 +108,13 @@ celery_app.conf.beat_schedule = {
         "task": "app.workers.discovery_tasks.deduplicate_opportunity_pool",
         "schedule": crontab(hour=2, minute=0),
     },
+    "finance-overspend-alerts": {
+        "task": "app.workers.notification_tasks.check_finance_overspend",
+        "schedule": crontab(hour=9, minute=0),
+    },
+    # Agentic source discovery: runs Tuesday + Friday at 3am UTC
+    "discover-new-sources": {
+        "task": "app.workers.discovery_tasks.discover_new_sources",
+        "schedule": crontab(hour=3, minute=0, day_of_week="2,5"),
+    },
 }

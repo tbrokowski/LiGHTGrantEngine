@@ -37,8 +37,49 @@ ai:
       max_tokens: 3000
     section_drafter:
       model: gpt-4o
+      temperature: 0.4
+      max_tokens: 12000
+    draft_narrative_digest:
+      model: gpt-4o-mini
+      temperature: 0.2
+      max_tokens: 800
+    draft_orchestrator:
+      model: gpt-4o
+      temperature: 0.2
+      max_tokens: 6000
+    methods_agent:
+      model: gpt-4o
       temperature: 0.5
+      max_tokens: 12000
+    work_package_agent:
+      model: gpt-4o
+      temperature: 0.4
+      max_tokens: 12000
+    impact_agent:
+      model: gpt-4o
+      temperature: 0.35
       max_tokens: 8000
+    section_expander:
+      model: gpt-4o
+      temperature: 0.4
+      max_tokens: 12000
+    section_compressor:
+      model: gpt-4o-mini
+      temperature: 0.2
+      max_tokens: 8000
+    section_stitcher:
+      model: gpt-4o
+      temperature: 0.3
+      max_tokens: 12000
+    subsection_planner:
+      model: gpt-4o-mini
+      temperature: 0.2
+      max_tokens: 2000
+    domain_reviewer:
+      model: gpt-4o-mini
+      temperature: 0.1
+      max_tokens: 1500
+
     section_splitter:
       temperature: 0.1
       max_tokens: 8000
@@ -81,6 +122,18 @@ ai:
       model: gpt-4o-mini
       temperature: 0.1
       max_tokens: 2000
+    limits_extractor:
+      model: gpt-4o-mini
+      temperature: 0.1
+      max_tokens: 3000
+    limits_verifier:
+      model: gpt-4o-mini
+      temperature: 0.1
+      max_tokens: 2500
+    idea_constraints_aligner:
+      model: gpt-4o-mini
+      temperature: 0.2
+      max_tokens: 3000
     hyde_expander:
       model: gpt-4o-mini
       temperature: 0.4

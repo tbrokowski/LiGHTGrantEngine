@@ -13,6 +13,7 @@ Requires: google-api-python-client, google-auth
 from __future__ import annotations
 
 import logging
+import re
 from html.parser import HTMLParser
 from typing import Any
 
@@ -224,9 +225,47 @@ class _HtmlToParagraphs(HTMLParser):
             self._run_text += data
 
 
+
+
+def _preprocess_html_for_push(html: str) -> tuple[str, list[dict]]:
+    """Extract images and flatten tables before paragraph parsing."""
+    images: list[dict] = []
+    text = html or ""
+
+    def _img_repl(m):
+        src = m.group(1) or ""
+        alt = m.group(2) or "Figure"
+        if src.startswith("http"):
+            images.append({"url": src, "alt": alt})
+            return f'<p><em>[{alt}]</em></p>'
+        return m.group(0)
+
+    text = re.sub(
+        r'<img[^>]+src=["\']([^"\']+)["\'][^>]*(?:alt=["\']([^"\']*)["\'])?[^>]*/?>',
+        _img_repl,
+        text,
+        flags=re.I,
+    )
+
+    def _table_repl(m):
+        inner = m.group(1)
+        rows = re.findall(r"<tr[^>]*>(.*?)</tr>", inner, re.I | re.S)
+        lines = []
+        for row in rows:
+            cells = re.findall(r"<t[dh][^>]*>(.*?)</t[dh]>", row, re.I | re.S)
+            clean = [re.sub(r"<[^>]+>", "", c).strip() for c in cells]
+            if any(clean):
+                lines.append(" | ".join(clean))
+        return "<p>" + "</p><p>".join(lines) + "</p>" if lines else ""
+
+    text = re.sub(r"<table[^>]*>(.*?)</table>", _table_repl, text, flags=re.I | re.S)
+    return text, images
+
+
 def _html_to_paragraphs(html: str) -> list[dict[str, Any]]:
+    cleaned, _ = _preprocess_html_for_push(html)
     parser = _HtmlToParagraphs()
-    parser.feed(html or "")
+    parser.feed(cleaned)
     return parser.paragraphs
 
 
@@ -621,12 +660,33 @@ def read_document_as_text(
 
 
 def _write_content_to_doc(docs_svc: Any, doc_id: str, content_html: str) -> None:
-    paragraphs = _html_to_paragraphs(content_html)
+    cleaned, images = _preprocess_html_for_push(content_html)
+    paragraphs = _html_to_paragraphs(cleaned)
     requests = _build_insert_requests(paragraphs)
     if requests:
         docs_svc.documents().batchUpdate(
             documentId=doc_id, body={"requests": requests}
         ).execute()
+    # Append inline images at end of document
+    if images:
+        doc = docs_svc.documents().get(documentId=doc_id).execute()
+        end_index = doc.get("body", {}).get("content", [{}])[-1].get("endIndex", 1) - 1
+        img_requests = []
+        for img in images[:5]:
+            img_requests.append({
+                "insertText": {"location": {"index": end_index}, "text": f"\n{img.get('alt', 'Figure')}\n"}
+            })
+            end_index += len(img.get("alt", "Figure")) + 2
+            img_requests.append({
+                "insertInlineImage": {
+                    "location": {"index": end_index},
+                    "uri": img["url"],
+                    "objectSize": {"width": {"magnitude": 400, "unit": "PT"}, "height": {"magnitude": 300, "unit": "PT"}},
+                }
+            })
+            end_index += 1
+        if img_requests:
+            docs_svc.documents().batchUpdate(documentId=doc_id, body={"requests": img_requests}).execute()
 
 
 def insert_image_after_heading(
