@@ -48,6 +48,7 @@ export interface WorkspaceContextType {
   draftSteps: import('@/lib/callAnalysisStore').AIThinkingStepData[] | null;
   draftError: string | null;
   draftExecutionPlan: Record<string, unknown> | null;
+  draftQaReport: Record<string, unknown> | null;
   wordCountWarnings: Record<string, { word_limit: number; actual: number; overage: number }>;
   missingSections: string[];
 

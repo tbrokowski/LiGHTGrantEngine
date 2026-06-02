@@ -12,7 +12,7 @@ async def stitch_subsections(
     for sd in subsection_drafts:
         parts.append(f"### {sd.get('title', 'Part')}\n{sd.get('draft', '')}")
     combined = "\n\n".join(parts)
-    prompt = f"""Merge these subsection drafts into one cohesive "{section_name}" section (~{target_words} words).
+    prompt = f"""Merge these subsection drafts into one cohesive "{section_name}" section (~{target_words} words). Eliminate any redundancy between the subsections and ensure it gets written into a cohesive concise section.
 Use h3 for subsection titles. Remove redundancy. Keep all specific claims and citations.
 
 SUBSECTIONS:

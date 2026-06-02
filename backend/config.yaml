@@ -37,8 +37,12 @@ ai:
       max_tokens: 3000
     section_drafter:
       model: gpt-4o
-      temperature: 0.5
+      temperature: 0.4
       max_tokens: 12000
+    draft_narrative_digest:
+      model: gpt-4o-mini
+      temperature: 0.2
+      max_tokens: 800
     draft_orchestrator:
       model: gpt-4o
       temperature: 0.2
@@ -53,7 +57,7 @@ ai:
       max_tokens: 12000
     impact_agent:
       model: gpt-4o
-      temperature: 0.5
+      temperature: 0.35
       max_tokens: 8000
     section_expander:
       model: gpt-4o

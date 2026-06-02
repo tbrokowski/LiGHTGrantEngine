@@ -32,6 +32,13 @@ class GrantsGovScraper(BaseScraper):
         page_size = int(cfg.get("page_size", _PAGE_SIZE))
         max_pages = int(cfg.get("max_pages", 3))
 
+        agencies = cfg.get("agencies") or []
+        filters: dict = {
+            "opportunity_status": {"one_of": ["posted", "forecasted"]},
+        }
+        if agencies:
+            filters["agency"] = {"one_of": agencies}
+
         results = []
         try:
             for page in range(1, max_pages + 1):
@@ -44,9 +51,7 @@ class GrantsGovScraper(BaseScraper):
                             {"order_by": "post_date", "sort_direction": "descending"},
                         ],
                     },
-                    "filters": {
-                        "opportunity_status": {"one_of": ["posted", "forecasted"]},
-                    },
+                    "filters": filters,
                 }
                 resp = httpx.post(
                     _SEARCH_URL,

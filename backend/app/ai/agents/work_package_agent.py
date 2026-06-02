@@ -2,45 +2,37 @@
 from __future__ import annotations
 import json
 from app.ai.client import chat_complete
-from app.ai.agents.draft_drafting_shared import format_evidence_context, word_target_block
+from app.ai.agents.draft_section_context import build_section_draft_context
 
-SYSTEM = """You write work package sections for EU/Horizon-style grants.
-For each WP include: objectives, tasks, deliverables (with codes if applicable), milestones, PM allocation.
-Use tables in HTML where helpful (<table><tr><th>...</th></tr>).
-Be specific to the team's idea — not generic WP templates."""
 
-async def draft_work_packages_section(
-    section_name: str,
-    skeleton_content: str = "",
-    grant_idea: str = "",
-    call_requirements: str = "",
-    required_subsections: list | None = None,
-    retrieved_sections: list | None = None,
-    concept_bundles: list | None = None,
-    evidence_summary: str = "",
-    citations: list | None = None,
-    target_words: int | None = None,
-    min_words: int | None = None,
-    writing_instructions: str = "",
-    funder: str = "",
-    **kwargs,
-) -> dict:
-    ctx = format_evidence_context(retrieved_sections, None, None, concept_bundles, evidence_summary, citations)
-    subs = required_subsections or []
-    prompt = f"""Draft {section_name} with detailed work packages.
-
-FUNDER: {funder}
-{word_target_block(target_words, min_words)}
-
-IDEA: {grant_idea[:4000]}
-SKELETON: {skeleton_content[:5000]}
-REQUIRED STRUCTURE: {subs}
-{writing_instructions}
-{ctx}
-
-Return JSON: draft (HTML with WP tables), word_count, warnings"""
+async def draft_work_packages_section(section_name: str, **kwargs) -> dict:
+    ctx = build_section_draft_context(
+        section_name=section_name,
+        section_type="work_packages",
+        agent_kind="work_packages",
+        grant_idea=kwargs.get("grant_idea", ""),
+        skeleton_content=kwargs.get("skeleton_content", ""),
+        call_requirements=kwargs.get("call_requirements", ""),
+        call_narrative_brief=kwargs.get("call_narrative_brief", ""),
+        evaluation_criteria=kwargs.get("evaluation_criteria"),
+        section_specific_requirements=kwargs.get("section_specific_requirements"),
+        prior_sections_summary=kwargs.get("prior_sections_summary", ""),
+        evidence_summary=kwargs.get("evidence_summary", ""),
+        key_evidence=kwargs.get("key_evidence"),
+        retrieved_sections=kwargs.get("retrieved_sections"),
+        concept_bundles=kwargs.get("concept_bundles"),
+        citations=kwargs.get("citations"),
+        writing_instructions=kwargs.get("writing_instructions", ""),
+        funder=kwargs.get("funder", ""),
+        target_words=kwargs.get("target_words"),
+        min_words=kwargs.get("min_words"),
+        user_instructions=str(kwargs.get("required_subsections") or ""),
+    )
     resp = await chat_complete(
-        messages=[{"role": "system", "content": SYSTEM}, {"role": "user", "content": prompt}],
+        messages=[
+            {"role": "system", "content": ctx.system_prompt},
+            {"role": "user", "content": ctx.user_prompt},
+        ],
         agent_name="work_package_agent",
         json_mode=True,
     )

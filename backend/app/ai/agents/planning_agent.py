@@ -120,6 +120,7 @@ async def plan_draft_research(
     call_strategy: dict | None = None,
     aligned_concept: dict | None = None,
     execution_plan: dict | None = None,
+    section_requirements: dict | None = None,
 ) -> dict:
     """
     Produce a research and narrative plan for the draft generation phase.
@@ -169,14 +170,38 @@ async def plan_draft_research(
     except (json.JSONDecodeError, TypeError):
         result = {"narrative_context": {}, "section_briefs": []}
 
-    # Ensure section_briefs covers all sections even if the LLM omitted some
-    brief_names = {b.get("section_name") for b in result.get("section_briefs", [])}
+    def _skeleton_claims(sec: dict) -> list[str]:
+        claims: list[str] = []
+        content = sec.get("content") or ""
+        for line in content.splitlines():
+            line = line.strip()
+            if line.startswith(("-", "*", "•")) or (len(line) > 2 and line[0].isdigit() and line[1] in ".)"):
+                claims.append(line.lstrip("-*•0123456789.) ").strip()[:200])
+        if sec.get("requirements"):
+            claims.append(str(sec["requirements"])[:200])
+        name = sec.get("name") or sec.get("title") or ""
+        sec_req = (section_requirements or {}).get(name) or (section_requirements or {}).get(name.lower())
+        if isinstance(sec_req, dict):
+            for ask in sec_req.get("key_asks") or []:
+                if ask and str(ask) not in claims:
+                    claims.append(str(ask)[:200])
+        return claims[:10]
+
+    # Ensure section_briefs covers all sections; seed key_claims from skeleton when empty
+    brief_by_name = {b.get("section_name"): b for b in result.get("section_briefs", []) if b.get("section_name")}
     for sec in skeleton_sections:
         name = sec.get("name") or sec.get("title") or ""
-        if name and name not in brief_names:
+        if not name:
+            continue
+        sk_claims = _skeleton_claims(sec)
+        if name in brief_by_name:
+            brief = brief_by_name[name]
+            if not brief.get("key_claims_to_support") and sk_claims:
+                brief["key_claims_to_support"] = sk_claims
+        else:
             result.setdefault("section_briefs", []).append({
                 "section_name": name,
-                "key_claims_to_support": [],
+                "key_claims_to_support": sk_claims,
                 "statistics_needed": [],
                 "web_search_queries": [f"{name} {grant_idea[:80]} evidence statistics"],
                 "academic_search_queries": [f"{name} {grant_idea[:60]}"],

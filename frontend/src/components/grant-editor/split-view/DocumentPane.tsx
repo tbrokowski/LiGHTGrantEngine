@@ -330,6 +330,7 @@ export default function DocumentPane({
             generatingFigure={workspace.generatingFigure}
             onGenerateFigure={workspace.onGenerateFigure}
             draftExecutionPlan={workspace.draftExecutionPlan}
+            draftQaReport={workspace.draftQaReport}
             documentConstraints={workspace.documentConstraints}
           />
         );

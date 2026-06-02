@@ -225,9 +225,22 @@ def _normalize_plan(
         if agent == "work_packages" and not requires_wp:
             agent = "methods" if "method" in name.lower() else "default"
         expansion = spec.get("expansion_mode") or ("hierarchical" if target > 1500 else "single")
-        tier = spec.get("research_tier") or (
-            "deep" if agent in ("methods", "work_packages", "intro") else "standard"
-        )
+        n_lower = name.lower()
+        tier = spec.get("research_tier") or "standard"
+        if agent in ("methods", "work_packages", "intro", "impact"):
+            tier = "deep"
+        elif any(k in n_lower for k in ("method", "technical", "approach", "impact", "dissemination")):
+            tier = "deep"
+        elif any(k in n_lower for k in ("budget", "admin", "abbreviation", "cv", "form")):
+            tier = "light"
+        archive_q = list(spec.get("archive_queries") or [name])
+        for term in spec.get("must_surface_from_idea") or []:
+            if term and term not in archive_q:
+                archive_q.append(str(term))
+        quality_rubric = spec.get("quality_rubric") or {
+            "min_exemplar_count": 2 if tier == "deep" else 1,
+            "require_citations": tier in ("deep", "standard"),
+        }
         normalized.append({
             "section_name": name,
             "agent": agent,
@@ -236,11 +249,12 @@ def _normalize_plan(
             "expansion_mode": expansion,
             "research_tier": tier,
             "required_subsections": spec.get("required_subsections") or [],
-            "archive_queries": spec.get("archive_queries") or [name],
+            "archive_queries": archive_q[:6],
             "must_surface_from_idea": spec.get("must_surface_from_idea") or [],
             "needs_figure": bool(spec.get("needs_figure")),
             "domain_review": spec.get("domain_review"),
             "priority": spec.get("priority") or "medium",
+            "quality_rubric": quality_rubric,
         })
 
     plan["sections"] = normalized

@@ -169,6 +169,8 @@ async def writing_status(
         "draft_status":    getattr(grant, "draft_status",    None) or "idle",
         "draft_steps":     getattr(grant, "draft_steps",     None) or [],
         "draft_error":     getattr(grant, "draft_error",     None),
+        "draft_execution_plan": getattr(grant, "draft_execution_plan", None),
+        "draft_qa_report": getattr(grant, "draft_qa_report", None),
         # Full document for frontend after draft completes
         "editor_document": grant.editor_document,
     }

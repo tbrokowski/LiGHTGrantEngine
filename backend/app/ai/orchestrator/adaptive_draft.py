@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import asyncio
+import os
 from typing import AsyncIterator, Callable
 
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -18,6 +19,7 @@ from app.ai.agents.grant_meta_synthesizer import GrantMetaSynthesizer
 from app.ai.agents.meta_agent import check_narrative_coherence, evaluate_and_improve_section
 from app.ai.agents.planning_agent import plan_draft_research
 from app.ai.agents.research_agent import gather_section_evidence
+from app.ai.agents.draft_section_context import compress_prior_sections, evidence_coverage_check
 from app.ai.agents.section_length_adjuster import compress_section, expand_section
 from app.ai.agents.section_router import draft_section_routed, INTRO_KEYWORDS
 from app.ai.agents.section_stitcher import stitch_subsections
@@ -78,6 +80,45 @@ def _get_concept_bundles(section_content: str, idea: str, concept_rag_map: dict)
         if concept.upper() in text_upper:
             bundles.extend(docs)
     return bundles[:8]
+
+
+async def _gather_entity_and_concept_bundles(
+    section_content: str,
+    idea: str,
+    concept_rag_map: dict,
+    must_surface_terms: list[str],
+    db: AsyncSession,
+    funder: str,
+    grant_id: str,
+) -> list[dict]:
+    """Substring concept match plus mandatory entity RAG for orchestrator terms."""
+    seen: set[str] = set()
+    bundles: list[dict] = []
+
+    def _add(docs: list[dict]) -> None:
+        for d in docs or []:
+            key = str(d.get("id") or d.get("title") or d.get("full_text", "")[:80])
+            if key not in seen:
+                seen.add(key)
+                bundles.append(d)
+
+    _add(_get_concept_bundles(section_content, idea, concept_rag_map))
+    for term in must_surface_terms or []:
+        _add(concept_rag_map.get(term, []))
+        if not term:
+            continue
+        try:
+            mentions = await retrieve_entity_mentions(
+                entity=term,
+                db=db,
+                funder=funder,
+                top_k=4,
+                current_grant_id=grant_id,
+            )
+            _add(mentions if isinstance(mentions, list) else [])
+        except Exception:
+            pass
+    return bundles[:12]
 
 
 async def run_adaptive_draft_stream(
@@ -170,6 +211,7 @@ async def run_adaptive_draft_stream(
             call_strategy=call_strategy,
             aligned_concept=aligned_concept,
             execution_plan=execution_plan,
+            section_requirements=section_requirements_map,
         )
     except Exception:
         plan = {"narrative_context": {}, "section_briefs": []}
@@ -233,6 +275,18 @@ async def run_adaptive_draft_stream(
                     pass
             for term in spec.get("must_surface_from_idea") or []:
                 rag_content.extend(concept_rag_map.get(term, []))
+                try:
+                    entity_hits = await retrieve_entity_mentions(
+                        entity=term,
+                        db=db,
+                        funder=grant.funder,
+                        top_k=3,
+                        current_grant_id=str(grant.id),
+                    )
+                    if isinstance(entity_hits, list):
+                        rag_content.extend(entity_hits)
+                except Exception:
+                    pass
 
             style_ex, reusable = [], []
             if tier != "light":
@@ -258,28 +312,52 @@ async def run_adaptive_draft_stream(
                 rag_content_exemplars=rag_content,
                 rag_reusable_language=reusable if isinstance(reusable, list) else [],
             )
-        return sec, evidence
+        return sec, evidence, len(rag_content), tier
 
     research_results = await asyncio.gather(*[_research_section(s) for s in sections], return_exceptions=True)
     section_evidence_map: dict[str, tuple[dict, dict]] = {}
+    research_coverage: list[dict] = []
     for res in research_results:
         if isinstance(res, Exception):
             continue
-        sec, ev = res
-        section_evidence_map[sec.get("name") or sec.get("title") or ""] = (sec, ev)
-    yield sse({"event": "research_complete", "total": len(sections)})
+        sec, ev, exemplar_count, tier = res
+        name = sec.get("name") or sec.get("title") or ""
+        section_evidence_map[name] = (sec, ev)
+        ke_count = len(ev.get("key_evidence") or [])
+        cov = {
+            "section": name,
+            "research_tier": tier,
+            "exemplar_count": exemplar_count,
+            "key_evidence_count": ke_count,
+            "degraded": tier in ("deep", "standard") and exemplar_count == 0,
+        }
+        research_coverage.append(cov)
+        yield sse({
+            "event": "section_evidence_ready",
+            "section": name,
+            "exemplar_count": exemplar_count,
+            "key_evidence_count": ke_count,
+            "research_tier": tier,
+        })
+        if cov["degraded"]:
+            yield sse({
+                "event": "section_research_degraded",
+                "section": name,
+                "research_tier": tier,
+                "reason": "no_archive_hits",
+            })
+
+    execution_plan["research_coverage"] = research_coverage
+    grant.draft_execution_plan = execution_plan
+    await db.commit()
+    yield sse({"event": "research_complete", "total": len(sections), "research_coverage": research_coverage})
 
     # Phase 3: Routed drafting
     word_count_warnings: list[dict] = []
     under_length: list[dict] = []
     all_draft_results: list[dict] = []
     section_results: dict[int, tuple[str, dict]] = {}
-    profile = execution_plan.get("document_profile") or {}
-    use_waves = (profile.get("total_target_words") or 0) > 15000
-    wave_order = execution_plan.get("wave_order") or {}
-    wave1_names = set(wave_order.get("wave1_parallel") or [])
-    if not wave1_names:
-        wave1_names = {s.get("name") or s.get("title") for s in sections}
+    draft_parallel = os.environ.get("DRAFT_PARALLEL_SECTIONS", "false").lower() in ("1", "true", "yes")
 
     async def _draft_one(sec: dict, idx: int, prior_summary: str) -> tuple[int, str, dict]:
         name = sec.get("name") or sec.get("title") or f"Section {idx + 1}"
@@ -296,9 +374,21 @@ async def run_adaptive_draft_stream(
         suggested_citations = evidence_bundle.get("suggested_citations", []) + [
             r.get("formatted_citation", "") for r in evidence_bundle.get("academic_results", [])[:4]
         ]
-        concept_bundles = _get_concept_bundles(skeleton_content, grant.grant_idea or "", concept_rag_map)
-        for term in spec.get("must_surface_from_idea") or []:
-            concept_bundles.extend(concept_rag_map.get(term, []))
+        concept_bundles = await _gather_entity_and_concept_bundles(
+            skeleton_content,
+            grant.grant_idea or "",
+            concept_rag_map,
+            spec.get("must_surface_from_idea") or [],
+            db,
+            grant.funder or "",
+            str(grant.id),
+        )
+        key_evidence = evidence_bundle.get("key_evidence") or []
+        rag_exemplars = evidence_bundle.get("rag_content_exemplars") or []
+        archive_exemplars_used = [
+            (e.get("title") or e.get("grant_title") or "Archive")[:80]
+            for e in rag_exemplars[:4]
+        ]
         sec_specific_req = section_requirements_map.get(name) or section_requirements_map.get(name.lower()) or {}
         if isinstance(sec_specific_req, dict) and sec_specific_req.get("word_limit"):
             target_words = target_words or sec_specific_req["word_limit"]
@@ -321,6 +411,10 @@ async def run_adaptive_draft_stream(
             skeleton_content=skeleton_content,
             compliance_guidance=sec.get("requirements") or "",
             evidence_summary=evidence_summary,
+            key_evidence=key_evidence,
+            archive_exemplars_used=archive_exemplars_used,
+            web_results=evidence_bundle.get("web_results") or [],
+            academic_results=evidence_bundle.get("academic_results") or [],
             narrative_context=narrative_context,
             strategic_guidance=strategy_section_map.get(name) or strategy_section_map.get(name.lower()) or "",
             emphasis_direction=emphasis_map.get(name) or emphasis_map.get(name.lower()) or "",
@@ -356,7 +450,12 @@ async def run_adaptive_draft_stream(
         actual_wc = result.get("word_count") or len(draft_text.split())
         if min_words and actual_wc < min_words:
             try:
-                expanded = await expand_section(name, draft_text, target_words or min_words, min_words, grant.grant_idea or "", evidence_summary)
+                expanded = await expand_section(
+                    name, draft_text, target_words or min_words, min_words,
+                    grant.grant_idea or "", evidence_summary,
+                    key_evidence=key_evidence,
+                    retrieved_sections=rag_exemplars,
+                )
                 result["draft"] = expanded
                 actual_wc = len(expanded.split())
                 under_length.append({"section": name, "before": result.get("word_count"), "after": actual_wc})
@@ -372,40 +471,61 @@ async def run_adaptive_draft_stream(
         result["word_count"] = actual_wc
         return idx, name, result
 
-    for i, sec in enumerate(sections):
-        yield sse({"event": "section_start", "section": sec.get("name") or sec.get("title"), "index": i, "total": len(sections)})
+    ordered_indices = sorted(
+        range(len(sections)),
+        key=lambda i: sections[i].get("order", i) if sections[i].get("order") is not None else i,
+    )
 
-    if use_waves:
-        wave1 = [s for i, s in enumerate(sections) if (s.get("name") or s.get("title")) in wave1_names]
-        wave2 = [s for i, s in enumerate(sections) if (s.get("name") or s.get("title")) not in wave1_names]
-        prior = ""
-        for i, sec in enumerate(wave1):
-            res = await _draft_one(sec, i, prior)
-            if not isinstance(res, Exception):
-                idx, name, result = res
-                section_results[idx] = (name, result)
-                all_draft_results.append(result)
-        prior = "\n".join(f"{n}: {(r.get('draft') or '')[:500]}" for n, r in section_results.values())
-        for i, sec in enumerate(wave2):
-            global_idx = sections.index(sec)
-            res = await _draft_one(sec, global_idx, prior)
-            if not isinstance(res, Exception):
-                idx, name, result = res
-                section_results[idx] = (name, result)
-                all_draft_results.append(result)
-    else:
-        completed = await asyncio.gather(*[_draft_one(sec, i, "") for i, sec in enumerate(sections)], return_exceptions=True)
+    if draft_parallel:
+        for i, sec in enumerate(sections):
+            yield sse({"event": "section_start", "section": sec.get("name") or sec.get("title"), "index": i, "total": len(sections)})
+        completed = await asyncio.gather(
+            *[_draft_one(sec, i, "") for i, sec in enumerate(sections)],
+            return_exceptions=True,
+        )
         for res in completed:
             if isinstance(res, Exception):
                 continue
             idx, name, result = res
             section_results[idx] = (name, result)
             all_draft_results.append(result)
-            if result.get("_word_count_warning"):
-                word_count_warnings.append(result["_word_count_warning"])
+    else:
+        sections_done: list[tuple[str, str]] = []
+        prior_digest = ""
+        for ord_pos, idx in enumerate(ordered_indices):
+            sec = sections[idx]
+            name = sec.get("name") or sec.get("title") or f"Section {idx + 1}"
+            yield sse({"event": "section_start", "section": name, "index": ord_pos, "total": len(sections)})
+            try:
+                res = await _draft_one(sec, idx, prior_digest)
+                if isinstance(res, Exception):
+                    continue
+                _, name, result = res
+                section_results[idx] = (name, result)
+                all_draft_results.append(result)
+                draft_plain = result.get("draft", "")
+                sections_done.append((name, draft_plain))
+                prior_digest = await compress_prior_sections(sections_done)
+            except Exception:
+                continue
 
     # Phase 4: Conditional QA
-    qa_report: dict = {"under_length": under_length, "domain_reviews": [], "meta_sections": []}
+    constraints_issues: list = []
+    doc_constraints = getattr(grant, "document_constraints", None) or {}
+    audit = doc_constraints.get("audit") or doc_constraints.get("constraints_audit") or {}
+    if isinstance(audit, dict):
+        constraints_issues = list(audit.get("issues") or audit.get("violations") or [])[:10]
+    elif isinstance(audit, list):
+        constraints_issues = audit[:10]
+
+    qa_report: dict = {
+        "under_length": under_length,
+        "domain_reviews": [],
+        "meta_sections": [],
+        "research_coverage": research_coverage,
+        "evidence_coverage": [],
+        "constraints_issues": constraints_issues,
+    }
     yield sse({"event": "meta_agent_start", "total": len(sections)})
     collected_questions: list[dict] = []
     all_warnings: list[str] = []
@@ -430,8 +550,21 @@ async def run_adaptive_draft_stream(
             except Exception:
                 pass
 
+        exemplar_count = next(
+            (c.get("exemplar_count", 0) for c in research_coverage if c.get("section") == name),
+            0,
+        )
+        _, ev_bundle = section_evidence_map.get(name, (sec, {}))
+        cov_check = evidence_coverage_check(
+            draft_text,
+            spec.get("must_surface_from_idea"),
+            ev_bundle.get("key_evidence"),
+            exemplar_count,
+        )
+        qa_report["evidence_coverage"].append({"section": name, **cov_check})
+
         improved_html = draft_html
-        run_meta = name in meta_sections_set or (execution_plan.get("alignment_score") or 100) < 70
+        run_meta = name in meta_sections_set
         if run_meta:
             try:
                 async for meta_event in evaluate_and_improve_section(

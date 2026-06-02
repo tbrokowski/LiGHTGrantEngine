@@ -113,6 +113,7 @@ async def gather_section_evidence(
         key_claims=section_brief.get("key_claims_to_support") or [],
         web_results=web_results,
         academic_results=academic_results,
+        rag_content_exemplars=rag_content_exemplars,
     )
 
     return {

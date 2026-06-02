@@ -491,6 +491,30 @@ def _map_draft_event(event: dict, current_steps: list) -> list | None:
         return _make_draft_steps(orchestrator="done", planning="done", research_label=f"Researching {total} sections…", research="active")
     if name == "research_start":
         return _make_draft_steps(orchestrator="done", planning="done", research_label=f"Researching 0/{total} sections…", research="active")
+    if name == "section_evidence_ready":
+        sec = event.get("section", "")
+        ex = event.get("exemplar_count", 0)
+        ke = event.get("key_evidence_count", 0)
+        tier = event.get("research_tier", "")
+        detail = f"{sec}: {ex} archive, {ke} claims ({tier})"
+        if current_steps:
+            for s in current_steps:
+                if s["id"] == "research" and s["status"] == "active":
+                    return _make_draft_steps(
+                        orchestrator="done", planning="done",
+                        research_label=f"Evidence: {detail}", research="active",
+                    )
+        return None
+    if name == "section_research_degraded":
+        sec = event.get("section", "")
+        if current_steps:
+            for s in current_steps:
+                if s["id"] == "research":
+                    return _make_draft_steps(
+                        orchestrator="done", planning="done",
+                        research_label=f"⚠ {sec}: no archive hits", research="active",
+                    )
+        return None
     if name == "research_complete":
         return _make_draft_steps(orchestrator="done", planning="done", research_label=f"Research complete ({total} sections)", research="done",
                                  draft_label=f"Drafting 0/{total} sections…", draft="active")

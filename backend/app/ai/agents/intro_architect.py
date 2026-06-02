@@ -1,22 +1,10 @@
 """
-Intro Architect — expands the user-authored skeleton into a full introduction
-following the 6-beat narrative arc. The skeleton content is the primary input;
-call requirements serve as compliance guidance.
+Intro Architect — expands skeleton into full introduction following 6-beat arc.
 """
 import json
 from app.ai.client import chat_complete
 from app.ai.context.grant_context import DEFAULT_INTRO_ARC
-
-SYSTEM_PROMPT = """You are an expert grant writer specializing in compelling proposal introductions.
-
-YOUR PRIMARY JOB:
-Take the team's skeleton content for the introduction and expand it into a full, compelling
-opening section following the 6-beat narrative arc. Preserve the team's framing and key claims;
-enrich with evidence, specificity, and narrative momentum.
-
-Follow the 6-beat narrative arc precisely. Write in the institutional style provided.
-Call requirements are compliance guidance — ensure key funder themes are woven in naturally.
-Respond with valid JSON."""
+from app.ai.agents.draft_section_context import build_section_draft_context
 
 
 async def draft_introduction(
@@ -40,6 +28,12 @@ async def draft_introduction(
     concept_bundles: list[dict] | None = None,
     min_words: int | None = None,
     writing_instructions: str = "",
+    section_specific_requirements: dict | None = None,
+    call_narrative_brief: str = "",
+    prior_sections_summary: str = "",
+    key_evidence: list | None = None,
+    target_words: int | None = None,
+    **kwargs,
 ) -> dict:
     arc = intro_arc or DEFAULT_INTRO_ARC
     arc_str = "\n".join(
@@ -47,122 +41,41 @@ async def draft_introduction(
         for i, beat in enumerate(arc)
     )
 
-    prior_str = ""
-    if retrieved_sections:
-        prior_str += "\nCONTENT EXEMPLARS (substance reference):\n"
-        for s in retrieved_sections[:3]:
-            prior_str += f"\n--- {s.get('section_type', '?')} from {s.get('grant_title', '?')} ---\n{s.get('full_text', '')[:4000]}\n"
-
-    if style_exemplars:
-        prior_str += "\nSTYLE EXEMPLARS (match voice and openings):\n"
-        for s in style_exemplars[:3]:
-            prior_str += f"\n--- {s.get('section_type', '?')} from {s.get('grant_title', '?')} ({s.get('outcome', '?')}) ---\n{s.get('full_text', '')[:3000]}\n"
-
-    cite_str = ""
-    if citations:
-        cite_str = "\nAVAILABLE CITATIONS:\n" + "\n".join(
-            f"- {c.get('formatted_citation', c.get('title', ''))}" for c in citations[:8]
-        )
-
-    mn = min_words or (int(word_limit * 0.9) if word_limit else None)
-    if word_limit:
-        limit_str = f"WORD TARGET: {mn}-{word_limit} words (minimum {mn} words required)\n"
-    else:
-        limit_str = ""
-    if writing_instructions:
-        limit_str += f"SECTION GUIDE: {writing_instructions}\n"
-
-    narrative_ctx = narrative_context or {}
-    theory_of_change = narrative_ctx.get("theory_of_change", "")
-    funder_priorities = "\n".join(
-        f"- {p}" for p in narrative_ctx.get("funder_priorities_to_emphasize", [])
+    ctx = build_section_draft_context(
+        section_name="Introduction",
+        section_type="introduction",
+        agent_kind="intro",
+        grant_idea=grant_idea,
+        skeleton_content=skeleton_content,
+        call_requirements=call_requirements,
+        call_narrative_brief=call_narrative_brief,
+        evaluation_criteria=evaluation_criteria,
+        section_specific_requirements=section_specific_requirements,
+        prior_sections_summary=prior_sections_summary,
+        evidence_summary=evidence_summary,
+        key_evidence=key_evidence,
+        retrieved_sections=retrieved_sections,
+        style_exemplars=style_exemplars,
+        citations=citations,
+        narrative_context=narrative_context,
+        opening_hook=opening_hook,
+        strategic_framing=strategic_framing,
+        concept_bundles=concept_bundles,
+        writing_instructions=writing_instructions,
+        compliance_guidance=compliance_guidance,
+        funder=funder,
+        style_profile=style_profile,
+        target_words=target_words or word_limit,
+        min_words=min_words,
+        user_instructions=user_instructions,
+        intro_arc_str=arc_str,
     )
 
-    skeleton_block = (
-        f"\nSKELETON CONTENT (team-authored — EXPAND THIS, preserve the framing):\n{skeleton_content}\n"
-        if skeleton_content else ""
-    )
-
-    strategy_block = ""
-    if opening_hook or strategic_framing:
-        strategy_block = "\nSTRATEGIC GUIDANCE (use this to shape the opening):\n"
-        if opening_hook:
-            strategy_block += f"SUGGESTED OPENING HOOK (adapt into your first beat):\n{opening_hook}\n"
-        if strategic_framing:
-            strategy_block += f"OVERALL FRAMING:\n{strategic_framing}\n"
-
-    concept_block = ""
-    if concept_bundles:
-        concept_block = "\nCONCEPT CONTEXT (archive content about named concepts in your skeleton):\n"
-        for bundle in concept_bundles[:3]:
-            if bundle.get("full_text"):
-                concept_block += f"\n--- {bundle.get('section_type','?')} / {bundle.get('grant_title','?')} ---\n{bundle.get('full_text','')[:1500]}\n"
-    evidence_block = (
-        f"\nRESEARCH EVIDENCE SUMMARY (weave in naturally):\n{evidence_summary}\n"
-        if evidence_summary else ""
-    )
-    compliance_block = (
-        f"\nCOMPLIANCE COVERAGE NOTES (ensure these themes appear across the 6 beats):\n{compliance_guidance}\n"
-        if compliance_guidance else ""
-    )
-
-    user_instructions_block = (
-        f"\nSPECIFIC REVISION INSTRUCTIONS (incorporate these changes):\n{user_instructions}\n"
-        if user_instructions else ""
-    )
-    eval_criteria = evaluation_criteria or []
-
-    user_prompt = f"""Expand the skeleton content below into a full Introduction section for a grant proposal.
-Follow the 6-beat narrative arc, preserving the team's framing and voice.
-
-FUNDER: {funder}
-{limit_str}
-
-GRANT IDEA:
-{grant_idea[:4000]}
-
-OVERALL NARRATIVE CONTEXT:
-Theory of change: {theory_of_change or 'See grant idea and skeleton'}
-{f'Funder priorities to emphasise:{chr(10)}{funder_priorities}' if funder_priorities else ''}
-{strategy_block}
-{skeleton_block}
-{concept_block}
-{evidence_block}
-{compliance_block}
-{user_instructions_block}
-
-CALL REQUIREMENTS (guidance — ensure key funder themes are woven in):
-{call_requirements[:4000]}
-
-EVALUATION CRITERIA (address across the 6 beats):
-{chr(10).join(f'- {c}' for c in eval_criteria)}
-
-NARRATIVE ARC (follow this structure exactly):
-{arc_str}
-
-STYLE PROFILE:
-{json.dumps(style_profile or {}, indent=2)[:4000]}
-
-ARCHIVE EXEMPLARS:
-{prior_str}
-{cite_str}
-
-Expand the skeleton into the full introduction following all 6 beats in order.
-Preserve the team's voice. Use [CUSTOMIZE:] and [VERIFY:] markers where needed.
-
-Return JSON with:
-- draft: the full introduction text (HTML paragraphs allowed)
-- beats_covered: list of {{beat, excerpt}} showing each beat was addressed
-- citations_used: list of citations incorporated
-- word_count: int
-- assumptions: list
-- customization_points: list
-- warnings: list
-"""
+    user_prompt = ctx.user_prompt + "\n\nFollow all 6 beats in order. Return JSON with draft, beats_covered, citations_used, word_count, warnings."
 
     response = await chat_complete(
         messages=[
-            {"role": "system", "content": SYSTEM_PROMPT},
+            {"role": "system", "content": ctx.system_prompt},
             {"role": "user", "content": user_prompt},
         ],
         agent_name="intro_architect",
