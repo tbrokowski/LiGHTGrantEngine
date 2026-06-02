@@ -2,11 +2,13 @@ export interface Opportunity {
   id: string;
   title: string;
   funder: string | null;
+  opportunity_type: string | null;
   deadline: string | null;
   fit_score: number | null;
   priority: string | null;
   status: string;
   thematic_areas: string[];
+  geography: string[];
   award_min: number | null;
   award_max: number | null;
   currency: string | null;
@@ -15,6 +17,7 @@ export interface Opportunity {
   has_description: boolean;
   funder_logo_url: string | null;
   opportunity_url: string | null;
+  source_id: string | null;
   is_read?: boolean;
   is_personal_shortlisted?: boolean;
   is_on_org_shortlist?: boolean;
@@ -24,11 +27,26 @@ export interface OpportunityFilters {
   search: string;
   priority: string;
   theme: string;
+  opportunityType: string;
+  geography: string;
+  funder: string;
+  funderCategory: string;
+  sourceId: string;
   deadlineBefore: string;
   deadlineAfter: string;
   awardMin: string;
+  awardMax: string;
   hasDeadline: boolean;
   sortBy: 'relevance' | 'deadline' | 'award';
+}
+
+export interface FilterOptions {
+  funders: { name: string; logo_url: string | null }[];
+  opportunity_types: string[];
+  geographies: string[];
+  thematic_areas: string[];
+  source_categories: string[];
+  sources: { id: string; name: string; category: string | null; logo_url: string | null }[];
 }
 
 export const PRIORITY_LABELS: Record<string, string> = {

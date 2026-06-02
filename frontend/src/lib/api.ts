@@ -138,6 +138,7 @@ export const users = {
 // ── Opportunities ────────────────────────────────────────────────────────────
 export const opportunities = {
   list: (params?: Record<string, unknown>) => api.get('/opportunities/', { params }),
+  filterOptions: () => api.get('/opportunities/filter-options'),
   newOpportunities: (params?: { unread_only?: boolean; limit?: number; offset?: number }) =>
     api.get('/opportunities/new-opportunities', { params }),
   newOpportunitiesCounts: () => api.get('/opportunities/new-opportunities/counts'),

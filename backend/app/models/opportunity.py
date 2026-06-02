@@ -9,6 +9,18 @@ from pgvector.sqlalchemy import Vector
 from app.database import Base
 
 
+class OpportunityType(str, Enum):
+    GRANT = "grant"
+    FELLOWSHIP = "fellowship"
+    SCHOLARSHIP = "scholarship"
+    RESIDENCY = "residency"
+    OPEN_CALL = "open_call"
+    PRIZE = "prize"
+    BURSARY = "bursary"
+    COMMISSION = "commission"
+    OTHER = "other"
+
+
 class OpportunityStatus(str, Enum):
     NEW = "new"
     NEEDS_REVIEW = "needs_review"
@@ -81,6 +93,7 @@ class Opportunity(Base):
     clinical_trial_allowed: Mapped[bool | None] = mapped_column(Boolean)
 
     # Classification
+    opportunity_type: Mapped[str | None] = mapped_column(String(50), index=True)
     thematic_areas: Mapped[list] = mapped_column(JSON, default=list)
     keywords: Mapped[list] = mapped_column(JSON, default=list)
     geography: Mapped[list] = mapped_column(JSON, default=list)

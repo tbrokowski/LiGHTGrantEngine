@@ -3,6 +3,7 @@ import Link from 'next/link';
 import dynamic from 'next/dynamic';
 import ScoreBadge from './ScoreBadge';
 import FunderLogo from './FunderLogo';
+import OpportunityTypeBadge from './OpportunityTypeBadge';
 import { formatDate, formatAward, PRIORITY_COLORS, PRIORITY_LABELS, type Opportunity } from './types';
 
 const MarkdownContent = dynamic(() => import('./MarkdownContent'), {
@@ -28,7 +29,10 @@ export default function OpportunityCard({ opp, onClick, selected, variant = 'def
         <div className="flex items-center gap-2 min-w-0">
           <FunderLogo url={opp.funder_logo_url} name={opp.funder} size="md" />
           <div className="min-w-0">
-            {opp.funder && <p className="text-xs text-gray-400 truncate">{opp.funder}</p>}
+            <div className="flex items-center gap-1.5 flex-wrap">
+              {opp.funder && <p className="text-xs text-gray-400 truncate">{opp.funder}</p>}
+              {opp.opportunity_type && <OpportunityTypeBadge type={opp.opportunity_type} size="xs" />}
+            </div>
             <div className="flex items-center gap-2">
               {unread && <span className="w-2 h-2 rounded-full bg-blue-500 shrink-0" />}
               <h2 className={`text-base leading-snug truncate ${

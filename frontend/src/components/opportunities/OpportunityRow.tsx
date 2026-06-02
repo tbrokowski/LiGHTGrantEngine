@@ -3,6 +3,7 @@ import Link from 'next/link';
 import ScoreBadge from './ScoreBadge';
 import FunderLogo from './FunderLogo';
 import OpportunityActions, { type OpportunityActionHandlers } from './OpportunityActions';
+import OpportunityTypeBadge from './OpportunityTypeBadge';
 import { formatDate, formatAward, type Opportunity } from './types';
 
 interface OpportunityRowProps extends OpportunityActionHandlers {
@@ -51,9 +52,12 @@ export default function OpportunityRow({
         </Link>
       </td>
       <td className="px-4 py-3.5 hidden md:table-cell">
-        <div className="flex items-center gap-1.5 max-w-[160px]">
-          <FunderLogo url={opp.funder_logo_url} name={opp.funder} />
-          <span className="text-sm text-gray-500 truncate">{opp.funder ?? '—'}</span>
+        <div className="flex flex-col gap-1 max-w-[160px]">
+          <div className="flex items-center gap-1.5">
+            <FunderLogo url={opp.funder_logo_url} name={opp.funder} />
+            <span className="text-sm text-gray-500 truncate">{opp.funder ?? '—'}</span>
+          </div>
+          {opp.opportunity_type && <OpportunityTypeBadge type={opp.opportunity_type} size="xs" />}
         </div>
       </td>
       <td className="px-4 py-3.5 text-sm text-gray-500 hidden lg:table-cell whitespace-nowrap">

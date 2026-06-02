@@ -109,6 +109,14 @@ class WebSearchConfig(BaseModel):
     cache_ttl_hours: int = 24
 
 
+class SourceDiscoveryConfig(BaseModel):
+    enabled: bool = True
+    n_queries_per_run: int = 40
+    auto_approve_confidence: int = 70
+    query_rotation_ttl_days: int = 30
+    max_candidates_per_run: int = 200
+
+
 class Settings(BaseSettings):
     """
     Main settings object. Values come from:
@@ -167,6 +175,9 @@ class Settings(BaseSettings):
     # Tavily web search
     tavily_api_key: Optional[str] = None
 
+    # Exa.ai neural search (source discovery)
+    exa_api_key: Optional[str] = None
+
     class Config:
         env_file = ".env"
         case_sensitive = False
@@ -201,6 +212,10 @@ class Settings(BaseSettings):
     @property
     def web_search(self) -> "WebSearchConfig":
         return WebSearchConfig(**(_raw.get("web_search") or {}))
+
+    @property
+    def source_discovery(self) -> "SourceDiscoveryConfig":
+        return SourceDiscoveryConfig(**(_raw.get("source_discovery") or {}))
 
     @property
     def discovery(self) -> dict:
