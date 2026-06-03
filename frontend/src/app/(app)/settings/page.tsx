@@ -417,6 +417,10 @@ function SettingsPageInner() {
   const [scanAllResult, setScanAllResult] = useState<string | null>(null);
   const [deduplicating, setDeduplicating] = useState(false);
   const [dedupResult, setDedupResult] = useState<string | null>(null);
+  const [discoveringSource, setDiscoveringSource] = useState(false);
+  const [discoverResult, setDiscoverResult] = useState<string | null>(null);
+  const [backfillingTypes, setBackfillingTypes] = useState(false);
+  const [backfillResult, setBackfillResult] = useState<string | null>(null);
   const [toggling, setToggling] = useState<string | null>(null);
   const [deleting, setDeleting] = useState<string | null>(null);
   const [showAdd, setShowAdd] = useState(false);
@@ -725,13 +729,65 @@ function SettingsPageInner() {
               Add websites, RSS feeds, or APIs to automatically discover new grant opportunities.
             </p>
           </div>
-          <button
-            onClick={() => { setShowAdd(!showAdd); }}
-            className="text-sm text-blue-600 hover:text-blue-800 border border-blue-200 px-3 py-1.5 rounded-md hover:bg-blue-50"
-          >
-            {showAdd ? 'Cancel' : '+ Add source'}
-          </button>
+          <div className="flex items-center gap-2 flex-wrap">
+            {isPlatformAdmin && (
+              <>
+                <button
+                  onClick={async () => {
+                    setDiscoveringSource(true);
+                    setDiscoverResult(null);
+                    try {
+                      await admin.discoverSources();
+                      setDiscoverResult('Discovery task queued — check back in a few minutes.');
+                    } catch {
+                      setDiscoverResult('Failed to queue discovery task.');
+                    } finally {
+                      setDiscoveringSource(false);
+                    }
+                  }}
+                  disabled={discoveringSource}
+                  className="text-sm text-emerald-700 border border-emerald-200 px-3 py-1.5 rounded-md hover:bg-emerald-50 disabled:opacity-50"
+                >
+                  {discoveringSource ? 'Queuing…' : 'Run Discovery'}
+                </button>
+                <button
+                  onClick={async () => {
+                    setBackfillingTypes(true);
+                    setBackfillResult(null);
+                    try {
+                      await admin.backfillOpportunityTypes();
+                      setBackfillResult('Backfill task queued.');
+                    } catch {
+                      setBackfillResult('Failed to queue backfill task.');
+                    } finally {
+                      setBackfillingTypes(false);
+                    }
+                  }}
+                  disabled={backfillingTypes}
+                  className="text-sm text-violet-700 border border-violet-200 px-3 py-1.5 rounded-md hover:bg-violet-50 disabled:opacity-50"
+                >
+                  {backfillingTypes ? 'Queuing…' : 'Backfill Types'}
+                </button>
+              </>
+            )}
+            <button
+              onClick={() => { setShowAdd(!showAdd); }}
+              className="text-sm text-blue-600 hover:text-blue-800 border border-blue-200 px-3 py-1.5 rounded-md hover:bg-blue-50"
+            >
+              {showAdd ? 'Cancel' : '+ Add source'}
+            </button>
+          </div>
         </div>
+        {(discoverResult || backfillResult) && (
+          <div className="mb-3 flex flex-col gap-1">
+            {discoverResult && (
+              <p className="text-xs text-emerald-700 bg-emerald-50 border border-emerald-200 rounded-md px-3 py-2">{discoverResult}</p>
+            )}
+            {backfillResult && (
+              <p className="text-xs text-violet-700 bg-violet-50 border border-violet-200 rounded-md px-3 py-2">{backfillResult}</p>
+            )}
+          </div>
+        )}
 
         {/* Add source form */}
         {showAdd && (

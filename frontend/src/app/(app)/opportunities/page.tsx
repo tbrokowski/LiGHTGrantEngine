@@ -620,6 +620,7 @@ export default function OpportunitiesPage() {
           />
         ) : (
           <div className="bg-white border border-gray-200 rounded-xl overflow-hidden">
+            <div className="overflow-x-auto">
             <table className="w-full text-sm">
               <thead>
                 <tr className="border-b border-gray-100">
@@ -635,6 +636,7 @@ export default function OpportunitiesPage() {
                 {renderTableBody(upcoming)}
               </tbody>
             </table>
+            </div>
 
             {activeTab === 'queue' && past.length > 0 && (
               <div className="border-t border-gray-100">

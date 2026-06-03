@@ -480,6 +480,8 @@ export const admin = {
   reindex: () => api.post('/admin/reindex'),
   resyncFeeds: (institutionId?: string) =>
     api.post('/admin/resync-feeds', {}, { params: institutionId ? { institution_id: institutionId } : {} }),
+  discoverSources: () => api.post('/admin/trigger/discover-sources'),
+  backfillOpportunityTypes: () => api.post('/admin/trigger/backfill-opportunity-types'),
 };
 
 // ── Tasks ────────────────────────────────────────────────────────────────────
