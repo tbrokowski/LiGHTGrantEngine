@@ -44,21 +44,20 @@ export default function PendingCard({ grant, onStageChange, onDelete }: Props) {
       )}
 
       <div
-        className="group flex items-stretch transition-colors duration-100"
-        style={{ borderBottom: '1px solid var(--rule-subtle)' }}
-        onMouseEnter={e => (e.currentTarget.style.background = 'var(--selection-bg)')}
-        onMouseLeave={e => (e.currentTarget.style.background = 'transparent')}
+        className="group flex items-stretch rounded-xl overflow-hidden transition-all duration-150"
+        style={{
+          background: 'var(--surface-base)',
+          border: '1px solid var(--rule-subtle)',
+          borderLeft: `4px solid ${accentColor}`,
+          boxShadow: '0 1px 3px rgba(0,0,0,0.06)',
+        }}
+        onMouseEnter={e => (e.currentTarget.style.boxShadow = '0 4px 14px rgba(0,0,0,0.10)')}
+        onMouseLeave={e => (e.currentTarget.style.boxShadow = '0 1px 3px rgba(0,0,0,0.06)')}
       >
-        {/* Left accent bar — muted for pending state */}
-        <div
-          className="w-1 shrink-0 self-stretch"
-          style={{ background: accentColor, minHeight: '56px' }}
-        />
-
         {/* Main content */}
         <Link href={`/grants/${grant.id}`} className="flex-1 min-w-0 px-5 py-4">
           {/* Top row */}
-          <div className="flex items-center gap-2 mb-1.5 flex-wrap">
+          <div className="flex items-center gap-2 mb-2 flex-wrap">
             <span
               className="text-[10px] font-medium px-1.5 py-0.5 rounded-[var(--radius-xs)]"
               style={{ background: 'var(--surface-sunken)', color: 'var(--ink-muted)', border: '1px solid var(--rule-subtle)' }}
@@ -74,30 +73,27 @@ export default function PendingCard({ grant, onStageChange, onDelete }: Props) {
               </span>
             )}
             {amountLabel && (
-              <span className="mono-data text-[11px] font-medium" style={{ color: 'var(--accent-warm)' }}>
+              <span className="text-xs font-semibold" style={{ color: 'var(--accent-primary)' }}>
                 {amountLabel}
               </span>
             )}
           </div>
 
           {/* Title */}
-          <h3
-            className="text-sm font-medium leading-snug"
-            style={{ color: 'var(--ink-secondary)' }}
-          >
+          <h3 className="text-sm font-semibold leading-snug" style={{ color: 'var(--ink-primary)' }}>
             {grant.title}
           </h3>
 
           {/* Meta */}
           {grant.funder && (
-            <p className="mono-data text-[11px] mt-1 truncate" style={{ color: 'var(--ink-muted)' }}>
+            <p className="text-xs mt-1.5 truncate" style={{ color: 'var(--ink-muted)' }}>
               {grant.funder}
             </p>
           )}
 
           {/* Submitted date */}
           {submittedDate && (
-            <p className="mono-data text-[11px] mt-1.5" style={{ color: 'var(--ink-faint)' }}>
+            <p className="text-xs mt-1.5" style={{ color: 'var(--ink-faint)' }}>
               Submitted {submittedDate}
             </p>
           )}

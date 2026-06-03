@@ -31,7 +31,7 @@ function TaskProgress({ tasks }: { tasks?: { status: string }[] }) {
           className="h-full transition-all"
           style={{
             width: `${pct}%`,
-            background: pct === 100 ? 'var(--accent-cool)' : 'var(--accent-cool)',
+            background: 'var(--accent-primary)',
             borderRadius: 'var(--radius-xs)',
           }}
         />
@@ -143,8 +143,8 @@ export default function ActiveGrantCard({ grant, onStageChange, onDelete, onDead
                 disabled={savingDeadline}
                 className="px-4 py-1.5 text-sm font-medium transition-colors disabled:opacity-50"
                 style={{
-                  background: 'var(--accent-cool)',
-                  color: 'var(--ink-inverse)',
+                  background: 'var(--accent-primary)',
+                  color: '#fff',
                   borderRadius: 'var(--radius-sm)',
                 }}
               >
@@ -156,21 +156,20 @@ export default function ActiveGrantCard({ grant, onStageChange, onDelete, onDead
       )}
 
       <div
-        className="group flex items-stretch transition-colors duration-100"
-        style={{ borderBottom: '1px solid var(--rule-subtle)' }}
-        onMouseEnter={e => (e.currentTarget.style.background = 'var(--selection-bg)')}
-        onMouseLeave={e => (e.currentTarget.style.background = 'transparent')}
+        className="group flex items-stretch rounded-xl overflow-hidden transition-all duration-150"
+        style={{
+          background: 'var(--surface-base)',
+          border: '1px solid var(--rule-subtle)',
+          borderLeft: `4px solid ${accentColor}`,
+          boxShadow: '0 1px 3px rgba(0,0,0,0.06)',
+        }}
+        onMouseEnter={e => (e.currentTarget.style.boxShadow = '0 4px 14px rgba(0,0,0,0.10)')}
+        onMouseLeave={e => (e.currentTarget.style.boxShadow = '0 1px 3px rgba(0,0,0,0.06)')}
       >
-        {/* Left accent bar — institutional green for active grants */}
-        <div
-          className="w-1 shrink-0 self-stretch"
-          style={{ background: accentColor, minHeight: '60px' }}
-        />
-
         {/* Main content */}
         <Link href={`/grants/${grant.id}/workspace`} className="flex-1 min-w-0 px-5 py-4">
           {/* Top row */}
-          <div className="flex items-center gap-2 mb-1.5">
+          <div className="flex items-center gap-2 mb-2">
             <span
               className="text-[10px] font-medium px-1.5 py-0.5 rounded-[var(--radius-xs)]"
               style={{ background: 'var(--state-success-bg)', color: 'var(--state-success)' }}
@@ -178,44 +177,41 @@ export default function ActiveGrantCard({ grant, onStageChange, onDelete, onDead
               Active
             </span>
             {awardAmt && (
-              <span className="mono-data text-[11px] font-medium" style={{ color: 'var(--accent-warm)' }}>
+              <span className="text-xs font-semibold" style={{ color: 'var(--accent-primary)' }}>
                 {awardAmt}
               </span>
             )}
           </div>
 
           {/* Title */}
-          <h3
-            className="text-sm font-medium leading-snug"
-            style={{ color: 'var(--ink-primary)' }}
-          >
+          <h3 className="text-sm font-semibold leading-snug" style={{ color: 'var(--ink-primary)' }}>
             {grant.title}
           </h3>
 
           {/* Meta */}
           {meta.length > 0 && (
-            <p className="mono-data text-[11px] mt-1 truncate" style={{ color: 'var(--ink-muted)' }}>
+            <p className="text-xs mt-1.5 truncate" style={{ color: 'var(--ink-muted)' }}>
               {meta.join('  ·  ')}
             </p>
           )}
 
           {/* Progress + dates */}
-          <div className="mt-2 flex items-center gap-4 flex-wrap">
+          <div className="mt-2.5 flex items-center gap-4 flex-wrap">
             <TaskProgress tasks={grant.tasks} />
             {awardedDate && (
-              <span className="mono-data text-[11px]" style={{ color: 'var(--ink-faint)' }}>
+              <span className="text-xs" style={{ color: 'var(--ink-faint)' }}>
                 Awarded {awardedDate}
               </span>
             )}
             {grant.external_deadline ? (
               <span
-                className="mono-data text-[11px] px-1.5 py-0.5 rounded-[var(--radius-xs)]"
-                style={{ background: 'var(--state-success-bg)', color: 'var(--state-success)' }}
+                className="text-xs px-1.5 py-0.5 rounded-[var(--radius-xs)]"
+                style={{ background: 'var(--state-info-bg)', color: 'var(--state-info)' }}
               >
                 Ends {formatDate(grant.external_deadline)}
               </span>
             ) : (
-              <span className="text-[11px] italic" style={{ color: 'var(--ink-faint)' }}>
+              <span className="text-xs italic" style={{ color: 'var(--ink-faint)' }}>
                 No end date
               </span>
             )}

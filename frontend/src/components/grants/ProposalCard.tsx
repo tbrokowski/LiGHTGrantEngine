@@ -81,7 +81,7 @@ function TaskProgress({ tasks }: { tasks?: { status: string }[] }) {
           className="h-full"
           style={{
             width: `${pct}%`,
-            background: pct === 100 ? 'var(--accent-cool)' : 'var(--accent-primary)',
+            background: 'var(--accent-primary)',
             borderRadius: 'var(--radius-xs)',
           }}
         />
@@ -117,8 +117,7 @@ export default function ProposalCard({ grant, onStageChange, onDelete }: Props) 
   const amountLabel = formatAmount(grant.requested_amount, grant.currency);
   const themes = (grant.themes ?? []).slice(0, 2);
 
-  // Color accent — use grant color if set, else the institutional navy
-  const accentColor = grant.color ?? 'var(--rule-subtle)';
+  const accentColor = grant.color ?? 'var(--accent-primary)';
 
   return (
     <>
@@ -132,21 +131,20 @@ export default function ProposalCard({ grant, onStageChange, onDelete }: Props) 
         />
       )}
       <div
-        className="group flex items-stretch transition-colors duration-100"
-        style={{ borderBottom: '1px solid var(--rule-subtle)' }}
-        onMouseEnter={e => (e.currentTarget.style.background = 'var(--selection-bg)')}
-        onMouseLeave={e => (e.currentTarget.style.background = 'transparent')}
+        className="group flex items-stretch rounded-xl overflow-hidden transition-all duration-150"
+        style={{
+          background: 'var(--surface-base)',
+          border: '1px solid var(--rule-subtle)',
+          borderLeft: `4px solid ${accentColor}`,
+          boxShadow: '0 1px 3px rgba(0,0,0,0.06)',
+        }}
+        onMouseEnter={e => (e.currentTarget.style.boxShadow = '0 4px 14px rgba(0,0,0,0.10)')}
+        onMouseLeave={e => (e.currentTarget.style.boxShadow = '0 1px 3px rgba(0,0,0,0.06)')}
       >
-        {/* Left color accent bar */}
-        <div
-          className="w-1 shrink-0 self-stretch"
-          style={{ background: accentColor, minHeight: '60px' }}
-        />
-
         {/* Main content */}
         <Link href={`/grants/${grant.id}`} className="flex-1 min-w-0 px-5 py-4">
-          {/* Top row: priority + meta chips */}
-          <div className="flex items-center gap-2 mb-1.5 flex-wrap">
+          {/* Top row: priority + chips */}
+          <div className="flex items-center gap-2 mb-2 flex-wrap">
             <PriorityTag grantId={grant.id} priority={priority} onUpdate={setPriority} />
             {isPersonal && (
               <span
@@ -159,29 +157,26 @@ export default function ProposalCard({ grant, onStageChange, onDelete }: Props) 
           </div>
 
           {/* Title */}
-          <h3
-            className="text-sm font-medium leading-snug transition-colors duration-100"
-            style={{ color: 'var(--ink-primary)' }}
-          >
+          <h3 className="text-sm font-semibold leading-snug" style={{ color: 'var(--ink-primary)' }}>
             {grant.title}
           </h3>
 
           {/* Meta row */}
-          <div className="mt-1 flex items-center gap-3 flex-wrap">
+          <div className="mt-1.5 flex items-center gap-3 flex-wrap">
             {meta.length > 0 && (
-              <p className="mono-data text-[11px] truncate" style={{ color: 'var(--ink-muted)' }}>
+              <p className="text-xs truncate" style={{ color: 'var(--ink-muted)' }}>
                 {meta.join('  ·  ')}
               </p>
             )}
             {amountLabel && (
-              <span className="mono-data text-[11px] font-medium" style={{ color: 'var(--accent-warm)' }}>
+              <span className="text-xs font-semibold" style={{ color: 'var(--accent-primary)' }}>
                 {amountLabel}
               </span>
             )}
           </div>
 
           {/* Bottom row: deadline + tasks + themes */}
-          <div className="mt-2 flex items-center gap-4 flex-wrap">
+          <div className="mt-2.5 flex items-center gap-4 flex-wrap">
             <DeadlineChip dateStr={grant.external_deadline} />
             <TaskProgress tasks={grant.tasks} />
             {themes.map(theme => (
@@ -202,7 +197,7 @@ export default function ProposalCard({ grant, onStageChange, onDelete }: Props) 
             <button
               type="button"
               onClick={() => setMenuOpen(v => !v)}
-              className="w-6 h-6 flex items-center justify-center rounded-[var(--radius-xs)] transition-colors"
+              className="w-6 h-6 flex items-center justify-center rounded-[var(--radius-sm)] transition-colors"
               style={{ color: 'var(--ink-faint)' }}
               onMouseEnter={e => { e.currentTarget.style.color = 'var(--ink-muted)'; e.currentTarget.style.background = 'var(--surface-sunken)'; }}
               onMouseLeave={e => { e.currentTarget.style.color = 'var(--ink-faint)'; e.currentTarget.style.background = 'transparent'; }}
@@ -248,18 +243,16 @@ export default function ProposalCard({ grant, onStageChange, onDelete }: Props) 
 
           <Link
             href={`/grants/${grant.id}?tab=editor`}
-            className="text-xs font-medium px-2.5 py-1 transition-colors"
+            className="text-xs font-semibold px-3 py-1.5 transition-all"
             style={{
               borderRadius: 'var(--radius-sm)',
-              background: 'var(--accent-secondary)',
-              color: 'var(--accent-primary)',
-              border: '1px solid var(--accent-primary)',
-              opacity: 0.8,
+              background: 'var(--accent-primary)',
+              color: '#fff',
             }}
-            onMouseEnter={e => { (e.currentTarget as HTMLElement).style.opacity = '1'; }}
-            onMouseLeave={e => { (e.currentTarget as HTMLElement).style.opacity = '0.8'; }}
+            onMouseEnter={e => { (e.currentTarget as HTMLElement).style.background = '#152d5a'; }}
+            onMouseLeave={e => { (e.currentTarget as HTMLElement).style.background = 'var(--accent-primary)'; }}
           >
-            Write
+            Write →
           </Link>
         </div>
       </div>

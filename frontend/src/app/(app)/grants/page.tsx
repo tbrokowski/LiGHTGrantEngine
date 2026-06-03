@@ -451,10 +451,7 @@ export default function GrantsPage() {
       <div className="flex-1 overflow-y-auto">
         {/* Section label */}
         {!loading && tabGrants.length > 0 && (
-          <div
-            className="px-7 py-2 flex items-center justify-between"
-            style={{ borderBottom: '1px solid var(--rule-subtle)', background: 'var(--surface-sunken)' }}
-          >
+          <div className="px-5 pt-5 pb-1">
             <span className="ledger-label">
               {currentTab.label} · {tabGrants.length} {tabGrants.length === 1 ? 'grant' : 'grants'}
               {search && ` matching "${search}"`}
@@ -462,7 +459,7 @@ export default function GrantsPage() {
           </div>
         )}
 
-        <div style={{ background: 'var(--surface-raised)' }}>
+        <div className="p-5 flex flex-col gap-3">
           {loading ? (
             <><SkeletonRow /><SkeletonRow /><SkeletonRow /></>
           ) : tabGrants.length === 0 ? (
