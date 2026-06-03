@@ -1,7 +1,7 @@
 'use client';
 
 import { useEffect, useState, useCallback } from 'react';
-import { organizations, users, sources } from '@/lib/api';
+import { organizations, users, sources, admin } from '@/lib/api';
 
 interface OrgSource {
   id: string;
@@ -104,6 +104,8 @@ export function GrantFiltersPanel({ institutionId, isOrgAdmin }: GrantFiltersPan
   // Data management (admin-only)
   const [refreshing, setRefreshing] = useState(false);
   const [ranking, setRanking] = useState(false);
+  const [discovering, setDiscovering] = useState(false);
+  const [backfilling, setBackfilling] = useState(false);
   const [scanBanner, setScanBanner] = useState('');
   const [scanLogs, setScanLogs] = useState<ScanRun[]>([]);
   const [showScanLogs, setShowScanLogs] = useState(false);
@@ -396,8 +398,8 @@ export function GrantFiltersPanel({ institutionId, isOrgAdmin }: GrantFiltersPan
             </div>
           )}
 
-          <div className="flex flex-col sm:flex-row gap-3">
-            <div className="flex-1 border border-gray-100 rounded-lg p-4 bg-gray-50">
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+            <div className="border border-gray-100 rounded-lg p-4 bg-gray-50">
               <p className="text-xs font-semibold text-gray-700 mb-1">Refresh Sources</p>
               <p className="text-xs text-gray-400 mb-3">Re-scan all active grant sources and pull in new opportunities.</p>
               <button
@@ -412,7 +414,7 @@ export function GrantFiltersPanel({ institutionId, isOrgAdmin }: GrantFiltersPan
               </button>
             </div>
 
-            <div className="flex-1 border border-gray-100 rounded-lg p-4 bg-gray-50">
+            <div className="border border-gray-100 rounded-lg p-4 bg-gray-50">
               <p className="text-xs font-semibold text-gray-700 mb-1">Custom Rank</p>
               <p className="text-xs text-gray-400 mb-3">
                 Use AI to score all opportunities against your org profile and keywords — more precise than keyword matching alone. Results shown as High / Medium / Low fit.
@@ -426,6 +428,64 @@ export function GrantFiltersPanel({ institutionId, isOrgAdmin }: GrantFiltersPan
                   <path strokeLinecap="round" strokeLinejoin="round" d="M9.663 17h4.673M12 3v1m6.364 1.636l-.707.707M21 12h-1M4 12H3m3.343-5.657l-.707-.707m2.828 9.9a5 5 0 117.072 0l-.347.347a2 2 0 01-1.414.586H9.88a2 2 0 01-1.414-.586l-.347-.347z" />
                 </svg>
                 {ranking ? 'Queuing…' : 'Custom Rank'}
+              </button>
+            </div>
+
+            <div className="border border-gray-100 rounded-lg p-4 bg-gray-50">
+              <p className="text-xs font-semibold text-gray-700 mb-1">Run Discovery</p>
+              <p className="text-xs text-gray-400 mb-3">
+                Use Exa.ai neural search to find new funding portals not yet in the database. High-confidence finds are added automatically; others go to review.
+              </p>
+              <button
+                onClick={async () => {
+                  setDiscovering(true);
+                  try {
+                    await admin.discoverSources();
+                    setScanBanner('Discovery task queued — new portals will appear in Data Sources within a few minutes.');
+                    setTimeout(() => setScanBanner(''), 10000);
+                  } catch {
+                    setScanBanner('Failed to queue discovery task. Admin access required.');
+                    setTimeout(() => setScanBanner(''), 5000);
+                  } finally {
+                    setDiscovering(false);
+                  }
+                }}
+                disabled={discovering}
+                className="flex items-center gap-1.5 text-xs px-3 py-1.5 bg-emerald-600 text-white rounded-md hover:bg-emerald-700 disabled:opacity-50 transition-colors"
+              >
+                <svg className={`w-3 h-3 ${discovering ? 'animate-spin' : ''}`} fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+                  <path strokeLinecap="round" strokeLinejoin="round" d="M21 21l-4.35-4.35M17 11A6 6 0 115 11a6 6 0 0112 0z" />
+                </svg>
+                {discovering ? 'Queuing…' : 'Run Discovery'}
+              </button>
+            </div>
+
+            <div className="border border-gray-100 rounded-lg p-4 bg-gray-50">
+              <p className="text-xs font-semibold text-gray-700 mb-1">Backfill Types</p>
+              <p className="text-xs text-gray-400 mb-3">
+                Use AI to classify the opportunity type (grant, fellowship, residency, prize, etc.) for all existing opportunities that are missing a type label.
+              </p>
+              <button
+                onClick={async () => {
+                  setBackfilling(true);
+                  try {
+                    await admin.backfillOpportunityTypes();
+                    setScanBanner('Type backfill queued — opportunity type badges will populate within a few minutes.');
+                    setTimeout(() => setScanBanner(''), 10000);
+                  } catch {
+                    setScanBanner('Failed to queue backfill task. Admin access required.');
+                    setTimeout(() => setScanBanner(''), 5000);
+                  } finally {
+                    setBackfilling(false);
+                  }
+                }}
+                disabled={backfilling}
+                className="flex items-center gap-1.5 text-xs px-3 py-1.5 bg-violet-500 text-white rounded-md hover:bg-violet-600 disabled:opacity-50 transition-colors"
+              >
+                <svg className={`w-3 h-3 ${backfilling ? 'animate-spin' : ''}`} fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+                  <path strokeLinecap="round" strokeLinejoin="round" d="M7 7h.01M7 3h5c.512 0 1.024.195 1.414.586l7 7a2 2 0 010 2.828l-7 7a2 2 0 01-2.828 0l-7-7A2 2 0 013 12V7a2 2 0 012-2z" />
+                </svg>
+                {backfilling ? 'Queuing…' : 'Backfill Types'}
               </button>
             </div>
           </div>

@@ -466,23 +466,30 @@
     {
       "name": "Rockefeller Foundation",
       "category": "Major Private Foundation",
-      "url": "https://www.rockefellerfoundation.org/grants/",
+      "url": "https://www.rockefellerfoundation.org/grants/search/?post_type=grant&grant_active_status&keyword&filter_grant_commitments%5B0%5D=794&filter_grant_commitments%5B1%5D=790&filter_grant_commitments%5B2%5D=791&filter_grant_commitments%5B3%5D=792&filter_grant_commitments%5B4%5D=793&filter_grant_commitments%5B5%5D=795&filter_grant_commitments%5B6%5D=796&submit=Submit",
       "source_type": "ai_scraper",
       "api_endpoint": null,
       "scraper_config": {
         "use_playwright": true,
-        "crawl_depth": 1
+        "crawl_depth": 1,
+        "paginate": true,
+        "max_pages": 10,
+        "link_filter": "rockefellerfoundation\\.org/grant/[^/]+"
       },
       "refresh_frequency": "weekly",
       "is_high_priority": false,
-      "logo_url": null,
+      "logo_url": "https://www.google.com/s2/favicons?domain=rockefellerfoundation.org&sz=64",
       "status": "active",
       "relevant_themes": [
         "health",
+        "food systems",
+        "climate",
+        "energy",
+        "economic opportunity",
         "AI",
         "digital"
       ],
-      "notes": "No API; scraping required. Accessible via Candid & ProPublica"
+      "notes": "Active grants search page. Pagination via WordPress paged=N or /page/N/. link_filter restricts crawl to individual grant detail pages (/grant/<slug>/)."
     },
     {
       "name": "Bloomberg Philanthropies",

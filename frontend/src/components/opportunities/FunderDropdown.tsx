@@ -21,8 +21,8 @@ export default function FunderDropdown({ value, onChange, options, placeholder =
   const inputRef = useRef<HTMLInputElement>(null);
 
   const filtered = query
-    ? options.filter(o => o.name.toLowerCase().includes(query.toLowerCase())).slice(0, 40)
-    : options.slice(0, 40);
+    ? options.filter(o => o.name.toLowerCase().includes(query.toLowerCase()))
+    : options.slice(0, 200);
 
   useEffect(() => {
     function onClickOutside(e: MouseEvent) {

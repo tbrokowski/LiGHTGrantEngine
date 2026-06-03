@@ -113,30 +113,57 @@ async def _llm_extract_section_links(
         return []
 
 
-def _detect_next_page(soup, base_url: str) -> str | None:
+def _detect_next_page(soup, current_url: str) -> str | None:
     """Return the URL of the next page if pagination is detected, else None."""
-    from urllib.parse import urljoin
+    from urllib.parse import urljoin, urlparse, parse_qs, urlencode, urlunparse
+    import re as _re
 
-    # rel="next" link tag
+    # rel="next" link tag (most reliable)
     next_tag = soup.find("link", rel=lambda v: v and "next" in v)
     if next_tag and next_tag.get("href"):
-        return urljoin(base_url, next_tag["href"])
+        return urljoin(current_url, next_tag["href"])
 
-    # Anchor with aria-label="Next" or text "Next"
+    # Anchor with aria-label="Next" or next-like text/rel
+    next_texts = {"next", "next page", "›", "»", "next »", "→"}
     for a in soup.find_all("a", href=True):
-        label = (a.get("aria-label") or "").lower()
+        label = (a.get("aria-label") or "").lower().strip()
+        rel = " ".join(a.get("rel") or []).lower()
         text = a.get_text(strip=True).lower()
-        if label in ("next", "next page") or text in ("next", "next page", "›", "»"):
-            return urljoin(base_url, a["href"])
+        if label in next_texts or rel == "next" or text in next_texts:
+            href = a["href"]
+            if href and not href.startswith(("#", "javascript:", "mailto:")):
+                return urljoin(current_url, href)
 
-    # ?page=N pattern — look for highest page number anchor beyond current
-    import re as _re
-    page_anchors = []
+    # Collect all page-number anchors — supports ?page=N, ?paged=N, /page/N/
+    page_anchors: list[tuple[int, str]] = []
     for a in soup.find_all("a", href=True):
-        m = _re.search(r"[?&]page=(\d+)", a["href"])
+        href = a["href"]
+        # ?page=N or ?paged=N (WordPress query style)
+        m = _re.search(r"[?&](page|paged)=(\d+)", href)
         if m:
-            page_anchors.append((int(m.group(1)), urljoin(base_url, a["href"])))
+            page_anchors.append((int(m.group(2)), urljoin(current_url, href)))
+            continue
+        # /page/N/ (WordPress pretty-URL style)
+        m = _re.search(r"/page/(\d+)/?", href)
+        if m:
+            page_anchors.append((int(m.group(1)), urljoin(current_url, href)))
+
     if page_anchors:
+        # Determine current page number from current_url
+        cur = 1
+        m = _re.search(r"[?&](page|paged)=(\d+)", current_url)
+        if m:
+            cur = int(m.group(2))
+        else:
+            m = _re.search(r"/page/(\d+)/?", current_url)
+            if m:
+                cur = int(m.group(1))
+        # Return the anchor with the smallest page number > current
+        candidates = [(n, u) for n, u in page_anchors if n > cur]
+        if candidates:
+            candidates.sort(key=lambda x: x[0])
+            return candidates[0][1]
+        # Fallback: if no current page detected, return the highest-numbered page
         page_anchors.sort(key=lambda x: x[0])
         return page_anchors[-1][1]
 
@@ -307,20 +334,20 @@ class AIScraper(BaseScraper):
             from bs4 import BeautifulSoup
             import httpx as _httpx
             visited_pages = {self.source.url}
-            current_html_text = page_text
-            current_links = page_links
+            current_url = self.source.url
             for _ in range(max_pages - 1):
                 try:
-                    # Re-fetch raw HTML for next-page detection
+                    # Fetch the current page's raw HTML to detect next-page link
                     resp = _httpx.get(
-                        self.source.url, timeout=30, follow_redirects=True,
+                        current_url, timeout=30, follow_redirects=True,
                         headers={"User-Agent": "LiGHT Grant System/1.0"},
                     )
                     soup = BeautifulSoup(resp.text, "lxml")
-                    next_url = _detect_next_page(soup, self.source.url)
+                    next_url = _detect_next_page(soup, current_url)
                     if not next_url or next_url in visited_pages:
                         break
                     visited_pages.add(next_url)
+                    current_url = next_url
                     next_text, next_links = _fetch_page_text(next_url, use_playwright)
                     all_page_texts.append((next_text, next_links))
                 except Exception:

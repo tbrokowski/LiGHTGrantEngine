@@ -81,6 +81,24 @@ async def resync_feeds(
     return result
 
 
+@router.post("/trigger/discover-sources")
+async def trigger_discover_sources(current_user: User = Depends(get_current_user)):
+    """Queue a discover_new_sources Celery task."""
+    _require_admin(current_user)
+    from app.workers.celery_app import celery_app
+    task = celery_app.send_task("app.workers.discovery_tasks.discover_new_sources")
+    return {"message": "Source discovery task queued", "task_id": task.id}
+
+
+@router.post("/trigger/backfill-opportunity-types")
+async def trigger_backfill_types(current_user: User = Depends(get_current_user)):
+    """Queue the opportunity_type backfill task for opportunities missing a type."""
+    _require_admin(current_user)
+    from app.workers.celery_app import celery_app
+    task = celery_app.send_task("app.workers.discovery_tasks.backfill_opportunity_types")
+    return {"message": "Type backfill task queued", "task_id": task.id}
+
+
 @router.post("/deduplicate-opportunities")
 async def run_dedup(current_user: User = Depends(get_current_user)):
     """Run a synchronous dedup scan across all opportunities.
