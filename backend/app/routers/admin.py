@@ -15,7 +15,7 @@ def _require_admin(current_user: User):
         raise HTTPException(403, "Admin access required")
 
 def _require_admin_or_org_admin(current_user: User):
-    """Allow platform admins or institution admins (grant_lead + institution_role=admin)."""
+    """Allow platform admins or institution admins (institution_role=admin)."""
     if current_user.role == "admin":
         return
     if current_user.institution_role == "admin":

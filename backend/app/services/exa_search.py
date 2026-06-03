@@ -50,11 +50,14 @@ def _normalise(results: list[Any]) -> list[dict]:
     """
     out = []
     for r in results:
-        highlights = getattr(r, "highlights", None) or []
-        if isinstance(highlights, list):
+        raw_highlights = getattr(r, "highlights", None)
+        highlights = raw_highlights if isinstance(raw_highlights, list) else []
+        text = getattr(r, "text", None) or ""
+
+        if any(highlights):
             content = " … ".join(h for h in highlights[:2] if h)
         else:
-            content = getattr(r, "text", None) or ""
+            content = text
         out.append({
             "title": getattr(r, "title", "") or "",
             "url": getattr(r, "url", "") or "",
