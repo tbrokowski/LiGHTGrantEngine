@@ -6,6 +6,8 @@ Mirrors the interface of web_search.py: returns a list of result dicts with
 
 Falls back gracefully when EXA_API_KEY is not set or exa-py is not installed.
 Uses a simple 24hr in-process cache (keyed on query + num_results).
+
+API reference: https://docs.exa.ai/reference/search-api-guide-for-coding-agents
 """
 from __future__ import annotations
 
@@ -39,14 +41,27 @@ def _cache_set(key: str, data: list[dict]) -> None:
 
 
 def _normalise(results: list[Any]) -> list[dict]:
+    """Convert exa-py result objects to plain dicts.
+
+    With contents={"highlights": True}, each result has:
+      r.highlights  → list[str] of query-relevant excerpts  (may be None)
+      r.text        → full page text  (None unless explicitly requested)
+    We join the first two highlights as the content snippet.
+    """
     out = []
     for r in results:
+        raw_highlights = getattr(r, "highlights", None)
+        highlights = raw_highlights if isinstance(raw_highlights, list) else []
+        text = getattr(r, "text", None) or ""
+
+        if any(highlights):
+            content = " … ".join(h for h in highlights[:2] if h)
+        else:
+            content = text
         out.append({
             "title": getattr(r, "title", "") or "",
             "url": getattr(r, "url", "") or "",
-            "content": (getattr(r, "text", None) or getattr(r, "highlights", None) or [""])[0]
-            if isinstance(getattr(r, "highlights", None), list)
-            else (getattr(r, "text", None) or ""),
+            "content": content,
             "score": getattr(r, "score", 0.0) or 0.0,
         })
     return out
@@ -55,18 +70,24 @@ def _normalise(results: list[Any]) -> list[dict]:
 async def exa_search(
     query: str,
     num_results: int = 10,
-    use_autoprompt: bool = True,
+    search_type: str = "auto",
     include_domains: list[str] | None = None,
     exclude_domains: list[str] | None = None,
     start_published_date: str | None = None,
 ) -> list[dict[str, Any]]:
-    """Neural search via Exa.ai. Returns up to num_results result dicts."""
+    """Neural search via Exa.ai.
+
+    Uses type="auto" (balanced relevance/speed) and highlights content mode
+    (token-efficient excerpts, recommended for agent workflows).
+
+    Returns up to num_results result dicts with {title, url, content, score}.
+    """
     settings = get_settings()
     api_key = settings.exa_api_key
     if not api_key:
         return []
 
-    cache_key = _key("search", query, str(num_results))
+    cache_key = _key("search", query, str(num_results), search_type)
     cached = _cache_get(cache_key)
     if cached is not None:
         return cached
@@ -76,9 +97,11 @@ async def exa_search(
 
         client = Exa(api_key=api_key)
         kwargs: dict[str, Any] = {
+            "type": search_type,
             "num_results": num_results,
-            "use_autoprompt": use_autoprompt,
-            "text": {"max_characters": 800},
+            # highlights=True: token-efficient query-relevant excerpts,
+            # recommended over full text for LLM agent workflows.
+            "contents": {"highlights": True},
         }
         if include_domains:
             kwargs["include_domains"] = include_domains
@@ -87,7 +110,7 @@ async def exa_search(
         if start_published_date:
             kwargs["start_published_date"] = start_published_date
 
-        response = client.search_and_contents(query, **kwargs)
+        response = client.search(query, **kwargs)
         results = _normalise(response.results)
         _cache_set(cache_key, results)
         return results
@@ -103,7 +126,10 @@ async def exa_find_similar(
     num_results: int = 10,
     exclude_source_domain: bool = True,
 ) -> list[dict[str, Any]]:
-    """Find pages similar to a known funding portal — good for peer discovery."""
+    """Find pages similar to a known funding portal — good for peer discovery.
+
+    Uses highlights content mode for token efficiency.
+    """
     settings = get_settings()
     api_key = settings.exa_api_key
     if not api_key:
@@ -118,11 +144,49 @@ async def exa_find_similar(
         from exa_py import Exa  # type: ignore
 
         client = Exa(api_key=api_key)
-        response = client.find_similar_and_contents(
+        response = client.find_similar(
             url,
             num_results=num_results,
             exclude_source_domain=exclude_source_domain,
-            text={"max_characters": 800},
+            contents={"highlights": True},
+        )
+        results = _normalise(response.results)
+        _cache_set(cache_key, results)
+        return results
+
+    except ImportError:
+        return []
+    except Exception:
+        return []
+
+
+async def exa_get_contents(
+    urls: list[str],
+    max_characters: int = 3000,
+) -> list[dict[str, Any]]:
+    """Fetch clean parsed content for a list of known URLs.
+
+    Use this when you already have URLs and need their full text
+    (e.g. after a search identified candidates worth reading in depth).
+    Uses text mode with a character cap to control token cost.
+    """
+    settings = get_settings()
+    api_key = settings.exa_api_key
+    if not api_key or not urls:
+        return []
+
+    cache_key = _key("contents", *sorted(urls), str(max_characters))
+    cached = _cache_get(cache_key)
+    if cached is not None:
+        return cached
+
+    try:
+        from exa_py import Exa  # type: ignore
+
+        client = Exa(api_key=api_key)
+        response = client.get_contents(
+            urls,
+            text={"max_characters": max_characters},
         )
         results = _normalise(response.results)
         _cache_set(cache_key, results)
