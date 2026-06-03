@@ -19,11 +19,13 @@ export default function OpportunityRow({
   ...handlers
 }: OpportunityRowProps) {
   const unread = !opp.is_read;
+  const shortlisted = opp.is_personal_shortlisted || opp.is_on_org_shortlist;
+  const prominent = unread || shortlisted;
 
   return (
     <tr className={`group transition-colors border-b border-gray-100 ${
       index % 2 === 0 ? 'bg-white' : 'bg-gray-50/50'
-    } hover:bg-blue-50/30 ${unread ? '' : 'opacity-75'}`}>
+    } hover:bg-blue-50/30 ${prominent ? '' : 'opacity-75'}`}>
       <td className="px-5 py-3.5">
         <Link href={`/opportunities/${opp.id}`} className="block">
           <div className="flex items-start gap-2">
@@ -32,7 +34,7 @@ export default function OpportunityRow({
             )}
             <div className="min-w-0">
               <span className={`text-sm block leading-snug ${
-                unread ? 'font-semibold text-gray-900' : 'font-medium text-gray-600'
+                prominent ? 'font-semibold text-gray-900' : 'font-medium text-gray-600'
               } hover:text-gray-600`}>
                 {opp.title}
               </span>
