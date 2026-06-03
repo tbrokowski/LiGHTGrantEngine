@@ -12,11 +12,24 @@ SYSTEM_PROMPT = """You are an expert research planning strategist for competitiv
 Given a grant proposal skeleton (sections with user-authored content) and call requirements, your job is to:
 1. Understand the overall narrative and key claims the applicant is making
 2. Identify what evidence, data, statistics, or citations each section needs to be compelling
-3. Generate targeted web search queries and academic search queries for each section's research needs
+3. Generate targeted web search queries, academic search queries, AND Exa neural search queries
 4. Produce a concise narrative context that the section drafters should maintain as a through-line
 
 You are NOT writing the proposal — you are planning what research support is needed to make
 the user's skeleton content as strong as possible when it gets expanded into a full draft.
+
+IMPORTANT — THREE DIFFERENT QUERY TYPES:
+- web_search_queries: short keyword phrases for traditional search engines (Tavily). Concise, fact-finding.
+- academic_search_queries: author/topic style for PubMed/OpenAlex. Suitable for peer-reviewed literature.
+- exa_search_queries: natural-language sentences for Exa neural search. These should read like text
+  you would find IN the target document — not a question about it. Best patterns:
+  * Evidence/stats: "studies show [specific intervention] improves [outcome] in [context]"
+  * Grey literature: "report on [domain] funding landscape priorities [region]"
+  * Precedent: "funded programme addressing [problem] using [approach] achieved [impact]"
+  * Policy: "national strategy for [topic] calls for investment in [area]"
+  Exa excels at finding policy briefs, grey literature, program evaluations, funder reports,
+  and recent evidence that keyword search misses. Phrase queries so they echo the document's
+  own language rather than a user's question.
 
 Respond with valid JSON."""
 
@@ -41,8 +54,12 @@ PROPOSAL SKELETON (user-authored — these are the sections and content the team
 For each section, identify:
 - What key claims or assertions need supporting evidence or citations
 - What statistics, data points, or recent findings would strengthen the argument
-- 2–3 targeted web search queries to find supporting evidence (specific enough to return useful results)
+- 2–3 targeted web search queries (keyword-style, for Tavily)
 - 1–2 academic search queries for peer-reviewed support (PubMed/OpenAlex style)
+- 2–3 Exa neural search queries — natural-language sentences that echo document language:
+    * ONE evidence query (phrase as a claim a paper/report would make)
+    * ONE grey-literature/policy query (phrase as a policy report sentence)
+    * ONE precedent query (phrase as a project description of a similar funded programme)
 - Any compliance gaps relative to call requirements that the drafter should address
 - If a call strategy is provided, note which CRITICAL_THEMES or MUST_DEMONSTRATE items this section should address
 
@@ -63,8 +80,13 @@ Return JSON with this structure:
       "section_name": "...",
       "key_claims_to_support": ["...", "..."],
       "statistics_needed": ["...", "..."],
-      "web_search_queries": ["query 1", "query 2"],
-      "academic_search_queries": ["query 1"],
+      "web_search_queries": ["keyword query 1", "keyword query 2"],
+      "academic_search_queries": ["pubmed/openalex style query"],
+      "exa_search_queries": [
+        "natural language evidence sentence matching what a study would say",
+        "policy report sentence on funding priorities for this domain",
+        "description of a funded programme addressing this problem"
+      ],
       "compliance_notes": "...",
       "strategy_themes_to_address": ["..."],
       "priority": "high" | "medium" | "low"
@@ -198,6 +220,12 @@ async def plan_draft_research(
             brief = brief_by_name[name]
             if not brief.get("key_claims_to_support") and sk_claims:
                 brief["key_claims_to_support"] = sk_claims
+            # Seed fallback Exa queries when planning agent didn't produce them
+            if not brief.get("exa_search_queries"):
+                brief["exa_search_queries"] = [
+                    f"evidence that {name.lower()} approaches improve outcomes in {grant_idea[:60]}",
+                    f"funded programme {name.lower()} {grant_idea[:50]} demonstrating impact",
+                ]
         else:
             result.setdefault("section_briefs", []).append({
                 "section_name": name,
@@ -205,6 +233,10 @@ async def plan_draft_research(
                 "statistics_needed": [],
                 "web_search_queries": [f"{name} {grant_idea[:80]} evidence statistics"],
                 "academic_search_queries": [f"{name} {grant_idea[:60]}"],
+                "exa_search_queries": [
+                    f"research shows {name.lower()} interventions significantly improve outcomes in {grant_idea[:60]}",
+                    f"funding programme supporting {name.lower()} approaches to address {grant_idea[:60]}",
+                ],
                 "compliance_notes": "",
                 "priority": "medium",
             })
