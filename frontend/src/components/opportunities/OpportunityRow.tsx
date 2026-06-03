@@ -31,17 +31,17 @@ export default function OpportunityRow({
               <span className="mt-1.5 w-2 h-2 rounded-full bg-blue-500 shrink-0" title="Unread" />
             )}
             <div className="min-w-0">
-              <span className={`text-sm truncate block max-w-xs leading-snug ${
+              <span className={`text-sm block leading-snug ${
                 unread ? 'font-semibold text-gray-900' : 'font-medium text-gray-600'
               } hover:text-gray-600`}>
                 {opp.title}
               </span>
               {opp.short_summary ? (
-                <span className="text-xs text-gray-400 mt-0.5 line-clamp-1 block max-w-sm">
+                <span className="text-xs text-gray-400 mt-0.5 line-clamp-2 block">
                   {opp.short_summary}
                 </span>
               ) : opp.thematic_areas?.length > 0 ? (
-                <span className="text-xs text-gray-400 mt-0.5 truncate block max-w-xs">
+                <span className="text-xs text-gray-400 mt-0.5 block">
                   {opp.thematic_areas.slice(0, 3).join(' · ')}
                 </span>
               ) : !opp.has_description ? (
