@@ -21,7 +21,7 @@ import type {
 } from '@/components/grant-workspace/types';
 
 const TasksHub = dynamic(() => import('@/components/grant-workspace/TasksHub'), {
-  loading: () => <div className="flex justify-center py-16 text-sm text-gray-400">Loading tasks…</div>,
+  loading: () => <div className="flex justify-center py-16 text-sm" style={{ color: 'var(--ink-faint)' }}>Loading tasks…</div>,
   ssr: false,
 });
 
@@ -185,13 +185,13 @@ function ActiveGrantWorkspaceContent() {
   }, [id, fetchGrant, fetchSummary]);
 
   if (loading) {
-    return <div className="flex justify-center py-24 text-sm text-gray-400">Loading…</div>;
+    return <div className="flex justify-center py-24 text-sm" style={{ color: 'var(--ink-faint)' }}>Loading…</div>;
   }
   if (!grant) {
     return (
-      <div className="px-8 py-16 text-center text-gray-500 text-sm">
+      <div className="px-8 py-16 text-center text-sm" style={{ color: 'var(--ink-muted)' }}>
         Grant not found.{' '}
-        <Link href="/grants" className="text-blue-600 hover:underline">Back to grants</Link>
+        <Link href="/grants" style={{ color: 'var(--accent-primary)' }} className="hover:underline">Back to grants</Link>
       </div>
     );
   }
@@ -205,20 +205,38 @@ function ActiveGrantWorkspaceContent() {
     <div className="flex flex-col min-h-0">
 
       {/* ── Header ── */}
-      <div className="px-6 pt-5 pb-0 border-b border-gray-200 bg-white shrink-0">
+      <div
+        className="px-6 pt-5 pb-0 shrink-0"
+        style={{ borderBottom: '1px solid var(--rule-subtle)', background: 'var(--surface-base)' }}
+      >
         <div className="max-w-7xl mx-auto">
 
           {/* Breadcrumb + links */}
           <div className="flex items-center justify-between mb-3">
-            <div className="flex items-center gap-2 text-sm text-gray-400">
-              <Link href="/grants" className="hover:text-gray-700 transition-colors">Grants</Link>
-              <span className="text-gray-300">/</span>
-              <span className="text-gray-600 truncate max-w-xs">{grant.title}</span>
+            <div className="flex items-center gap-2 text-sm" style={{ color: 'var(--ink-faint)' }}>
+              <Link
+                href="/grants"
+                className="transition-colors"
+                style={{ color: 'var(--ink-faint)' }}
+                onMouseEnter={e => (e.currentTarget.style.color = 'var(--ink-secondary)')}
+                onMouseLeave={e => (e.currentTarget.style.color = 'var(--ink-faint)')}
+              >
+                Grants
+              </Link>
+              <span style={{ color: 'var(--rule-strong)' }}>/</span>
+              <span className="truncate max-w-xs" style={{ color: 'var(--ink-muted)' }}>{grant.title}</span>
             </div>
             <div className="flex items-center gap-3 shrink-0">
               {grant.drive_folder_url && (
-                <a href={grant.drive_folder_url} target="_blank" rel="noopener noreferrer"
-                  className="text-xs text-gray-500 hover:text-emerald-600 flex items-center gap-1 transition-colors">
+                <a
+                  href={grant.drive_folder_url}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="text-xs flex items-center gap-1 transition-colors"
+                  style={{ color: 'var(--ink-muted)' }}
+                  onMouseEnter={e => (e.currentTarget.style.color = 'var(--accent-cool)')}
+                  onMouseLeave={e => (e.currentTarget.style.color = 'var(--ink-muted)')}
+                >
                   <svg className="w-3.5 h-3.5" fill="none" viewBox="0 0 16 16" stroke="currentColor" strokeWidth={1.5}>
                     <path strokeLinecap="round" strokeLinejoin="round" d="M2 4a1 1 0 011-1h4l2 2h4a1 1 0 011 1v6a1 1 0 01-1 1H3a1 1 0 01-1-1V4z" />
                   </svg>
@@ -226,8 +244,15 @@ function ActiveGrantWorkspaceContent() {
                 </a>
               )}
               {grant.submission_portal_url && (
-                <a href={grant.submission_portal_url} target="_blank" rel="noopener noreferrer"
-                  className="text-xs text-gray-500 hover:text-emerald-600 transition-colors">
+                <a
+                  href={grant.submission_portal_url}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="text-xs transition-colors"
+                  style={{ color: 'var(--ink-muted)' }}
+                  onMouseEnter={e => (e.currentTarget.style.color = 'var(--accent-cool)')}
+                  onMouseLeave={e => (e.currentTarget.style.color = 'var(--ink-muted)')}
+                >
                   Portal
                 </a>
               )}
@@ -243,40 +268,64 @@ function ActiveGrantWorkspaceContent() {
                   type="button"
                   title="Grant color"
                   onClick={() => setShowColorPicker(v => !v)}
-                  className="w-4 h-4 rounded-full border-2 border-white shadow ring-1 ring-gray-200 hover:ring-emerald-400 transition-all mt-0.5"
-                  style={{ backgroundColor: grant.color ?? '#10b981' }}
+                  className="w-4 h-4 rounded-full transition-all mt-0.5"
+                  style={{
+                    backgroundColor: grant.color ?? 'var(--accent-cool)',
+                    outline: '2px solid var(--surface-base)',
+                    outlineOffset: '1px',
+                    boxShadow: '0 0 0 1px var(--rule-strong)',
+                  }}
                 />
                 {showColorPicker && (
-                  <div className="absolute left-0 top-7 z-30 bg-white border border-gray-200 rounded-xl shadow-lg p-3 w-max">
+                  <div
+                    className="absolute left-0 top-7 z-30 p-3 w-max"
+                    style={{
+                      background: 'var(--surface-panel)',
+                      border: '1px solid var(--rule-subtle)',
+                      borderRadius: 'var(--radius-lg)',
+                      boxShadow: 'var(--shadow-floating)',
+                    }}
+                  >
                     <GrantColorPicker value={grant.color} onChange={handleColorChange} label="" />
                   </div>
                 )}
               </div>
               <div className="min-w-0">
                 <div className="flex items-center gap-2 mb-1">
-                  <span className="text-xs font-semibold text-emerald-700 bg-emerald-100 border border-emerald-200 px-2 py-0.5 rounded-full">
+                  <span
+                    className="text-[10px] font-medium px-1.5 py-0.5 rounded-[var(--radius-xs)]"
+                    style={{ background: 'var(--state-success-bg)', color: 'var(--state-success)' }}
+                  >
                     Active
                   </span>
                   {awardDisplay && (
-                    <span className="text-xs font-bold text-emerald-700">{awardDisplay}</span>
+                    <span className="mono-data text-[11px] font-medium" style={{ color: 'var(--accent-warm)' }}>
+                      {awardDisplay}
+                    </span>
                   )}
                   {awardedDate && (
-                    <span className="text-xs text-gray-400">awarded {awardedDate}</span>
+                    <span className="mono-data text-[11px]" style={{ color: 'var(--ink-faint)' }}>
+                      awarded {awardedDate}
+                    </span>
                   )}
                 </div>
-                <h1 className="text-lg font-semibold text-gray-900 leading-tight truncate">{grant.title}</h1>
+                <h1 className="text-base font-semibold leading-tight truncate" style={{ color: 'var(--ink-primary)' }}>
+                  {grant.title}
+                </h1>
                 <div className="flex items-center gap-2 flex-wrap mt-1">
-                  {grant.funder && <span className="text-sm text-gray-500">{grant.funder}</span>}
+                  {grant.funder && (
+                    <span className="mono-data text-[11px]" style={{ color: 'var(--ink-muted)' }}>{grant.funder}</span>
+                  )}
                   {grant.program && (
                     <>
-                      <span className="text-gray-300 text-sm">·</span>
-                      <span className="text-sm text-gray-400">{grant.program}</span>
+                      <span className="text-[11px]" style={{ color: 'var(--rule-strong)' }}>·</span>
+                      <span className="mono-data text-[11px]" style={{ color: 'var(--ink-faint)' }}>{grant.program}</span>
                     </>
                   )}
                   {grant.pi_name && (
                     <>
-                      <span className="text-gray-300 text-sm">·</span>
-                      <span className="text-sm text-gray-400">PI: {grant.pi_name}</span>
+                      <span className="text-[11px]" style={{ color: 'var(--rule-strong)' }}>·</span>
+                      <span className="mono-data text-[11px]" style={{ color: 'var(--ink-faint)' }}>PI: {grant.pi_name}</span>
                     </>
                   )}
                 </div>
@@ -295,20 +344,28 @@ function ActiveGrantWorkspaceContent() {
 
         {/* Tab nav */}
         <div className="max-w-7xl mx-auto overflow-x-auto">
-          <div className="flex border-b-0 min-w-max">
-            {TABS.map(tab => (
-              <button
-                key={tab.id}
-                onClick={() => handleTabChange(tab.id)}
-                className={`whitespace-nowrap px-5 py-3 text-sm font-medium border-b-2 transition-colors ${
-                  activeTab === tab.id
-                    ? 'border-emerald-600 text-emerald-700'
-                    : 'border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300'
-                }`}
-              >
-                {tab.label}
-              </button>
-            ))}
+          <div className="flex min-w-max">
+            {TABS.map(tab => {
+              const isActive = activeTab === tab.id;
+              return (
+                <button
+                  key={tab.id}
+                  onClick={() => handleTabChange(tab.id)}
+                  className="relative whitespace-nowrap px-5 py-3 text-sm font-medium transition-colors"
+                  style={{ color: isActive ? 'var(--ink-primary)' : 'var(--ink-muted)' }}
+                  onMouseEnter={e => { if (!isActive) e.currentTarget.style.color = 'var(--ink-secondary)'; }}
+                  onMouseLeave={e => { if (!isActive) e.currentTarget.style.color = 'var(--ink-muted)'; }}
+                >
+                  {tab.label}
+                  {isActive && (
+                    <span
+                      className="absolute bottom-0 left-0 right-0 h-0.5"
+                      style={{ background: 'var(--accent-primary)' }}
+                    />
+                  )}
+                </button>
+              );
+            })}
           </div>
         </div>
       </div>
@@ -338,7 +395,7 @@ function ActiveGrantWorkspaceContent() {
             />
           )}
           {activeTab === 'overview' && !summary && (
-            <div className="flex justify-center py-16 text-sm text-gray-400">Loading overview…</div>
+            <div className="flex justify-center py-16 text-sm" style={{ color: 'var(--ink-faint)' }}>Loading overview…</div>
           )}
 
           {/* Tasks */}
@@ -389,7 +446,7 @@ function ActiveGrantWorkspaceContent() {
 
 export default function ActiveGrantWorkspacePage() {
   return (
-    <Suspense fallback={<div className="flex justify-center py-24 text-sm text-gray-400">Loading…</div>}>
+    <Suspense fallback={<div className="flex justify-center py-24 text-sm" style={{ color: 'var(--ink-faint)' }}>Loading…</div>}>
       <ActiveGrantWorkspaceContent />
     </Suspense>
   );

@@ -2,7 +2,6 @@
 import { useEffect, useState, useCallback } from 'react';
 import Link from 'next/link';
 import { usePathname } from 'next/navigation';
-import { ChevronRight } from 'lucide-react';
 import { analytics, opportunities, grants, tasks as tasksApi } from '@/lib/api';
 import { onOpportunitiesChanged } from '@/lib/opportunities-events';
 import { useAuth } from '@/lib/auth';
@@ -29,33 +28,26 @@ interface QueueItem {
   is_read?: boolean;
 }
 
-const PRIORITY_COLOR: Record<string, string> = {
-  high: 'bg-emerald-100 text-emerald-700',
-  medium: 'bg-amber-100 text-amber-600',
-  low: 'bg-gray-100 text-gray-400',
-  // legacy fallbacks
-  high_priority: 'bg-emerald-100 text-emerald-700',
-  worth_reviewing: 'bg-amber-100 text-amber-600',
-  watchlist: 'bg-sky-100 text-sky-600',
-  low_fit: 'bg-gray-100 text-gray-400',
+const PRIORITY_COLOR: Record<string, { bg: string; color: string }> = {
+  high:          { bg: 'var(--state-success-bg)',  color: 'var(--state-success)' },
+  medium:        { bg: 'var(--state-warning-bg)',  color: 'var(--state-warning)' },
+  low:           { bg: 'var(--surface-sunken)',    color: 'var(--ink-muted)' },
+  high_priority: { bg: 'var(--state-success-bg)',  color: 'var(--state-success)' },
+  worth_reviewing:{ bg: 'var(--state-warning-bg)', color: 'var(--state-warning)' },
+  watchlist:     { bg: 'var(--state-info-bg)',     color: 'var(--state-info)' },
+  low_fit:       { bg: 'var(--surface-sunken)',    color: 'var(--ink-muted)' },
 };
 
 const PRIORITY_LABEL: Record<string, string> = {
-  high: 'High Fit',
-  medium: 'Medium Fit',
-  low: 'Low Fit',
-  // legacy fallbacks
-  high_priority: 'High Fit',
-  worth_reviewing: 'Medium Fit',
-  watchlist: 'Low Fit',
-  low_fit: 'Low Fit',
+  high: 'High Fit', medium: 'Medium Fit', low: 'Low Fit',
+  high_priority: 'High Fit', worth_reviewing: 'Medium Fit',
+  watchlist: 'Low Fit', low_fit: 'Low Fit',
 };
 
 function formatDate(d?: string | null) {
   if (!d) return null;
-  try {
-    return new Date(d).toLocaleDateString('en-US', { month: 'short', day: 'numeric' });
-  } catch { return d; }
+  try { return new Date(d).toLocaleDateString('en-US', { month: 'short', day: 'numeric' }); }
+  catch { return d; }
 }
 
 function greeting(name?: string | null) {
@@ -69,12 +61,49 @@ function todayLabel() {
   return new Date().toLocaleDateString('en-US', { weekday: 'long', month: 'long', day: 'numeric' });
 }
 
-
 function loadStarredIds(): Set<string> {
   try {
     const raw = localStorage.getItem('dashboard_starred');
     return raw ? new Set(JSON.parse(raw)) : new Set();
   } catch { return new Set(); }
+}
+
+interface StatMetric {
+  label: string;
+  value: number;
+  href: string;
+  alert?: boolean;
+  warn?: boolean;
+}
+
+function MetricCell({ metric, loading }: { metric?: StatMetric; loading: boolean }) {
+  if (loading) {
+    return (
+      <div className="flex-1 px-5 py-3">
+        <div className="h-2 w-16 rounded animate-pulse mb-2" style={{ background: 'var(--rule-subtle)' }} />
+        <div className="h-5 w-8 rounded animate-pulse" style={{ background: 'var(--rule-subtle)' }} />
+      </div>
+    );
+  }
+  if (!metric) return null;
+
+  const valueColor = metric.alert
+    ? 'var(--state-danger)'
+    : metric.warn
+    ? 'var(--state-warning)'
+    : 'var(--ink-primary)';
+
+  return (
+    <Link href={metric.href} className="flex-1 px-5 py-3 group transition-colors hover:bg-[var(--selection-bg)]">
+      <p className="ledger-label mb-1.5">{metric.label}</p>
+      <p
+        className="mono-data font-semibold"
+        style={{ fontSize: '18px', color: valueColor }}
+      >
+        {metric.value}
+      </p>
+    </Link>
+  );
 }
 
 export default function DashboardPage() {
@@ -105,175 +134,206 @@ export default function DashboardPage() {
 
   useEffect(() => {
     setStarredIds(loadStarredIds());
-
-    // Re-sync stars when localStorage changes (e.g. user stars something in FocusPanel)
     const onStorage = () => setStarredIds(loadStarredIds());
     window.addEventListener('storage', onStorage);
     return () => window.removeEventListener('storage', onStorage);
   }, []);
 
-  useEffect(() => {
-    loadDashboard();
-  }, [loadDashboard, pathname]);
+  useEffect(() => { loadDashboard(); }, [loadDashboard, pathname]);
 
   useEffect(() => {
-    const onVisible = () => {
-      if (document.visibilityState === 'visible') loadDashboard();
-    };
+    const onVisible = () => { if (document.visibilityState === 'visible') loadDashboard(); };
     document.addEventListener('visibilitychange', onVisible);
     const unsub = onOpportunitiesChanged(loadDashboard);
-    return () => {
-      document.removeEventListener('visibilitychange', onVisible);
-      unsub();
-    };
+    return () => { document.removeEventListener('visibilitychange', onVisible); unsub(); };
   }, [loadDashboard]);
 
-  const statChips = stats ? [
+  const metrics: StatMetric[] = stats ? [
     {
       label: 'Pending Review',
       value: stats.high_fit_pending_review,
       href: '/opportunities',
-      tint: stats.high_fit_pending_review > 0 ? 'text-blue-600 bg-blue-50 border-blue-100' : 'text-gray-500 bg-gray-50 border-gray-100',
+      warn: stats.high_fit_pending_review > 0,
     },
     {
       label: 'Active Grants',
       value: stats.active_grants,
       href: '/grants',
-      tint: 'text-gray-700 bg-gray-50 border-gray-100',
     },
     {
-      label: 'Due in 30d',
+      label: 'Due in 30 Days',
       value: stats.grants_due_within_30_days,
       href: '/grants',
-      tint: stats.grants_due_within_30_days > 0 ? 'text-amber-600 bg-amber-50 border-amber-100' : 'text-gray-500 bg-gray-50 border-gray-100',
+      warn: stats.grants_due_within_30_days > 0,
     },
     {
       label: 'Overdue Tasks',
       value: stats.overdue_tasks,
       href: '/grants',
-      tint: stats.overdue_tasks > 0 ? 'text-red-600 bg-red-50 border-red-100' : 'text-gray-500 bg-gray-50 border-gray-100',
+      alert: stats.overdue_tasks > 0,
     },
   ] : [];
 
   return (
-    <div className="px-6 py-8 max-w-7xl mx-auto space-y-6">
+    <div
+      className="flex flex-col h-full"
+      style={{ background: 'var(--surface-base)' }}
+    >
 
-      {/* ── Header ── */}
-      <div className="flex flex-col sm:flex-row sm:items-end sm:justify-between gap-4">
-        <div>
-          <p className="text-[10px] font-semibold text-gray-400 uppercase tracking-[0.15em] mb-1">{todayLabel()}</p>
-          <h1 className="text-2xl font-semibold text-gray-900 tracking-tight">{greeting(userName)}</h1>
-          <p className="text-sm text-gray-400 mt-0.5">Here&apos;s what needs your attention today.</p>
-        </div>
+      {/* ── Page header ─────────────────────────────────────── */}
+      <div
+        className="px-7 pt-6 pb-5"
+        style={{ borderBottom: '1px solid var(--rule-subtle)' }}
+      >
+        <p className="ledger-label mb-1">{todayLabel()}</p>
+        <h1
+          className="font-semibold tracking-tight"
+          style={{ fontSize: '20px', color: 'var(--ink-primary)' }}
+        >
+          {greeting(userName)}
+        </h1>
+      </div>
 
-        {/* Stat chips */}
-        <div className="flex flex-wrap gap-2 sm:justify-end">
-          {loading
-            ? [1,2,3,4].map(i => <div key={i} className="h-7 w-28 rounded-full bg-gray-100 animate-pulse" />)
-            : statChips.map(chip => (
-              <Link key={chip.label} href={chip.href}>
-                <span className={`inline-flex items-center gap-1.5 px-3 py-1 rounded-full border text-xs font-semibold transition-all hover:shadow-sm ${chip.tint}`}>
-                  <span className="tabular-nums">{chip.value}</span>
-                  <span className="font-normal opacity-70">{chip.label}</span>
-                </span>
-              </Link>
+      {/* ── Metric strip ────────────────────────────────────── */}
+      <div
+        className="flex shrink-0"
+        style={{
+          borderBottom: '1px solid var(--rule-subtle)',
+          background: 'var(--surface-raised)',
+        }}
+      >
+        {loading
+          ? [0,1,2,3].map((i, idx) => (
+              <div key={i} className="flex-1" style={idx > 0 ? { borderLeft: '1px solid var(--rule-subtle)' } : undefined}>
+                <MetricCell loading={true} />
+              </div>
             ))
-          }
-        </div>
+          : metrics.map((m, idx) => (
+              <div key={m.label} className="flex-1" style={idx > 0 ? { borderLeft: '1px solid var(--rule-subtle)' } : undefined}>
+                <MetricCell metric={m} loading={false} />
+              </div>
+            ))
+        }
       </div>
 
-      {/* Quick Actions */}
-      <div className="flex flex-wrap gap-2">
-        <Link href="/opportunities">
-          <button className="flex items-center gap-1.5 text-xs font-medium text-gray-600 bg-white border border-gray-200 rounded-lg px-3 py-1.5 hover:border-gray-300 hover:text-gray-900 transition-all shadow-sm">
-            Browse Opportunities
-            <ChevronRight className="w-3 h-3 opacity-50" />
-          </button>
-        </Link>
-        <Link href="/grants">
-          <button className="flex items-center gap-1.5 text-xs font-medium text-gray-600 bg-white border border-gray-200 rounded-lg px-3 py-1.5 hover:border-gray-300 hover:text-gray-900 transition-all shadow-sm">
-            View Pipeline
-            <ChevronRight className="w-3 h-3 opacity-50" />
-          </button>
-        </Link>
-        <Link href="/partners">
-          <button className="flex items-center gap-1.5 text-xs font-medium text-gray-600 bg-white border border-gray-200 rounded-lg px-3 py-1.5 hover:border-gray-300 hover:text-gray-900 transition-all shadow-sm">
-            Partners
-            <ChevronRight className="w-3 h-3 opacity-50" />
-          </button>
-        </Link>
-      </div>
+      {/* ── Main content ────────────────────────────────────── */}
+      <div className="flex-1 overflow-y-auto">
+        <div className="grid grid-cols-1 xl:grid-cols-5 gap-0" style={{ minHeight: 0 }}>
 
-      {/* ── Focus + Scratchpad ── */}
-      <div className="grid grid-cols-1 lg:grid-cols-5 gap-5 items-stretch" style={{ minHeight: 280 }}>
-        <div className="lg:col-span-3">
-          <FocusPanel grants={grantList} tasks={taskList} loading={loading} currentUserId={user?.id ?? null} />
-        </div>
-        <div className="lg:col-span-2">
-          <Scratchpad />
-        </div>
-      </div>
+          {/* Focus + Scratchpad — left column */}
+          <div
+            className="xl:col-span-3 flex flex-col"
+            style={{ borderRight: '1px solid var(--rule-subtle)' }}
+          >
+            {/* Focus panel */}
+            <div className="flex-1 p-5">
+              <FocusPanel grants={grantList} tasks={taskList} loading={loading} currentUserId={user?.id ?? null} />
+            </div>
 
-      {/* ── Grant Timeline (Gantt) ── */}
-      <GrantTimeline grants={grantList} loading={loading} starredIds={starredIds} tasks={taskList} />
-
-      {/* ── Review Queue — New Opportunities This Week ── */}
-      <div className="bg-white border border-gray-100 rounded-2xl overflow-hidden">
-        <div className="px-5 py-4 flex items-center justify-between border-b border-gray-50">
-          <div className="flex items-center gap-2.5">
-            <h2 className="text-sm font-semibold text-gray-900">New Opportunities</h2>
-            {!loading && stats && stats.new_opportunities_this_week > 0 && (
-              <span className="inline-flex items-center gap-1 text-[10px] font-bold text-white bg-blue-500 px-2 py-0.5 rounded-full">
-                <span className="relative flex h-1.5 w-1.5">
-                  <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-white opacity-60" />
-                  <span className="relative inline-flex rounded-full h-1.5 w-1.5 bg-white" />
-                </span>
-                {stats.new_opportunities_this_week} this week
-              </span>
-            )}
+            {/* Scratchpad — below focus */}
+            <div
+              className="p-5"
+              style={{ borderTop: '1px solid var(--rule-subtle)' }}
+            >
+              <Scratchpad />
+            </div>
           </div>
-          <Link href="/opportunities" className="flex items-center gap-0.5 text-xs text-gray-400 hover:text-gray-600 transition-colors">
-            View all <ChevronRight className="w-3.5 h-3.5" />
-          </Link>
-        </div>
 
-        {loading ? (
-          <div className="px-5 py-10 text-center text-sm text-gray-300">Loading...</div>
-        ) : queue.length === 0 ? (
-          <div className="px-5 py-10 text-center">
-            <p className="text-sm text-gray-400">All caught up</p>
-            <p className="text-xs text-gray-300 mt-1">No new opportunities to review</p>
-          </div>
-        ) : (
-          <div className="divide-y divide-gray-50">
-            {queue.map(opp => (
-              <Link key={opp.id} href={`/opportunities/${opp.id}`}>
-                <div className="px-5 py-3 hover:bg-gray-50/70 transition-colors flex items-center justify-between gap-3">
-                  <div className="min-w-0 flex-1 flex items-start gap-2">
-                    {!opp.is_read && (
-                      <span className="mt-1.5 w-2 h-2 rounded-full bg-blue-500 shrink-0" />
-                    )}
-                    <div className="min-w-0">
-                      <p className={`text-sm truncate leading-snug ${
-                        !opp.is_read ? 'font-semibold text-gray-900' : 'font-medium text-gray-600'
-                      }`}>{opp.title}</p>
-                      <p className="text-xs text-gray-400 mt-0.5 truncate">
-                        {[opp.funder, opp.deadline ? formatDate(opp.deadline) : null].filter(Boolean).join(' · ')}
-                      </p>
-                    </div>
-                  </div>
-                  <div className="shrink-0 flex items-center gap-2.5">
-                    {opp.priority && (
-                      <span className={`text-xs px-1.5 py-0.5 rounded-full font-medium ${PRIORITY_COLOR[opp.priority] ?? 'bg-gray-100 text-gray-400'}`}>
-                        {PRIORITY_LABEL[opp.priority] ?? opp.priority}
-                      </span>
-                    )}
-                  </div>
-                </div>
+          {/* Review Queue — right column */}
+          <div className="xl:col-span-2 flex flex-col">
+            {/* Section header */}
+            <div
+              className="px-5 py-3 flex items-center justify-between shrink-0"
+              style={{ borderBottom: '1px solid var(--rule-subtle)' }}
+            >
+              <div className="flex items-center gap-2.5">
+                <span className="ledger-label">New Opportunities</span>
+                {!loading && stats && stats.new_opportunities_this_week > 0 && (
+                  <span
+                    className="mono-data text-[10px] font-semibold px-1.5 py-0.5 rounded-[var(--radius-xs)]"
+                    style={{ background: 'var(--state-info-bg)', color: 'var(--state-info)' }}
+                  >
+                    {stats.new_opportunities_this_week} this week
+                  </span>
+                )}
+              </div>
+              <Link
+                href="/opportunities"
+                className="text-xs transition-colors"
+                style={{ color: 'var(--ink-faint)' }}
+                onMouseEnter={e => (e.currentTarget.style.color = 'var(--ink-muted)')}
+                onMouseLeave={e => (e.currentTarget.style.color = 'var(--ink-faint)')}
+              >
+                View all →
               </Link>
-            ))}
+            </div>
+
+            {/* Queue list */}
+            <div className="flex-1 overflow-y-auto">
+              {loading ? (
+                <div className="px-5 py-8 text-center text-sm" style={{ color: 'var(--ink-faint)' }}>
+                  Loading…
+                </div>
+              ) : queue.length === 0 ? (
+                <div className="px-5 py-12 text-center">
+                  <p className="text-sm" style={{ color: 'var(--ink-muted)' }}>All caught up</p>
+                  <p className="text-xs mt-1" style={{ color: 'var(--ink-faint)' }}>No new opportunities to review</p>
+                </div>
+              ) : (
+                <div>
+                  {queue.map(opp => {
+                    const pc = opp.priority ? (PRIORITY_COLOR[opp.priority] ?? PRIORITY_COLOR.low) : null;
+                    return (
+                      <Link key={opp.id} href={`/opportunities/${opp.id}`}>
+                        <div className="ledger-row px-5 py-3 flex items-start justify-between gap-3">
+                          <div className="min-w-0 flex-1 flex items-start gap-2">
+                            {!opp.is_read && (
+                              <span
+                                className="mt-1.5 w-1.5 h-1.5 rounded-full shrink-0"
+                                style={{ background: 'var(--accent-primary)' }}
+                              />
+                            )}
+                            <div className="min-w-0">
+                              <p
+                                className="text-sm truncate leading-snug"
+                                style={{
+                                  fontWeight: opp.is_read ? 400 : 500,
+                                  color: opp.is_read ? 'var(--ink-muted)' : 'var(--ink-primary)',
+                                }}
+                              >
+                                {opp.title}
+                              </p>
+                              <p
+                                className="mono-data text-[11px] mt-0.5 truncate"
+                                style={{ color: 'var(--ink-faint)' }}
+                              >
+                                {[opp.funder, opp.deadline ? formatDate(opp.deadline) : null]
+                                  .filter(Boolean).join('  ·  ')}
+                              </p>
+                            </div>
+                          </div>
+                          {pc && opp.priority && (
+                            <span
+                              className="shrink-0 text-[10px] font-medium px-1.5 py-0.5 rounded-[var(--radius-xs)] mono-data"
+                              style={{ background: pc.bg, color: pc.color }}
+                            >
+                              {PRIORITY_LABEL[opp.priority] ?? opp.priority}
+                            </span>
+                          )}
+                        </div>
+                      </Link>
+                    );
+                  })}
+                </div>
+              )}
+            </div>
           </div>
-        )}
+        </div>
+
+        {/* ── Grant Timeline ───────────────────────────────── */}
+        <div style={{ borderTop: '1px solid var(--rule-subtle)' }} className="p-5">
+          <GrantTimeline grants={grantList} loading={loading} starredIds={starredIds} tasks={taskList} />
+        </div>
       </div>
 
     </div>

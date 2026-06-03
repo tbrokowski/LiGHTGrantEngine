@@ -42,15 +42,15 @@ const OUTCOMES = [
   { value: 'partially_funded', label: 'Partial' },
 ];
 
-const OUTCOME_STYLES: Record<string, string> = {
-  awarded: 'text-emerald-700 bg-emerald-50',
-  rejected: 'text-red-600 bg-red-50',
-  pending: 'text-amber-700 bg-amber-50',
-  withdrawn: 'text-gray-500 bg-gray-100',
-  deferred: 'text-gray-500 bg-gray-100',
-  not_submitted: 'text-gray-500 bg-gray-100',
-  resubmitted: 'text-blue-600 bg-blue-50',
-  partially_funded: 'text-teal-700 bg-teal-50',
+const OUTCOME_TOKENS: Record<string, { bg: string; color: string }> = {
+  awarded:          { bg: 'var(--state-success-bg)', color: 'var(--state-success)' },
+  rejected:         { bg: 'var(--state-danger-bg)',  color: 'var(--state-danger)' },
+  pending:          { bg: 'var(--state-warning-bg)', color: 'var(--state-warning)' },
+  withdrawn:        { bg: 'var(--surface-sunken)',   color: 'var(--ink-muted)' },
+  deferred:         { bg: 'var(--surface-sunken)',   color: 'var(--ink-muted)' },
+  not_submitted:    { bg: 'var(--surface-sunken)',   color: 'var(--ink-muted)' },
+  resubmitted:      { bg: 'var(--state-info-bg)',    color: 'var(--state-info)' },
+  partially_funded: { bg: 'var(--state-success-bg)', color: 'var(--accent-cool)' },
 };
 
 function formatAmount(amt: number | null, currency: string | null) {
@@ -89,15 +89,15 @@ function FileUploadButton({
   label: string;
   file: File | null;
   onPick: (f: File | null) => void;
-  inputRef: React.RefObject<HTMLInputElement | null>;
+  inputRef: React.RefObject<HTMLInputElement>;
   accept: string;
   hint: string;
   required?: boolean;
 }) {
   return (
     <div>
-      <label className="block text-xs font-medium text-gray-500 mb-1.5">
-        {label} {required && <span className="text-red-400">*</span>}
+      <label className="block text-xs font-medium mb-1.5" style={{ color: 'var(--ink-muted)' }}>
+        {label} {required && <span style={{ color: 'var(--state-danger)' }}>*</span>}
       </label>
       <input
         ref={inputRef}
@@ -109,15 +109,19 @@ function FileUploadButton({
       <button
         type="button"
         onClick={() => inputRef.current?.click()}
-        className="w-full border border-dashed border-gray-300 rounded-xl px-3 py-3 text-sm text-left hover:border-gray-400 hover:bg-gray-50 transition-colors"
+        className="w-full px-3 py-3 text-sm text-left transition-colors"
+        style={{
+          border: '1px dashed var(--rule-strong)',
+          borderRadius: 'var(--radius-sm)',
+          background: 'transparent',
+          color: file ? 'var(--ink-primary)' : 'var(--ink-faint)',
+        }}
+        onMouseEnter={e => (e.currentTarget.style.background = 'var(--surface-sunken)')}
+        onMouseLeave={e => (e.currentTarget.style.background = 'transparent')}
       >
-        {file ? (
-          <span className="text-gray-800">{file.name}</span>
-        ) : (
-          <span className="text-gray-400">Click to upload</span>
-        )}
+        {file ? file.name : 'Click to upload'}
       </button>
-      <p className="text-[10px] text-gray-400 mt-1">{hint}</p>
+      <p className="text-[10px] mt-1" style={{ color: 'var(--ink-faint)' }}>{hint}</p>
     </div>
   );
 }
@@ -205,21 +209,66 @@ function NewArchiveModal({ onClose, onCreated }: { onClose: () => void; onCreate
     }
   }
 
+  const inputStyle: React.CSSProperties = {
+    border: '1px solid var(--rule-subtle)',
+    borderRadius: 'var(--radius-sm)',
+    background: 'var(--surface-sunken)',
+    color: 'var(--ink-primary)',
+    outline: 'none',
+  };
+
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/30 backdrop-blur-sm">
-      <div className="bg-white rounded-2xl shadow-2xl w-full max-w-lg mx-4 overflow-hidden max-h-[90vh] flex flex-col">
-        <div className="px-6 py-5 border-b border-gray-100 flex items-center justify-between shrink-0">
-          <h2 className="text-base font-semibold text-gray-900">Add to Archive</h2>
-          <button onClick={onClose} className="text-gray-400 hover:text-gray-600 p-1 rounded-lg hover:bg-gray-100 transition-colors">
+    <div className="fixed inset-0 z-50 flex items-center justify-center" style={{ background: 'var(--surface-overlay)' }}>
+      <div
+        className="w-full max-w-lg mx-4 overflow-hidden max-h-[90vh] flex flex-col"
+        style={{
+          background: 'var(--surface-panel)',
+          borderRadius: 'var(--radius-lg)',
+          border: '1px solid var(--rule-subtle)',
+          boxShadow: 'var(--shadow-floating)',
+        }}
+      >
+        <div
+          className="px-6 py-5 flex items-center justify-between shrink-0"
+          style={{ borderBottom: '1px solid var(--rule-subtle)' }}
+        >
+          <h2 className="text-sm font-semibold" style={{ color: 'var(--ink-primary)' }}>Add to Archive</h2>
+          <button
+            onClick={onClose}
+            className="p-1 transition-colors"
+            style={{ color: 'var(--ink-faint)', borderRadius: 'var(--radius-sm)' }}
+            onMouseEnter={e => (e.currentTarget.style.color = 'var(--ink-muted)')}
+            onMouseLeave={e => (e.currentTarget.style.color = 'var(--ink-faint)')}
+          >
             <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
               <path strokeLinecap="round" strokeLinejoin="round" d="M6 18L18 6M6 6l12 12" />
             </svg>
           </button>
         </div>
         <form id="archive-form" onSubmit={handleSubmit} className="px-6 py-5 space-y-4 overflow-y-auto flex-1">
-          {error && <p className="text-sm text-red-600 bg-red-50 rounded-lg px-3 py-2">{error}</p>}
+          {error && (
+            <p
+              className="text-sm px-3 py-2"
+              style={{
+                color: 'var(--state-danger)',
+                background: 'var(--state-danger-bg)',
+                borderRadius: 'var(--radius-sm)',
+              }}
+            >
+              {error}
+            </p>
+          )}
           {saving && (
-            <div className="flex items-center gap-2.5 text-xs text-amber-700 bg-amber-50 border border-amber-100 rounded-lg px-3 py-2.5">
+            <div
+              className="flex items-center gap-2.5 text-xs px-3 py-2.5"
+              style={{
+                color: 'var(--state-warning)',
+                background: 'var(--state-warning-bg)',
+                border: '1px solid var(--state-warning)',
+                borderRadius: 'var(--radius-sm)',
+                opacity: 0.8,
+              }}
+            >
               <svg className="w-3.5 h-3.5 shrink-0 animate-spin" fill="none" viewBox="0 0 24 24">
                 <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
                 <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z" />
@@ -229,68 +278,88 @@ function NewArchiveModal({ onClose, onCreated }: { onClose: () => void; onCreate
           )}
 
           <div>
-            <label className="block text-xs font-medium text-gray-500 mb-1.5">Title <span className="text-red-400">*</span></label>
+            <label className="block text-xs font-medium mb-1.5" style={{ color: 'var(--ink-muted)' }}>
+              Title <span style={{ color: 'var(--state-danger)' }}>*</span>
+            </label>
             <input
               ref={firstRef}
               type="text"
               value={form.title}
               onChange={e => setField('title', e.target.value)}
               placeholder="Grant or proposal title"
-              className="w-full border border-gray-200 rounded-xl px-3 py-2 text-sm text-gray-900 focus:outline-none focus:ring-1 focus:ring-gray-400 placeholder-gray-300"
+              className="w-full px-3 py-2 text-sm"
+              style={inputStyle}
+              onFocus={e => (e.currentTarget.style.borderColor = 'var(--accent-primary)')}
+              onBlur={e => (e.currentTarget.style.borderColor = 'var(--rule-subtle)')}
             />
           </div>
 
           <div className="grid grid-cols-2 gap-3">
             <div>
-              <label className="block text-xs font-medium text-gray-500 mb-1.5">Funder</label>
+              <label className="block text-xs font-medium mb-1.5" style={{ color: 'var(--ink-muted)' }}>Funder</label>
               <input
                 type="text"
                 value={form.funder}
                 onChange={e => setField('funder', e.target.value)}
                 placeholder="Organization"
-                className="w-full border border-gray-200 rounded-xl px-3 py-2 text-sm text-gray-900 focus:outline-none focus:ring-1 focus:ring-gray-400 placeholder-gray-300"
+                className="w-full px-3 py-2 text-sm"
+                style={inputStyle}
+                onFocus={e => (e.currentTarget.style.borderColor = 'var(--accent-primary)')}
+                onBlur={e => (e.currentTarget.style.borderColor = 'var(--rule-subtle)')}
               />
             </div>
             <div>
-              <label className="block text-xs font-medium text-gray-500 mb-1.5">Lead PI</label>
+              <label className="block text-xs font-medium mb-1.5" style={{ color: 'var(--ink-muted)' }}>Lead PI</label>
               <input
                 type="text"
                 value={form.lead_pi}
                 onChange={e => setField('lead_pi', e.target.value)}
                 placeholder="PI name"
-                className="w-full border border-gray-200 rounded-xl px-3 py-2 text-sm text-gray-900 focus:outline-none focus:ring-1 focus:ring-gray-400 placeholder-gray-300"
+                className="w-full px-3 py-2 text-sm"
+                style={inputStyle}
+                onFocus={e => (e.currentTarget.style.borderColor = 'var(--accent-primary)')}
+                onBlur={e => (e.currentTarget.style.borderColor = 'var(--rule-subtle)')}
               />
             </div>
           </div>
 
           <div className="grid grid-cols-2 gap-3">
             <div>
-              <label className="block text-xs font-medium text-gray-500 mb-1.5">Call year</label>
+              <label className="block text-xs font-medium mb-1.5" style={{ color: 'var(--ink-muted)' }}>Call year</label>
               <input
                 type="number"
                 value={form.call_year}
                 onChange={e => setField('call_year', e.target.value)}
                 placeholder={String(new Date().getFullYear())}
-                className="w-full border border-gray-200 rounded-xl px-3 py-2 text-sm text-gray-900 focus:outline-none focus:ring-1 focus:ring-gray-400 placeholder-gray-300"
+                className="w-full px-3 py-2 text-sm"
+                style={inputStyle}
+                onFocus={e => (e.currentTarget.style.borderColor = 'var(--accent-primary)')}
+                onBlur={e => (e.currentTarget.style.borderColor = 'var(--rule-subtle)')}
               />
             </div>
             <div>
-              <label className="block text-xs font-medium text-gray-500 mb-1.5">Submission date</label>
+              <label className="block text-xs font-medium mb-1.5" style={{ color: 'var(--ink-muted)' }}>Submission date</label>
               <input
                 type="date"
                 value={form.submission_date}
                 onChange={e => setField('submission_date', e.target.value)}
-                className="w-full border border-gray-200 rounded-xl px-3 py-2 text-sm text-gray-700 focus:outline-none focus:ring-1 focus:ring-gray-400"
+                className="w-full px-3 py-2 text-sm"
+                style={inputStyle}
+                onFocus={e => (e.currentTarget.style.borderColor = 'var(--accent-primary)')}
+                onBlur={e => (e.currentTarget.style.borderColor = 'var(--rule-subtle)')}
               />
             </div>
           </div>
 
           <div>
-            <label className="block text-xs font-medium text-gray-500 mb-1.5">Outcome</label>
+            <label className="block text-xs font-medium mb-1.5" style={{ color: 'var(--ink-muted)' }}>Outcome</label>
             <select
               value={form.outcome}
               onChange={e => setField('outcome', e.target.value)}
-              className="w-full border border-gray-200 rounded-xl px-3 py-2 text-sm text-gray-700 focus:outline-none focus:ring-1 focus:ring-gray-400 bg-white"
+              className="w-full px-3 py-2 text-sm"
+              style={inputStyle}
+              onFocus={e => (e.currentTarget.style.borderColor = 'var(--accent-primary)')}
+              onBlur={e => (e.currentTarget.style.borderColor = 'var(--rule-subtle)')}
             >
               {OUTCOMES.filter(o => o.value).map(o => (
                 <option key={o.value} value={o.value}>{o.label}</option>
@@ -300,33 +369,42 @@ function NewArchiveModal({ onClose, onCreated }: { onClose: () => void; onCreate
 
           <div className="grid grid-cols-3 gap-3">
             <div>
-              <label className="block text-xs font-medium text-gray-500 mb-1.5">Currency</label>
+              <label className="block text-xs font-medium mb-1.5" style={{ color: 'var(--ink-muted)' }}>Currency</label>
               <input
                 type="text"
                 value={form.currency}
                 onChange={e => setField('currency', e.target.value)}
                 placeholder="USD"
-                className="w-full border border-gray-200 rounded-xl px-3 py-2 text-sm text-gray-900 focus:outline-none focus:ring-1 focus:ring-gray-400 placeholder-gray-300"
+                className="w-full px-3 py-2 text-sm"
+                style={inputStyle}
+                onFocus={e => (e.currentTarget.style.borderColor = 'var(--accent-primary)')}
+                onBlur={e => (e.currentTarget.style.borderColor = 'var(--rule-subtle)')}
               />
             </div>
             <div>
-              <label className="block text-xs font-medium text-gray-500 mb-1.5">Requested</label>
+              <label className="block text-xs font-medium mb-1.5" style={{ color: 'var(--ink-muted)' }}>Requested</label>
               <input
                 type="text"
                 value={form.requested_amount}
                 onChange={e => setField('requested_amount', e.target.value)}
                 placeholder="0"
-                className="w-full border border-gray-200 rounded-xl px-3 py-2 text-sm text-gray-900 focus:outline-none focus:ring-1 focus:ring-gray-400 placeholder-gray-300"
+                className="w-full px-3 py-2 text-sm"
+                style={inputStyle}
+                onFocus={e => (e.currentTarget.style.borderColor = 'var(--accent-primary)')}
+                onBlur={e => (e.currentTarget.style.borderColor = 'var(--rule-subtle)')}
               />
             </div>
             <div>
-              <label className="block text-xs font-medium text-gray-500 mb-1.5">Awarded</label>
+              <label className="block text-xs font-medium mb-1.5" style={{ color: 'var(--ink-muted)' }}>Awarded</label>
               <input
                 type="text"
                 value={form.awarded_amount}
                 onChange={e => setField('awarded_amount', e.target.value)}
                 placeholder="0"
-                className="w-full border border-gray-200 rounded-xl px-3 py-2 text-sm text-gray-900 focus:outline-none focus:ring-1 focus:ring-gray-400 placeholder-gray-300"
+                className="w-full px-3 py-2 text-sm"
+                style={inputStyle}
+                onFocus={e => (e.currentTarget.style.borderColor = 'var(--accent-primary)')}
+                onBlur={e => (e.currentTarget.style.borderColor = 'var(--rule-subtle)')}
               />
             </div>
           </div>
@@ -366,45 +444,51 @@ function NewArchiveModal({ onClose, onCreated }: { onClose: () => void; onCreate
           />
 
           <div className="flex flex-col gap-2">
-            <label className="flex items-center gap-2 text-xs text-gray-600 cursor-pointer">
+            <label className="flex items-center gap-2 text-xs cursor-pointer" style={{ color: 'var(--ink-secondary)' }}>
               <input
                 type="checkbox"
                 checked={form.ai_retrieval_allowed}
                 onChange={e => setField('ai_retrieval_allowed', e.target.checked)}
-                className="rounded border-gray-300"
+                className="rounded"
               />
               Allow AI retrieval from this proposal
             </label>
-            <label className="flex items-center gap-2 text-xs text-gray-600 cursor-pointer">
+            <label className="flex items-center gap-2 text-xs cursor-pointer" style={{ color: 'var(--ink-secondary)' }}>
               <input
                 type="checkbox"
                 checked={form.text_reuse_allowed}
                 onChange={e => setField('text_reuse_allowed', e.target.checked)}
-                className="rounded border-gray-300"
+                className="rounded"
               />
               Allow direct text reuse (otherwise paraphrase-only)
             </label>
           </div>
 
           <div>
-            <label className="block text-xs font-medium text-gray-500 mb-1.5">Lessons learned</label>
+            <label className="block text-xs font-medium mb-1.5" style={{ color: 'var(--ink-muted)' }}>Lessons learned</label>
             <textarea
               value={form.lessons_learned}
               onChange={e => setField('lessons_learned', e.target.value)}
               rows={2}
               placeholder="What worked, what didn't…"
-              className="w-full border border-gray-200 rounded-xl px-3 py-2 text-sm text-gray-900 focus:outline-none focus:ring-1 focus:ring-gray-400 placeholder-gray-300 resize-none"
+              className="w-full px-3 py-2 text-sm resize-none"
+              style={{ ...inputStyle, outline: 'none' }}
+              onFocus={e => (e.currentTarget.style.borderColor = 'var(--accent-primary)')}
+              onBlur={e => (e.currentTarget.style.borderColor = 'var(--rule-subtle)')}
             />
           </div>
 
           <div>
-            <label className="block text-xs font-medium text-gray-500 mb-1.5">Notes</label>
+            <label className="block text-xs font-medium mb-1.5" style={{ color: 'var(--ink-muted)' }}>Notes</label>
             <textarea
               value={form.notes}
               onChange={e => setField('notes', e.target.value)}
               rows={2}
               placeholder="Internal notes…"
-              className="w-full border border-gray-200 rounded-xl px-3 py-2 text-sm text-gray-900 focus:outline-none focus:ring-1 focus:ring-gray-400 placeholder-gray-300 resize-none"
+              className="w-full px-3 py-2 text-sm resize-none"
+              style={{ ...inputStyle, outline: 'none' }}
+              onFocus={e => (e.currentTarget.style.borderColor = 'var(--accent-primary)')}
+              onBlur={e => (e.currentTarget.style.borderColor = 'var(--rule-subtle)')}
             />
           </div>
         </form>
@@ -412,7 +496,14 @@ function NewArchiveModal({ onClose, onCreated }: { onClose: () => void; onCreate
           <button
             type="button"
             onClick={onClose}
-            className="flex-1 px-4 py-2 text-sm text-gray-600 border border-gray-200 rounded-xl hover:bg-gray-50 transition-colors"
+            className="flex-1 px-4 py-2 text-sm transition-colors"
+            style={{
+              color: 'var(--ink-muted)',
+              border: '1px solid var(--rule-subtle)',
+              borderRadius: 'var(--radius-sm)',
+            }}
+            onMouseEnter={e => (e.currentTarget.style.background = 'var(--surface-sunken)')}
+            onMouseLeave={e => (e.currentTarget.style.background = 'transparent')}
           >
             Cancel
           </button>
@@ -420,7 +511,12 @@ function NewArchiveModal({ onClose, onCreated }: { onClose: () => void; onCreate
             type="submit"
             form="archive-form"
             disabled={saving}
-            className="flex-1 px-4 py-2 text-sm font-medium text-white bg-gray-900 rounded-xl hover:bg-gray-700 disabled:opacity-50 transition-colors flex items-center justify-center gap-2"
+            className="flex-1 px-4 py-2 text-sm font-medium transition-colors disabled:opacity-50 flex items-center justify-center gap-2"
+            style={{
+              background: 'var(--accent-primary)',
+              color: 'var(--ink-inverse)',
+              borderRadius: 'var(--radius-sm)',
+            }}
           >
             {saving ? (
               <>
@@ -540,7 +636,7 @@ export default function ArchivePage() {
   }, {});
 
   return (
-    <div className={viewMode === 'graph' ? 'flex flex-col h-full' : 'px-8 py-8 max-w-6xl mx-auto'}>
+    <div className="flex flex-col h-full" style={{ background: 'var(--surface-base)' }}>
       {showModal && (
         <NewArchiveModal
           onClose={() => setShowModal(false)}
@@ -550,17 +646,32 @@ export default function ArchivePage() {
 
       {/* Success banner */}
       {successMessage && (
-        <div className={`flex items-center justify-between bg-emerald-50 border border-emerald-100 rounded-xl px-4 py-3 text-sm text-emerald-800 ${viewMode === 'graph' ? 'mx-6 mt-4' : 'mb-4'}`}>
+        <div
+          className="mx-6 mt-4 flex items-center justify-between px-4 py-3 text-sm shrink-0"
+          style={{
+            background: 'var(--state-success-bg)',
+            border: '1px solid var(--state-success)',
+            borderRadius: 'var(--radius-sm)',
+            color: 'var(--state-success)',
+          }}
+        >
           <span>{successMessage}</span>
-          <button onClick={() => setSuccessMessage('')} className="text-emerald-600 hover:text-emerald-800">×</button>
+          <button
+            onClick={() => setSuccessMessage('')}
+            style={{ color: 'var(--state-success)', opacity: 0.7 }}
+            onMouseEnter={e => (e.currentTarget.style.opacity = '1')}
+            onMouseLeave={e => (e.currentTarget.style.opacity = '0.7')}
+          >
+            ×
+          </button>
         </div>
       )}
 
       {/* Header */}
-      <div className={`flex items-start justify-between ${viewMode === 'graph' ? 'px-6 pt-6 pb-3 shrink-0' : 'mb-6'}`}>
+      <div className="px-7 pt-6 pb-3 flex items-center justify-between shrink-0">
         <div>
-          <h1 className="text-xl font-semibold text-gray-900 tracking-tight">Grant Archive</h1>
-          <p className="text-sm text-gray-400 mt-0.5">Institutional memory — all past submissions</p>
+          <h1 className="text-base font-semibold" style={{ color: 'var(--ink-primary)' }}>Grant Archive</h1>
+          <p className="text-xs mt-0.5" style={{ color: 'var(--ink-faint)' }}>Institutional memory — all past submissions</p>
         </div>
         <div className="flex items-center gap-2">
           {viewMode === 'list' && (
@@ -569,16 +680,30 @@ export default function ArchivePage() {
               placeholder="Search archive…"
               value={search}
               onChange={e => setSearch(e.target.value)}
-              className="border border-gray-200 rounded-lg px-3 py-1.5 text-sm w-52 focus:outline-none focus:ring-1 focus:ring-gray-400 bg-white"
+              className="px-3 py-1.5 text-sm w-52"
+              style={{
+                border: '1px solid var(--rule-subtle)',
+                borderRadius: 'var(--radius-sm)',
+                background: 'var(--surface-sunken)',
+                color: 'var(--ink-primary)',
+                outline: 'none',
+              }}
+              onFocus={e => (e.currentTarget.style.borderColor = 'var(--accent-primary)')}
+              onBlur={e => (e.currentTarget.style.borderColor = 'var(--rule-subtle)')}
             />
           )}
           <ViewToggle view={viewMode} onChange={setViewMode} />
           {canUpload && (
             <button
               onClick={() => setShowModal(true)}
-              className="flex items-center gap-1.5 px-4 py-2 text-sm font-medium text-white bg-gray-900 rounded-xl hover:bg-gray-700 transition-colors whitespace-nowrap"
+              className="flex items-center gap-1.5 px-3 py-1.5 text-sm font-medium transition-colors whitespace-nowrap"
+              style={{
+                background: 'var(--accent-primary)',
+                color: 'var(--ink-inverse)',
+                borderRadius: 'var(--radius-sm)',
+              }}
             >
-              <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2.5}>
+              <svg className="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2.5}>
                 <path strokeLinecap="round" strokeLinejoin="round" d="M12 4v16m8-8H4" />
               </svg>
               Add entry
@@ -591,7 +716,7 @@ export default function ArchivePage() {
       {viewMode === 'graph' && (
         <div className="flex flex-col flex-1 overflow-hidden">
           {/* Graph filter bar */}
-          <div className="px-6 pb-3 shrink-0 flex items-center gap-3 flex-wrap">
+          <div className="px-7 pb-3 shrink-0 flex items-center gap-3 flex-wrap">
             <ArchiveGraphFilters
               filters={graphFilters}
               onChange={handleGraphFiltersChange}
@@ -600,7 +725,7 @@ export default function ArchivePage() {
               themes={allThemes}
             />
             {graphLoading && (
-              <span className="text-xs text-gray-400 flex items-center gap-1.5">
+              <span className="text-xs flex items-center gap-1.5" style={{ color: 'var(--ink-faint)' }}>
                 <svg className="w-3 h-3 animate-spin" fill="none" viewBox="0 0 24 24">
                   <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
                   <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z" />
@@ -609,7 +734,7 @@ export default function ArchivePage() {
               </span>
             )}
           </div>
-          <div className="flex-1 overflow-hidden border-t border-gray-100">
+          <div className="flex-1 overflow-hidden" style={{ borderTop: '1px solid var(--rule-subtle)' }}>
             <ArchiveGraphView
               nodes={graphNodes}
               edges={graphEdges}
@@ -621,27 +746,33 @@ export default function ArchivePage() {
 
       {/* ── List view ────────────────────────────────────────────────────────── */}
       {viewMode === 'list' && (
-        <>
+        <div className="flex flex-col flex-1 overflow-hidden">
           {/* Outcome filter tabs */}
-          <div className="flex gap-0 mb-6 border-b border-gray-100 overflow-x-auto">
+          <div className="flex overflow-x-auto shrink-0" style={{ borderBottom: '1px solid var(--rule-subtle)' }}>
             {OUTCOMES.map(o => {
               const count = outcomeCounts[o.value] ?? 0;
               if (!o.value && !loading && entries.length === 0) return null;
+              const isActive = outcomeFilter === o.value;
               return (
                 <button
                   key={o.value}
                   onClick={() => setOutcomeFilter(o.value)}
-                  className={`flex items-center gap-1.5 px-4 py-2.5 text-sm font-medium border-b-2 -mb-px transition-colors whitespace-nowrap ${
-                    outcomeFilter === o.value
-                      ? 'border-gray-900 text-gray-900'
-                      : 'border-transparent text-gray-400 hover:text-gray-700'
-                  }`}
+                  className="relative flex items-center gap-1.5 px-4 py-2.5 text-sm font-medium transition-colors whitespace-nowrap"
+                  style={{ color: isActive ? 'var(--ink-primary)' : 'var(--ink-faint)' }}
+                  onMouseEnter={e => { if (!isActive) e.currentTarget.style.color = 'var(--ink-secondary)'; }}
+                  onMouseLeave={e => { if (!isActive) e.currentTarget.style.color = 'var(--ink-faint)'; }}
                 >
                   {o.label}
                   {count > 0 && (
-                    <span className={`text-xs tabular-nums ${outcomeFilter === o.value ? 'text-gray-600' : 'text-gray-300'}`}>
+                    <span className="mono-data text-[10px]" style={{ color: isActive ? 'var(--ink-muted)' : 'var(--ink-faint)' }}>
                       {count}
                     </span>
+                  )}
+                  {isActive && (
+                    <span
+                      className="absolute bottom-0 left-0 right-0 h-0.5"
+                      style={{ background: 'var(--accent-primary)' }}
+                    />
                   )}
                 </button>
               );
@@ -649,34 +780,39 @@ export default function ArchivePage() {
           </div>
 
           {/* Table */}
-          <div className="bg-white border border-gray-100 rounded-2xl shadow-sm overflow-hidden">
+          <div className="flex-1 overflow-y-auto">
             <table className="w-full text-sm">
-              <thead>
-                <tr className="border-b border-gray-50">
-                  <th className="text-left px-5 py-3 text-xs font-medium text-gray-400 uppercase tracking-wider">Title</th>
-                  <th className="text-left px-4 py-3 text-xs font-medium text-gray-400 uppercase tracking-wider hidden md:table-cell">Funder</th>
-                  <th className="text-left px-4 py-3 text-xs font-medium text-gray-400 uppercase tracking-wider hidden lg:table-cell">PI</th>
-                  <th className="text-left px-4 py-3 text-xs font-medium text-gray-400 uppercase tracking-wider hidden lg:table-cell">Year</th>
-                  <th className="text-right px-4 py-3 text-xs font-medium text-gray-400 uppercase tracking-wider hidden lg:table-cell">Amount</th>
-                  <th className="text-left px-4 py-3 text-xs font-medium text-gray-400 uppercase tracking-wider hidden md:table-cell">AI</th>
-                  <th className="text-left px-4 py-3 text-xs font-medium text-gray-400 uppercase tracking-wider">Outcome</th>
+              <thead style={{ position: 'sticky', top: 0, zIndex: 1 }}>
+                <tr style={{ borderBottom: '1px solid var(--rule-subtle)', background: 'var(--surface-sunken)' }}>
+                  <th className="text-left px-5 py-3 ledger-label">Title</th>
+                  <th className="text-left px-4 py-3 ledger-label hidden md:table-cell">Funder</th>
+                  <th className="text-left px-4 py-3 ledger-label hidden lg:table-cell">PI</th>
+                  <th className="text-left px-4 py-3 ledger-label hidden lg:table-cell">Year</th>
+                  <th className="text-right px-4 py-3 ledger-label hidden lg:table-cell">Amount</th>
+                  <th className="text-left px-4 py-3 ledger-label hidden md:table-cell">AI</th>
+                  <th className="text-left px-4 py-3 ledger-label">Outcome</th>
                 </tr>
               </thead>
-              <tbody className="divide-y divide-gray-50">
+              <tbody>
                 {loading ? (
                   <tr>
-                    <td colSpan={7} className="px-5 py-14 text-center text-sm text-gray-300">Loading…</td>
+                    <td colSpan={7} className="px-5 py-14 text-center text-sm" style={{ color: 'var(--ink-faint)' }}>
+                      Loading…
+                    </td>
                   </tr>
                 ) : filtered.length === 0 ? (
                   <tr>
                     <td colSpan={7} className="px-5 py-14 text-center">
-                      <p className="text-sm text-gray-400">
+                      <p className="text-sm" style={{ color: 'var(--ink-faint)' }}>
                         {search ? 'No matches found.' : 'Archive is empty.'}
                       </p>
                       {!search && (
                         <button
                           onClick={() => setShowModal(true)}
-                          className="text-xs text-gray-400 hover:text-gray-600 underline underline-offset-2 mt-1"
+                          className="text-xs underline underline-offset-2 mt-1"
+                          style={{ color: 'var(--ink-faint)' }}
+                          onMouseEnter={e => (e.currentTarget.style.color = 'var(--ink-secondary)')}
+                          onMouseLeave={e => (e.currentTarget.style.color = 'var(--ink-faint)')}
                         >
                           Add the first entry
                         </button>
@@ -685,55 +821,96 @@ export default function ArchivePage() {
                   </tr>
                 ) : (
                   filtered.map(entry => (
-                    <tr key={entry.id} className="hover:bg-gray-50/70 transition-colors">
+                    <tr
+                      key={entry.id}
+                      className="transition-colors"
+                      style={{ borderBottom: '1px solid var(--rule-subtle)' }}
+                      onMouseEnter={e => (e.currentTarget.style.background = 'var(--selection-bg)')}
+                      onMouseLeave={e => (e.currentTarget.style.background = 'transparent')}
+                    >
                       <td className="px-5 py-3.5">
-                        <Link href={`/archive/${entry.id}`} className="font-medium text-gray-900 hover:text-gray-600 block truncate max-w-xs">
+                        <Link
+                          href={`/archive/${entry.id}`}
+                          className="font-medium block truncate max-w-xs"
+                          style={{ color: 'var(--ink-primary)' }}
+                          onMouseEnter={e => (e.currentTarget.style.color = 'var(--ink-secondary)')}
+                          onMouseLeave={e => (e.currentTarget.style.color = 'var(--ink-primary)')}
+                        >
                           {entry.title}
                         </Link>
                         {entry.themes?.length > 0 && (
-                          <span className="text-xs text-gray-400 mt-0.5 truncate block max-w-xs">
-                            {entry.themes.slice(0, 3).join(' · ')}
+                          <span className="mono-data text-[11px] mt-0.5 truncate block max-w-xs" style={{ color: 'var(--ink-faint)' }}>
+                            {entry.themes.slice(0, 3).join('  ·  ')}
                           </span>
                         )}
                       </td>
-                      <td className="px-4 py-3.5 text-sm text-gray-500 hidden md:table-cell truncate max-w-[160px]">
+                      <td className="px-4 py-3.5 text-sm hidden md:table-cell truncate max-w-[160px]" style={{ color: 'var(--ink-muted)' }}>
                         {entry.funder ?? '—'}
                       </td>
-                      <td className="px-4 py-3.5 text-sm text-gray-500 hidden lg:table-cell">{entry.lead_pi ?? '—'}</td>
-                      <td className="px-4 py-3.5 text-sm text-gray-500 hidden lg:table-cell tabular-nums">{entry.call_year ?? '—'}</td>
-                      <td className="px-4 py-3.5 text-sm text-gray-500 text-right hidden lg:table-cell whitespace-nowrap">
-                        {formatAmount(entry.awarded_amount ?? entry.requested_amount, entry.currency) ?? '—'}
+                      <td className="px-4 py-3.5 text-sm hidden lg:table-cell" style={{ color: 'var(--ink-muted)' }}>
+                        {entry.lead_pi ?? '—'}
+                      </td>
+                      <td className="px-4 py-3.5 hidden lg:table-cell">
+                        <span className="mono-data text-[12px]" style={{ color: 'var(--ink-muted)' }}>
+                          {entry.call_year ?? '—'}
+                        </span>
+                      </td>
+                      <td className="px-4 py-3.5 text-right hidden lg:table-cell whitespace-nowrap">
+                        <span className="mono-data text-[12px]" style={{ color: 'var(--ink-muted)' }}>
+                          {formatAmount(entry.awarded_amount ?? entry.requested_amount, entry.currency) ?? '—'}
+                        </span>
                       </td>
                       <td className="px-4 py-3.5 hidden md:table-cell">
                         <div className="flex flex-col gap-1">
                           {entry.indexing_status === 'pending' || entry.indexing_status === 'processing' ? (
-                            <span className="text-xs px-2 py-0.5 rounded-full bg-amber-50 text-amber-700 font-medium w-fit">
+                            <span
+                              className="text-[10px] font-medium px-1.5 py-0.5 rounded-[var(--radius-xs)] w-fit"
+                              style={{ background: 'var(--state-warning-bg)', color: 'var(--state-warning)' }}
+                            >
                               Indexing…
                             </span>
                           ) : entry.indexing_status === 'failed' ? (
-                            <span className="text-xs px-2 py-0.5 rounded-full bg-red-50 text-red-600 font-medium w-fit" title={entry.indexing_error ?? undefined}>
+                            <span
+                              className="text-[10px] font-medium px-1.5 py-0.5 rounded-[var(--radius-xs)] w-fit"
+                              style={{ background: 'var(--state-danger-bg)', color: 'var(--state-danger)' }}
+                              title={entry.indexing_error ?? undefined}
+                            >
                               Index failed
                             </span>
                           ) : (entry.section_count ?? 0) > 0 ? (
-                            <span className="text-xs px-2 py-0.5 rounded-full bg-indigo-50 text-indigo-700 font-medium w-fit">
+                            <span
+                              className="mono-data text-[10px] font-medium px-1.5 py-0.5 rounded-[var(--radius-xs)] w-fit"
+                              style={{ background: 'var(--state-info-bg)', color: 'var(--state-info)' }}
+                            >
                               {entry.section_count} sections
                             </span>
                           ) : (
-                            <span className="text-xs text-gray-300">—</span>
+                            <span className="text-[11px]" style={{ color: 'var(--ink-faint)' }}>—</span>
                           )}
                           {entry.style_indexed && entry.indexing_status === 'complete' && (
-                            <span className="text-xs px-2 py-0.5 rounded-full bg-violet-50 text-violet-700 font-medium w-fit">
+                            <span
+                              className="text-[10px] font-medium px-1.5 py-0.5 rounded-[var(--radius-xs)] w-fit"
+                              style={{ background: 'var(--surface-sunken)', color: 'var(--ink-muted)', border: '1px solid var(--rule-subtle)' }}
+                            >
                               Style
                             </span>
                           )}
                         </div>
                       </td>
                       <td className="px-4 py-3.5">
-                        {entry.outcome ? (
-                          <span className={`text-xs px-2.5 py-0.5 rounded-full font-medium ${OUTCOME_STYLES[entry.outcome] ?? 'text-gray-500 bg-gray-100'}`}>
-                            {OUTCOMES.find(o => o.value === entry.outcome)?.label ?? entry.outcome}
-                          </span>
-                        ) : <span className="text-gray-300 text-xs">—</span>}
+                        {entry.outcome ? (() => {
+                          const tok = OUTCOME_TOKENS[entry.outcome] ?? { bg: 'var(--surface-sunken)', color: 'var(--ink-muted)' };
+                          return (
+                            <span
+                              className="text-[10px] font-medium px-1.5 py-0.5 rounded-[var(--radius-xs)]"
+                              style={{ background: tok.bg, color: tok.color }}
+                            >
+                              {OUTCOMES.find(o => o.value === entry.outcome)?.label ?? entry.outcome}
+                            </span>
+                          );
+                        })() : (
+                          <span className="text-[11px]" style={{ color: 'var(--ink-faint)' }}>—</span>
+                        )}
                       </td>
                     </tr>
                   ))
@@ -741,7 +918,7 @@ export default function ArchivePage() {
               </tbody>
             </table>
           </div>
-        </>
+        </div>
       )}
     </div>
   );

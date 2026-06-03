@@ -2,7 +2,7 @@
 import Image from 'next/image';
 import Link from 'next/link';
 import { usePathname } from 'next/navigation';
-import { useEffect, useRef, useState, useCallback } from 'react';
+import { useEffect, useCallback, useState } from 'react';
 import { opportunities } from '@/lib/api';
 import { onOpportunitiesChanged } from '@/lib/opportunities-events';
 import { useAuth, hasModulePermission, ModulePermissions } from '@/lib/auth';
@@ -14,21 +14,18 @@ interface NavItem {
 }
 
 const NAV: NavItem[] = [
-  { href: '/dashboard', label: 'Dashboard' },
+  { href: '/dashboard',     label: 'Dashboard' },
   { href: '/opportunities', label: 'Opportunities' },
-  { href: '/grants', label: 'Grants', permissionKey: 'can_view_grants' },
-  { href: '/finance', label: 'Finance', permissionKey: 'can_view_finance' },
-  { href: '/archive', label: 'Archive', permissionKey: 'can_view_archive' },
-  { href: '/partners', label: 'Partners', permissionKey: 'can_view_partners' },
-  { href: '/settings', label: 'Settings' },
+  { href: '/grants',        label: 'Grants',   permissionKey: 'can_view_grants' },
+  { href: '/finance',       label: 'Finance',  permissionKey: 'can_view_finance' },
+  { href: '/archive',       label: 'Archive',  permissionKey: 'can_view_archive' },
+  { href: '/partners',      label: 'Partners', permissionKey: 'can_view_partners' },
 ];
 
 export default function Sidebar() {
   const path = usePathname();
   const { user } = useAuth();
   const [queueCount, setQueueCount] = useState<number | null>(null);
-  const [isOpen, setIsOpen] = useState(false);
-  const closeTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   const refreshCount = useCallback(() => {
     opportunities.newOpportunitiesCounts()
@@ -36,111 +33,99 @@ export default function Sidebar() {
       .catch(() => null);
   }, []);
 
-  useEffect(() => {
-    refreshCount();
-  }, [refreshCount, path]);
+  useEffect(() => { refreshCount(); }, [refreshCount, path]);
+  useEffect(() => onOpportunitiesChanged(refreshCount), [refreshCount]);
 
-  useEffect(() => {
-    return onOpportunitiesChanged(refreshCount);
-  }, [refreshCount]);
-
-  const isDashboard = path === '/dashboard';
-
-  const visibleNav = NAV.filter(item => {
-    if (!item.permissionKey) return true;
-    return hasModulePermission(user, item.permissionKey);
-  });
-
-  function handleMouseEnter() {
-    if (closeTimer.current) clearTimeout(closeTimer.current);
-    setIsOpen(true);
-  }
-
-  function handleMouseLeave() {
-    closeTimer.current = setTimeout(() => setIsOpen(false), 150);
-  }
-
-  const logoBlock = (
-    <div className="px-5 pt-5 pb-4 border-b border-gray-100">
-      <Link href="/dashboard" className="block" onClick={() => setIsOpen(false)}>
-        <Image src="/logo.png" alt="LiGHT" width={90} height={24} className="object-contain" priority />
-        <p className="text-[9px] font-semibold tracking-[0.2em] text-gray-400 uppercase mt-1.5 pl-0.5">
-          Grant Engine
-        </p>
-      </Link>
-    </div>
+  const visibleNav = NAV.filter(item =>
+    !item.permissionKey || hasModulePermission(user, item.permissionKey)
   );
-
-  const navBlock = (
-    <nav className="flex-1 px-2 py-3 space-y-0.5 overflow-y-auto">
-      {visibleNav.map(({ href, label }) => {
-        const active = path === href || path.startsWith(href + '/');
-        const isOpportunities = href === '/opportunities';
-        return (
-          <Link
-            key={href}
-            href={href}
-            onClick={() => setIsOpen(false)}
-            className={`relative flex items-center justify-between px-3 py-2 text-sm rounded-lg transition-colors ${
-              active
-                ? 'font-semibold text-gray-900 bg-gray-50'
-                : 'text-gray-500 hover:text-gray-900 hover:bg-gray-50'
-            }`}
-          >
-            {active && (
-              <span className="absolute left-0 top-1/2 -translate-y-1/2 h-4 w-0.5 bg-gray-900 rounded-r-full" />
-            )}
-            <span>{label}</span>
-            {isOpportunities && queueCount != null && queueCount > 0 && (
-              <span className="ml-auto text-xs font-semibold text-white bg-gray-400 rounded-full px-1.5 py-0.5 leading-none tabular-nums min-w-[1.25rem] text-center">
-                {queueCount > 99 ? '99+' : queueCount}
-              </span>
-            )}
-          </Link>
-        );
-      })}
-    </nav>
-  );
-
-  if (isDashboard) {
-    return (
-      <aside className="w-52 shrink-0 flex flex-col h-full bg-white border-r border-gray-100">
-        {logoBlock}
-        {navBlock}
-      </aside>
-    );
-  }
 
   return (
-    <>
-      {/* Reserve 112px to clear the always-visible logo strip */}
-      <div className="w-28 shrink-0" />
-
-      {/* Fixed hover zone covering the left edge */}
+    <aside
+      style={{ width: 'var(--space-rail)', borderRight: '1px solid var(--rule-subtle)' }}
+      className="shrink-0 flex flex-col h-full bg-[var(--surface-raised)]"
+    >
+      {/* Logo */}
       <div
-        className="fixed left-0 top-0 h-screen z-50"
-        onMouseEnter={handleMouseEnter}
-        onMouseLeave={handleMouseLeave}
+        style={{ borderBottom: '1px solid var(--rule-subtle)' }}
+        className="px-5 pt-5 pb-4"
       >
-        {/* Always-visible collapsed strip — full logo + "Grant Engine" at proper size */}
-        <div
-          className={`absolute left-0 top-0 h-full w-28 flex flex-col bg-white border-r border-gray-200 transition-opacity duration-150 ${
-            isOpen ? 'opacity-0 pointer-events-none' : 'opacity-100'
-          }`}
-        >
-          {logoBlock}
-        </div>
-
-        {/* Full sidebar panel — slides in on hover (overlays the collapsed strip) */}
-        <aside
-          className={`absolute left-0 top-0 h-full w-52 flex flex-col bg-white border-r border-gray-100 shadow-xl transition-transform duration-200 ease-in-out ${
-            isOpen ? 'translate-x-0' : '-translate-x-full'
-          }`}
-        >
-          {logoBlock}
-          {navBlock}
-        </aside>
+        <Link href="/dashboard" className="block">
+          <Image src="/logo.png" alt="LiGHT" width={80} height={21} className="object-contain" priority />
+          <p className="ledger-label mt-2 pl-0.5">Grant Engine</p>
+        </Link>
       </div>
-    </>
+
+      {/* Navigation */}
+      <nav className="flex-1 px-3 py-4 space-y-px overflow-y-auto">
+        {/* Section marker */}
+        <p className="ledger-label px-2.5 pb-2">Navigation</p>
+
+        {visibleNav.map(({ href, label }) => {
+          const active = path === href || path.startsWith(href + '/');
+          const isOpportunities = href === '/opportunities';
+
+          return (
+            <Link
+              key={href}
+              href={href}
+              className={`
+                relative flex items-center justify-between px-2.5 py-1.5 text-sm
+                rounded-[var(--radius-sm)] transition-colors duration-100
+                ${active
+                  ? 'font-medium text-[var(--accent-primary)] bg-[var(--accent-secondary)]'
+                  : 'text-[var(--ink-muted)] hover:text-[var(--ink-primary)] hover:bg-[var(--surface-sunken)]'
+                }
+              `}
+            >
+              {/* Left accent bar */}
+              {active && (
+                <span
+                  className="absolute left-0 top-1 bottom-1 w-0.5 rounded-r-full"
+                  style={{ background: 'var(--accent-primary)' }}
+                />
+              )}
+
+              <span className="pl-1">{label}</span>
+
+              {/* Unread count badge */}
+              {isOpportunities && queueCount != null && queueCount > 0 && (
+                <span
+                  style={{
+                    background: active ? 'var(--accent-primary)' : 'var(--ink-faint)',
+                    color: 'var(--ink-inverse)',
+                  }}
+                  className="mono-data text-[10px] font-semibold px-1.5 py-0.5 rounded-[var(--radius-xs)] leading-none min-w-[1.25rem] text-center"
+                >
+                  {queueCount > 99 ? '99+' : queueCount}
+                </span>
+              )}
+            </Link>
+          );
+        })}
+      </nav>
+
+      {/* Settings — separated at bottom */}
+      <div style={{ borderTop: '1px solid var(--rule-subtle)' }} className="px-3 py-3">
+        <Link
+          href="/settings"
+          className={`
+            flex items-center px-2.5 py-1.5 text-sm rounded-[var(--radius-sm)] transition-colors duration-100
+            ${path.startsWith('/settings')
+              ? 'font-medium text-[var(--accent-primary)] bg-[var(--accent-secondary)]'
+              : 'text-[var(--ink-muted)] hover:text-[var(--ink-primary)] hover:bg-[var(--surface-sunken)]'
+            }
+          `}
+        >
+          {path.startsWith('/settings') && (
+            <span
+              className="absolute left-0 top-1 bottom-1 w-0.5 rounded-r-full"
+              style={{ background: 'var(--accent-primary)' }}
+            />
+          )}
+          <span className="pl-1">Settings</span>
+        </Link>
+      </div>
+    </aside>
   );
 }
