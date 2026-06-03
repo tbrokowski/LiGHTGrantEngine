@@ -84,7 +84,10 @@ function applyFilters(items: Opportunity[], filters: OpportunityFilters): Opport
 
 function ColHead({ children, className = '' }: { children: React.ReactNode; className?: string }) {
   return (
-    <th className={`text-left px-4 py-3 text-xs font-medium text-gray-400 uppercase tracking-wider ${className}`}>
+    <th
+      className={`text-left px-4 py-2.5 ledger-label ${className}`}
+      style={{ background: 'var(--surface-sunken)' }}
+    >
       {children}
     </th>
   );
@@ -452,7 +455,7 @@ export default function OpportunitiesPage() {
   }
 
   return (
-    <div className="flex min-h-screen bg-gray-50/30">
+    <div className="flex h-full" style={{ background: 'var(--surface-base)' }}>
       {/* Left filter sidebar */}
       <OpportunityFiltersSidebar
         filters={filters}
@@ -462,217 +465,253 @@ export default function OpportunitiesPage() {
       />
 
       {/* Main content */}
-      <div className="flex-1 min-w-0 px-8 py-8">
-        {/* Header */}
-        <div className="flex items-start justify-between mb-6">
-          <div>
-            <h1 className="text-xl font-semibold text-gray-900 tracking-tight">Opportunities</h1>
-            <p className="text-sm text-gray-400 mt-0.5">
-              {loading ? 'Loading…' : activeTab === 'queue'
-                ? `${queueTotal > queue.length ? `${queue.length} of ${queueTotal.toLocaleString()}` : queueTotal.toLocaleString()} grants · ${unreadCount.toLocaleString()} unread · ${upcoming.length} upcoming`
-                : activeTab === 'shortlist'
-                ? `${shortlist.length} bookmarked`
-                : `${orgShortlist.length} on org shortlist`}
-            </p>
+      <div className="flex-1 min-w-0 flex flex-col overflow-hidden">
+
+        {/* ── Tabs + controls ─────────────────────────── */}
+        <div
+          className="px-7 flex items-center justify-between shrink-0"
+          style={{ borderBottom: '1px solid var(--rule-subtle)', background: 'var(--surface-raised)' }}
+        >
+          <div className="flex items-center gap-0">
+            {([
+              { id: 'queue' as TabMode, label: 'All Opportunities', badge: unreadCount > 0 ? unreadCount.toLocaleString() : null, badgeStyle: { background: 'var(--state-info-bg)', color: 'var(--state-info)' } },
+              { id: 'shortlist' as TabMode, label: 'My Shortlist', badge: shortlist.length > 0 ? String(shortlist.length) : null, badgeStyle: { background: 'var(--state-warning-bg)', color: 'var(--state-warning)' } },
+              { id: 'org-shortlist' as TabMode, label: 'Org Shortlist', badge: orgShortlistCount > 0 ? String(orgShortlistCount) : null, badgeStyle: { background: 'var(--accent-secondary)', color: 'var(--accent-primary)' } },
+            ] as { id: TabMode; label: string; badge: string | null; badgeStyle: React.CSSProperties }[]).map(t => {
+              const active = activeTab === t.id;
+              return (
+                <button
+                  key={t.id}
+                  onClick={() => { setActiveTab(t.id); setFocusIndex(0); }}
+                  className="relative flex items-center gap-2 px-4 py-3.5 text-sm font-medium transition-colors"
+                  style={{ color: active ? 'var(--ink-primary)' : 'var(--ink-muted)' }}
+                >
+                  {t.label}
+                  {t.badge && (
+                    <span
+                      className="mono-data text-[10px] px-1.5 py-0.5 rounded-[var(--radius-xs)]"
+                      style={t.badgeStyle}
+                    >
+                      {t.badge}
+                    </span>
+                  )}
+                  {active && (
+                    <span className="absolute bottom-0 left-0 right-0 h-0.5" style={{ background: 'var(--accent-primary)' }} />
+                  )}
+                </button>
+              );
+            })}
           </div>
-          <div className="flex items-center gap-2">
+
+          <div className="flex items-center gap-2 py-2.5">
             {activeTab === 'shortlist' && (
               <button
                 onClick={() => setShowAddModal(true)}
-                className="px-3 py-1.5 text-sm font-medium rounded-lg border border-gray-900 bg-gray-900 text-white hover:bg-gray-700 transition-colors"
+                className="px-3 py-1.5 text-sm font-medium transition-colors"
+                style={{
+                  borderRadius: 'var(--radius-sm)',
+                  border: '1px solid var(--rule-strong)',
+                  color: 'var(--ink-secondary)',
+                  background: 'var(--surface-raised)',
+                }}
               >
                 + Add
               </button>
             )}
-          </div>
-        </div>
 
-        {/* Tabs + view toggle */}
-        <div className="flex items-center justify-between mb-5 border-b border-gray-200">
-          <div className="flex gap-0">
-            <button
-              onClick={() => { setActiveTab('queue'); setFocusIndex(0); }}
-              className={`px-4 py-2.5 text-sm font-medium border-b-2 -mb-px transition-colors ${
-                activeTab === 'queue'
-                  ? 'border-gray-900 text-gray-900'
-                  : 'border-transparent text-gray-400 hover:text-gray-600'
-              }`}
-            >
-              All Opportunities
-              {unreadCount > 0 && (
-                <span className="ml-1.5 text-xs bg-blue-100 text-blue-700 px-1.5 py-0.5 rounded-full">{unreadCount.toLocaleString()}</span>
-              )}
-            </button>
-            <button
-              onClick={() => { setActiveTab('shortlist'); setFocusIndex(0); }}
-              className={`px-4 py-2.5 text-sm font-medium border-b-2 -mb-px transition-colors ${
-                activeTab === 'shortlist'
-                  ? 'border-gray-900 text-gray-900'
-                  : 'border-transparent text-gray-400 hover:text-gray-600'
-              }`}
-            >
-              My Shortlist
-              {shortlist.length > 0 && (
-                <span className="ml-1.5 text-xs bg-amber-100 text-amber-700 px-1.5 py-0.5 rounded-full">{shortlist.length}</span>
-              )}
-            </button>
-            <button
-              onClick={() => { setActiveTab('org-shortlist'); setFocusIndex(0); }}
-              className={`px-4 py-2.5 text-sm font-medium border-b-2 -mb-px transition-colors ${
-                activeTab === 'org-shortlist'
-                  ? 'border-gray-900 text-gray-900'
-                  : 'border-transparent text-gray-400 hover:text-gray-600'
-              }`}
-            >
-              Org Shortlist
-              {orgShortlistCount > 0 && (
-                <span className="ml-1.5 text-xs bg-purple-100 text-purple-700 px-1.5 py-0.5 rounded-full">{orgShortlistCount}</span>
-              )}
-            </button>
-          </div>
-          <div className="flex items-center gap-2 pb-2">
             {activeTab === 'queue' && (
-              <div className="flex items-center gap-1 mr-2">
-                <button
-                  onClick={() => setUnreadOnly(true)}
-                  className={`px-2.5 py-1 text-xs rounded-md transition-colors ${
-                    unreadOnly ? 'bg-gray-900 text-white' : 'text-gray-400 hover:text-gray-600'
-                  }`}
+              <>
+                {/* Unread / All toggle */}
+                <div
+                  className="flex items-center overflow-hidden"
+                  style={{ border: '1px solid var(--rule-subtle)', borderRadius: 'var(--radius-sm)' }}
                 >
-                  Unread
-                </button>
-                <button
-                  onClick={() => setUnreadOnly(false)}
-                  className={`px-2.5 py-1 text-xs rounded-md transition-colors ${
-                    !unreadOnly ? 'bg-gray-900 text-white' : 'text-gray-400 hover:text-gray-600'
-                  }`}
+                  {[{ val: true, label: 'Unread' }, { val: false, label: 'All' }].map(({ val, label }) => (
+                    <button
+                      key={label}
+                      onClick={() => setUnreadOnly(val)}
+                      className="px-2.5 py-1 text-xs transition-colors"
+                      style={{
+                        background: unreadOnly === val ? 'var(--ink-primary)' : 'transparent',
+                        color: unreadOnly === val ? 'var(--ink-inverse)' : 'var(--ink-muted)',
+                      }}
+                    >
+                      {label}
+                    </button>
+                  ))}
+                </div>
+
+                {/* View mode toggle */}
+                <div
+                  className="flex items-center overflow-hidden"
+                  style={{ border: '1px solid var(--rule-subtle)', borderRadius: 'var(--radius-sm)' }}
                 >
-                  All
-                </button>
-              </div>
-            )}
-            {activeTab === 'queue' && (
-              <div className="flex items-center border border-gray-200 rounded-lg overflow-hidden">
-                <button
-                  onClick={() => setView('table')}
-                  className={`px-2.5 py-1 text-xs transition-colors ${
-                    viewMode === 'table' ? 'bg-gray-100 text-gray-900' : 'text-gray-400 hover:text-gray-600'
-                  }`}
-                  title="Table view"
-                >
-                  Table
-                </button>
-                <button
-                  onClick={() => setView('focus')}
-                  className={`px-2.5 py-1 text-xs transition-colors ${
-                    viewMode === 'focus' ? 'bg-gray-100 text-gray-900' : 'text-gray-400 hover:text-gray-600'
-                  }`}
-                  title="Focus view"
-                >
-                  Focus
-                </button>
-                <button
-                  onClick={() => setView('graph' as ViewMode)}
-                  className={`px-2.5 py-1 text-xs transition-colors ${
-                    (viewMode as string) === 'graph' ? 'bg-gray-100 text-gray-900' : 'text-gray-400 hover:text-gray-600'
-                  }`}
-                  title="Graph view"
-                >
-                  Graph
-                </button>
-              </div>
+                  {[
+                    { val: 'table', label: 'Table' },
+                    { val: 'focus', label: 'Focus' },
+                    { val: 'graph', label: 'Graph' },
+                  ].map(({ val, label }) => {
+                    const active = viewMode === val;
+                    return (
+                      <button
+                        key={val}
+                        onClick={() => setView(val as ViewMode)}
+                        className="px-2.5 py-1 text-xs transition-colors"
+                        style={{
+                          background: active ? 'var(--ink-primary)' : 'transparent',
+                          color: active ? 'var(--ink-inverse)' : 'var(--ink-muted)',
+                        }}
+                      >
+                        {label}
+                      </button>
+                    );
+                  })}
+                </div>
+              </>
             )}
           </div>
         </div>
 
-        {/* Graph filter bar */}
-        {(viewMode as string) === 'graph' && (
-          <div className="mb-4">
-            <GraphFilters
-              filters={graphFilters}
-              onChange={setGraphFilters}
-              funders={[...new Set(graphNodes.map(n => n.funder).filter(Boolean) as string[])].slice(0, 20)}
-              themes={[...new Set(graphNodes.flatMap(n => n.thematic_areas))].slice(0, 20)}
-            />
+        {/* Status label */}
+        {!loading && (
+          <div
+            className="px-7 py-2 shrink-0"
+            style={{ borderBottom: '1px solid var(--rule-subtle)', background: 'var(--surface-sunken)' }}
+          >
+            <span className="ledger-label">
+              {activeTab === 'queue'
+                ? `${queueTotal > queue.length ? `${queue.length} of ${queueTotal.toLocaleString()}` : queueTotal.toLocaleString()} opportunities · ${unreadCount.toLocaleString()} unread`
+                : activeTab === 'shortlist'
+                ? `${shortlist.length} bookmarked`
+                : `${orgShortlist.length} on org shortlist`}
+            </span>
           </div>
         )}
 
-        {loading ? (
-          <div className="bg-white border border-gray-200 rounded-xl overflow-hidden">
-            <div className="px-5 py-16 text-center text-sm text-gray-400">Loading…</div>
-          </div>
-        ) : (viewMode as string) === 'graph' ? (
-          <div className="bg-white border border-gray-200 rounded-xl overflow-hidden flex flex-col" style={{ height: 600 }}>
-            {graphLoading ? (
-              <div className="flex-1 flex items-center justify-center text-sm text-gray-400">Loading graph…</div>
-            ) : (
-              <OpportunityGraphView nodes={graphNodes} clusters={graphClusters} edges={graphEdges} />
-            )}
-          </div>
-        ) : activeTab === 'queue' && viewMode === 'focus' ? (
-          <FocusReview
-            items={upcoming}
-            currentIndex={focusIndex}
-            onIndexChange={setFocusIndex}
-            onMarkRead={handleMarkReadFocus}
-            onToggleBookmark={handleToggleBookmark}
-            onStartGrant={handleStartGrant}
-          />
-        ) : (
-          <div className="bg-white border border-gray-200 rounded-xl overflow-hidden">
-            <div className="overflow-x-auto">
-            <table className="w-full text-sm">
-              <thead>
-                <tr className="border-b border-gray-100">
-                  <ColHead className="pl-5">Title</ColHead>
-                  <ColHead className="hidden md:table-cell">Funder</ColHead>
-                  <ColHead className="hidden lg:table-cell">Deadline</ColHead>
-                  <ColHead className="hidden lg:table-cell text-right">Award</ColHead>
-                  <ColHead className="text-center">Score</ColHead>
-                  <ColHead>Actions</ColHead>
-                </tr>
-              </thead>
-              <tbody>
-                {renderTableBody(upcoming)}
-              </tbody>
-            </table>
+        {/* Scrollable content */}
+        <div className="flex-1 overflow-y-auto px-7 py-5">
+
+          {/* Graph filter bar */}
+          {(viewMode as string) === 'graph' && (
+            <div className="mb-4">
+              <GraphFilters
+                filters={graphFilters}
+                onChange={setGraphFilters}
+                funders={[...new Set(graphNodes.map(n => n.funder).filter(Boolean) as string[])].slice(0, 20)}
+                themes={[...new Set(graphNodes.flatMap(n => n.thematic_areas))].slice(0, 20)}
+              />
             </div>
+          )}
 
-            {activeTab === 'queue' && past.length > 0 && (
-              <div className="border-t border-gray-100">
-                <button
-                  onClick={() => setPastExpanded(v => !v)}
-                  className="w-full flex items-center justify-between px-5 py-3 text-xs font-medium text-gray-400 hover:text-gray-600 hover:bg-gray-50 transition-colors"
-                >
-                  <span>Past deadline · {past.length}</span>
-                  <svg
-                    className={`w-4 h-4 transition-transform ${pastExpanded ? 'rotate-180' : ''}`}
-                    fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}
-                  >
-                    <path strokeLinecap="round" strokeLinejoin="round" d="M19 9l-7 7-7-7" />
-                  </svg>
-                </button>
-                {pastExpanded && (
-                  <table className="w-full text-sm">
-                    <tbody>{renderTableBody(past)}</tbody>
-                  </table>
-                )}
-              </div>
-            )}
-          </div>
-        )}
-
-        {!loading && activeTab === 'queue' && (viewMode as string) !== 'graph' && queue.length < queueTotal && (
-          <div className="mt-4 flex items-center justify-center gap-3">
-            <button
-              onClick={loadMoreQueue}
-              disabled={loadingMore}
-              className="px-4 py-2 text-sm font-medium text-gray-600 bg-white border border-gray-200 rounded-lg hover:border-gray-400 hover:text-gray-900 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
+          {loading ? (
+            <div
+              style={{
+                border: '1px solid var(--rule-subtle)',
+                borderRadius: 'var(--radius-md)',
+                background: 'var(--surface-raised)',
+              }}
             >
-              {loadingMore ? 'Loading…' : `Load more (${queueTotal - queue.length} remaining)`}
-            </button>
-          </div>
-        )}
+              <div className="px-5 py-16 text-center text-sm" style={{ color: 'var(--ink-faint)' }}>Loading…</div>
+            </div>
+          ) : (viewMode as string) === 'graph' ? (
+            <div
+              className="flex flex-col overflow-hidden"
+              style={{
+                height: 600,
+                border: '1px solid var(--rule-subtle)',
+                borderRadius: 'var(--radius-md)',
+                background: 'var(--surface-raised)',
+              }}
+            >
+              {graphLoading ? (
+                <div className="flex-1 flex items-center justify-center text-sm" style={{ color: 'var(--ink-faint)' }}>
+                  Loading graph…
+                </div>
+              ) : (
+                <OpportunityGraphView nodes={graphNodes} clusters={graphClusters} edges={graphEdges} />
+              )}
+            </div>
+          ) : activeTab === 'queue' && viewMode === 'focus' ? (
+            <FocusReview
+              items={upcoming}
+              currentIndex={focusIndex}
+              onIndexChange={setFocusIndex}
+              onMarkRead={handleMarkReadFocus}
+              onToggleBookmark={handleToggleBookmark}
+              onStartGrant={handleStartGrant}
+            />
+          ) : (
+            <div
+              className="overflow-hidden"
+              style={{
+                border: '1px solid var(--rule-subtle)',
+                borderRadius: 'var(--radius-md)',
+                background: 'var(--surface-raised)',
+              }}
+            >
+              <div className="overflow-x-auto">
+                <table className="w-full text-sm">
+                  <thead>
+                    <tr style={{ borderBottom: '1px solid var(--rule-subtle)' }}>
+                      <ColHead className="pl-5">Title</ColHead>
+                      <ColHead className="hidden md:table-cell">Funder</ColHead>
+                      <ColHead className="hidden lg:table-cell">Deadline</ColHead>
+                      <ColHead className="hidden lg:table-cell text-right">Award</ColHead>
+                      <ColHead className="text-center">Score</ColHead>
+                      <ColHead>Actions</ColHead>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {renderTableBody(upcoming)}
+                  </tbody>
+                </table>
+              </div>
+
+              {activeTab === 'queue' && past.length > 0 && (
+                <div style={{ borderTop: '1px solid var(--rule-subtle)' }}>
+                  <button
+                    onClick={() => setPastExpanded(v => !v)}
+                    className="w-full flex items-center justify-between px-5 py-3 text-xs font-medium transition-colors"
+                    style={{ color: 'var(--ink-muted)' }}
+                    onMouseEnter={e => (e.currentTarget.style.background = 'var(--surface-sunken)')}
+                    onMouseLeave={e => (e.currentTarget.style.background = 'transparent')}
+                  >
+                    <span>Past deadline · {past.length}</span>
+                    <svg
+                      className={`w-4 h-4 transition-transform ${pastExpanded ? 'rotate-180' : ''}`}
+                      fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}
+                    >
+                      <path strokeLinecap="round" strokeLinejoin="round" d="M19 9l-7 7-7-7" />
+                    </svg>
+                  </button>
+                  {pastExpanded && (
+                    <table className="w-full text-sm">
+                      <tbody>{renderTableBody(past)}</tbody>
+                    </table>
+                  )}
+                </div>
+              )}
+            </div>
+          )}
+
+          {!loading && activeTab === 'queue' && (viewMode as string) !== 'graph' && queue.length < queueTotal && (
+            <div className="mt-4 flex items-center justify-center">
+              <button
+                onClick={loadMoreQueue}
+                disabled={loadingMore}
+                className="px-4 py-2 text-sm font-medium transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+                style={{
+                  border: '1px solid var(--rule-subtle)',
+                  borderRadius: 'var(--radius-sm)',
+                  color: 'var(--ink-muted)',
+                  background: 'var(--surface-raised)',
+                }}
+              >
+                {loadingMore ? 'Loading…' : `Load more (${queueTotal - queue.length} remaining)`}
+              </button>
+            </div>
+          )}
+        </div>
       </div>
 
       {showAddModal && (

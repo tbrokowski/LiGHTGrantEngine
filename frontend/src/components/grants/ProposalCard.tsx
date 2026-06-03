@@ -38,24 +38,31 @@ function formatDate(d: string | null) {
 }
 
 function DeadlineChip({ dateStr }: { dateStr: string | null }) {
-  if (!dateStr) return <span className="text-gray-300 text-xs">No deadline</span>;
+  if (!dateStr) return null;
   const days = daysUntil(dateStr);
   const label = formatDate(dateStr);
   if (days === null) return null;
 
-  let color = 'text-gray-400';
-  let dot = 'bg-gray-300';
+  let inkColor = 'var(--ink-faint)';
+  let dotColor = 'var(--ink-faint)';
   let badge = '';
-  if (days < 0) { color = 'text-gray-400'; dot = 'bg-gray-300'; }
-  else if (days <= 7) { color = 'text-red-600'; dot = 'bg-red-500'; badge = `${days}d left`; }
-  else if (days <= 14) { color = 'text-amber-600'; dot = 'bg-amber-400'; badge = `${days}d left`; }
-  else if (days <= 30) { color = 'text-amber-500'; dot = 'bg-amber-300'; badge = `${days}d left`; }
+  if (days < 0) { inkColor = 'var(--ink-faint)'; dotColor = 'var(--ink-faint)'; }
+  else if (days <= 7)  { inkColor = 'var(--state-danger)';  dotColor = 'var(--state-danger)';  badge = `${days}d`; }
+  else if (days <= 14) { inkColor = 'var(--state-warning)'; dotColor = 'var(--state-warning)'; badge = `${days}d`; }
+  else if (days <= 30) { inkColor = 'var(--state-warning)'; dotColor = 'var(--state-warning)'; }
 
   return (
-    <div className={`flex items-center gap-1.5 ${color}`}>
-      <span className={`w-1.5 h-1.5 rounded-full shrink-0 ${dot}`} />
-      <span className="text-xs whitespace-nowrap">{label}</span>
-      {badge && <span className="text-xs font-medium px-1 py-0.5 rounded bg-current/10">{badge}</span>}
+    <div className="flex items-center gap-1.5 mono-data text-[11px]" style={{ color: inkColor }}>
+      <span className="w-1.5 h-1.5 rounded-full shrink-0" style={{ background: dotColor }} />
+      <span className="whitespace-nowrap">{label}</span>
+      {badge && (
+        <span
+          className="text-[10px] font-semibold px-1 py-px rounded-[var(--radius-xs)]"
+          style={{ background: days <= 7 ? 'var(--state-danger-bg)' : 'var(--state-warning-bg)' }}
+        >
+          {badge}
+        </span>
+      )}
     </div>
   );
 }
@@ -66,10 +73,22 @@ function TaskProgress({ tasks }: { tasks?: { status: string }[] }) {
   const pct = Math.round((done / tasks.length) * 100);
   return (
     <div className="flex items-center gap-2">
-      <div className="h-1 w-24 bg-blue-100 rounded-full overflow-hidden">
-        <div className="h-full bg-blue-400 rounded-full" style={{ width: `${pct}%` }} />
+      <div
+        className="h-0.5 w-20 overflow-hidden"
+        style={{ background: 'var(--rule-subtle)', borderRadius: 'var(--radius-xs)' }}
+      >
+        <div
+          className="h-full"
+          style={{
+            width: `${pct}%`,
+            background: pct === 100 ? 'var(--accent-cool)' : 'var(--accent-primary)',
+            borderRadius: 'var(--radius-xs)',
+          }}
+        />
       </div>
-      <span className="text-xs text-gray-400">{done}/{tasks.length} tasks</span>
+      <span className="mono-data text-[10px]" style={{ color: 'var(--ink-faint)' }}>
+        {done}/{tasks.length}
+      </span>
     </div>
   );
 }
@@ -92,16 +111,14 @@ export default function ProposalCard({ grant, onStageChange, onDelete }: Props) 
   const [menuOpen, setMenuOpen] = useState(false);
 
   const isPersonal = grant.is_personal;
-  const cardBg = isPersonal
-    ? 'bg-white border-gray-200 border-dashed'
-    : 'bg-blue-50/40 border-blue-100';
-
   const meta: string[] = [];
   if (grant.funder) meta.push(grant.funder);
   if (grant.pi_name) meta.push(grant.pi_name);
-
   const amountLabel = formatAmount(grant.requested_amount, grant.currency);
-  const themes = (grant.themes ?? []).slice(0, 3);
+  const themes = (grant.themes ?? []).slice(0, 2);
+
+  // Color accent — use grant color if set, else the institutional navy
+  const accentColor = grant.color ?? 'var(--rule-subtle)';
 
   return (
     <>
@@ -115,81 +132,135 @@ export default function ProposalCard({ grant, onStageChange, onDelete }: Props) 
         />
       )}
       <div
-        className={`group border rounded-2xl px-5 py-4 hover:shadow-md hover:-translate-y-px transition-all duration-150 ${cardBg}`}
-        style={grant.color ? { borderLeftColor: grant.color, borderLeftWidth: '4px' } : undefined}
+        className="group flex items-stretch transition-colors duration-100"
+        style={{ borderBottom: '1px solid var(--rule-subtle)' }}
+        onMouseEnter={e => (e.currentTarget.style.background = 'var(--selection-bg)')}
+        onMouseLeave={e => (e.currentTarget.style.background = 'transparent')}
       >
-        <div className="flex items-start gap-3">
-          <Link href={`/grants/${grant.id}`} className="flex-1 min-w-0">
-            <div className="flex items-center gap-2 mb-1.5 flex-wrap">
-              <PriorityTag grantId={grant.id} priority={priority} onUpdate={setPriority} />
-              {isPersonal && (
-                <span className="text-xs text-gray-400 bg-gray-100 px-1.5 py-0.5 rounded-full">Personal</span>
-              )}
-              {amountLabel && (
-                <span className="text-xs font-medium text-gray-500 bg-gray-100 px-2 py-0.5 rounded-full">
-                  {amountLabel}
-                </span>
-              )}
-            </div>
-            <h3 className="text-sm font-semibold text-gray-900 leading-snug group-hover:text-blue-700 transition-colors">
-              {grant.title}
-            </h3>
-            {meta.length > 0 && (
-              <p className="text-xs text-gray-400 mt-1 truncate">{meta.join(' · ')}</p>
+        {/* Left color accent bar */}
+        <div
+          className="w-1 shrink-0 self-stretch"
+          style={{ background: accentColor, minHeight: '60px' }}
+        />
+
+        {/* Main content */}
+        <Link href={`/grants/${grant.id}`} className="flex-1 min-w-0 px-5 py-4">
+          {/* Top row: priority + meta chips */}
+          <div className="flex items-center gap-2 mb-1.5 flex-wrap">
+            <PriorityTag grantId={grant.id} priority={priority} onUpdate={setPriority} />
+            {isPersonal && (
+              <span
+                className="text-[10px] font-medium px-1.5 py-0.5 rounded-[var(--radius-xs)]"
+                style={{ background: 'var(--surface-sunken)', color: 'var(--ink-muted)' }}
+              >
+                Personal
+              </span>
             )}
-            {themes.length > 0 && (
-              <div className="mt-1.5 flex flex-wrap gap-1">
-                {themes.map(theme => (
-                  <span key={theme} className="text-[10px] font-medium text-indigo-600 bg-indigo-50 px-1.5 py-0.5 rounded-full">
-                    {theme}
-                  </span>
-                ))}
+          </div>
+
+          {/* Title */}
+          <h3
+            className="text-sm font-medium leading-snug transition-colors duration-100"
+            style={{ color: 'var(--ink-primary)' }}
+          >
+            {grant.title}
+          </h3>
+
+          {/* Meta row */}
+          <div className="mt-1 flex items-center gap-3 flex-wrap">
+            {meta.length > 0 && (
+              <p className="mono-data text-[11px] truncate" style={{ color: 'var(--ink-muted)' }}>
+                {meta.join('  ·  ')}
+              </p>
+            )}
+            {amountLabel && (
+              <span className="mono-data text-[11px] font-medium" style={{ color: 'var(--accent-warm)' }}>
+                {amountLabel}
+              </span>
+            )}
+          </div>
+
+          {/* Bottom row: deadline + tasks + themes */}
+          <div className="mt-2 flex items-center gap-4 flex-wrap">
+            <DeadlineChip dateStr={grant.external_deadline} />
+            <TaskProgress tasks={grant.tasks} />
+            {themes.map(theme => (
+              <span
+                key={theme}
+                className="text-[10px] font-medium px-1.5 py-0.5 rounded-[var(--radius-xs)]"
+                style={{ background: 'var(--state-info-bg)', color: 'var(--state-info)' }}
+              >
+                {theme}
+              </span>
+            ))}
+          </div>
+        </Link>
+
+        {/* Right: actions */}
+        <div className="flex flex-col items-end justify-between gap-2 px-4 py-4 shrink-0">
+          <div className="relative">
+            <button
+              type="button"
+              onClick={() => setMenuOpen(v => !v)}
+              className="w-6 h-6 flex items-center justify-center rounded-[var(--radius-xs)] transition-colors"
+              style={{ color: 'var(--ink-faint)' }}
+              onMouseEnter={e => { e.currentTarget.style.color = 'var(--ink-muted)'; e.currentTarget.style.background = 'var(--surface-sunken)'; }}
+              onMouseLeave={e => { e.currentTarget.style.color = 'var(--ink-faint)'; e.currentTarget.style.background = 'transparent'; }}
+            >
+              <svg className="w-3.5 h-3.5" fill="currentColor" viewBox="0 0 24 24">
+                <circle cx="12" cy="5" r="1.5" /><circle cx="12" cy="12" r="1.5" /><circle cx="12" cy="19" r="1.5" />
+              </svg>
+            </button>
+            {menuOpen && (
+              <div
+                className="absolute right-0 top-full mt-1 w-44 py-1 z-10"
+                style={{
+                  border: '1px solid var(--rule-subtle)',
+                  borderRadius: 'var(--radius-md)',
+                  background: 'var(--surface-panel)',
+                  boxShadow: 'var(--shadow-floating)',
+                }}
+                onMouseLeave={() => setMenuOpen(false)}
+              >
+                <button
+                  type="button"
+                  onClick={() => { setMenuOpen(false); setTransition('submit'); }}
+                  className="w-full text-left px-3 py-2 text-sm transition-colors"
+                  style={{ color: 'var(--ink-secondary)' }}
+                  onMouseEnter={e => (e.currentTarget.style.background = 'var(--surface-sunken)')}
+                  onMouseLeave={e => (e.currentTarget.style.background = 'transparent')}
+                >
+                  Mark as Submitted
+                </button>
+                <button
+                  type="button"
+                  onClick={() => { setMenuOpen(false); onDelete(grant.id); }}
+                  className="w-full text-left px-3 py-2 text-sm transition-colors"
+                  style={{ color: 'var(--state-danger)' }}
+                  onMouseEnter={e => (e.currentTarget.style.background = 'var(--state-danger-bg)')}
+                  onMouseLeave={e => (e.currentTarget.style.background = 'transparent')}
+                >
+                  Delete
+                </button>
               </div>
             )}
-            <div className="mt-2 flex items-center gap-3 flex-wrap">
-              <DeadlineChip dateStr={grant.external_deadline} />
-              <TaskProgress tasks={grant.tasks} />
-            </div>
-          </Link>
-
-          <div className="flex flex-col items-end gap-2 shrink-0">
-            <div className="relative">
-              <button
-                type="button"
-                onClick={() => setMenuOpen(v => !v)}
-                className="w-7 h-7 rounded-lg flex items-center justify-center text-gray-400 hover:text-gray-700 hover:bg-white/80 transition-colors"
-              >
-                <svg className="w-4 h-4" fill="currentColor" viewBox="0 0 24 24">
-                  <circle cx="12" cy="5" r="1.5" /><circle cx="12" cy="12" r="1.5" /><circle cx="12" cy="19" r="1.5" />
-                </svg>
-              </button>
-              {menuOpen && (
-                <div className="absolute right-0 top-full mt-1 w-44 bg-white border border-gray-200 rounded-xl shadow-lg py-1 z-10"
-                  onMouseLeave={() => setMenuOpen(false)}>
-                  <button
-                    type="button"
-                    onClick={() => { setMenuOpen(false); setTransition('submit'); }}
-                    className="w-full text-left px-3 py-2 text-sm text-gray-700 hover:bg-gray-50"
-                  >
-                    Mark as Submitted
-                  </button>
-                  <button
-                    type="button"
-                    onClick={() => { setMenuOpen(false); onDelete(grant.id); }}
-                    className="w-full text-left px-3 py-2 text-sm text-red-600 hover:bg-red-50"
-                  >
-                    Delete
-                  </button>
-                </div>
-              )}
-            </div>
-            <Link
-              href={`/grants/${grant.id}?tab=editor`}
-              className="text-xs font-medium bg-blue-600 text-white px-2.5 py-1 rounded-lg hover:bg-blue-700 transition-colors"
-            >
-              Write
-            </Link>
           </div>
+
+          <Link
+            href={`/grants/${grant.id}?tab=editor`}
+            className="text-xs font-medium px-2.5 py-1 transition-colors"
+            style={{
+              borderRadius: 'var(--radius-sm)',
+              background: 'var(--accent-secondary)',
+              color: 'var(--accent-primary)',
+              border: '1px solid var(--accent-primary)',
+              opacity: 0.8,
+            }}
+            onMouseEnter={e => { (e.currentTarget as HTMLElement).style.opacity = '1'; }}
+            onMouseLeave={e => { (e.currentTarget as HTMLElement).style.opacity = '0.8'; }}
+          >
+            Write
+          </Link>
         </div>
       </div>
     </>

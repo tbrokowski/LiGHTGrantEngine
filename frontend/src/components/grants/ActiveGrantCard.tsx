@@ -23,10 +23,22 @@ function TaskProgress({ tasks }: { tasks?: { status: string }[] }) {
   const pct = Math.round((done / tasks.length) * 100);
   return (
     <div className="flex items-center gap-2">
-      <div className="h-1.5 w-28 bg-emerald-100 rounded-full overflow-hidden">
-        <div className="h-full bg-emerald-500 rounded-full transition-all" style={{ width: `${pct}%` }} />
+      <div
+        className="h-0.5 w-20 overflow-hidden"
+        style={{ background: 'var(--rule-subtle)', borderRadius: 'var(--radius-xs)' }}
+      >
+        <div
+          className="h-full transition-all"
+          style={{
+            width: `${pct}%`,
+            background: pct === 100 ? 'var(--accent-cool)' : 'var(--accent-cool)',
+            borderRadius: 'var(--radius-xs)',
+          }}
+        />
       </div>
-      <span className="text-xs text-gray-400">{pct}%</span>
+      <span className="mono-data text-[10px]" style={{ color: 'var(--ink-faint)' }}>
+        {done}/{tasks.length}
+      </span>
     </div>
   );
 }
@@ -61,10 +73,11 @@ export default function ActiveGrantCard({ grant, onStageChange, onDelete, onDead
 
   const awardedDate = formatDate(grant.decision_at);
   const awardAmt = formatCurrency(grant.award_amount, grant.currency);
-
   const meta: string[] = [];
   if (grant.funder) meta.push(grant.funder);
   if (grant.pi_name) meta.push(grant.pi_name);
+
+  const accentColor = grant.color ?? 'var(--accent-cool)';
 
   return (
     <>
@@ -78,23 +91,49 @@ export default function ActiveGrantCard({ grant, onStageChange, onDelete, onDead
         />
       )}
 
+      {/* Edit deadline mini-modal */}
       {editingDeadline && (
-        <div className="fixed inset-0 z-40 flex items-center justify-center bg-black/20 backdrop-blur-sm">
-          <div className="bg-white rounded-2xl shadow-xl border border-gray-100 p-6 w-80">
-            <h3 className="text-sm font-semibold text-gray-900 mb-1">Edit Project End Date</h3>
-            <p className="text-xs text-gray-400 mb-4">{grant.title}</p>
+        <div
+          className="fixed inset-0 z-40 flex items-center justify-center"
+          style={{ background: 'var(--surface-overlay)' }}
+        >
+          <div
+            className="p-6 w-80"
+            style={{
+              background: 'var(--surface-panel)',
+              borderRadius: 'var(--radius-lg)',
+              border: '1px solid var(--rule-subtle)',
+              boxShadow: 'var(--shadow-floating)',
+            }}
+          >
+            <h3 className="text-sm font-semibold mb-1" style={{ color: 'var(--ink-primary)' }}>
+              Edit Project End Date
+            </h3>
+            <p className="text-xs mb-4 truncate" style={{ color: 'var(--ink-muted)' }}>{grant.title}</p>
             <input
               type="date"
               value={deadlineInput}
               onChange={e => setDeadlineInput(e.target.value)}
-              className="w-full px-3 py-2 text-sm border border-gray-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-emerald-400 mb-4"
+              className="w-full px-3 py-2 text-sm mb-4"
+              style={{
+                border: '1px solid var(--rule-subtle)',
+                borderRadius: 'var(--radius-sm)',
+                background: 'var(--surface-sunken)',
+                color: 'var(--ink-primary)',
+                outline: 'none',
+              }}
+              onFocus={e => (e.currentTarget.style.borderColor = 'var(--accent-primary)')}
+              onBlur={e => (e.currentTarget.style.borderColor = 'var(--rule-subtle)')}
               autoFocus
             />
             <div className="flex gap-2 justify-end">
               <button
                 type="button"
                 onClick={() => setEditingDeadline(false)}
-                className="px-3 py-1.5 text-sm text-gray-600 hover:text-gray-900 transition-colors"
+                className="px-3 py-1.5 text-sm transition-colors"
+                style={{ color: 'var(--ink-muted)' }}
+                onMouseEnter={e => (e.currentTarget.style.color = 'var(--ink-primary)')}
+                onMouseLeave={e => (e.currentTarget.style.color = 'var(--ink-muted)')}
               >
                 Cancel
               </button>
@@ -102,7 +141,12 @@ export default function ActiveGrantCard({ grant, onStageChange, onDelete, onDead
                 type="button"
                 onClick={handleSaveDeadline}
                 disabled={savingDeadline}
-                className="px-4 py-1.5 text-sm font-medium bg-emerald-600 text-white rounded-lg hover:bg-emerald-700 disabled:opacity-50 transition-colors"
+                className="px-4 py-1.5 text-sm font-medium transition-colors disabled:opacity-50"
+                style={{
+                  background: 'var(--accent-cool)',
+                  color: 'var(--ink-inverse)',
+                  borderRadius: 'var(--radius-sm)',
+                }}
               >
                 {savingDeadline ? 'Saving…' : 'Save'}
               </button>
@@ -110,87 +154,136 @@ export default function ActiveGrantCard({ grant, onStageChange, onDelete, onDead
           </div>
         </div>
       )}
-      <div
-        className="group border border-emerald-100 bg-emerald-50/30 rounded-2xl px-5 py-4 hover:shadow-md hover:-translate-y-px transition-all duration-150"
-        style={grant.color ? { borderLeftColor: grant.color, borderLeftWidth: '4px' } : undefined}
-      >
-        <div className="flex items-start gap-3">
-          <Link href={`/grants/${grant.id}/workspace`} className="flex-1 min-w-0 cursor-pointer">
-            <div className="flex items-center gap-2 mb-1.5">
-              <span className="text-xs font-medium text-emerald-700 bg-emerald-100 border border-emerald-200 px-2 py-0.5 rounded-full">
-                Active
-              </span>
-              {awardAmt && (
-                <span className="text-xs text-emerald-600 font-medium">{awardAmt}</span>
-              )}
-            </div>
-            <h3 className="text-sm font-semibold text-gray-900 leading-snug group-hover:text-emerald-800 transition-colors">
-              {grant.title}
-            </h3>
-            {meta.length > 0 && (
-              <p className="text-xs text-gray-400 mt-1 truncate">{meta.join(' · ')}</p>
-            )}
-            <div className="mt-2.5 flex items-center gap-3 flex-wrap">
-              <TaskProgress tasks={grant.tasks} />
-              {awardedDate && (
-                <span className="text-xs text-gray-400 bg-gray-50 border border-gray-100 px-2 py-0.5 rounded-full">
-                  Awarded {awardedDate}
-                </span>
-              )}
-              {grant.external_deadline ? (
-                <span className="text-xs text-emerald-700 bg-emerald-50 border border-emerald-100 px-2 py-0.5 rounded-full">
-                  Ends {formatDate(grant.external_deadline)}
-                </span>
-              ) : (
-                <span className="text-xs text-gray-300 italic">No end date</span>
-              )}
-            </div>
-          </Link>
 
-          <div className="flex flex-col items-end gap-2 shrink-0">
-            <div className="relative">
-              <button
-                type="button"
-                onClick={() => setMenuOpen(v => !v)}
-                className="w-7 h-7 rounded-lg flex items-center justify-center text-gray-400 hover:text-gray-700 hover:bg-gray-100 transition-colors"
+      <div
+        className="group flex items-stretch transition-colors duration-100"
+        style={{ borderBottom: '1px solid var(--rule-subtle)' }}
+        onMouseEnter={e => (e.currentTarget.style.background = 'var(--selection-bg)')}
+        onMouseLeave={e => (e.currentTarget.style.background = 'transparent')}
+      >
+        {/* Left accent bar — institutional green for active grants */}
+        <div
+          className="w-1 shrink-0 self-stretch"
+          style={{ background: accentColor, minHeight: '60px' }}
+        />
+
+        {/* Main content */}
+        <Link href={`/grants/${grant.id}/workspace`} className="flex-1 min-w-0 px-5 py-4">
+          {/* Top row */}
+          <div className="flex items-center gap-2 mb-1.5">
+            <span
+              className="text-[10px] font-medium px-1.5 py-0.5 rounded-[var(--radius-xs)]"
+              style={{ background: 'var(--state-success-bg)', color: 'var(--state-success)' }}
+            >
+              Active
+            </span>
+            {awardAmt && (
+              <span className="mono-data text-[11px] font-medium" style={{ color: 'var(--accent-warm)' }}>
+                {awardAmt}
+              </span>
+            )}
+          </div>
+
+          {/* Title */}
+          <h3
+            className="text-sm font-medium leading-snug"
+            style={{ color: 'var(--ink-primary)' }}
+          >
+            {grant.title}
+          </h3>
+
+          {/* Meta */}
+          {meta.length > 0 && (
+            <p className="mono-data text-[11px] mt-1 truncate" style={{ color: 'var(--ink-muted)' }}>
+              {meta.join('  ·  ')}
+            </p>
+          )}
+
+          {/* Progress + dates */}
+          <div className="mt-2 flex items-center gap-4 flex-wrap">
+            <TaskProgress tasks={grant.tasks} />
+            {awardedDate && (
+              <span className="mono-data text-[11px]" style={{ color: 'var(--ink-faint)' }}>
+                Awarded {awardedDate}
+              </span>
+            )}
+            {grant.external_deadline ? (
+              <span
+                className="mono-data text-[11px] px-1.5 py-0.5 rounded-[var(--radius-xs)]"
+                style={{ background: 'var(--state-success-bg)', color: 'var(--state-success)' }}
               >
-                <svg className="w-4 h-4" fill="currentColor" viewBox="0 0 24 24">
-                  <circle cx="12" cy="5" r="1.5" /><circle cx="12" cy="12" r="1.5" /><circle cx="12" cy="19" r="1.5" />
-                </svg>
-              </button>
-              {menuOpen && (
-                <div
-                  className="absolute right-0 top-full mt-1 w-44 bg-white border border-gray-200 rounded-xl shadow-lg py-1 z-10"
-                  onMouseLeave={() => setMenuOpen(false)}
+                Ends {formatDate(grant.external_deadline)}
+              </span>
+            ) : (
+              <span className="text-[11px] italic" style={{ color: 'var(--ink-faint)' }}>
+                No end date
+              </span>
+            )}
+          </div>
+        </Link>
+
+        {/* Right: actions */}
+        <div className="flex flex-col items-end justify-start px-4 py-4 shrink-0">
+          <div className="relative">
+            <button
+              type="button"
+              onClick={() => setMenuOpen(v => !v)}
+              className="w-6 h-6 flex items-center justify-center rounded-[var(--radius-xs)] transition-colors"
+              style={{ color: 'var(--ink-faint)' }}
+              onMouseEnter={e => { e.currentTarget.style.color = 'var(--ink-muted)'; e.currentTarget.style.background = 'var(--surface-sunken)'; }}
+              onMouseLeave={e => { e.currentTarget.style.color = 'var(--ink-faint)'; e.currentTarget.style.background = 'transparent'; }}
+            >
+              <svg className="w-3.5 h-3.5" fill="currentColor" viewBox="0 0 24 24">
+                <circle cx="12" cy="5" r="1.5" /><circle cx="12" cy="12" r="1.5" /><circle cx="12" cy="19" r="1.5" />
+              </svg>
+            </button>
+            {menuOpen && (
+              <div
+                className="absolute right-0 top-full mt-1 w-44 py-1 z-10"
+                style={{
+                  border: '1px solid var(--rule-subtle)',
+                  borderRadius: 'var(--radius-md)',
+                  background: 'var(--surface-panel)',
+                  boxShadow: 'var(--shadow-floating)',
+                }}
+                onMouseLeave={() => setMenuOpen(false)}
+              >
+                <button
+                  type="button"
+                  onClick={() => {
+                    setMenuOpen(false);
+                    setDeadlineInput(grant.external_deadline?.substring(0, 10) ?? '');
+                    setEditingDeadline(true);
+                  }}
+                  className="w-full text-left px-3 py-2 text-sm transition-colors"
+                  style={{ color: 'var(--ink-secondary)' }}
+                  onMouseEnter={e => (e.currentTarget.style.background = 'var(--surface-sunken)')}
+                  onMouseLeave={e => (e.currentTarget.style.background = 'transparent')}
                 >
-                  <button
-                    type="button"
-                    onClick={() => {
-                      setMenuOpen(false);
-                      setDeadlineInput(grant.external_deadline?.substring(0, 10) ?? '');
-                      setEditingDeadline(true);
-                    }}
-                    className="w-full text-left px-3 py-2 text-sm text-gray-700 hover:bg-gray-50"
-                  >
-                    Edit End Date
-                  </button>
-                  <button
-                    type="button"
-                    onClick={() => { setMenuOpen(false); setArchiving(true); }}
-                    className="w-full text-left px-3 py-2 text-sm text-gray-700 hover:bg-gray-50"
-                  >
-                    Move to Archive
-                  </button>
-                  <button
-                    type="button"
-                    onClick={() => { setMenuOpen(false); onDelete(grant.id); }}
-                    className="w-full text-left px-3 py-2 text-sm text-red-600 hover:bg-red-50"
-                  >
-                    Delete
-                  </button>
-                </div>
-              )}
-            </div>
+                  Edit End Date
+                </button>
+                <button
+                  type="button"
+                  onClick={() => { setMenuOpen(false); setArchiving(true); }}
+                  className="w-full text-left px-3 py-2 text-sm transition-colors"
+                  style={{ color: 'var(--ink-secondary)' }}
+                  onMouseEnter={e => (e.currentTarget.style.background = 'var(--surface-sunken)')}
+                  onMouseLeave={e => (e.currentTarget.style.background = 'transparent')}
+                >
+                  Move to Archive
+                </button>
+                <button
+                  type="button"
+                  onClick={() => { setMenuOpen(false); onDelete(grant.id); }}
+                  className="w-full text-left px-3 py-2 text-sm transition-colors"
+                  style={{ color: 'var(--state-danger)' }}
+                  onMouseEnter={e => (e.currentTarget.style.background = 'var(--state-danger-bg)')}
+                  onMouseLeave={e => (e.currentTarget.style.background = 'transparent')}
+                >
+                  Delete
+                </button>
+              </div>
+            )}
           </div>
         </div>
       </div>
