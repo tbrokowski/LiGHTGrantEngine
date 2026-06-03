@@ -4,7 +4,7 @@ from alembic import op
 import sqlalchemy as sa
 
 revision = "039_draft_execution_plan"
-down_revision = "038_call_intelligence"
+down_revision = "039"
 branch_labels = None
 depends_on = None
 
