@@ -9,9 +9,10 @@
 ───────────────────────────────────────────────────────────── */
 :root {
   /* Surfaces */
-  --surface-base:    #F9F8F5;   /* warm ivory — page background */
+  --surface-chrome:  #EEF2F7;   /* outer shell behind content cards */
+  --surface-base:    #FFFFFF;   /* white — page/card background */
   --surface-raised:  #FFFFFF;   /* panels, cards, nav */
-  --surface-sunken:  #F2F1ED;   /* recessed regions, input bg */
+  --surface-sunken:  #F0F4F8;   /* recessed regions, input bg */
   --surface-panel:   #FFFFFF;   /* inspection pane, modals */
   --surface-overlay: rgba(12, 12, 10, 0.50); /* modal backdrop */
 
@@ -20,7 +21,7 @@
   --ink-secondary: #3A3A36;   /* body text */
   --ink-muted:     #87867F;   /* captions, secondary labels */
   --ink-faint:     #C4C3BB;   /* placeholders, disabled */
-  --ink-inverse:   #F9F8F5;   /* text on dark backgrounds */
+  --ink-inverse:   #FFFFFF;   /* text on dark backgrounds */
 
   /* Rules — horizontal dividers, the primary spatial motif */
   --rule-subtle: #E5E4DF;     /* default divider */
@@ -47,11 +48,12 @@
   --focus-ring:    rgba(28, 60, 114, 0.40);
   --selection-bg:  rgba(28, 60, 114, 0.07);
 
-  /* Radius — tighter than the old rounded-2xl default */
-  --radius-xs: 2px;
-  --radius-sm: 4px;
-  --radius-md: 6px;
-  --radius-lg: 10px;
+  /* Radius */
+  --radius-xs: 3px;
+  --radius-sm: 6px;
+  --radius-md: 8px;
+  --radius-lg: 12px;
+  --radius-card: 12px; /* main content card */
 
   /* Shadows */
   --shadow-panel:    0 1px 3px rgba(0, 0, 0, 0.06), 0 1px 2px rgba(0, 0, 0, 0.04);
@@ -72,14 +74,14 @@
 /* ── Base overrides ─────────────────────────────────────────── */
 html {
   font-family: var(--font-body);
-  background-color: var(--surface-base);
+  background-color: var(--surface-chrome);
   color: var(--ink-primary);
   -webkit-font-smoothing: antialiased;
   -moz-osx-font-smoothing: grayscale;
 }
 
 body {
-  background-color: var(--surface-base);
+  background-color: var(--surface-chrome);
 }
 
 /* ── Tiptap editor styles ───────────────────────────────────── */

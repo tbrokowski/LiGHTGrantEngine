@@ -133,8 +133,8 @@ export default function PendingCard({ grant, onStageChange, onDelete }: Props) {
                   type="button"
                   onClick={() => { setMenuOpen(false); setTransition('accept'); }}
                   className="w-full text-left px-3 py-2 text-sm transition-colors"
-                  style={{ color: 'var(--state-success)' }}
-                  onMouseEnter={e => (e.currentTarget.style.background = 'var(--state-success-bg)')}
+                  style={{ color: 'var(--ink-secondary)' }}
+                  onMouseEnter={e => (e.currentTarget.style.background = 'var(--surface-sunken)')}
                   onMouseLeave={e => (e.currentTarget.style.background = 'transparent')}
                 >
                   Mark Accepted
@@ -143,8 +143,8 @@ export default function PendingCard({ grant, onStageChange, onDelete }: Props) {
                   type="button"
                   onClick={() => { setMenuOpen(false); setTransition('reject'); }}
                   className="w-full text-left px-3 py-2 text-sm transition-colors"
-                  style={{ color: 'var(--state-danger)' }}
-                  onMouseEnter={e => (e.currentTarget.style.background = 'var(--state-danger-bg)')}
+                  style={{ color: 'var(--ink-secondary)' }}
+                  onMouseEnter={e => (e.currentTarget.style.background = 'var(--surface-sunken)')}
                   onMouseLeave={e => (e.currentTarget.style.background = 'transparent')}
                 >
                   Mark Rejected
@@ -154,8 +154,8 @@ export default function PendingCard({ grant, onStageChange, onDelete }: Props) {
                   type="button"
                   onClick={() => { setMenuOpen(false); onDelete(grant.id); }}
                   className="w-full text-left px-3 py-2 text-sm transition-colors"
-                  style={{ color: 'var(--state-danger)' }}
-                  onMouseEnter={e => (e.currentTarget.style.background = 'var(--state-danger-bg)')}
+                  style={{ color: 'var(--ink-secondary)' }}
+                  onMouseEnter={e => (e.currentTarget.style.background = 'var(--surface-sunken)')}
                   onMouseLeave={e => (e.currentTarget.style.background = 'transparent')}
                 >
                   Delete

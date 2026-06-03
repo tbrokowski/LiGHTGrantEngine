@@ -307,11 +307,12 @@ function PartnersPageInner() {
             onClick={() => setShowPalette(true)}
             className="flex items-center gap-2 text-sm px-3 py-1.5 transition-colors"
             style={{
-              color: 'var(--ink-muted)',
-              border: '1px solid var(--rule-subtle)',
+              color: 'var(--accent-primary)',
+              border: '1px solid var(--accent-primary)',
               borderRadius: 'var(--radius-sm)',
+              background: 'transparent',
             }}
-            onMouseEnter={e => (e.currentTarget.style.background = 'var(--surface-sunken)')}
+            onMouseEnter={e => (e.currentTarget.style.background = 'var(--state-info-bg)')}
             onMouseLeave={e => (e.currentTarget.style.background = 'transparent')}
           >
             <Search className="w-3.5 h-3.5" />
@@ -328,12 +329,13 @@ function PartnersPageInner() {
             disabled={exporting}
             className="flex items-center gap-1.5 text-sm px-3 py-1.5 transition-colors disabled:opacity-50"
             style={{
-              color: 'var(--ink-muted)',
-              border: '1px solid var(--rule-subtle)',
+              color: 'var(--accent-primary)',
+              border: '1px solid var(--accent-primary)',
               borderRadius: 'var(--radius-sm)',
+              background: 'transparent',
             }}
             title="Export CSV"
-            onMouseEnter={e => (e.currentTarget.style.background = 'var(--surface-sunken)')}
+            onMouseEnter={e => (e.currentTarget.style.background = 'var(--state-info-bg)')}
             onMouseLeave={e => (e.currentTarget.style.background = 'transparent')}
           >
             <Download className="w-3.5 h-3.5" />
@@ -528,11 +530,12 @@ function PartnersPageInner() {
               onClick={() => setBulkConfirm('delete')}
               className="flex items-center gap-1 text-xs px-2.5 py-1 transition-colors"
               style={{
-                color: 'var(--state-danger)',
-                border: '1px solid var(--state-danger)',
+                color: 'var(--accent-primary)',
+                border: '1px solid var(--accent-primary)',
                 borderRadius: 'var(--radius-xs)',
+                background: 'transparent',
               }}
-              onMouseEnter={e => (e.currentTarget.style.background = 'var(--state-danger-bg)')}
+              onMouseEnter={e => (e.currentTarget.style.background = 'var(--state-info-bg)')}
               onMouseLeave={e => (e.currentTarget.style.background = 'transparent')}
             >
               <Trash2 className="w-3 h-3" />Delete

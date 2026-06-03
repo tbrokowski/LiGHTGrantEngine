@@ -510,10 +510,12 @@ export default function OpportunitiesPage() {
                 className="px-3 py-1.5 text-sm font-medium transition-colors"
                 style={{
                   borderRadius: 'var(--radius-sm)',
-                  border: '1px solid var(--rule-strong)',
-                  color: 'var(--ink-secondary)',
-                  background: 'var(--surface-raised)',
+                  border: '1px solid var(--accent-primary)',
+                  color: 'var(--accent-primary)',
+                  background: 'transparent',
                 }}
+                onMouseEnter={e => (e.currentTarget.style.background = 'var(--state-info-bg)')}
+                onMouseLeave={e => (e.currentTarget.style.background = 'transparent')}
               >
                 + Add
               </button>

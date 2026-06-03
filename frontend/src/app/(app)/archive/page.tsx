@@ -498,11 +498,12 @@ function NewArchiveModal({ onClose, onCreated }: { onClose: () => void; onCreate
             onClick={onClose}
             className="flex-1 px-4 py-2 text-sm transition-colors"
             style={{
-              color: 'var(--ink-muted)',
-              border: '1px solid var(--rule-subtle)',
+              color: 'var(--accent-primary)',
+              border: '1px solid var(--accent-primary)',
               borderRadius: 'var(--radius-sm)',
+              background: 'transparent',
             }}
-            onMouseEnter={e => (e.currentTarget.style.background = 'var(--surface-sunken)')}
+            onMouseEnter={e => (e.currentTarget.style.background = 'var(--state-info-bg)')}
             onMouseLeave={e => (e.currentTarget.style.background = 'transparent')}
           >
             Cancel

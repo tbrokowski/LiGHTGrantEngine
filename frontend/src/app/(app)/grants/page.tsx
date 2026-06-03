@@ -418,10 +418,9 @@ export default function GrantsPage() {
               onClick={() => setShowActiveModal(true)}
               className="flex items-center gap-1.5 px-3.5 py-1.5 text-sm font-medium transition-colors"
               style={{
-                border: '1px solid var(--state-success)',
+                background: 'var(--accent-primary)',
+                color: 'var(--ink-inverse)',
                 borderRadius: 'var(--radius-sm)',
-                color: 'var(--state-success)',
-                background: 'var(--state-success-bg)',
               }}
             >
               <svg className="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2.5}>

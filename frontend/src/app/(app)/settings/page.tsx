@@ -84,11 +84,12 @@ function GoogleIntegrationCard() {
           disabled={disconnecting}
           className="text-xs font-medium px-3 py-1.5 transition-colors disabled:opacity-50 shrink-0"
           style={{
-            color: 'var(--state-danger)',
-            border: '1px solid var(--state-danger)',
+            color: 'var(--accent-primary)',
+            border: '1px solid var(--accent-primary)',
             borderRadius: 'var(--radius-sm)',
+            background: 'transparent',
           }}
-          onMouseEnter={e => (e.currentTarget.style.background = 'var(--state-danger-bg)')}
+          onMouseEnter={e => (e.currentTarget.style.background = 'var(--state-info-bg)')}
           onMouseLeave={e => (e.currentTarget.style.background = 'transparent')}
         >
           {disconnecting ? 'Disconnecting…' : 'Disconnect'}
@@ -99,11 +100,12 @@ function GoogleIntegrationCard() {
           disabled={connecting}
           className="text-xs font-medium px-3 py-1.5 transition-colors disabled:opacity-50 shrink-0"
           style={{
-            color: 'var(--ink-muted)',
-            border: '1px solid var(--rule-subtle)',
+            color: 'var(--accent-primary)',
+            border: '1px solid var(--accent-primary)',
             borderRadius: 'var(--radius-sm)',
+            background: 'transparent',
           }}
-          onMouseEnter={e => (e.currentTarget.style.background = 'var(--surface-sunken)')}
+          onMouseEnter={e => (e.currentTarget.style.background = 'var(--state-info-bg)')}
           onMouseLeave={e => (e.currentTarget.style.background = 'transparent')}
         >
           {connecting ? 'Connecting…' : 'Connect Google'}
@@ -843,11 +845,12 @@ function SettingsPageInner() {
               disabled={deduplicating}
               className="flex items-center gap-2 text-sm px-4 py-2 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
               style={{
-                color: 'var(--ink-muted)',
-                border: '1px solid var(--rule-subtle)',
+                color: 'var(--accent-primary)',
+                border: '1px solid var(--accent-primary)',
                 borderRadius: 'var(--radius-sm)',
+                background: 'transparent',
               }}
-              onMouseEnter={e => (e.currentTarget.style.background = 'var(--surface-sunken)')}
+              onMouseEnter={e => (e.currentTarget.style.background = 'var(--state-info-bg)')}
               onMouseLeave={e => (e.currentTarget.style.background = 'transparent')}
             >
               {deduplicating ? (
@@ -932,13 +935,13 @@ function SettingsPageInner() {
                   disabled={discoveringSource}
                   className="text-sm px-3 py-1.5 transition-colors disabled:opacity-50"
                   style={{
-                    color: 'var(--state-success)',
-                    border: '1px solid var(--state-success)',
+                    color: 'var(--accent-primary)',
+                    border: '1px solid var(--accent-primary)',
                     borderRadius: 'var(--radius-sm)',
-                    opacity: 0.85,
+                    background: 'transparent',
                   }}
-                  onMouseEnter={e => { e.currentTarget.style.opacity = '1'; e.currentTarget.style.background = 'var(--state-success-bg)'; }}
-                  onMouseLeave={e => { e.currentTarget.style.opacity = '0.85'; e.currentTarget.style.background = 'transparent'; }}
+                  onMouseEnter={e => (e.currentTarget.style.background = 'var(--state-info-bg)')}
+                  onMouseLeave={e => (e.currentTarget.style.background = 'transparent')}
                 >
                   {discoveringSource ? 'Queuing…' : 'Run Discovery'}
                 </button>
@@ -958,13 +961,13 @@ function SettingsPageInner() {
                   disabled={backfillingTypes}
                   className="text-sm px-3 py-1.5 transition-colors disabled:opacity-50"
                   style={{
-                    color: 'var(--state-info)',
-                    border: '1px solid var(--state-info)',
+                    color: 'var(--accent-primary)',
+                    border: '1px solid var(--accent-primary)',
                     borderRadius: 'var(--radius-sm)',
-                    opacity: 0.85,
+                    background: 'transparent',
                   }}
-                  onMouseEnter={e => { e.currentTarget.style.opacity = '1'; e.currentTarget.style.background = 'var(--state-info-bg)'; }}
-                  onMouseLeave={e => { e.currentTarget.style.opacity = '0.85'; e.currentTarget.style.background = 'transparent'; }}
+                  onMouseEnter={e => (e.currentTarget.style.background = 'var(--state-info-bg)')}
+                  onMouseLeave={e => (e.currentTarget.style.background = 'transparent')}
                 >
                   {backfillingTypes ? 'Queuing…' : 'Backfill Types'}
                 </button>
@@ -1186,11 +1189,12 @@ function SettingsPageInner() {
                 onClick={resetForm}
                 className="text-sm px-3 py-1.5 transition-colors"
                 style={{
-                  color: 'var(--ink-muted)',
-                  border: '1px solid var(--rule-subtle)',
+                  color: 'var(--accent-primary)',
+                  border: '1px solid var(--accent-primary)',
                   borderRadius: 'var(--radius-sm)',
+                  background: 'transparent',
                 }}
-                onMouseEnter={e => (e.currentTarget.style.background = 'var(--surface-sunken)')}
+                onMouseEnter={e => (e.currentTarget.style.background = 'var(--state-info-bg)')}
                 onMouseLeave={e => (e.currentTarget.style.background = 'transparent')}
               >
                 Cancel
@@ -1414,9 +1418,7 @@ function SettingsPageInner() {
                               disabled={approving === s.id}
                               title="Approve — set source to active and queue a scan"
                               className="text-xs px-2.5 py-1 transition-colors disabled:opacity-40"
-                              style={{ color: 'var(--state-success)', border: '1px solid var(--state-success)', borderRadius: 'var(--radius-xs)' }}
-                              onMouseEnter={e => (e.currentTarget.style.background = 'var(--state-success-bg)')}
-                              onMouseLeave={e => (e.currentTarget.style.background = 'transparent')}
+                              style={{ background: 'var(--accent-primary)', color: 'var(--ink-inverse)', borderRadius: 'var(--radius-xs)' }}
                             >
                               {approving === s.id ? 'Approving…' : 'Approve'}
                             </button>
@@ -1425,8 +1427,8 @@ function SettingsPageInner() {
                               disabled={rejecting === s.id}
                               title="Reject — remove this source"
                               className="text-xs px-2.5 py-1 transition-colors disabled:opacity-40"
-                              style={{ color: 'var(--state-danger)', border: '1px solid var(--state-danger)', borderRadius: 'var(--radius-xs)' }}
-                              onMouseEnter={e => (e.currentTarget.style.background = 'var(--state-danger-bg)')}
+                              style={{ color: 'var(--accent-primary)', border: '1px solid var(--accent-primary)', borderRadius: 'var(--radius-xs)', background: 'transparent' }}
+                              onMouseEnter={e => (e.currentTarget.style.background = 'var(--state-info-bg)')}
                               onMouseLeave={e => (e.currentTarget.style.background = 'transparent')}
                             >
                               {rejecting === s.id ? '…' : 'Reject'}
@@ -1450,8 +1452,8 @@ function SettingsPageInner() {
                               disabled={toggling === s.id}
                               title={s.status === 'active' ? 'Pause' : 'Resume'}
                               className="text-xs px-2.5 py-1 transition-colors disabled:opacity-40"
-                              style={{ color: 'var(--ink-muted)', border: '1px solid var(--rule-subtle)', borderRadius: 'var(--radius-xs)' }}
-                              onMouseEnter={e => (e.currentTarget.style.background = 'var(--surface-sunken)')}
+                              style={{ color: 'var(--accent-primary)', border: '1px solid var(--accent-primary)', borderRadius: 'var(--radius-xs)', background: 'transparent' }}
+                              onMouseEnter={e => (e.currentTarget.style.background = 'var(--state-info-bg)')}
                               onMouseLeave={e => (e.currentTarget.style.background = 'transparent')}
                             >
                               {toggling === s.id ? '…' : s.status === 'active' ? 'Pause' : 'Resume'}
@@ -1461,8 +1463,8 @@ function SettingsPageInner() {
                               disabled={deleting === s.id}
                               title="Delete source"
                               className="text-xs px-2.5 py-1 transition-colors disabled:opacity-40"
-                              style={{ color: 'var(--state-danger)', border: '1px solid var(--state-danger)', borderRadius: 'var(--radius-xs)' }}
-                              onMouseEnter={e => (e.currentTarget.style.background = 'var(--state-danger-bg)')}
+                              style={{ color: 'var(--accent-primary)', border: '1px solid var(--accent-primary)', borderRadius: 'var(--radius-xs)', background: 'transparent' }}
+                              onMouseEnter={e => (e.currentTarget.style.background = 'var(--state-info-bg)')}
                               onMouseLeave={e => (e.currentTarget.style.background = 'transparent')}
                             >
                               {deleting === s.id ? '…' : 'Delete'}
@@ -1615,11 +1617,12 @@ function SettingsPageInner() {
                               onClick={() => setExpandedSource(null)}
                               className="text-xs px-3 py-1.5 transition-colors"
                               style={{
-                                color: 'var(--ink-muted)',
-                                border: '1px solid var(--rule-subtle)',
+                                color: 'var(--accent-primary)',
+                                border: '1px solid var(--accent-primary)',
                                 borderRadius: 'var(--radius-sm)',
+                                background: 'transparent',
                               }}
-                              onMouseEnter={e => (e.currentTarget.style.background = 'var(--surface-sunken)')}
+                              onMouseEnter={e => (e.currentTarget.style.background = 'var(--state-info-bg)')}
                               onMouseLeave={e => (e.currentTarget.style.background = 'transparent')}
                             >
                               Cancel
