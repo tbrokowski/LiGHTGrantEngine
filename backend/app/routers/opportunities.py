@@ -1330,17 +1330,17 @@ async def _load_personal_shortlist_map(
 
 
 async def _mark_read(db: AsyncSession, user_id: str, opp_id: str) -> None:
-    q = select(UserOpportunityState).where(
-        UserOpportunityState.user_id == user_id,
-        UserOpportunityState.opportunity_id == opp_id,
-    )
-    result = await db.execute(q)
-    state = result.scalar_one_or_none()
+    from sqlalchemy.dialects.postgresql import insert as pg_insert
     now = datetime.now(timezone.utc)
-    if state:
-        state.read_at = now
-    else:
-        db.add(UserOpportunityState(user_id=user_id, opportunity_id=opp_id, read_at=now))
+    stmt = (
+        pg_insert(UserOpportunityState)
+        .values(user_id=user_id, opportunity_id=opp_id, read_at=now, pinned=False, personal_tags=[])
+        .on_conflict_do_update(
+            index_elements=["user_id", "opportunity_id"],
+            set_={"read_at": now},
+        )
+    )
+    await db.execute(stmt)
     await db.commit()
 
 
