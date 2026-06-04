@@ -113,5 +113,5 @@ export function isExpired(deadline: string | null) {
   return new Date(deadline) < new Date();
 }
 
-export type ViewMode = 'table' | 'focus' | 'graph';
+export type ViewMode = 'table' | 'graph';
 export type TabMode = 'queue' | 'shortlist' | 'org-shortlist';

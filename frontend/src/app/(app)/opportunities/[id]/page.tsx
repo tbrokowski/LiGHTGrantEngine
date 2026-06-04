@@ -2,7 +2,7 @@
 import { useEffect, useState, useCallback } from 'react';
 import { useRouter, useParams } from 'next/navigation';
 import Link from 'next/link';
-import { Sparkles, Check, AlertTriangle, Folder, ChevronRight, Loader2 } from 'lucide-react';
+import { Sparkles, Check, AlertTriangle, Folder, ChevronLeft, ChevronRight, Loader2 } from 'lucide-react';
 import { opportunities, ai, api } from '@/lib/api';
 import { notifyOpportunitiesChanged } from '@/lib/opportunities-events';
 import { usePdfViewer } from '@/contexts/PdfViewerContext';
@@ -158,6 +158,7 @@ export default function OpportunityDetailPage() {
   const [actionBusy, setActionBusy] = useState(false);
   const [enriching, setEnriching] = useState(false);
   const [enrichMessage, setEnrichMessage] = useState('');
+  const [navIds, setNavIds] = useState<string[]>([]);
   const { openPdfViewer } = usePdfViewer();
 
   const fetchOpp = useCallback((notify = false) => {
@@ -172,6 +173,16 @@ export default function OpportunityDetailPage() {
   }, [id]);
 
   useEffect(() => { fetchOpp(true); }, [fetchOpp]);
+
+  useEffect(() => {
+    try {
+      const raw = sessionStorage.getItem('opp_nav_list');
+      if (raw) {
+        const parsed = JSON.parse(raw);
+        if (Array.isArray(parsed)) setNavIds(parsed);
+      }
+    } catch { /* ignore */ }
+  }, []);
 
   // Poll for updated content after a re-enrich task is queued
   useEffect(() => {
@@ -290,12 +301,48 @@ export default function OpportunityDetailPage() {
 
   return (
     <div className="px-8 py-8 max-w-5xl mx-auto">
-      {/* Breadcrumb */}
-      <div className="text-sm text-gray-400 mb-6 flex items-center gap-2">
-        <Link href="/opportunities" className="hover:text-gray-700">Opportunities</Link>
-        <span>/</span>
-        <span className="text-gray-600 truncate">{opp.title}</span>
-      </div>
+      {/* Breadcrumb + nav arrows */}
+      {(() => {
+        const navIndex = navIds.indexOf(id);
+        const hasPrev = navIndex > 0;
+        const hasNext = navIndex >= 0 && navIndex < navIds.length - 1;
+        return (
+          <div className="text-sm text-gray-400 mb-6 flex items-center gap-2">
+            <Link href="/opportunities" className="hover:text-gray-700">Opportunities</Link>
+            <span>/</span>
+            <span className="text-gray-600 truncate">{opp.title}</span>
+            {(hasPrev || hasNext) && (
+              <div className="ml-auto flex items-center gap-1 shrink-0">
+                <button
+                  onClick={() => router.push(`/opportunities/${navIds[navIndex - 1]}`)}
+                  disabled={!hasPrev}
+                  title="Previous opportunity"
+                  className="p-1 rounded transition-colors disabled:opacity-30"
+                  style={{ color: 'var(--ink-muted)' }}
+                  onMouseEnter={e => { if (hasPrev) e.currentTarget.style.background = 'var(--surface-sunken)'; }}
+                  onMouseLeave={e => (e.currentTarget.style.background = 'transparent')}
+                >
+                  <ChevronLeft className="w-4 h-4" />
+                </button>
+                <span className="mono-data text-[11px]" style={{ color: 'var(--ink-faint)' }}>
+                  {navIndex + 1} / {navIds.length}
+                </span>
+                <button
+                  onClick={() => router.push(`/opportunities/${navIds[navIndex + 1]}`)}
+                  disabled={!hasNext}
+                  title="Next opportunity"
+                  className="p-1 rounded transition-colors disabled:opacity-30"
+                  style={{ color: 'var(--ink-muted)' }}
+                  onMouseEnter={e => { if (hasNext) e.currentTarget.style.background = 'var(--surface-sunken)'; }}
+                  onMouseLeave={e => (e.currentTarget.style.background = 'transparent')}
+                >
+                  <ChevronRight className="w-4 h-4" />
+                </button>
+              </div>
+            )}
+          </div>
+        );
+      })()}
 
       {/* Inline enrichment status banner */}
       {enrichMessage && (

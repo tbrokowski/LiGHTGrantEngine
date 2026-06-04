@@ -10,12 +10,14 @@ interface OpportunityRowProps extends OpportunityActionHandlers {
   opp: Opportunity;
   index: number;
   mode?: 'queue' | 'shortlist' | 'org-shortlist';
+  onNavigate?: (id: string) => void;
 }
 
 export default function OpportunityRow({
   opp,
   index,
   mode = 'queue',
+  onNavigate,
   ...handlers
 }: OpportunityRowProps) {
   const unread = !opp.is_read;
@@ -30,7 +32,7 @@ export default function OpportunityRow({
       onMouseLeave={e => (e.currentTarget.style.background = 'transparent')}
     >
       <td className="px-5 py-3">
-        <Link href={`/opportunities/${opp.id}`} className="block">
+        <Link href={`/opportunities/${opp.id}`} className="block" onClick={() => onNavigate?.(opp.id)}>
           <div className="flex items-start gap-2">
             {unread && (
               <span

@@ -4,7 +4,6 @@ import { useRouter } from 'next/navigation';
 import { opportunities } from '@/lib/api';
 import { notifyOpportunitiesChanged, onOpportunitiesChanged } from '@/lib/opportunities-events';
 import OpportunityRow from '@/components/opportunities/OpportunityRow';
-import FocusReview from '@/components/opportunities/FocusReview';
 import OpportunityFiltersSidebar from '@/components/opportunities/OpportunityFilters';
 import OpportunityGraphView, { GraphNode, GraphCluster, GraphEdge } from '@/components/opportunities/OpportunityGraphView';
 import GraphFilters, { GraphFilterState } from '@/components/opportunities/GraphFilters';
@@ -133,7 +132,6 @@ export default function OpportunitiesPage() {
   const [showAddModal, setShowAddModal] = useState(false);
   const [pastExpanded, setPastExpanded] = useState(false);
   const [unreadOnly, setUnreadOnly] = useState(true);
-  const [focusIndex, setFocusIndex] = useState(0);
   const [graphNodes, setGraphNodes] = useState<GraphNode[]>([]);
   const [graphClusters, setGraphClusters] = useState<GraphCluster[]>([]);
   const [graphEdges, setGraphEdges] = useState<GraphEdge[]>([]);
@@ -142,7 +140,7 @@ export default function OpportunitiesPage() {
 
   useEffect(() => {
     const saved = localStorage.getItem(VIEW_STORAGE_KEY);
-    if (saved === 'table' || saved === 'focus') setViewMode(saved);
+    if (saved === 'table' || saved === 'graph') setViewMode(saved);
   }, []);
 
   // Load filter options once on mount
@@ -246,7 +244,6 @@ export default function OpportunitiesPage() {
   function setView(mode: ViewMode | 'graph') {
     setViewMode(mode as ViewMode);
     localStorage.setItem(VIEW_STORAGE_KEY, mode);
-    setFocusIndex(0);
     if (mode === 'graph') loadGraphData();
   }
 
@@ -348,14 +345,6 @@ export default function OpportunitiesPage() {
     }
   }
 
-  // In focus mode, marking as read should NOT remove the card from the list —
-  // that would shrink the array, change currentIndex, re-trigger mark-read,
-  // and create an infinite removal cascade. Just flip is_read locally instead.
-  async function handleMarkReadFocus(id: string) {
-    await opportunities.markRead(id);
-    markReadLocal(id);
-  }
-
   async function handleToggleRead(id: string, isRead: boolean) {
     if (isRead) {
       await opportunities.markUnread(id);
@@ -413,12 +402,6 @@ export default function OpportunitiesPage() {
     }
   }
 
-  useEffect(() => {
-    if (focusIndex >= upcoming.length && upcoming.length > 0) {
-      setFocusIndex(upcoming.length - 1);
-    }
-  }, [upcoming.length, focusIndex]);
-
   const actionHandlers = {
     onToggleBookmark: handleToggleBookmark,
     onToggleRead: handleToggleRead,
@@ -449,6 +432,10 @@ export default function OpportunitiesPage() {
         opp={opp}
         index={i}
         mode={rowMode}
+        onNavigate={() => {
+          const ordered = [...upcoming, ...past].map(o => o.id);
+          sessionStorage.setItem('opp_nav_list', JSON.stringify(ordered));
+        }}
         {...actionHandlers}
       />
     ));
@@ -482,7 +469,7 @@ export default function OpportunitiesPage() {
               return (
                 <button
                   key={t.id}
-                  onClick={() => { setActiveTab(t.id); setFocusIndex(0); }}
+                  onClick={() => { setActiveTab(t.id); }}
                   className="relative flex items-center gap-2 px-4 py-3.5 text-sm font-medium transition-colors"
                   style={{ color: active ? 'var(--ink-primary)' : 'var(--ink-muted)' }}
                 >
@@ -550,7 +537,6 @@ export default function OpportunitiesPage() {
                 >
                   {[
                     { val: 'table', label: 'Table' },
-                    { val: 'focus', label: 'Focus' },
                     { val: 'graph', label: 'Graph' },
                   ].map(({ val, label }) => {
                     const active = viewMode === val;
@@ -633,22 +619,6 @@ export default function OpportunitiesPage() {
                 <OpportunityGraphView nodes={graphNodes} clusters={graphClusters} edges={graphEdges} />
               )}
             </div>
-          ) : activeTab === 'queue' && viewMode === 'focus' ? (
-            <FocusReview
-              items={[
-                // Upcoming items with a real deadline, soonest first
-                ...upcoming.filter(o => o.deadline).sort((a, b) => new Date(a.deadline!).getTime() - new Date(b.deadline!).getTime()),
-                // Upcoming items with no deadline
-                ...upcoming.filter(o => !o.deadline),
-                // Past-deadline items
-                ...past,
-              ]}
-              currentIndex={focusIndex}
-              onIndexChange={setFocusIndex}
-              onMarkRead={handleMarkReadFocus}
-              onToggleBookmark={handleToggleBookmark}
-              onStartGrant={handleStartGrant}
-            />
           ) : (
             <div
               className="overflow-hidden"
