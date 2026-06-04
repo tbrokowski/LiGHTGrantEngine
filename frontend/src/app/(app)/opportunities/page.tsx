@@ -278,6 +278,12 @@ export default function OpportunitiesPage() {
   const upcoming = displayItems.filter(o => !isExpired(o.deadline) || !o.deadline);
   const past = displayItems.filter(o => isExpired(o.deadline));
 
+  useEffect(() => {
+    if (!loading && upcoming.length === 0 && past.length > 0) {
+      setPastExpanded(true);
+    }
+  }, [loading, upcoming.length, past.length]);
+
   const hasFilters = !!(
     filters.search || filters.priority || filters.theme || filters.opportunityType ||
     filters.geography || filters.funder || filters.funderCategory || filters.sourceId ||
@@ -417,7 +423,7 @@ export default function OpportunitiesPage() {
             {hasFilters
             ? 'No matches for current filters.'
             : activeTab === 'queue'
-            ? 'Queue is empty.'
+            ? (past.length > 0 ? 'No upcoming opportunities.' : 'Queue is empty.')
             : activeTab === 'shortlist'
             ? 'Your shortlist is empty. Bookmark opportunities from the queue to add them here.'
             : 'No opportunities on the org shortlist yet. Promote items from your personal shortlist.'}
