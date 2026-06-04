@@ -9,12 +9,25 @@
 ───────────────────────────────────────────────────────────── */
 :root {
   /* Surfaces */
-  --surface-chrome:  #EEF2F7;   /* outer shell behind content cards */
+  --surface-chrome:  #FFFFFF;   /* outer shell — white canvas */
   --surface-base:    #FFFFFF;   /* white — page/card background */
   --surface-raised:  #FFFFFF;   /* panels, cards, nav */
   --surface-sunken:  #F0F4F8;   /* recessed regions, input bg */
   --surface-panel:   #FFFFFF;   /* inspection pane, modals */
   --surface-overlay: rgba(12, 12, 10, 0.50); /* modal backdrop */
+
+  /* Sidebar — deep navy identity column */
+  --sidebar-bg:         #0F2347;
+  --sidebar-fg:         rgba(255, 255, 255, 0.80);
+  --sidebar-fg-active:  #FFFFFF;
+  --sidebar-fg-muted:   rgba(255, 255, 255, 0.40);
+  --sidebar-accent:     rgba(255, 255, 255, 0.12);
+  --sidebar-rule:       rgba(255, 255, 255, 0.08);
+
+  /* Panel section headers — blue accent */
+  --panel-header-bg:    #EEF3FB;
+  --panel-header-text:  #1C3C72;
+  --panel-header-rule:  rgba(28, 60, 114, 0.12);
 
   /* Ink */
   --ink-primary:   #111110;   /* headings, labels — warm near-black */

@@ -68,14 +68,6 @@ export default function FocusReview({
     };
   }, []); // intentionally empty — runs only on unmount
 
-  if (items.length === 0) {
-    return (
-      <div className="bg-white border border-gray-200 rounded-xl px-5 py-16 text-center text-sm text-gray-400">
-        No opportunities to review.
-      </div>
-    );
-  }
-
   // Reset to first card if index goes out of bounds (must be in an effect, not render)
   useEffect(() => {
     if (!opp && items.length > 0 && !didResetRef.current) {
@@ -85,6 +77,14 @@ export default function FocusReview({
       didResetRef.current = false;
     }
   }, [opp, items.length, onIndexChange]);
+
+  if (items.length === 0) {
+    return (
+      <div className="bg-white border border-gray-200 rounded-xl px-5 py-16 text-center text-sm text-gray-400">
+        No opportunities to review.
+      </div>
+    );
+  }
 
   if (!opp) return null;
 

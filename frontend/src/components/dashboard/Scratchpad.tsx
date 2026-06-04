@@ -37,19 +37,45 @@ export default function Scratchpad() {
   useEffect(() => () => { if (timerRef.current) clearTimeout(timerRef.current); }, []);
 
   return (
-    <div className="bg-white border border-gray-100 rounded-2xl overflow-hidden flex flex-col h-full">
-      <div className="px-4 py-3.5 border-b border-gray-50 flex items-center justify-between">
+    <div
+      className="overflow-hidden flex flex-col h-full"
+      style={{
+        background: 'var(--surface-base)',
+        border: '1px solid var(--rule-subtle)',
+        borderRadius: 'var(--radius-lg)',
+      }}
+    >
+      <div
+        className="px-4 py-3.5 flex items-center justify-between"
+        style={{
+          background: 'var(--panel-header-bg)',
+          borderBottom: '1px solid var(--panel-header-rule)',
+        }}
+      >
         <div className="flex items-center gap-2">
-          <h2 className="text-sm font-semibold text-gray-900">Scratchpad</h2>
-          <svg className="w-3.5 h-3.5 text-gray-300" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={1.75}>
+          <h2
+            className="text-sm font-semibold"
+            style={{ color: 'var(--panel-header-text)' }}
+          >
+            Scratchpad
+          </h2>
+          <svg
+            className="w-3.5 h-3.5"
+            style={{ color: 'var(--panel-header-text)', opacity: 0.4 }}
+            fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={1.75}
+          >
             <path strokeLinecap="round" strokeLinejoin="round" d="M15.232 5.232l3.536 3.536m-2.036-5.036a2.5 2.5 0 113.536 3.536L6.5 21.036H3v-3.572L16.732 3.732z" />
           </svg>
         </div>
-        <span className={`text-[10px] font-medium transition-all duration-300 ${
-          saveState === 'saved' ? 'text-emerald-500' :
-          saveState === 'pending' ? 'text-gray-300' :
-          'text-gray-200'
-        }`}>
+        <span
+          className="text-[10px] font-medium transition-all duration-300"
+          style={{
+            color: saveState === 'saved' ? 'var(--state-success)' :
+                   saveState === 'pending' ? 'var(--ink-faint)' :
+                   'var(--panel-header-text)',
+            opacity: saveState === 'idle' ? 0.35 : 1,
+          }}
+        >
           {saveState === 'saved' ? 'Saved' : saveState === 'pending' ? 'Saving...' : 'Local'}
         </span>
       </div>

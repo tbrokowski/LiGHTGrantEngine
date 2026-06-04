@@ -315,20 +315,53 @@ export default function GrantTimeline({ grants, loading, starredIds = new Set(),
   }
 
   return (
-    <div className="bg-white border border-gray-100 rounded-2xl overflow-hidden">
+    <div
+      className="overflow-hidden"
+      style={{
+        background: 'var(--surface-base)',
+        border: '1px solid var(--rule-subtle)',
+        borderRadius: 'var(--radius-lg)',
+      }}
+    >
       {/* Header */}
-      <div className="px-5 py-3.5 border-b border-gray-50 flex items-center justify-between">
-        <h2 className="text-sm font-semibold text-gray-900">Grant Timeline</h2>
+      <div
+        className="px-5 py-3.5 flex items-center justify-between"
+        style={{
+          background: 'var(--panel-header-bg)',
+          borderBottom: '1px solid var(--panel-header-rule)',
+        }}
+      >
+        <h2
+          className="text-sm font-semibold"
+          style={{ color: 'var(--panel-header-text)' }}
+        >
+          Grant Timeline
+        </h2>
         <div className="flex items-center gap-1">
           {([30, 60, 90] as Window[]).map(w => (
             <button
               key={w}
               onClick={() => setWindow(w)}
-              className={`text-xs px-2.5 py-1 rounded-md font-medium transition-colors ${
-                window === w
-                  ? 'bg-gray-900 text-white'
-                  : 'text-gray-400 hover:text-gray-700 hover:bg-gray-50'
-              }`}
+              className="text-xs px-2.5 py-1 rounded-md font-medium transition-colors"
+              style={window === w ? {
+                background: 'var(--panel-header-text)',
+                color: '#FFFFFF',
+              } : {
+                color: 'var(--ink-muted)',
+                background: 'transparent',
+              }}
+              onMouseEnter={e => {
+                if (window !== w) {
+                  (e.currentTarget as HTMLButtonElement).style.background = 'rgba(28,60,114,0.08)';
+                  (e.currentTarget as HTMLButtonElement).style.color = 'var(--panel-header-text)';
+                }
+              }}
+              onMouseLeave={e => {
+                if (window !== w) {
+                  (e.currentTarget as HTMLButtonElement).style.background = 'transparent';
+                  (e.currentTarget as HTMLButtonElement).style.color = 'var(--ink-muted)';
+                }
+              }}
             >
               {w}d
             </button>

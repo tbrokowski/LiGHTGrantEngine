@@ -79,26 +79,32 @@ interface StatMetric {
 function MetricCell({ metric, loading }: { metric?: StatMetric; loading: boolean }) {
   if (loading) {
     return (
-      <div className="flex-1 px-5 py-3">
-        <div className="h-2 w-16 rounded animate-pulse mb-2" style={{ background: 'var(--rule-subtle)' }} />
-        <div className="h-5 w-8 rounded animate-pulse" style={{ background: 'var(--rule-subtle)' }} />
+      <div className="px-8 py-4">
+        <div className="h-2 w-20 rounded animate-pulse mb-3" style={{ background: 'var(--rule-subtle)' }} />
+        <div className="h-6 w-10 rounded animate-pulse" style={{ background: 'var(--rule-subtle)' }} />
       </div>
     );
   }
   if (!metric) return null;
 
-  const valueColor = metric.alert
+  const isAlert = metric.alert && metric.value > 0;
+  const isWarn = metric.warn && metric.value > 0;
+
+  const valueColor = isAlert
     ? 'var(--state-danger)'
-    : metric.warn
+    : isWarn
     ? 'var(--state-warning)'
     : 'var(--ink-primary)';
 
   return (
-    <Link href={metric.href} className="flex-1 px-5 py-3 group transition-colors hover:bg-[var(--selection-bg)]">
-      <p className="ledger-label mb-1.5">{metric.label}</p>
+    <Link
+      href={metric.href}
+      className="flex flex-col px-8 py-4 h-full transition-colors duration-100 hover:bg-[var(--selection-bg)]"
+    >
+      <p className="ledger-label mb-2">{metric.label}</p>
       <p
         className="mono-data font-semibold"
-        style={{ fontSize: '18px', color: valueColor }}
+        style={{ fontSize: '22px', lineHeight: 1, color: valueColor }}
       >
         {metric.value}
       </p>
@@ -182,13 +188,13 @@ export default function DashboardPage() {
 
       {/* ── Page header ─────────────────────────────────────── */}
       <div
-        className="px-7 pt-6 pb-5"
+        className="px-8 pt-6 pb-5"
         style={{ borderBottom: '1px solid var(--rule-subtle)' }}
       >
-        <p className="ledger-label mb-1">{todayLabel()}</p>
+        <p className="ledger-label mb-1.5" style={{ color: 'var(--panel-header-text)', opacity: 0.6 }}>{todayLabel()}</p>
         <h1
           className="font-semibold tracking-tight"
-          style={{ fontSize: '20px', color: 'var(--ink-primary)' }}
+          style={{ fontSize: '22px', color: 'var(--ink-primary)', letterSpacing: '-0.02em' }}
         >
           {greeting(userName)}
         </h1>
@@ -199,17 +205,17 @@ export default function DashboardPage() {
         className="flex shrink-0"
         style={{
           borderBottom: '1px solid var(--rule-subtle)',
-          background: 'var(--surface-raised)',
+          background: 'var(--panel-header-bg)',
         }}
       >
         {loading
           ? [0,1,2,3].map((i, idx) => (
-              <div key={i} className="flex-1" style={idx > 0 ? { borderLeft: '1px solid var(--rule-subtle)' } : undefined}>
+              <div key={i} className="flex-1" style={idx > 0 ? { borderLeft: '1px solid var(--panel-header-rule)' } : undefined}>
                 <MetricCell loading={true} />
               </div>
             ))
           : metrics.map((m, idx) => (
-              <div key={m.label} className="flex-1" style={idx > 0 ? { borderLeft: '1px solid var(--rule-subtle)' } : undefined}>
+              <div key={m.label} className="flex-1" style={idx > 0 ? { borderLeft: '1px solid var(--panel-header-rule)' } : undefined}>
                 <MetricCell metric={m} loading={false} />
               </div>
             ))
@@ -244,14 +250,17 @@ export default function DashboardPage() {
             {/* Section header */}
             <div
               className="px-5 py-3 flex items-center justify-between shrink-0"
-              style={{ borderBottom: '1px solid var(--rule-subtle)' }}
+              style={{
+                background: 'var(--panel-header-bg)',
+                borderBottom: '1px solid var(--panel-header-rule)',
+              }}
             >
               <div className="flex items-center gap-2.5">
-                <span className="ledger-label">New Opportunities</span>
+                <span className="ledger-label" style={{ color: 'var(--panel-header-text)' }}>New Opportunities</span>
                 {!loading && stats && stats.new_opportunities_this_week > 0 && (
                   <span
                     className="mono-data text-[10px] font-semibold px-1.5 py-0.5 rounded-[var(--radius-xs)]"
-                    style={{ background: 'var(--state-info-bg)', color: 'var(--state-info)' }}
+                    style={{ background: 'rgba(28,60,114,0.12)', color: 'var(--panel-header-text)' }}
                   >
                     {stats.new_opportunities_this_week} this week
                   </span>

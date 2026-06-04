@@ -158,21 +158,49 @@ export default function FocusPanel({ tasks, loading, currentUserId }: FocusPanel
   ].filter(Boolean).join(' · ') || (sorted.length > 0 ? `${sorted.length} open` : 'All clear');
 
   return (
-    <div className="bg-white border border-gray-100 rounded-2xl overflow-hidden flex flex-col h-full">
-      <div className="px-4 py-3.5 border-b border-gray-50 flex items-center justify-between gap-2">
-        <h2 className="text-sm font-semibold text-gray-900">Focus</h2>
+    <div
+      className="overflow-hidden flex flex-col h-full"
+      style={{
+        background: 'var(--surface-base)',
+        border: '1px solid var(--rule-subtle)',
+        borderRadius: 'var(--radius-lg)',
+      }}
+    >
+      <div
+        className="px-4 py-3.5 flex items-center justify-between gap-2"
+        style={{
+          background: 'var(--panel-header-bg)',
+          borderBottom: '1px solid var(--panel-header-rule)',
+        }}
+      >
+        <h2
+          className="text-sm font-semibold"
+          style={{ color: 'var(--panel-header-text)' }}
+        >
+          Focus
+        </h2>
         <div className="flex items-center gap-2 ml-auto">
           <button
             onClick={() => setAssignedOnly(v => !v)}
-            className={`text-[10px] font-semibold px-2 py-1 rounded-full border transition-colors whitespace-nowrap ${
-              assignedOnly
-                ? 'bg-indigo-50 text-indigo-600 border-indigo-200'
-                : 'bg-white text-gray-400 border-gray-200 hover:border-gray-300 hover:text-gray-600'
-            }`}
+            className="text-[10px] font-semibold px-2 py-1 rounded-full border transition-colors whitespace-nowrap"
+            style={assignedOnly ? {
+              background: 'rgba(28,60,114,0.12)',
+              color: 'var(--panel-header-text)',
+              borderColor: 'rgba(28,60,114,0.25)',
+            } : {
+              background: 'transparent',
+              color: 'var(--ink-muted)',
+              borderColor: 'var(--rule-subtle)',
+            }}
           >
             Assigned to me
           </button>
-          <p className="text-[10px] text-gray-400 font-medium shrink-0">{summaryText}</p>
+          <p
+            className="text-[10px] font-medium shrink-0"
+            style={{ color: 'var(--ink-muted)' }}
+          >
+            {summaryText}
+          </p>
         </div>
       </div>
 

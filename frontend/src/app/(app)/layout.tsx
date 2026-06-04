@@ -18,18 +18,8 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
             <EmailVerificationBanner />
             <UsageLimitWarning />
             <OnboardingGate />
-            <main className="flex-1 overflow-hidden" style={{ padding: '0 12px 12px' }}>
-              <div
-                className="h-full overflow-hidden"
-                style={{
-                  background: 'var(--surface-base)',
-                  borderRadius: 'var(--radius-card)',
-                  border: '1px solid var(--rule-subtle)',
-                  boxShadow: '0 2px 8px rgba(0,0,0,0.06)',
-                }}
-              >
-                {children}
-              </div>
+            <main className="flex-1 overflow-hidden" style={{ background: 'var(--surface-base)' }}>
+              {children}
             </main>
           </div>
         </div>

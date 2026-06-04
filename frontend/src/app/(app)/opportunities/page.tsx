@@ -635,7 +635,14 @@ export default function OpportunitiesPage() {
             </div>
           ) : activeTab === 'queue' && viewMode === 'focus' ? (
             <FocusReview
-              items={upcoming}
+              items={[
+                // Upcoming items with a real deadline, soonest first
+                ...upcoming.filter(o => o.deadline).sort((a, b) => new Date(a.deadline!).getTime() - new Date(b.deadline!).getTime()),
+                // Upcoming items with no deadline
+                ...upcoming.filter(o => !o.deadline),
+                // Past-deadline items
+                ...past,
+              ]}
               currentIndex={focusIndex}
               onIndexChange={setFocusIndex}
               onMarkRead={handleMarkReadFocus}
