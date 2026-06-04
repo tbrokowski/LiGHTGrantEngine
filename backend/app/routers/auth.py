@@ -329,7 +329,10 @@ async def accept_invite(
 
 
 @router.get("/me")
-async def me(current_user: User = Depends(get_current_user)):
+async def me(
+    current_user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+):
     from app.auth.permissions import (
         is_org_admin,
         _MODULE_PERMISSION_DEFAULTS,
@@ -351,6 +354,9 @@ async def me(current_user: User = Depends(get_current_user)):
             for k, default in _MODULE_PERMISSION_DEFAULTS.items()
         }
 
+    inst = await db.get(Institution, current_user.institution_id) if current_user.institution_id else None
+    institution_is_personal = inst.is_personal if inst else True
+
     return {
         "id": current_user.id,
         "name": current_user.name,
@@ -364,6 +370,7 @@ async def me(current_user: User = Depends(get_current_user)):
         "ai_usage_limit_cents": current_user.ai_usage_limit_cents,
         "google_access_token": "connected" if current_user.google_access_token else None,
         "module_permissions": effective_perms,
+        "institution_is_personal": institution_is_personal,
     }
 
 

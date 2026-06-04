@@ -22,6 +22,7 @@ export interface AuthUser {
   role: string;
   institution_id: string | null;
   institution_role: string | null;
+  institution_is_personal: boolean;
   email_verified: boolean;
   onboarding_complete: boolean;
   ai_usage_cents: number;

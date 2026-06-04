@@ -6,7 +6,7 @@ import { Sparkles, Check, AlertTriangle, Folder, ChevronLeft, ChevronRight, Load
 import { opportunities, ai, api } from '@/lib/api';
 import { notifyOpportunitiesChanged } from '@/lib/opportunities-events';
 import { usePdfViewer } from '@/contexts/PdfViewerContext';
-import SuggestedPartners from '@/components/crm/SuggestedPartners';
+import { useAuth } from '@/lib/auth';
 import FunderLogo from '@/components/opportunities/FunderLogo';
 import BookmarkButton from '@/components/opportunities/BookmarkButton';
 import ProseContent from '@/components/ui/ProseContent';
@@ -147,12 +147,27 @@ function CollapsibleSection({
 
 const oppCache = new Map<string, OpportunityDetail>();
 
+/** Parse a markdown string with ## headings into a section-name → body map */
+function parseAiSections(md: string): Record<string, string> {
+  const sections: Record<string, string> = {};
+  const parts = md.split(/^##\s+/m);
+  for (const part of parts.slice(1)) {
+    const newline = part.indexOf('\n');
+    if (newline === -1) continue;
+    const heading = part.slice(0, newline).trim();
+    const body = part.slice(newline + 1).trim();
+    if (heading && body) sections[heading] = body;
+  }
+  return sections;
+}
+
 export default function OpportunityDetailPage() {
   const { id } = useParams<{ id: string }>();
   const router = useRouter();
+  const { user } = useAuth();
   const [opp, setOpp] = useState<OpportunityDetail | null>(null);
   const [loading, setLoading] = useState(true);
-  const [activeTab, setActiveTab] = useState<'overview' | 'ai' | 'partners'>('overview');
+  const [scrapedOpen, setScrapedOpen] = useState(false);
   const [reviewing, setReviewing] = useState(false);
   const [deepReview, setDeepReview] = useState<DeepReviewResult | null>(null);
   const [converting, setConverting] = useState(false);
@@ -497,242 +512,90 @@ export default function OpportunityDetailPage() {
         </div>
       </div>
 
-      {/* Tabs */}
-      <div className="flex gap-0 mb-6 border-b border-gray-200">
-        {(['overview', 'ai', 'partners'] as const).map(tab => (
-          <button
-            key={tab}
-            onClick={() => setActiveTab(tab)}
-            className={`px-4 py-2.5 text-sm font-medium border-b-2 -mb-px transition-colors ${
-              activeTab === tab
-                ? 'border-blue-600 text-blue-700'
-                : 'border-transparent text-gray-500 hover:text-gray-700'
-            }`}
-          >
-            {tab === 'ai'
-              ? 'AI Review'
-              : tab === 'partners' ? 'Partners' : 'Overview'}
-          </button>
-        ))}
-      </div>
+      {/* ── Card 1: Call Overview ── */}
+      {(() => {
+        const isOrgUser = !user?.institution_is_personal;
+        const aiSections = opp.ai_summary ? parseAiSections(opp.ai_summary) : {};
+        const ALWAYS_SECTIONS = ['What This Grant Funds', 'Eligibility at a Glance', 'Key Dates', 'Budget & Award Details', 'Risk Flags'];
+        const ORG_SECTIONS = ['Fit Assessment', 'Potential Projects to Propose'];
+        const visibleSections = [...ALWAYS_SECTIONS, ...(isOrgUser ? ORG_SECTIONS : [])];
+        const hasAnySections = visibleSections.some(s => aiSections[s]);
 
-      {/* ── Overview Tab ── */}
-      {activeTab === 'overview' && (
-        <div className="space-y-3">
-          {/* Fit Rationale */}
-          {opp.fit_rationale && (
-            <div className={`rounded-lg px-4 py-3 border text-sm ${
-              (opp.priority === 'high' || opp.priority === 'high_priority')
-                ? 'bg-emerald-50 border-emerald-100 text-emerald-800'
-                : (opp.priority === 'medium' || opp.priority === 'worth_reviewing')
-                ? 'bg-amber-50 border-amber-100 text-amber-800'
-                : 'bg-gray-50 border-gray-200 text-gray-600'
-            }`}>
-              {opp.fit_rationale}
-            </div>
-          )}
-
-          {/* Main Description */}
-          <div className="bg-white border border-gray-200 rounded-lg p-5">
-            <div className="flex items-center justify-between mb-3">
-              <h3 className="text-xs font-semibold text-gray-500 uppercase tracking-wide">Description</h3>
-              {!opp.description && opp.opportunity_url && (
-                <button
-                  onClick={handleReEnrich}
-                  disabled={refetching || enriching}
-                  className="text-xs text-blue-600 hover:text-blue-800 disabled:opacity-50"
-                >
-                  <span className="flex items-center gap-0.5">{enriching ? 'Queuing...' : <>Fetch from source <ChevronRight className="w-3 h-3" /></>}</span>
-                </button>
+        return (
+          <div className="bg-white border border-gray-200 rounded-lg overflow-hidden mb-4">
+            <div className="px-5 py-3.5 border-b border-gray-100 flex items-center justify-between">
+              <h2 className="text-sm font-semibold text-gray-800">Call Overview</h2>
+              {reviewing && (
+                <span className="flex items-center gap-1.5 text-xs text-purple-600">
+                  <Loader2 className="w-3.5 h-3.5 animate-spin" /> Analyzing…
+                </span>
               )}
             </div>
-            {opp.description ? (
-              <ProseContent content={opp.description} />
+
+            {!opp.ai_summary && !reviewing ? (
+              <div className="px-5 py-10 text-center">
+                <Sparkles className="w-6 h-6 text-purple-300 mx-auto mb-2" />
+                <p className="text-sm text-gray-500 mb-4">
+                  AI summary not yet generated for this opportunity.
+                </p>
+                <button
+                  onClick={handleDeepReview}
+                  disabled={reviewing}
+                  className="text-sm text-white bg-purple-600 hover:bg-purple-700 px-4 py-1.5 rounded-md transition-colors disabled:opacity-50 font-medium"
+                >
+                  <span className="flex items-center gap-1.5"><Sparkles className="w-3.5 h-3.5" />Generate Overview</span>
+                </button>
+              </div>
             ) : (
-              <div className="text-sm text-gray-400 italic py-2">
-                {opp.opportunity_url
-                  ? 'Description not yet fetched. Click "Fetch from source" or "Refresh description" to retrieve it.'
-                  : 'No description available and no source URL to fetch from.'}
+              <div className="divide-y divide-gray-100">
+                {visibleSections.map(sectionName => {
+                  const body = aiSections[sectionName];
+                  if (!body) return null;
+                  return (
+                    <div key={sectionName} className="px-5 py-4">
+                      <h3 className="text-xs font-semibold text-gray-500 uppercase tracking-wide mb-2">{sectionName}</h3>
+                      <ProseContent content={body} />
+                    </div>
+                  );
+                })}
+                {!hasAnySections && opp.ai_summary && (
+                  <div className="px-5 py-4">
+                    <ProseContent content={opp.ai_summary} />
+                  </div>
+                )}
               </div>
             )}
           </div>
+        );
+      })()}
 
-          {/* Call Documents */}
-          {((opp.documents ?? []).length > 0 || opp.guidance_doc_link) && (
-            <div className="bg-white border border-gray-200 rounded-lg p-5">
-              <h3 className="text-xs font-semibold text-gray-500 uppercase tracking-wide mb-3">Call Documents</h3>
-              {(opp.documents ?? []).length > 0 ? (
-                <ul className="space-y-2">
-                  {opp.documents!.map(doc => (
-                    <li key={doc.id} className="flex items-center justify-between gap-3 text-sm">
-                      <span className="text-gray-700 truncate">{doc.file_name || 'Call document'}</span>
-                      <button
-                        type="button"
-                        onClick={() => handleDownloadDocument(doc.id, doc.file_name)}
-                        className="shrink-0 text-blue-600 hover:text-blue-800 font-medium"
-                      >
-                        View PDF
-                      </button>
-                    </li>
-                  ))}
-                </ul>
-              ) : opp.guidance_doc_link ? (
-                <a
-                  href={opp.guidance_doc_link}
-                  target="_blank"
-                  rel="noopener noreferrer"
-                  className="text-sm text-blue-600 hover:text-blue-800"
-                >
-                  View call document on funder site
-                </a>
-              ) : null}
-            </div>
-          )}
-
-          {/* Thematic Areas */}
-          {(opp.thematic_areas ?? []).length > 0 && (
-            <div className="bg-white border border-gray-200 rounded-lg p-5">
-              <h3 className="text-xs font-semibold text-gray-500 uppercase tracking-wide mb-3">Thematic Areas</h3>
-              <div className="flex flex-wrap gap-1.5">
-                {opp.thematic_areas!.map(t => (
-                  <span key={t} className="text-xs px-2.5 py-1 rounded-full bg-blue-50 text-blue-700 border border-blue-100">{t}</span>
-                ))}
-              </div>
-            </div>
-          )}
-
-          {/* Geography */}
-          {(opp.geography ?? []).length > 0 && (
-            <div className="bg-white border border-gray-200 rounded-lg p-5">
-              <h3 className="text-xs font-semibold text-gray-500 uppercase tracking-wide mb-3">Geography</h3>
-              <div className="flex flex-wrap gap-1.5">
-                {opp.geography!.map(g => (
-                  <span key={g} className="text-xs px-2.5 py-1 rounded-full bg-gray-100 text-gray-600">{g}</span>
-                ))}
-              </div>
-            </div>
-          )}
-
-          {/* Eligibility — collapsible */}
-          {opp.eligibility_criteria && (
-            <CollapsibleSection title="Eligibility" defaultOpen={true}>
-              <div className="pt-3">
-                <ProseContent content={opp.eligibility_criteria} />
-              </div>
-            </CollapsibleSection>
-          )}
-
-          {/* Partner Requirements — collapsible */}
-          {opp.partner_requirements && (
-            <CollapsibleSection title="Partner Requirements">
-              <div className="pt-3">
-                <ProseContent content={opp.partner_requirements} />
-              </div>
-            </CollapsibleSection>
-          )}
-
-          {/* Evaluation Criteria — collapsible */}
-          {opp.evaluation_criteria && (
-            <CollapsibleSection title="Evaluation Criteria">
-              <div className="pt-3">
-                <ProseContent content={opp.evaluation_criteria} />
-              </div>
-            </CollapsibleSection>
-          )}
-
-          {/* Submission Details — collapsible */}
-          {(opp.submission_portal || opp.required_documents?.length || opp.cost_sharing_requirements || opp.indirect_cost_rules) && (
-            <CollapsibleSection title="Submission Details">
-              <div className="pt-3 space-y-3 text-sm text-gray-700">
-                {opp.submission_portal && (
-                  <div>
-                    <span className="font-medium text-gray-800">Submission portal: </span>
-                    <a href={opp.submission_portal} target="_blank" rel="noopener noreferrer" className="text-blue-600 hover:underline break-all">
-                      {opp.submission_portal}
-                    </a>
-                  </div>
-                )}
-                {opp.required_documents && opp.required_documents.length > 0 && (
-                  <div>
-                    <span className="font-medium text-gray-800 block mb-1">Required documents:</span>
-                    <ul className="list-disc list-inside space-y-0.5 text-gray-600">
-                      {opp.required_documents.map((d, i) => <li key={i}>{d}</li>)}
-                    </ul>
-                  </div>
-                )}
-                {opp.cost_sharing_requirements && (
-                  <div>
-                    <span className="font-medium text-gray-800">Cost sharing: </span>
-                    {opp.cost_sharing_requirements}
-                  </div>
-                )}
-                {opp.indirect_cost_rules && (
-                  <div>
-                    <span className="font-medium text-gray-800">Indirect costs: </span>
-                    {opp.indirect_cost_rules}
-                  </div>
-                )}
-              </div>
-            </CollapsibleSection>
-          )}
-
-          {/* Contact Info — collapsible */}
-          {opp.contact_information && (
-            <CollapsibleSection title="Contact Information">
-              <div className="pt-3">
-                <p className="text-sm text-gray-700 whitespace-pre-wrap">{opp.contact_information}</p>
-              </div>
-            </CollapsibleSection>
-          )}
-
-          {/* Notes */}
-          {opp.notes && (
-            <div className="bg-white border border-gray-200 rounded-lg p-5">
-              <h3 className="text-xs font-semibold text-gray-500 uppercase tracking-wide mb-2">Notes</h3>
-              <p className="text-sm text-gray-700 whitespace-pre-wrap leading-relaxed">{opp.notes}</p>
-            </div>
-          )}
-        </div>
-      )}
-
-      {/* ── AI Review Tab ── */}
-      {activeTab === 'ai' && (
-        <div className="space-y-4">
-          {reviewing && (
-            <div className="bg-purple-50 border border-purple-100 rounded-lg p-6 text-center">
-              <div className="inline-flex items-center gap-2 text-sm text-purple-700">
-                <Loader2 className="w-4 h-4 animate-spin" />
-                Running deep analysis — this takes 10–20 seconds...
-              </div>
-            </div>
-          )}
-
-          {!deepReview && !reviewing && (
-            <div className="bg-white border border-gray-200 rounded-lg p-8 text-center">
-              <Sparkles className="w-7 h-7 text-purple-400 mx-auto mb-3" />
-              <h3 className="text-base font-semibold text-gray-800 mb-2">Deep AI Review</h3>
-              <p className="text-sm text-gray-500 max-w-md mx-auto mb-5">
-                Get a comprehensive strategic assessment — fit score, strengths, risks, proposal strategy,
-                critical requirements, and a Go / No-Go recommendation grounded in your org profile and past grants.
-              </p>
+      {/* ── Card 2: Deep Review (shown when run) ── */}
+      {(reviewing || deepReview) && (
+        <div className="bg-white border border-gray-200 rounded-lg overflow-hidden mb-4">
+          <div className="px-5 py-3.5 border-b border-gray-100 flex items-center justify-between">
+            <h2 className="text-sm font-semibold text-gray-800 flex items-center gap-1.5">
+              <Sparkles className="w-3.5 h-3.5 text-purple-500" /> Deep Review
+            </h2>
+            {!reviewing && (
               <button
                 onClick={handleDeepReview}
                 disabled={reviewing}
-                className="text-sm text-white bg-purple-600 hover:bg-purple-700 px-5 py-2 rounded-md transition-colors disabled:opacity-50 font-medium"
+                className="flex items-center gap-0.5 text-xs text-gray-400 hover:text-purple-600 transition-colors disabled:opacity-50"
               >
-                Run Deep Review
+                Re-run <ChevronRight className="w-3.5 h-3.5" />
               </button>
-              {opp.ai_summary && (
-                <div className="mt-8 text-left border-t border-gray-100 pt-6">
-                  <h4 className="text-xs font-semibold text-gray-400 uppercase tracking-wide mb-3">AI Summary</h4>
-                  <ProseContent content={opp.ai_summary} />
-                </div>
-              )}
+            )}
+          </div>
+
+          {reviewing && (
+            <div className="px-5 py-8 text-center text-sm text-purple-600 flex items-center justify-center gap-2">
+              <Loader2 className="w-4 h-4 animate-spin" />
+              Running deep analysis — this takes 10–20 seconds…
             </div>
           )}
 
           {deepReview && !reviewing && (
-            <>
+            <div className="space-y-4 p-5">
               {/* Verdict banner */}
               <div className={`rounded-lg p-5 border ${
                 deepReview.go_no_go === 'GO'
@@ -741,55 +604,49 @@ export default function OpportunityDetailPage() {
                   ? 'bg-amber-50 border-amber-200'
                   : 'bg-red-50 border-red-200'
               }`}>
-                <div className="flex items-start gap-4">
-                  <div>
-                    <div className="flex items-center gap-2 mb-1">
-                      <span className={`text-xs font-bold px-2.5 py-1 rounded-full uppercase tracking-wide ${
-                        deepReview.go_no_go === 'GO'
-                          ? 'bg-green-600 text-white'
-                          : deepReview.go_no_go === 'CONDITIONAL GO'
-                          ? 'bg-amber-600 text-white'
-                          : 'bg-red-600 text-white'
-                      }`}>
-                        {deepReview.go_no_go}
-                      </span>
-                      <span className={`text-xs font-medium px-2.5 py-1 rounded border ${PRIORITY_STYLES[deepReview.priority] ?? 'text-gray-500 bg-gray-100 border-gray-200'}`}>
-                        {PRIORITY_LABELS[deepReview.priority] ?? deepReview.priority}
-                      </span>
-                    </div>
-                    <p className="text-sm font-medium text-gray-800 mt-1">{deepReview.verdict}</p>
-                    <p className="text-xs text-gray-600 mt-1 leading-relaxed">{deepReview.go_no_go_rationale}</p>
-                  </div>
+                <div className="flex items-center gap-2 mb-1">
+                  <span className={`text-xs font-bold px-2.5 py-1 rounded-full uppercase tracking-wide ${
+                    deepReview.go_no_go === 'GO'
+                      ? 'bg-green-600 text-white'
+                      : deepReview.go_no_go === 'CONDITIONAL GO'
+                      ? 'bg-amber-600 text-white'
+                      : 'bg-red-600 text-white'
+                  }`}>
+                    {deepReview.go_no_go}
+                  </span>
+                  <span className={`text-xs font-medium px-2.5 py-1 rounded border ${PRIORITY_STYLES[deepReview.priority] ?? 'text-gray-500 bg-gray-100 border-gray-200'}`}>
+                    {PRIORITY_LABELS[deepReview.priority] ?? deepReview.priority}
+                  </span>
                 </div>
+                <p className="text-sm font-medium text-gray-800 mt-1">{deepReview.verdict}</p>
+                <p className="text-xs text-gray-600 mt-1 leading-relaxed">{deepReview.go_no_go_rationale}</p>
               </div>
 
               {/* Strengths + Risks */}
               <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                 {(deepReview.strengths ?? []).length > 0 && (
-                  <div className="bg-white border border-gray-200 rounded-lg p-5">
+                  <div className="bg-gray-50 border border-gray-200 rounded-lg p-4">
                     <h3 className="text-xs font-semibold text-gray-500 uppercase tracking-wide mb-3 flex items-center gap-1.5">
                       <Check className="w-3.5 h-3.5 text-green-500 shrink-0" /> Strengths
                     </h3>
                     <ul className="space-y-1.5">
-                      {deepReview.strengths!.map((s, i) => (
+                      {deepReview.strengths.map((s, i) => (
                         <li key={i} className="text-sm text-gray-700 flex gap-2">
-                          <span className="text-green-400 shrink-0 mt-0.5">•</span>
-                          <span>{s}</span>
+                          <span className="text-green-400 shrink-0 mt-0.5">•</span><span>{s}</span>
                         </li>
                       ))}
                     </ul>
                   </div>
                 )}
                 {(deepReview.risks ?? []).length > 0 && (
-                  <div className="bg-white border border-gray-200 rounded-lg p-5">
+                  <div className="bg-gray-50 border border-gray-200 rounded-lg p-4">
                     <h3 className="text-xs font-semibold text-gray-500 uppercase tracking-wide mb-3 flex items-center gap-1.5">
                       <AlertTriangle className="w-3.5 h-3.5 text-amber-500 shrink-0" /> Risks
                     </h3>
                     <ul className="space-y-1.5">
-                      {deepReview.risks!.map((r, i) => (
+                      {deepReview.risks.map((r, i) => (
                         <li key={i} className="text-sm text-gray-700 flex gap-2">
-                          <span className="text-amber-400 shrink-0 mt-0.5">•</span>
-                          <span>{r}</span>
+                          <span className="text-amber-400 shrink-0 mt-0.5">•</span><span>{r}</span>
                         </li>
                       ))}
                     </ul>
@@ -797,20 +654,18 @@ export default function OpportunityDetailPage() {
                 )}
               </div>
 
-              {/* Proposal strategy */}
               {deepReview.proposal_strategy && (
-                <div className="bg-blue-50 border border-blue-100 rounded-lg p-5">
+                <div className="bg-blue-50 border border-blue-100 rounded-lg p-4">
                   <h3 className="text-xs font-semibold text-blue-600 uppercase tracking-wide mb-2">Proposal Strategy</h3>
                   <p className="text-sm text-blue-900 leading-relaxed">{deepReview.proposal_strategy}</p>
                 </div>
               )}
 
-              {/* Critical requirements */}
               {(deepReview.critical_requirements ?? []).length > 0 && (
-                <div className="bg-white border border-gray-200 rounded-lg p-5">
+                <div className="border border-gray-200 rounded-lg p-4">
                   <h3 className="text-xs font-semibold text-gray-500 uppercase tracking-wide mb-3">Critical Requirements</h3>
                   <ul className="space-y-1.5">
-                    {deepReview.critical_requirements!.map((req, i) => (
+                    {deepReview.critical_requirements.map((req, i) => (
                       <li key={i} className="flex items-start gap-2 text-sm text-gray-700">
                         <input type="checkbox" className="mt-0.5 rounded" readOnly />
                         <span>{req}</span>
@@ -820,55 +675,176 @@ export default function OpportunityDetailPage() {
                 </div>
               )}
 
-              {/* Recommended sections + archive references */}
               <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                 {(deepReview.recommended_sections ?? []).length > 0 && (
-                  <div className="bg-white border border-gray-200 rounded-lg p-5">
+                  <div className="border border-gray-200 rounded-lg p-4">
                     <h3 className="text-xs font-semibold text-gray-500 uppercase tracking-wide mb-3">Recommended Sections</h3>
                     <ul className="space-y-1">
-                      {deepReview.recommended_sections!.map((s, i) => (
+                      {deepReview.recommended_sections.map((s, i) => (
                         <li key={i} className="text-sm text-gray-700 flex gap-2">
-                          <span className="text-blue-400 shrink-0">→</span>
-                          <span>{s}</span>
+                          <span className="text-blue-400 shrink-0">→</span><span>{s}</span>
                         </li>
                       ))}
                     </ul>
                   </div>
                 )}
                 {(deepReview.archive_references ?? []).length > 0 && (
-                  <div className="bg-white border border-gray-200 rounded-lg p-5">
+                  <div className="border border-gray-200 rounded-lg p-4">
                     <h3 className="text-xs font-semibold text-gray-500 uppercase tracking-wide mb-3">Archive References</h3>
                     <ul className="space-y-1">
-                      {deepReview.archive_references!.map((ref, i) => (
+                      {deepReview.archive_references.map((ref, i) => (
                         <li key={i} className="text-sm text-gray-600 flex gap-2">
-                          <Folder className="w-3.5 h-3.5 text-gray-300 shrink-0 mt-0.5" />
-                          <span>{ref}</span>
+                          <Folder className="w-3.5 h-3.5 text-gray-300 shrink-0 mt-0.5" /><span>{ref}</span>
                         </li>
                       ))}
                     </ul>
                   </div>
                 )}
               </div>
-
-              {/* Re-run */}
-              <div className="flex justify-end">
-                <button
-                  onClick={handleDeepReview}
-                  disabled={reviewing}
-                  className="flex items-center gap-0.5 text-xs text-gray-400 hover:text-purple-600 transition-colors disabled:opacity-50"
-                >
-                  Re-run deep review <ChevronRight className="w-3.5 h-3.5" />
-                </button>
-              </div>
-            </>
+            </div>
           )}
         </div>
       )}
 
-      {/* ── Partners Tab ── */}
-      {activeTab === 'partners' && (
-        <SuggestedPartners entityType="opportunity" entityId={id} />
-      )}
+      {/* ── Card 3: Scraped Call (collapsible) ── */}
+      <div className="bg-white border border-gray-200 rounded-lg overflow-hidden">
+        <button
+          onClick={() => setScrapedOpen(v => !v)}
+          className="w-full flex items-center justify-between px-5 py-3.5 text-left hover:bg-gray-50 transition-colors"
+        >
+          <h2 className="text-sm font-semibold text-gray-800">Scraped Call</h2>
+          <ChevronRight className={`w-4 h-4 text-gray-400 transition-transform ${scrapedOpen ? 'rotate-90' : ''}`} />
+        </button>
+
+        {scrapedOpen && (
+          <div className="border-t border-gray-100 px-5 py-5 space-y-4">
+            {/* Description */}
+            <div>
+              <div className="flex items-center justify-between mb-2">
+                <h3 className="text-xs font-semibold text-gray-500 uppercase tracking-wide">Description</h3>
+                {!opp.description && opp.opportunity_url && (
+                  <button
+                    onClick={handleReEnrich}
+                    disabled={refetching || enriching}
+                    className="text-xs text-blue-600 hover:text-blue-800 disabled:opacity-50 flex items-center gap-0.5"
+                  >
+                    {enriching ? 'Queuing...' : <>Fetch from source <ChevronRight className="w-3 h-3" /></>}
+                  </button>
+                )}
+              </div>
+              {opp.description ? (
+                <ProseContent content={opp.description} />
+              ) : (
+                <p className="text-sm text-gray-400 italic">
+                  {opp.opportunity_url
+                    ? 'Description not yet fetched.'
+                    : 'No description available.'}
+                </p>
+              )}
+            </div>
+
+            {/* Call Documents */}
+            {((opp.documents ?? []).length > 0 || opp.guidance_doc_link) && (
+              <div>
+                <h3 className="text-xs font-semibold text-gray-500 uppercase tracking-wide mb-2">Call Documents</h3>
+                {(opp.documents ?? []).length > 0 ? (
+                  <ul className="space-y-2">
+                    {opp.documents!.map(doc => (
+                      <li key={doc.id} className="flex items-center justify-between gap-3 text-sm">
+                        <span className="text-gray-700 truncate">{doc.file_name || 'Call document'}</span>
+                        <button type="button" onClick={() => handleDownloadDocument(doc.id, doc.file_name)} className="shrink-0 text-blue-600 hover:text-blue-800 font-medium">
+                          View PDF
+                        </button>
+                      </li>
+                    ))}
+                  </ul>
+                ) : opp.guidance_doc_link ? (
+                  <a href={opp.guidance_doc_link} target="_blank" rel="noopener noreferrer" className="text-sm text-blue-600 hover:text-blue-800">
+                    View call document on funder site
+                  </a>
+                ) : null}
+              </div>
+            )}
+
+            {/* Thematic Areas */}
+            {(opp.thematic_areas ?? []).length > 0 && (
+              <div>
+                <h3 className="text-xs font-semibold text-gray-500 uppercase tracking-wide mb-2">Thematic Areas</h3>
+                <div className="flex flex-wrap gap-1.5">
+                  {opp.thematic_areas!.map(t => (
+                    <span key={t} className="text-xs px-2.5 py-1 rounded-full bg-blue-50 text-blue-700 border border-blue-100">{t}</span>
+                  ))}
+                </div>
+              </div>
+            )}
+
+            {/* Geography */}
+            {(opp.geography ?? []).length > 0 && (
+              <div>
+                <h3 className="text-xs font-semibold text-gray-500 uppercase tracking-wide mb-2">Geography</h3>
+                <div className="flex flex-wrap gap-1.5">
+                  {opp.geography!.map(g => (
+                    <span key={g} className="text-xs px-2.5 py-1 rounded-full bg-gray-100 text-gray-600">{g}</span>
+                  ))}
+                </div>
+              </div>
+            )}
+
+            {opp.eligibility_criteria && (
+              <CollapsibleSection title="Eligibility" defaultOpen={true}>
+                <div className="pt-3"><ProseContent content={opp.eligibility_criteria} /></div>
+              </CollapsibleSection>
+            )}
+            {opp.partner_requirements && (
+              <CollapsibleSection title="Partner Requirements">
+                <div className="pt-3"><ProseContent content={opp.partner_requirements} /></div>
+              </CollapsibleSection>
+            )}
+            {opp.evaluation_criteria && (
+              <CollapsibleSection title="Evaluation Criteria">
+                <div className="pt-3"><ProseContent content={opp.evaluation_criteria} /></div>
+              </CollapsibleSection>
+            )}
+            {(opp.submission_portal || opp.required_documents?.length || opp.cost_sharing_requirements || opp.indirect_cost_rules) && (
+              <CollapsibleSection title="Submission Details">
+                <div className="pt-3 space-y-3 text-sm text-gray-700">
+                  {opp.submission_portal && (
+                    <div>
+                      <span className="font-medium text-gray-800">Submission portal: </span>
+                      <a href={opp.submission_portal} target="_blank" rel="noopener noreferrer" className="text-blue-600 hover:underline break-all">{opp.submission_portal}</a>
+                    </div>
+                  )}
+                  {opp.required_documents && opp.required_documents.length > 0 && (
+                    <div>
+                      <span className="font-medium text-gray-800 block mb-1">Required documents:</span>
+                      <ul className="list-disc list-inside space-y-0.5 text-gray-600">
+                        {opp.required_documents.map((d, i) => <li key={i}>{d}</li>)}
+                      </ul>
+                    </div>
+                  )}
+                  {opp.cost_sharing_requirements && (
+                    <div><span className="font-medium text-gray-800">Cost sharing: </span>{opp.cost_sharing_requirements}</div>
+                  )}
+                  {opp.indirect_cost_rules && (
+                    <div><span className="font-medium text-gray-800">Indirect costs: </span>{opp.indirect_cost_rules}</div>
+                  )}
+                </div>
+              </CollapsibleSection>
+            )}
+            {opp.contact_information && (
+              <CollapsibleSection title="Contact Information">
+                <div className="pt-3"><p className="text-sm text-gray-700 whitespace-pre-wrap">{opp.contact_information}</p></div>
+              </CollapsibleSection>
+            )}
+            {opp.notes && (
+              <div>
+                <h3 className="text-xs font-semibold text-gray-500 uppercase tracking-wide mb-2">Notes</h3>
+                <p className="text-sm text-gray-700 whitespace-pre-wrap leading-relaxed">{opp.notes}</p>
+              </div>
+            )}
+          </div>
+        )}
+      </div>
     </div>
     </div>
   );

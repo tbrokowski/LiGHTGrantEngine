@@ -116,49 +116,22 @@ TEAM PROFILE:
   State what the grant funds, who qualifies, and the award/deadline. No markdown.
 """
 
-    # Brief tier: only the 5 most decision-critical sections (medium fit 25–54).
-    # Full tier: all 8 sections including project ideas and action items (fit ≥ 55).
-    if summary_tier == "brief":
-        sections_prompt = """"full_summary": Markdown document with EXACTLY these ## sections:
-
-## What This Grant Funds
-2–3 paragraphs: funder's goal, problem they want to solve, types of projects supported.
-
-## Eligibility at a Glance
-Bullet list of ALL eligibility requirements. Use ⚠️ to flag any LiGHT may not meet.
-
-## Key Dates
-Bullet list of all deadlines (full proposal, LOI, concept note, Q&A window).
-
-## Fit for LiGHT / EPFL
-3–4 sentences on why (or why not) this is a strong fit for the team.
-
-## Budget & Award Details
-Award size, duration, number of awards, indirect cost rules."""
-    else:
-        sections_prompt = """"full_summary": Full markdown document with EXACTLY these ## sections:
+    sections_prompt = """"full_summary": Markdown document with EXACTLY these ## sections:
 
 ## What This Grant Funds
 2–3 paragraphs: funder's goal, problem they want to solve, types of projects supported,
 what a successful grantee looks like.
 
 ## Eligibility at a Glance
-Bullet list of ALL eligibility requirements. Use ⚠️ to flag any LiGHT may not meet.
+Bullet list of ALL eligibility requirements. Use ⚠️ to flag any the team may not meet.
 Include institution type, nationality, prior funding restrictions, co-PI rules.
 
 ## Key Dates
 Bullet list of all deadlines (full proposal, LOI, concept note, Q&A window).
 
-## Fit for LiGHT / EPFL
-3–4 sentences on why (or why not) this is a strong fit. Reference specific LiGHT
-research areas. Be honest about gaps or risks.
-
-## Potential Projects to Propose
-4–6 concrete project ideas LiGHT could submit, each 2–3 sentences. Align each to
-the funder's stated priorities with rough methodology.
-
-## Partnership Opportunities
-Which external partners, institutions, or NGOs would strengthen a LiGHT proposal?
+## Fit Assessment
+3–4 sentences on why (or why not) this is a strong fit. Reference the funder's stated
+priorities and the team's research themes. Be honest about gaps or risks.
 
 ## Budget & Award Details
 Award size, duration, number of awards, indirect cost rules, sub-award eligibility.
@@ -166,10 +139,11 @@ Award size, duration, number of awards, indirect cost rules, sub-award eligibili
 ## Risk Flags
 Bullet list: competition level, eligibility uncertainty, scope mismatches, capacity concerns.
 
-## Action Items
-Numbered list of concrete next steps: contacts, documents to prepare, go/no-go timeline."""
+## Potential Projects to Propose
+4–6 concrete project ideas the team could submit, each 2–3 sentences. Align each to
+the funder's stated priorities with rough methodology."""
 
-    user_prompt = header + sections_prompt
+    user_prompt = header + "\n" + sections_prompt
 
     try:
         raw = await chat_complete(
