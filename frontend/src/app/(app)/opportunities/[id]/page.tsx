@@ -145,6 +145,8 @@ function CollapsibleSection({
   );
 }
 
+const oppCache = new Map<string, OpportunityDetail>();
+
 export default function OpportunityDetailPage() {
   const { id } = useParams<{ id: string }>();
   const router = useRouter();
@@ -163,8 +165,14 @@ export default function OpportunityDetailPage() {
 
   const fetchOpp = useCallback((notify = false) => {
     if (!id) return;
+    // Serve cached version immediately so prefetched navigations feel instant
+    if (oppCache.has(id)) {
+      setOpp(oppCache.get(id)!);
+      setLoading(false);
+    }
     opportunities.get(id)
       .then(r => {
+        oppCache.set(id, r.data);
         setOpp(r.data);
         if (notify) notifyOpportunitiesChanged();
       })
@@ -183,6 +191,21 @@ export default function OpportunityDetailPage() {
       }
     } catch { /* ignore */ }
   }, []);
+
+  // Prefetch adjacent opportunities so arrow navigation feels instant
+  useEffect(() => {
+    if (!navIds.length || loading) return;
+    const navIndex = navIds.indexOf(id);
+    [navIds[navIndex - 1], navIds[navIndex + 1]]
+      .filter(Boolean)
+      .forEach(adjId => {
+        if (!oppCache.has(adjId)) {
+          opportunities.get(adjId)
+            .then(r => oppCache.set(adjId, r.data))
+            .catch(() => {});
+        }
+      });
+  }, [id, navIds, loading]);
 
   // Poll for updated content after a re-enrich task is queued
   useEffect(() => {

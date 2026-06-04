@@ -372,6 +372,12 @@ async def list_opportunities(
         relevance = func.coalesce(Opportunity.fit_score, 0)
 
     if sort_by == "relevance":
+        # Put upcoming (no deadline or deadline >= today) before past-deadline items
+        # so the first page always surfaces actionable opportunities.
+        upcoming_first = case(
+            (or_(Opportunity.deadline == None, Opportunity.deadline >= date.today()), 0),
+            else_=1,
+        )
         if semantic_ids:
             # When semantic search is active, boost semantic matches to the top
             # of the relevance sort so the most similar grants surface first.
@@ -379,9 +385,9 @@ async def list_opportunities(
                 (Opportunity.id.in_(semantic_ids), 1),
                 else_=0,
             )
-            order_cols = [desc(semantic_boost), desc(relevance), Opportunity.deadline]
+            order_cols = [upcoming_first, desc(semantic_boost), desc(relevance), Opportunity.deadline]
         else:
-            order_cols = [desc(relevance), Opportunity.deadline]
+            order_cols = [upcoming_first, desc(relevance), Opportunity.deadline]
     else:
         sort_col = getattr(Opportunity, sort_by, Opportunity.date_discovered)
         order_cols = [desc(sort_col) if sort_dir == "desc" else sort_col]
