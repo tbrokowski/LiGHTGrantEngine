@@ -560,22 +560,6 @@ export default function OpportunitiesPage() {
           </div>
         </div>
 
-        {/* Status label */}
-        {!loading && (
-          <div
-            className="px-7 py-2 shrink-0"
-            style={{ borderBottom: '1px solid var(--rule-subtle)', background: 'var(--surface-sunken)' }}
-          >
-            <span className="ledger-label">
-              {activeTab === 'queue'
-                ? `${queueTotal > queue.length ? `${queue.length} of ${queueTotal.toLocaleString()}` : queueTotal.toLocaleString()} opportunities · ${unreadCount.toLocaleString()} unread`
-                : activeTab === 'shortlist'
-                ? `${shortlist.length} bookmarked`
-                : `${orgShortlist.length} on org shortlist`}
-            </span>
-          </div>
-        )}
-
         {/* Scrollable content */}
         <div className="flex-1 overflow-y-auto px-7 py-5">
 

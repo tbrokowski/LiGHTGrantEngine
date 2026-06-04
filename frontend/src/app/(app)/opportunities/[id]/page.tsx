@@ -300,6 +300,7 @@ export default function OpportunityDetailPage() {
   }
 
   return (
+    <div className="h-full overflow-y-auto">
     <div className="px-8 py-8 max-w-5xl mx-auto">
       {/* Breadcrumb + nav arrows */}
       {(() => {
@@ -845,6 +846,7 @@ export default function OpportunityDetailPage() {
       {activeTab === 'partners' && (
         <SuggestedPartners entityType="opportunity" entityId={id} />
       )}
+    </div>
     </div>
   );
 }
