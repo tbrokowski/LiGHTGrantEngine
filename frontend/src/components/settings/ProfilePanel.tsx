@@ -1,6 +1,7 @@
 'use client';
 import { useState, useEffect } from 'react';
 import { auth, users } from '@/lib/api';
+import { clearAuthSession } from '@/lib/auth-cookie';
 
 interface User {
   id: string;
@@ -145,6 +146,16 @@ export function ProfilePanel() {
           {saving ? 'Saving…' : 'Save changes'}
         </button>
       </form>
+
+      <div className="pt-4 mt-4 border-t border-gray-100">
+        <button
+          type="button"
+          onClick={() => { clearAuthSession(); window.location.href = '/login'; }}
+          className="w-full py-2.5 border border-gray-300 hover:border-gray-400 text-gray-700 text-sm font-medium rounded-lg transition"
+        >
+          Sign out
+        </button>
+      </div>
     </div>
   );
 }
