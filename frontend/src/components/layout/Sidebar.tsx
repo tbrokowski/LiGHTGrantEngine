@@ -102,19 +102,6 @@ export default function Sidebar() {
 
         {/* Navigation links */}
         <nav className="relative z-10 px-3 pt-4 pb-2 space-y-px overflow-y-auto">
-          <p
-            className="px-2.5 pb-2"
-            style={{
-              fontSize: '9px',
-              fontWeight: 600,
-              letterSpacing: '0.1em',
-              textTransform: 'uppercase',
-              color: 'var(--sidebar-fg-muted)',
-            }}
-          >
-            Navigation
-          </p>
-
           {visibleNav.map(({ href, label }) => {
             const active = path === href || path.startsWith(href + '/');
             const isOpportunities = href === '/opportunities';

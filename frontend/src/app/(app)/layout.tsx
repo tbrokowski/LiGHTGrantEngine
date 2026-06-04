@@ -1,6 +1,5 @@
 import { Toaster } from 'sonner';
 import Sidebar from '@/components/layout/Sidebar';
-import TopBar from '@/components/layout/TopBar';
 import EmailVerificationBanner from '@/components/auth/EmailVerificationBanner';
 import OnboardingGate from '@/components/onboarding/OnboardingGate';
 import UsageLimitWarning from '@/components/ai/UsageLimitWarning';
@@ -14,7 +13,6 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
         <div className="flex h-screen overflow-hidden" style={{ background: 'var(--surface-chrome)' }}>
           <Sidebar />
           <div className="flex-1 flex flex-col min-w-0 overflow-hidden">
-            <TopBar />
             <EmailVerificationBanner />
             <UsageLimitWarning />
             <OnboardingGate />
