@@ -2,11 +2,43 @@
 import Image from 'next/image';
 import Link from 'next/link';
 import { usePathname } from 'next/navigation';
-import { useAuth } from '@/lib/auth';
+import { useEffect, useCallback, useState } from 'react';
+import { useAuth, hasModulePermission, ModulePermissions } from '@/lib/auth';
+import { opportunities } from '@/lib/api';
+import { onOpportunitiesChanged } from '@/lib/opportunities-events';
+
+interface NavItem {
+  href: string;
+  label: string;
+  permissionKey?: keyof ModulePermissions;
+}
+
+const NAV: NavItem[] = [
+  { href: '/dashboard',     label: 'Dashboard' },
+  { href: '/opportunities', label: 'Opportunities' },
+  { href: '/grants',        label: 'Grants',   permissionKey: 'can_view_grants' },
+  { href: '/finance',       label: 'Finance',  permissionKey: 'can_view_finance' },
+  { href: '/archive',       label: 'Archive',  permissionKey: 'can_view_archive' },
+  { href: '/partners',      label: 'Partners', permissionKey: 'can_view_partners' },
+];
 
 export default function Sidebar() {
   const path = usePathname();
   const { user } = useAuth();
+  const [queueCount, setQueueCount] = useState<number | null>(null);
+
+  const refreshCount = useCallback(() => {
+    opportunities.newOpportunitiesCounts()
+      .then(r => setQueueCount(r.data?.unread ?? null))
+      .catch(() => null);
+  }, []);
+
+  useEffect(() => { refreshCount(); }, [refreshCount, path]);
+  useEffect(() => onOpportunitiesChanged(refreshCount), [refreshCount]);
+
+  const visibleNav = NAV.filter(item =>
+    !item.permissionKey || hasModulePermission(user, item.permissionKey)
+  );
 
   const isSettings = path.startsWith('/settings');
 
@@ -48,9 +80,9 @@ export default function Sidebar() {
         </Link>
       </div>
 
-      {/* Spacer — identity/brand area */}
+      {/* Nav + brand area */}
       <div className="flex-1 relative overflow-hidden">
-        {/* Subtle watermark */}
+        {/* Subtle watermark behind nav */}
         <div
           className="absolute inset-0 flex items-center justify-center pointer-events-none select-none"
           aria-hidden
@@ -68,7 +100,78 @@ export default function Sidebar() {
           </span>
         </div>
 
-        {/* Decorative gradient glow at bottom of brand area */}
+        {/* Navigation links */}
+        <nav className="relative z-10 px-3 pt-4 pb-2 space-y-px overflow-y-auto">
+          <p
+            className="px-2.5 pb-2"
+            style={{
+              fontSize: '9px',
+              fontWeight: 600,
+              letterSpacing: '0.1em',
+              textTransform: 'uppercase',
+              color: 'var(--sidebar-fg-muted)',
+            }}
+          >
+            Navigation
+          </p>
+
+          {visibleNav.map(({ href, label }) => {
+            const active = path === href || path.startsWith(href + '/');
+            const isOpportunities = href === '/opportunities';
+
+            return (
+              <Link
+                key={href}
+                href={href}
+                className="relative flex items-center justify-between px-2.5 py-1.5 rounded-[var(--radius-sm)] transition-colors duration-100"
+                style={{
+                  fontSize: '13px',
+                  fontWeight: active ? 600 : 400,
+                  color: active ? 'var(--sidebar-fg-active)' : 'var(--sidebar-fg)',
+                  background: active ? 'var(--sidebar-accent)' : 'transparent',
+                }}
+                onMouseEnter={e => {
+                  if (!active) (e.currentTarget as HTMLAnchorElement).style.background = 'rgba(255,255,255,0.07)';
+                }}
+                onMouseLeave={e => {
+                  if (!active) (e.currentTarget as HTMLAnchorElement).style.background = 'transparent';
+                }}
+              >
+                {/* Left accent bar */}
+                {active && (
+                  <span
+                    className="absolute left-0 top-1 bottom-1 w-0.5 rounded-r-full"
+                    style={{ background: 'rgba(255,255,255,0.6)' }}
+                  />
+                )}
+
+                <span className="pl-1">{label}</span>
+
+                {/* Unread badge */}
+                {isOpportunities && queueCount != null && queueCount > 0 && (
+                  <span
+                    style={{
+                      background: active ? 'rgba(255,255,255,0.25)' : 'rgba(255,255,255,0.12)',
+                      color: 'var(--sidebar-fg-active)',
+                      fontSize: '9px',
+                      fontWeight: 700,
+                      fontFamily: 'var(--font-mono)',
+                      lineHeight: 1,
+                      padding: '2px 5px',
+                      borderRadius: '10px',
+                      minWidth: '18px',
+                      textAlign: 'center',
+                    }}
+                  >
+                    {queueCount > 99 ? '99+' : queueCount}
+                  </span>
+                )}
+              </Link>
+            );
+          })}
+        </nav>
+
+        {/* Decorative gradient glow */}
         <div
           className="absolute bottom-0 left-0 right-0 h-24 pointer-events-none"
           style={{

@@ -203,19 +203,16 @@ export default function DashboardPage() {
       {/* ── Metric strip ────────────────────────────────────── */}
       <div
         className="flex shrink-0"
-        style={{
-          borderBottom: '1px solid var(--rule-subtle)',
-          background: 'var(--panel-header-bg)',
-        }}
+        style={{ borderBottom: '1px solid var(--rule-subtle)' }}
       >
         {loading
-          ? [0,1,2,3].map((i, idx) => (
-              <div key={i} className="flex-1" style={idx > 0 ? { borderLeft: '1px solid var(--panel-header-rule)' } : undefined}>
+          ? [0,1,2,3].map(i => (
+              <div key={i} className="flex-1">
                 <MetricCell loading={true} />
               </div>
             ))
-          : metrics.map((m, idx) => (
-              <div key={m.label} className="flex-1" style={idx > 0 ? { borderLeft: '1px solid var(--panel-header-rule)' } : undefined}>
+          : metrics.map(m => (
+              <div key={m.label} className="flex-1">
                 <MetricCell metric={m} loading={false} />
               </div>
             ))
@@ -237,110 +234,120 @@ export default function DashboardPage() {
             </div>
 
             {/* Scratchpad — below focus */}
-            <div
-              className="p-5"
-              style={{ borderTop: '1px solid var(--rule-subtle)' }}
-            >
+            <div className="p-5">
               <Scratchpad />
             </div>
           </div>
 
           {/* Review Queue — right column */}
-          <div className="xl:col-span-2 flex flex-col">
-            {/* Section header */}
+          <div className="xl:col-span-2 p-5">
             <div
-              className="px-5 py-3 flex items-center justify-between shrink-0"
+              className="flex flex-col h-full overflow-hidden"
               style={{
-                background: 'var(--panel-header-bg)',
-                borderBottom: '1px solid var(--panel-header-rule)',
+                border: '1px solid var(--rule-subtle)',
+                borderRadius: 'var(--radius-lg)',
               }}
             >
-              <div className="flex items-center gap-2.5">
-                <span className="ledger-label" style={{ color: 'var(--panel-header-text)' }}>New Opportunities</span>
-                {!loading && stats && stats.new_opportunities_this_week > 0 && (
+              {/* Card header — matches Focus/Scratchpad/GrantTimeline */}
+              <div
+                className="px-5 py-3.5 flex items-center justify-between shrink-0"
+                style={{
+                  background: 'var(--panel-header-bg)',
+                  borderBottom: '1px solid var(--panel-header-rule)',
+                }}
+              >
+                <div className="flex items-center gap-2.5">
                   <span
-                    className="mono-data text-[10px] font-semibold px-1.5 py-0.5 rounded-[var(--radius-xs)]"
-                    style={{ background: 'rgba(28,60,114,0.12)', color: 'var(--panel-header-text)' }}
+                    className="text-sm font-semibold"
+                    style={{ color: 'var(--panel-header-text)' }}
                   >
-                    {stats.new_opportunities_this_week} this week
+                    New Opportunities
                   </span>
+                  {!loading && stats && stats.new_opportunities_this_week > 0 && (
+                    <span
+                      className="mono-data text-[10px] font-semibold px-1.5 py-0.5 rounded-[var(--radius-xs)]"
+                      style={{ background: 'rgba(28,60,114,0.12)', color: 'var(--panel-header-text)' }}
+                    >
+                      {stats.new_opportunities_this_week} this week
+                    </span>
+                  )}
+                </div>
+                <Link
+                  href="/opportunities"
+                  className="text-xs transition-colors"
+                  style={{ color: 'var(--ink-faint)', fontSize: '11px' }}
+                  onMouseEnter={e => (e.currentTarget.style.color = 'var(--ink-muted)')}
+                  onMouseLeave={e => (e.currentTarget.style.color = 'var(--ink-faint)')}
+                >
+                  View all →
+                </Link>
+              </div>
+
+              {/* Queue list */}
+              <div className="flex-1 overflow-y-auto">
+                {loading ? (
+                  <div className="px-5 py-8 text-center text-sm" style={{ color: 'var(--ink-faint)' }}>
+                    Loading…
+                  </div>
+                ) : queue.length === 0 ? (
+                  <div className="px-5 py-12 text-center">
+                    <p className="text-sm" style={{ color: 'var(--ink-muted)' }}>All caught up</p>
+                    <p className="text-xs mt-1" style={{ color: 'var(--ink-faint)' }}>No new opportunities to review</p>
+                  </div>
+                ) : (
+                  <div>
+                    {queue.map(opp => {
+                      const pc = opp.priority ? (PRIORITY_COLOR[opp.priority] ?? PRIORITY_COLOR.low) : null;
+                      return (
+                        <Link key={opp.id} href={`/opportunities/${opp.id}`}>
+                          <div className="ledger-row px-5 py-3 flex items-start justify-between gap-3">
+                            <div className="min-w-0 flex-1 flex items-start gap-2">
+                              {!opp.is_read && (
+                                <span
+                                  className="mt-1.5 w-1.5 h-1.5 rounded-full shrink-0"
+                                  style={{ background: 'var(--accent-primary)' }}
+                                />
+                              )}
+                              <div className="min-w-0">
+                                <p
+                                  className="text-sm truncate leading-snug"
+                                  style={{
+                                    fontWeight: opp.is_read ? 400 : 500,
+                                    color: opp.is_read ? 'var(--ink-muted)' : 'var(--ink-primary)',
+                                  }}
+                                >
+                                  {opp.title}
+                                </p>
+                                <p
+                                  className="mono-data text-[11px] mt-0.5 truncate"
+                                  style={{ color: 'var(--ink-faint)' }}
+                                >
+                                  {[opp.funder, opp.deadline ? formatDate(opp.deadline) : null]
+                                    .filter(Boolean).join('  ·  ')}
+                                </p>
+                              </div>
+                            </div>
+                            {pc && opp.priority && (
+                              <span
+                                className="shrink-0 text-[10px] font-medium px-1.5 py-0.5 rounded-[var(--radius-xs)] mono-data"
+                                style={{ background: pc.bg, color: pc.color }}
+                              >
+                                {PRIORITY_LABEL[opp.priority] ?? opp.priority}
+                              </span>
+                            )}
+                          </div>
+                        </Link>
+                      );
+                    })}
+                  </div>
                 )}
               </div>
-              <Link
-                href="/opportunities"
-                className="text-xs transition-colors"
-                style={{ color: 'var(--ink-faint)' }}
-                onMouseEnter={e => (e.currentTarget.style.color = 'var(--ink-muted)')}
-                onMouseLeave={e => (e.currentTarget.style.color = 'var(--ink-faint)')}
-              >
-                View all →
-              </Link>
-            </div>
-
-            {/* Queue list */}
-            <div className="flex-1 overflow-y-auto">
-              {loading ? (
-                <div className="px-5 py-8 text-center text-sm" style={{ color: 'var(--ink-faint)' }}>
-                  Loading…
-                </div>
-              ) : queue.length === 0 ? (
-                <div className="px-5 py-12 text-center">
-                  <p className="text-sm" style={{ color: 'var(--ink-muted)' }}>All caught up</p>
-                  <p className="text-xs mt-1" style={{ color: 'var(--ink-faint)' }}>No new opportunities to review</p>
-                </div>
-              ) : (
-                <div>
-                  {queue.map(opp => {
-                    const pc = opp.priority ? (PRIORITY_COLOR[opp.priority] ?? PRIORITY_COLOR.low) : null;
-                    return (
-                      <Link key={opp.id} href={`/opportunities/${opp.id}`}>
-                        <div className="ledger-row px-5 py-3 flex items-start justify-between gap-3">
-                          <div className="min-w-0 flex-1 flex items-start gap-2">
-                            {!opp.is_read && (
-                              <span
-                                className="mt-1.5 w-1.5 h-1.5 rounded-full shrink-0"
-                                style={{ background: 'var(--accent-primary)' }}
-                              />
-                            )}
-                            <div className="min-w-0">
-                              <p
-                                className="text-sm truncate leading-snug"
-                                style={{
-                                  fontWeight: opp.is_read ? 400 : 500,
-                                  color: opp.is_read ? 'var(--ink-muted)' : 'var(--ink-primary)',
-                                }}
-                              >
-                                {opp.title}
-                              </p>
-                              <p
-                                className="mono-data text-[11px] mt-0.5 truncate"
-                                style={{ color: 'var(--ink-faint)' }}
-                              >
-                                {[opp.funder, opp.deadline ? formatDate(opp.deadline) : null]
-                                  .filter(Boolean).join('  ·  ')}
-                              </p>
-                            </div>
-                          </div>
-                          {pc && opp.priority && (
-                            <span
-                              className="shrink-0 text-[10px] font-medium px-1.5 py-0.5 rounded-[var(--radius-xs)] mono-data"
-                              style={{ background: pc.bg, color: pc.color }}
-                            >
-                              {PRIORITY_LABEL[opp.priority] ?? opp.priority}
-                            </span>
-                          )}
-                        </div>
-                      </Link>
-                    );
-                  })}
-                </div>
-              )}
             </div>
           </div>
         </div>
 
         {/* ── Grant Timeline ───────────────────────────────── */}
-        <div style={{ borderTop: '1px solid var(--rule-subtle)' }} className="p-5">
+        <div className="p-5">
           <GrantTimeline grants={grantList} loading={loading} starredIds={starredIds} tasks={taskList} />
         </div>
       </div>
