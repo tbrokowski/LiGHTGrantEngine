@@ -832,10 +832,12 @@ async def re_enrich_opportunity(
             "app.workers.enrichment_tasks.enrich_opportunity_force",
             args=[opp_id],
         )
-    # Always queue an AI summary generation (works even without a URL if description exists)
+    # Always queue an AI summary generation with force=True so the user gets
+    # fresh content even if a summary already exists.
     celery_app.send_task(
         "app.workers.enrichment_tasks.generate_ai_summary",
         args=[opp_id],
+        kwargs={"force": True},
     )
     return {"status": "queued", "message": "Re-enrichment and AI summary queued"}
 
@@ -1138,7 +1140,16 @@ def _opp_full(o: Opportunity, io: InstitutionOpportunity | None = None) -> dict:
         d["priority"] = io.priority
         d["status"] = io.status
         d["fit_rationale"] = io.fit_rationale
-        d["ai_summary"] = io.ai_summary or o.ai_summary
+        # Merge global sections + org-specific sections into one markdown document.
+        # Global sections (What This Grant Funds, Eligibility, etc.) come first,
+        # then org sections (Fit Assessment, Potential Projects) are appended.
+        # Orgs without a per-org summary only see the global sections.
+        global_summary = o.ai_summary or ""
+        org_summary = io.ai_summary or ""
+        if org_summary:
+            d["ai_summary"] = (global_summary + "\n\n" + org_summary).strip()
+        else:
+            d["ai_summary"] = global_summary or None
     if d.get("deadline"):
         d["deadline"] = str(d["deadline"])
     if d.get("date_discovered"):

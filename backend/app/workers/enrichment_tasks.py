@@ -201,18 +201,32 @@ def enrich_opportunity(self, opportunity_id: str, skip_pdf: bool = False):
     max_retries=2,
     default_retry_delay=120,
 )
-def generate_ai_summary(self, opportunity_id: str):
+def generate_ai_summary(self, opportunity_id: str, force: bool = False):
     """
     Generate a structured markdown AI summary for an opportunity.
-    Stored in Opportunity.ai_summary for rich display in the frontend.
+
+    Produces two layers of content:
+
+    Global (org-agnostic) — stored in opportunities.ai_summary
+      Sections: What This Grant Funds, Eligibility at a Glance, Key Dates,
+                Budget & Award Details, Risk Flags
+
+    Per-org — stored in institution_opportunities.ai_summary for each
+      institution that has this opportunity surfaced and scored.
+      Sections: Fit Assessment, Potential Projects to Propose
+
+    Pass force=True to regenerate even when a summary already exists.
     """
     import structlog
     logger = structlog.get_logger()
 
-    from sqlalchemy import create_engine
+    from sqlalchemy import create_engine, select
     from sqlalchemy.orm import Session
     from app.config import get_settings
     from app.models.opportunity import Opportunity
+    from app.models.institution_opportunity import InstitutionOpportunity
+    from app.models.institution import Institution
+    from app.schemas.grant_profile import GrantProfile
 
     settings = get_settings()
     engine = create_engine(settings.database_url)
@@ -225,57 +239,107 @@ def generate_ai_summary(self, opportunity_id: str):
         if not opp.title:
             return {"status": "missing_title"}
 
-        # Skip if a full summary already exists — avoids redundant LLM calls on
-        # re-enrichment and dedup re-queuing.
-        if opp.ai_summary and len(opp.ai_summary) > 200:
-            return {"status": "already_summarized"}
-
-        # Skip low-fit opportunities — no point generating rich summaries for
-        # irrelevant grants. fit_score=None means not yet scored; proceed.
-        fit_score = opp.fit_score or 0
-        if opp.fit_score is not None and fit_score < 25:
-            return {"status": "skipped_low_fit", "fit_score": fit_score}
-
-        # Tier: brief summary for medium-fit (25–54), full for high-fit (≥ 55)
-        summary_tier = "brief" if fit_score < 55 else "full"
-
         # Cap description to avoid ballooning token usage — parsed_text can be
         # 10k–30k chars. 6000 chars covers all meaningful grant content.
         description_text = (opp.description or opp.parsed_text or "")[:6000]
 
-        try:
-            from app.ai.agents.opportunity_summarizer import generate_opportunity_summary
-            result = _run_async(generate_opportunity_summary(
-                title=opp.title,
-                funder=opp.funder or "",
-                description=description_text,
-                eligibility=opp.eligibility_criteria or "",
-                geography=", ".join(opp.geography or []),
-                award_min=opp.award_min,
-                award_max=opp.award_max,
-                currency=opp.currency or "USD",
-                deadline=str(opp.deadline) if opp.deadline else "",
-                loi_deadline=str(opp.loi_deadline) if opp.loi_deadline else "",
-                thematic_areas=opp.thematic_areas or [],
-                opportunity_url=opp.opportunity_url or "",
-                fit_score=opp.fit_score,
-                fit_rationale=opp.fit_rationale or "",
-                summary_tier=summary_tier,
-            ))
-            opp.ai_summary = result["full_summary"]
-            if result["short_description"]:
-                opp.short_summary = result["short_description"]
+        # ── Global summary ──────────────────────────────────────────────────
+        global_generated = False
+        if force or not (opp.ai_summary and len(opp.ai_summary) > 200):
+            try:
+                from app.ai.agents.opportunity_summarizer import generate_opportunity_summary
+                result = _run_async(generate_opportunity_summary(
+                    title=opp.title,
+                    funder=opp.funder or "",
+                    description=description_text,
+                    eligibility=opp.eligibility_criteria or "",
+                    geography=", ".join(opp.geography or []),
+                    award_min=opp.award_min,
+                    award_max=opp.award_max,
+                    currency=opp.currency or "USD",
+                    deadline=str(opp.deadline) if opp.deadline else "",
+                    loi_deadline=str(opp.loi_deadline) if opp.loi_deadline else "",
+                    thematic_areas=opp.thematic_areas or [],
+                    opportunity_url=opp.opportunity_url or "",
+                ))
+                opp.ai_summary = result["full_summary"]
+                if result["short_description"]:
+                    opp.short_summary = result["short_description"]
+                db.commit()
+                global_generated = True
+                logger.info(
+                    "Global AI summary generated",
+                    opp_id=opportunity_id,
+                    summary_length=len(result["full_summary"]),
+                )
+            except Exception as e:
+                logger.error("Global AI summary generation failed", opp_id=opportunity_id, error=str(e))
+                raise self.retry(exc=e)
+        else:
+            logger.info("Global AI summary already exists, skipping", opp_id=opportunity_id)
+
+        # ── Per-org summaries ────────────────────────────────────────────────
+        # Generate Fit Assessment + Potential Projects for each institution
+        # that has this opportunity surfaced with a fit score.
+        rows = db.execute(
+            select(InstitutionOpportunity, Institution)
+            .join(Institution, Institution.id == InstitutionOpportunity.institution_id)
+            .where(InstitutionOpportunity.opportunity_id == opportunity_id)
+            .where(InstitutionOpportunity.fit_score.isnot(None))
+        ).all()
+
+        org_generated = 0
+        org_skipped = 0
+        for io, inst in rows:
+            if not force and io.ai_summary and len(io.ai_summary) > 100:
+                org_skipped += 1
+                continue
+
+            profile = GrantProfile.from_dict(inst.grant_profile or {})
+            team_themes = profile.keywords or []
+            team_geographies = profile.geographies or []
+
+            try:
+                from app.ai.agents.opportunity_summarizer import generate_org_sections
+                org_result = _run_async(generate_org_sections(
+                    title=opp.title,
+                    funder=opp.funder or "",
+                    description=description_text[:2000],
+                    institution_name=profile.institution_name or inst.name,
+                    team_themes=team_themes,
+                    team_geographies=team_geographies,
+                    fit_score=io.fit_score,
+                    fit_rationale=io.fit_rationale or "",
+                    eligibility=opp.eligibility_criteria or "",
+                    thematic_areas=opp.thematic_areas or [],
+                ))
+                if org_result.get("org_summary"):
+                    io.ai_summary = org_result["org_summary"]
+                    org_generated += 1
+            except Exception as e:
+                logger.error(
+                    "Org AI summary generation failed",
+                    opp_id=opportunity_id,
+                    institution_id=io.institution_id,
+                    error=str(e),
+                )
+
+        if rows:
             db.commit()
-            logger.info(
-                "AI summary generated",
-                opp_id=opportunity_id,
-                summary_length=len(result["full_summary"]),
-                short_desc_length=len(result["short_description"]),
-            )
-            return {"status": "ok", "length": len(result["full_summary"])}
-        except Exception as e:
-            logger.error("AI summary generation failed", opp_id=opportunity_id, error=str(e))
-            raise self.retry(exc=e)
+
+        logger.info(
+            "AI summary task complete",
+            opp_id=opportunity_id,
+            global_generated=global_generated,
+            org_generated=org_generated,
+            org_skipped=org_skipped,
+        )
+        return {
+            "status": "ok",
+            "global_generated": global_generated,
+            "org_generated": org_generated,
+            "org_skipped": org_skipped,
+        }
 
 
 @celery_app.task(
