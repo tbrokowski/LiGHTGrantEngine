@@ -1,38 +1,44 @@
 'use client';
 import { useState, useEffect, useRef, useCallback } from 'react';
+import { useAuth } from '@/lib/auth';
 
-const LS_KEY = 'dashboard_scratchpad';
 const DEBOUNCE_MS = 800;
 
 export default function Scratchpad() {
+  const { user } = useAuth();
+  const lsKey = user?.id ? `dashboard_scratchpad:${user.id}` : null;
+
   const [text, setText] = useState('');
   const [saveState, setSaveState] = useState<'idle' | 'pending' | 'saved'>('idle');
   const timerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const initialLoad = useRef(true);
 
+  // Load the saved text whenever the user (and therefore lsKey) is known.
   useEffect(() => {
+    if (!lsKey) return;
+    initialLoad.current = true;
     try {
-      const saved = localStorage.getItem(LS_KEY);
-      if (saved !== null) setText(saved);
+      const saved = localStorage.getItem(lsKey);
+      setText(saved !== null ? saved : '');
     } catch {}
     initialLoad.current = false;
-  }, []);
+  }, [lsKey]);
 
   const handleChange = useCallback((val: string) => {
     setText(val);
-    if (initialLoad.current) return;
+    if (initialLoad.current || !lsKey) return;
     setSaveState('pending');
     if (timerRef.current) clearTimeout(timerRef.current);
     timerRef.current = setTimeout(() => {
       try {
-        localStorage.setItem(LS_KEY, val);
+        localStorage.setItem(lsKey, val);
         setSaveState('saved');
         timerRef.current = setTimeout(() => setSaveState('idle'), 2000);
       } catch {
         setSaveState('idle');
       }
     }, DEBOUNCE_MS);
-  }, []);
+  }, [lsKey]);
 
   useEffect(() => () => { if (timerRef.current) clearTimeout(timerRef.current); }, []);
 
