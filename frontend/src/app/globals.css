@@ -245,11 +245,11 @@ body {
    SIDEBAR LIGHTHOUSE — animation keyframes
 ───────────────────────────────────────────────────────────── */
 @keyframes lh-wave {
-  /* Scrolls a 300% wide multi-peak gradient across the element.
-     background-position 100%→0% moves the visible window leftward through
-     the gradient, so peaks appear from the left and sweep right. */
-  0%   { background-position: 100% 0; }
-  100% { background-position: 0%   0; }
+  /* Scrolls a 300%-tall multi-peak gradient top→bottom.
+     background-position 0%→100% moves the visible window downward through
+     the gradient so brightness peaks wash from top to bottom. */
+  0%   { background-position: 0 0%;   }
+  100% { background-position: 0 100%; }
 }
 
 @keyframes lh-beam {

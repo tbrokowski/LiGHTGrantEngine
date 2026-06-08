@@ -94,7 +94,7 @@ export default function Sidebar() {
               position: 'absolute',
               inset: 0,
               backgroundImage: [
-                'linear-gradient(90deg,',
+                'linear-gradient(180deg,',
                 '  transparent        0%,',
                 '  rgba(255,255,255,0.012)  8%,',
                 '  rgba(255,255,255,0.062) 14%,',
@@ -108,7 +108,7 @@ export default function Sidebar() {
                 '  rgba(255,255,255,0.036) 84%,',
                 '  transparent      100%)',
               ].join(''),
-              backgroundSize: '300% 100%',
+              backgroundSize: '100% 300%',
               animation: 'lh-wave 11s linear infinite',
             }}
           />
@@ -119,7 +119,7 @@ export default function Sidebar() {
               position: 'absolute',
               inset: 0,
               backgroundImage: [
-                'linear-gradient(90deg,',
+                'linear-gradient(180deg,',
                 '  transparent        0%,',
                 '  rgba(255,255,255,0.010) 11%,',
                 '  rgba(255,255,255,0.048) 17%,',
@@ -131,7 +131,7 @@ export default function Sidebar() {
                 '  transparent       80%,',
                 '  transparent      100%)',
               ].join(''),
-              backgroundSize: '250% 100%',
+              backgroundSize: '100% 250%',
               animation: 'lh-wave 7.5s linear infinite',
               animationDelay: '-3.8s',
             }}
