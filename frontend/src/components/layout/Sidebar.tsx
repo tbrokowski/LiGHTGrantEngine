@@ -100,14 +100,13 @@ export default function Sidebar() {
               aspectRatio: '2 / 3',
             }}
           >
-            {/* Narrow triangle beam — true single-point apex, opens as it extends.
-                clipPath polygon(0 50%, …) starts at one pixel-thin point at the
-                left-center, expanding to a slim cone at the far end.
+            {/* Narrow triangle beam — apex locked to the actual lantern position.
+                Pixel analysis: tower top is at y≈20%, x≈50% of the image.
                 rotate(75deg) in the keyframe points it steeply downward. */}
             <div
               style={{
                 position: 'absolute',
-                top: '7%',
+                top: '20%',
                 left: '50%',
                 width: '200%',
                 height: '50%',
