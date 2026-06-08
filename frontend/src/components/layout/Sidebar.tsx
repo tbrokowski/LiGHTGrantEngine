@@ -87,26 +87,66 @@ export default function Sidebar() {
           className="absolute inset-0 pointer-events-none select-none overflow-hidden"
           aria-hidden
         >
-          {/* Gradient wave — translateX(%) is relative to its own width = sidebar width, auto-scales */}
+          {/* Wave layer A — primary, 3 peaks baked into a 300%-wide gradient.
+              background-position scrolls the peaks left→right at 11s/cycle. */}
           <div
             style={{
               position: 'absolute',
-              top: 0, left: 0, right: 0, bottom: 0,
-              background: 'linear-gradient(90deg, transparent 0%, rgba(255,255,255,0.05) 50%, transparent 100%)',
-              animation: 'lh-wave 9s ease-in-out infinite',
+              inset: 0,
+              backgroundImage: [
+                'linear-gradient(90deg,',
+                '  transparent        0%,',
+                '  rgba(255,255,255,0.012)  8%,',
+                '  rgba(255,255,255,0.062) 14%,',
+                '  rgba(255,255,255,0.012) 20%,',
+                '  transparent       30%,',
+                '  rgba(255,255,255,0.009) 43%,',
+                '  rgba(255,255,255,0.050) 49%,',
+                '  rgba(255,255,255,0.009) 55%,',
+                '  transparent       65%,',
+                '  rgba(255,255,255,0.006) 78%,',
+                '  rgba(255,255,255,0.036) 84%,',
+                '  transparent      100%)',
+              ].join(''),
+              backgroundSize: '300% 100%',
+              animation: 'lh-wave 11s linear infinite',
+            }}
+          />
+          {/* Wave layer B — slightly narrower peaks, faster, phase-offset.
+              Constructive interference at crossings creates convincing swell. */}
+          <div
+            style={{
+              position: 'absolute',
+              inset: 0,
+              backgroundImage: [
+                'linear-gradient(90deg,',
+                '  transparent        0%,',
+                '  rgba(255,255,255,0.010) 11%,',
+                '  rgba(255,255,255,0.048) 17%,',
+                '  rgba(255,255,255,0.010) 23%,',
+                '  transparent       36%,',
+                '  rgba(255,255,255,0.007) 51%,',
+                '  rgba(255,255,255,0.040) 58%,',
+                '  rgba(255,255,255,0.007) 65%,',
+                '  transparent       80%,',
+                '  transparent      100%)',
+              ].join(''),
+              backgroundSize: '250% 100%',
+              animation: 'lh-wave 7.5s linear infinite',
+              animationDelay: '-3.8s',
             }}
           />
 
           {/* Lighthouse + beam assembly
-              85% of sidebar width, vertically centered in the nav area.
-              aspect-ratio 2/3 matches image pixels → height tracks width automatically. */}
+              width: 100% of sidebar; aspect-ratio 2/3 sets height to 150% of width.
+              Vertically centered so the tower fills the nav area. */}
           <div
             style={{
               position: 'absolute',
               top: '50%',
               left: '50%',
               transform: 'translate(-50%, -50%)',
-              width: '85%',
+              width: '100%',
               aspectRatio: '2 / 3',
             }}
           >
@@ -138,17 +178,18 @@ export default function Sidebar() {
               }}
             />
 
-            {/* Thin crisp ray — uppermost layer */}
+            {/* Thin ray — same apex as fan, rotates downward to complement
+                the upper-right beam (≈95° apart, creating a diverging pair). */}
             <div
               style={{
                 position: 'absolute',
                 top: '8%',
                 left: '50%',
-                width: '240%',
+                width: '180%',
                 height: '1px',
                 transformOrigin: '0 0',
-                transform: 'rotate(-25deg)',
-                background: 'linear-gradient(to right, rgba(255,255,255,0.65), transparent 80%)',
+                transform: 'rotate(70deg)',
+                background: 'linear-gradient(to right, rgba(255,255,255,0.60), transparent 75%)',
                 animation: 'lh-ray 6s ease-in-out infinite',
               }}
             />
