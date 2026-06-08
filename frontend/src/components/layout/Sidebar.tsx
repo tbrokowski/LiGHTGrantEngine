@@ -98,56 +98,58 @@ export default function Sidebar() {
           />
 
           {/* Lighthouse + beam assembly
-              width: 50% of sidebar → scales automatically.
-              aspect-ratio: 2/3 matches the image → height scales with width.
-              All child positions use % → proportional to this container. */}
+              85% of sidebar width, vertically centered in the nav area.
+              aspect-ratio 2/3 matches image pixels → height tracks width automatically. */}
           <div
             style={{
               position: 'absolute',
-              bottom: 0,
+              top: '50%',
               left: '50%',
-              transform: 'translateX(-50%)',
-              width: '50%',
+              transform: 'translate(-50%, -50%)',
+              width: '85%',
               aspectRatio: '2 / 3',
             }}
           >
-            {/* Broad beam — origin at lantern (top-center of image) */}
-            <div
-              style={{
-                position: 'absolute',
-                top: '5%',
-                left: '50%',
-                width: '220%',
-                height: '38%',
-                transformOrigin: '0 0',
-                background: 'linear-gradient(90deg, rgba(255,255,255,0.22) 0%, transparent 100%)',
-                borderRadius: '0 30% 30% 0',
-                animation: 'lh-beam 6s ease-in-out infinite',
-              }}
-            />
-            {/* Thin ray */}
+            {/* Fan beam — behind image, pivots at lantern (left-center of element) */}
             <div
               style={{
                 position: 'absolute',
                 top: '7%',
                 left: '50%',
-                width: '220%',
-                height: '1px',
-                transformOrigin: '0 0',
-                background: 'linear-gradient(90deg, rgba(255,255,255,0.75) 0%, transparent 80%)',
-                animation: 'lh-ray 6s ease-in-out infinite',
+                width: '240%',
+                height: '45%',
+                transformOrigin: '0 50%',
+                clipPath: 'polygon(0 28%, 0 72%, 100% 100%, 100% 0%)',
+                background: 'linear-gradient(to right, rgba(255,255,255,0.16), transparent 85%)',
+                animation: 'lh-beam 6s ease-in-out infinite',
               }}
             />
-            {/* Lighthouse image fills the container */}
+
+            {/* Lighthouse silhouette — in front of beam, behind ray */}
             <Image
               src="/lighthouse.png"
               alt=""
               fill
               style={{
-                opacity: 0.09,
+                opacity: 0.10,
                 objectFit: 'contain',
-                objectPosition: 'bottom center',
+                objectPosition: 'center',
                 filter: 'brightness(0) invert(1)',
+              }}
+            />
+
+            {/* Thin crisp ray — uppermost layer */}
+            <div
+              style={{
+                position: 'absolute',
+                top: '8%',
+                left: '50%',
+                width: '240%',
+                height: '1px',
+                transformOrigin: '0 0',
+                transform: 'rotate(-25deg)',
+                background: 'linear-gradient(to right, rgba(255,255,255,0.65), transparent 80%)',
+                animation: 'lh-ray 6s ease-in-out infinite',
               }}
             />
           </div>
