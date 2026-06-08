@@ -88,8 +88,10 @@ export default function Sidebar() {
           aria-hidden
         >
           {/* Lighthouse + beam assembly
-              width: 150% of sidebar (overflows, clipped); aspect-ratio 2/3
-              gives height = 225% of sidebar width — fills the nav area. */}
+              width: 150% of sidebar (same as before, clipped by overflow-hidden).
+              height: 90% of nav area — independent of width so the lighthouse
+              fills most of the vertical space regardless of screen size.
+              objectFit cover + objectPosition top keeps the tower/lantern visible. */}
           <div
             style={{
               position: 'absolute',
@@ -97,19 +99,19 @@ export default function Sidebar() {
               left: '50%',
               transform: 'translate(-50%, -50%)',
               width: '150%',
-              aspectRatio: '2 / 3',
+              height: '90%',
             }}
           >
-            {/* Narrow triangle beam — apex locked to the actual lantern position.
-                Pixel analysis: tower top is at y≈20%, x≈50% of the image.
-                rotate(75deg) in the keyframe points it steeply downward. */}
+            {/* Narrow triangle beam — apex at lantern (y≈20%, x≈50% of image).
+                rotate(-10deg) in keyframe matches the upper-right ray baked into
+                the lighthouse PNG (pixel-traced from lantern at y=312, x=512). */}
             <div
               style={{
                 position: 'absolute',
                 top: '20%',
                 left: '50%',
                 width: '200%',
-                height: '50%',
+                height: '40%',
                 transformOrigin: '0 50%',
                 clipPath: 'polygon(0 50%, 100% 20%, 100% 80%)',
                 background: 'linear-gradient(to right, rgba(255,255,255,0.22) 0%, transparent 85%)',
@@ -117,15 +119,16 @@ export default function Sidebar() {
               }}
             />
 
-            {/* Lighthouse silhouette — rendered above beam */}
+            {/* Lighthouse silhouette — cover fills the tall container,
+                objectPosition top keeps the lantern near the top of the frame. */}
             <Image
               src="/lighthouse.png"
               alt=""
               fill
               style={{
                 opacity: 0.11,
-                objectFit: 'contain',
-                objectPosition: 'center',
+                objectFit: 'cover',
+                objectPosition: 'center top',
                 filter: 'brightness(0) invert(1)',
               }}
             />
