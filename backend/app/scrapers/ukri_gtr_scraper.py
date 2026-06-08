@@ -78,6 +78,7 @@ class UKRIGtRScraper(BaseScraper):
                         "deadline": fund.get("end") if isinstance(fund, dict) else None,
                         "program_name": proj.get("grantCategory") or proj.get("status"),
                         "opportunity_number": proj_id or None,
+                        "opportunity_type": "past_award",
                     }))
 
                 if len(projects) < _PAGE_SIZE:

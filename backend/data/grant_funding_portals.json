@@ -1,6 +1,6 @@
 {
-  "version": 5,
-  "notes": "Merged and deduplicated from v4. Duplicates removed: NIH RePORTER (paused, subsumed by NIH Open FOAs), NSF Award Search (paused, subsumed by NSF Open Solicitations), Horizon Europe/CORDIS (paused, subsumed by EU Funding & Tenders Portal), EIC (paused, subsumed by EU Funding & Tenders Portal), EU Funding & Tenders Horizon Programmes (paused, duplicate), ESIF/Cohesion (paused, separate scraper needed), EU Funding Portal aggregator eufundingportal.eu (paused, no scraper), UKRI Active Opportunities (duplicate of UKRI Funding Opportunities), d-portal (subsumed by IATI Datastore), Wellcome Open Research (subsumed by Wellcome Trust main entry), Robert Bosch Stiftung Arts entry (merged into main Robert Bosch Stiftung EU entry), Nuffield Foundation duplicate (merged), Leverhulme Trust duplicate (merged), Alfred P Sloan Foundation duplicate (merged), Esmee Fairbairn Foundation duplicate (merged), Pew Charitable Trusts duplicate (merged), Joyce Foundation duplicate (merged), Volkswagen Stiftung duplicate (merged), Schmidt Futures duplicate (merged into Schmidt Sciences entry), Wellcome Leap duplicate (merged), Wellcome Trust Open Calls duplicate (merged). gcgh.grandchallenges.org/grant-opportunities added as dedicated scraper target. All new sources from gap analysis added.",
+  "version": 7,
+  "notes": "Merged and deduplicated from v4. Duplicates removed: NIH RePORTER (paused, subsumed by NIH Open FOAs), NSF Award Search (paused, subsumed by NSF Open Solicitations), Horizon Europe/CORDIS (paused, subsumed by EU Funding & Tenders Portal), EIC (paused, subsumed by EU Funding & Tenders Portal), EU Funding & Tenders Horizon Programmes (paused, duplicate), ESIF/Cohesion (paused, separate scraper needed), EU Funding Portal aggregator eufundingportal.eu (paused, no scraper), UKRI Active Opportunities (duplicate of UKRI Funding Opportunities), d-portal (subsumed by IATI Datastore), Wellcome Open Research (subsumed by Wellcome Trust main entry), Robert Bosch Stiftung Arts entry (merged into main Robert Bosch Stiftung EU entry), Nuffield Foundation duplicate (merged), Leverhulme Trust duplicate (merged), Alfred P Sloan Foundation duplicate (merged), Esmee Fairbairn Foundation duplicate (merged), Pew Charitable Trusts duplicate (merged), Joyce Foundation duplicate (merged), Volkswagen Stiftung duplicate (merged), Schmidt Futures duplicate (merged into Schmidt Sciences entry), Wellcome Leap duplicate (merged), Wellcome Trust Open Calls duplicate (merged). gcgh.grandchallenges.org/grant-opportunities added as dedicated scraper target. All new sources from gap analysis added. v6: NIHR entries now use paginate=true/max_pages=8 to capture all funding pages; Fulbright link_filter=/program. v7: bulk scraper_config upgrade \u2014 depth=0\u21921 for 23 sources, pagination added to 261 sources, link_filter added to 53 sources, use_playwright enforced on 0 sources.",
   "sources": [
     {
       "name": "Grants.gov (Simpler Grants)",
@@ -145,7 +145,9 @@
       "api_endpoint": null,
       "scraper_config": {
         "use_playwright": true,
-        "crawl_depth": 1
+        "crawl_depth": 1,
+        "paginate": true,
+        "max_pages": 5
       },
       "refresh_frequency": "weekly",
       "is_high_priority": true,
@@ -168,7 +170,10 @@
       "api_endpoint": null,
       "scraper_config": {
         "use_playwright": true,
-        "crawl_depth": 1
+        "crawl_depth": 1,
+        "paginate": true,
+        "max_pages": 5,
+        "link_filter": "/work-with-us/|/opportunities"
       },
       "refresh_frequency": "weekly",
       "is_high_priority": true,
@@ -191,7 +196,9 @@
       "api_endpoint": null,
       "scraper_config": {
         "use_playwright": true,
-        "crawl_depth": 1
+        "crawl_depth": 1,
+        "paginate": true,
+        "max_pages": 5
       },
       "refresh_frequency": "daily",
       "is_high_priority": true,
@@ -213,7 +220,9 @@
       "api_endpoint": null,
       "scraper_config": {
         "use_playwright": true,
-        "crawl_depth": 1
+        "crawl_depth": 1,
+        "paginate": true,
+        "max_pages": 5
       },
       "refresh_frequency": "weekly",
       "is_high_priority": true,
@@ -236,7 +245,10 @@
       "api_endpoint": null,
       "scraper_config": {
         "use_playwright": true,
-        "crawl_depth": 1
+        "crawl_depth": 1,
+        "paginate": true,
+        "max_pages": 5,
+        "link_filter": "/grants/|/funding"
       },
       "refresh_frequency": "weekly",
       "is_high_priority": false,
@@ -259,7 +271,10 @@
       "api_endpoint": null,
       "scraper_config": {
         "use_playwright": true,
-        "crawl_depth": 1
+        "crawl_depth": 1,
+        "paginate": true,
+        "max_pages": 5,
+        "link_filter": "/grants|/funding|/program"
       },
       "refresh_frequency": "weekly",
       "is_high_priority": false,
@@ -283,7 +298,9 @@
       "api_endpoint": null,
       "scraper_config": {
         "use_playwright": true,
-        "crawl_depth": 1
+        "crawl_depth": 1,
+        "paginate": true,
+        "max_pages": 5
       },
       "refresh_frequency": "weekly",
       "is_high_priority": true,
@@ -307,7 +324,9 @@
       "api_endpoint": null,
       "scraper_config": {
         "use_playwright": true,
-        "crawl_depth": 1
+        "crawl_depth": 1,
+        "paginate": true,
+        "max_pages": 5
       },
       "refresh_frequency": "weekly",
       "is_high_priority": false,
@@ -329,7 +348,9 @@
       "api_endpoint": null,
       "scraper_config": {
         "use_playwright": true,
-        "crawl_depth": 1
+        "crawl_depth": 1,
+        "paginate": true,
+        "max_pages": 5
       },
       "refresh_frequency": "weekly",
       "is_high_priority": false,
@@ -351,7 +372,9 @@
       "api_endpoint": null,
       "scraper_config": {
         "use_playwright": true,
-        "crawl_depth": 0
+        "crawl_depth": 1,
+        "paginate": true,
+        "max_pages": 5
       },
       "refresh_frequency": "weekly",
       "is_high_priority": false,
@@ -373,7 +396,9 @@
       "api_endpoint": null,
       "scraper_config": {
         "use_playwright": true,
-        "crawl_depth": 1
+        "crawl_depth": 1,
+        "paginate": true,
+        "max_pages": 5
       },
       "refresh_frequency": "weekly",
       "is_high_priority": true,
@@ -397,7 +422,9 @@
       "api_endpoint": null,
       "scraper_config": {
         "use_playwright": true,
-        "crawl_depth": 1
+        "crawl_depth": 1,
+        "paginate": true,
+        "max_pages": 5
       },
       "refresh_frequency": "weekly",
       "is_high_priority": false,
@@ -421,7 +448,10 @@
       "api_endpoint": null,
       "scraper_config": {
         "use_playwright": true,
-        "crawl_depth": 1
+        "crawl_depth": 1,
+        "paginate": true,
+        "max_pages": 5,
+        "link_filter": "/funding"
       },
       "refresh_frequency": "weekly",
       "is_high_priority": true,
@@ -445,7 +475,10 @@
       "api_endpoint": null,
       "scraper_config": {
         "use_playwright": true,
-        "crawl_depth": 1
+        "crawl_depth": 1,
+        "paginate": true,
+        "max_pages": 5,
+        "link_filter": "/funding"
       },
       "refresh_frequency": "weekly",
       "is_high_priority": false,
@@ -467,7 +500,10 @@
       "api_endpoint": null,
       "scraper_config": {
         "use_playwright": true,
-        "crawl_depth": 1
+        "crawl_depth": 1,
+        "paginate": true,
+        "max_pages": 5,
+        "link_filter": "/grants|/funding"
       },
       "refresh_frequency": "weekly",
       "is_high_priority": false,
@@ -489,7 +525,9 @@
       "api_endpoint": null,
       "scraper_config": {
         "use_playwright": true,
-        "crawl_depth": 1
+        "crawl_depth": 1,
+        "paginate": true,
+        "max_pages": 5
       },
       "refresh_frequency": "weekly",
       "is_high_priority": false,
@@ -511,7 +549,9 @@
       "api_endpoint": null,
       "scraper_config": {
         "use_playwright": true,
-        "crawl_depth": 1
+        "crawl_depth": 1,
+        "paginate": true,
+        "max_pages": 5
       },
       "refresh_frequency": "weekly",
       "is_high_priority": false,
@@ -533,7 +573,9 @@
       "api_endpoint": null,
       "scraper_config": {
         "use_playwright": true,
-        "crawl_depth": 1
+        "crawl_depth": 1,
+        "paginate": true,
+        "max_pages": 5
       },
       "refresh_frequency": "weekly",
       "is_high_priority": true,
@@ -556,7 +598,9 @@
       "api_endpoint": null,
       "scraper_config": {
         "use_playwright": true,
-        "crawl_depth": 1
+        "crawl_depth": 1,
+        "paginate": true,
+        "max_pages": 5
       },
       "refresh_frequency": "weekly",
       "is_high_priority": true,
@@ -579,7 +623,9 @@
       "api_endpoint": null,
       "scraper_config": {
         "use_playwright": true,
-        "crawl_depth": 1
+        "crawl_depth": 1,
+        "paginate": true,
+        "max_pages": 5
       },
       "refresh_frequency": "weekly",
       "is_high_priority": true,
@@ -602,7 +648,9 @@
       "api_endpoint": null,
       "scraper_config": {
         "use_playwright": true,
-        "crawl_depth": 1
+        "crawl_depth": 1,
+        "paginate": true,
+        "max_pages": 5
       },
       "refresh_frequency": "weekly",
       "is_high_priority": true,
@@ -626,7 +674,9 @@
       "api_endpoint": null,
       "scraper_config": {
         "use_playwright": true,
-        "crawl_depth": 1
+        "crawl_depth": 1,
+        "paginate": true,
+        "max_pages": 5
       },
       "refresh_frequency": "weekly",
       "is_high_priority": false,
@@ -649,7 +699,9 @@
       "api_endpoint": null,
       "scraper_config": {
         "use_playwright": true,
-        "crawl_depth": 1
+        "crawl_depth": 1,
+        "paginate": true,
+        "max_pages": 5
       },
       "refresh_frequency": "weekly",
       "is_high_priority": false,
@@ -672,7 +724,9 @@
       "api_endpoint": null,
       "scraper_config": {
         "use_playwright": true,
-        "crawl_depth": 1
+        "crawl_depth": 1,
+        "paginate": true,
+        "max_pages": 5
       },
       "refresh_frequency": "weekly",
       "is_high_priority": false,
@@ -694,7 +748,9 @@
       "api_endpoint": null,
       "scraper_config": {
         "use_playwright": true,
-        "crawl_depth": 1
+        "crawl_depth": 1,
+        "paginate": true,
+        "max_pages": 5
       },
       "refresh_frequency": "weekly",
       "is_high_priority": true,
@@ -716,7 +772,10 @@
       "api_endpoint": null,
       "scraper_config": {
         "use_playwright": true,
-        "crawl_depth": 1
+        "crawl_depth": 1,
+        "paginate": true,
+        "max_pages": 10,
+        "link_filter": "/grant|/what-we-do|/program"
       },
       "refresh_frequency": "daily",
       "is_high_priority": true,
@@ -737,7 +796,9 @@
       "api_endpoint": null,
       "scraper_config": {
         "use_playwright": true,
-        "crawl_depth": 1
+        "crawl_depth": 1,
+        "paginate": true,
+        "max_pages": 10
       },
       "refresh_frequency": "daily",
       "is_high_priority": true,
@@ -760,7 +821,9 @@
       "api_endpoint": null,
       "scraper_config": {
         "use_playwright": true,
-        "crawl_depth": 1
+        "crawl_depth": 1,
+        "paginate": true,
+        "max_pages": 5
       },
       "refresh_frequency": "weekly",
       "is_high_priority": false,
@@ -782,7 +845,10 @@
       "api_endpoint": null,
       "scraper_config": {
         "use_playwright": true,
-        "crawl_depth": 1
+        "crawl_depth": 1,
+        "paginate": true,
+        "max_pages": 10,
+        "link_filter": "/grant-funding|/scheme"
       },
       "refresh_frequency": "daily",
       "is_high_priority": true,
@@ -806,7 +872,10 @@
       "api_endpoint": null,
       "scraper_config": {
         "use_playwright": true,
-        "crawl_depth": 1
+        "crawl_depth": 1,
+        "paginate": true,
+        "max_pages": 10,
+        "link_filter": "/grant-funding|/scheme"
       },
       "refresh_frequency": "weekly",
       "is_high_priority": true,
@@ -829,7 +898,10 @@
       "api_endpoint": null,
       "scraper_config": {
         "use_playwright": true,
-        "crawl_depth": 1
+        "crawl_depth": 1,
+        "paginate": true,
+        "max_pages": 10,
+        "link_filter": "/grant-funding|/scheme"
       },
       "refresh_frequency": "weekly",
       "is_high_priority": true,
@@ -852,7 +924,9 @@
       "api_endpoint": null,
       "scraper_config": {
         "use_playwright": true,
-        "crawl_depth": 1
+        "crawl_depth": 1,
+        "paginate": true,
+        "max_pages": 3
       },
       "refresh_frequency": "weekly",
       "is_high_priority": true,
@@ -875,7 +949,10 @@
       "api_endpoint": null,
       "scraper_config": {
         "use_playwright": true,
-        "crawl_depth": 1
+        "crawl_depth": 1,
+        "paginate": true,
+        "max_pages": 10,
+        "link_filter": "/work/our-grants|/grant"
       },
       "refresh_frequency": "weekly",
       "is_high_priority": false,
@@ -892,7 +969,10 @@
       "api_endpoint": null,
       "scraper_config": {
         "use_playwright": true,
-        "crawl_depth": 1
+        "crawl_depth": 1,
+        "paginate": true,
+        "max_pages": 10,
+        "link_filter": "/grants/|/program"
       },
       "refresh_frequency": "weekly",
       "is_high_priority": false,
@@ -914,7 +994,10 @@
       "api_endpoint": null,
       "scraper_config": {
         "use_playwright": true,
-        "crawl_depth": 1
+        "crawl_depth": 1,
+        "paginate": true,
+        "max_pages": 10,
+        "link_filter": "/grants|/fellowship|/program"
       },
       "refresh_frequency": "weekly",
       "is_high_priority": true,
@@ -938,7 +1021,9 @@
       "api_endpoint": null,
       "scraper_config": {
         "use_playwright": true,
-        "crawl_depth": 1
+        "crawl_depth": 1,
+        "paginate": true,
+        "max_pages": 10
       },
       "refresh_frequency": "weekly",
       "is_high_priority": true,
@@ -989,7 +1074,9 @@
       "api_endpoint": null,
       "scraper_config": {
         "use_playwright": true,
-        "crawl_depth": 0
+        "crawl_depth": 1,
+        "paginate": true,
+        "max_pages": 10
       },
       "refresh_frequency": "weekly",
       "is_high_priority": false,
@@ -1006,7 +1093,9 @@
       "api_endpoint": null,
       "scraper_config": {
         "use_playwright": true,
-        "crawl_depth": 1
+        "crawl_depth": 1,
+        "paginate": true,
+        "max_pages": 10
       },
       "refresh_frequency": "weekly",
       "is_high_priority": false,
@@ -1023,7 +1112,9 @@
       "api_endpoint": null,
       "scraper_config": {
         "use_playwright": true,
-        "crawl_depth": 1
+        "crawl_depth": 1,
+        "paginate": true,
+        "max_pages": 10
       },
       "refresh_frequency": "weekly",
       "is_high_priority": false,
@@ -1045,7 +1136,9 @@
       "api_endpoint": null,
       "scraper_config": {
         "use_playwright": true,
-        "crawl_depth": 1
+        "crawl_depth": 1,
+        "paginate": true,
+        "max_pages": 10
       },
       "refresh_frequency": "weekly",
       "is_high_priority": false,
@@ -1066,7 +1159,9 @@
       "api_endpoint": null,
       "scraper_config": {
         "use_playwright": true,
-        "crawl_depth": 0
+        "crawl_depth": 1,
+        "paginate": true,
+        "max_pages": 10
       },
       "refresh_frequency": "daily",
       "is_high_priority": true,
@@ -1088,7 +1183,9 @@
       "api_endpoint": null,
       "scraper_config": {
         "use_playwright": true,
-        "crawl_depth": 1
+        "crawl_depth": 1,
+        "paginate": true,
+        "max_pages": 10
       },
       "refresh_frequency": "weekly",
       "is_high_priority": true,
@@ -1110,7 +1207,9 @@
       "api_endpoint": null,
       "scraper_config": {
         "use_playwright": true,
-        "crawl_depth": 0
+        "crawl_depth": 1,
+        "paginate": true,
+        "max_pages": 10
       },
       "refresh_frequency": "weekly",
       "is_high_priority": false,
@@ -1127,7 +1226,9 @@
       "api_endpoint": null,
       "scraper_config": {
         "use_playwright": true,
-        "crawl_depth": 1
+        "crawl_depth": 1,
+        "paginate": true,
+        "max_pages": 10
       },
       "refresh_frequency": "weekly",
       "is_high_priority": false,
@@ -1144,7 +1245,9 @@
       "api_endpoint": null,
       "scraper_config": {
         "use_playwright": true,
-        "crawl_depth": 1
+        "crawl_depth": 1,
+        "paginate": true,
+        "max_pages": 10
       },
       "refresh_frequency": "weekly",
       "is_high_priority": false,
@@ -1166,7 +1269,9 @@
       "api_endpoint": null,
       "scraper_config": {
         "use_playwright": true,
-        "crawl_depth": 1
+        "crawl_depth": 1,
+        "paginate": true,
+        "max_pages": 10
       },
       "refresh_frequency": "weekly",
       "is_high_priority": false,
@@ -1189,7 +1294,9 @@
       "api_endpoint": null,
       "scraper_config": {
         "use_playwright": true,
-        "crawl_depth": 1
+        "crawl_depth": 1,
+        "paginate": true,
+        "max_pages": 10
       },
       "refresh_frequency": "weekly",
       "is_high_priority": false,
@@ -1212,7 +1319,9 @@
       "api_endpoint": null,
       "scraper_config": {
         "use_playwright": true,
-        "crawl_depth": 1
+        "crawl_depth": 1,
+        "paginate": true,
+        "max_pages": 10
       },
       "refresh_frequency": "weekly",
       "is_high_priority": false,
@@ -1236,7 +1345,10 @@
       "api_endpoint": null,
       "scraper_config": {
         "use_playwright": true,
-        "crawl_depth": 1
+        "crawl_depth": 1,
+        "paginate": true,
+        "max_pages": 10,
+        "link_filter": "/grants|/program"
       },
       "refresh_frequency": "weekly",
       "is_high_priority": false,
@@ -1259,7 +1371,10 @@
       "api_endpoint": null,
       "scraper_config": {
         "use_playwright": true,
-        "crawl_depth": 1
+        "crawl_depth": 1,
+        "paginate": true,
+        "max_pages": 10,
+        "link_filter": "/programs|/grant|/funding"
       },
       "refresh_frequency": "weekly",
       "is_high_priority": true,
@@ -1282,7 +1397,9 @@
       "api_endpoint": null,
       "scraper_config": {
         "use_playwright": true,
-        "crawl_depth": 1
+        "crawl_depth": 1,
+        "paginate": true,
+        "max_pages": 10
       },
       "refresh_frequency": "weekly",
       "is_high_priority": false,
@@ -1305,7 +1422,9 @@
       "api_endpoint": null,
       "scraper_config": {
         "use_playwright": true,
-        "crawl_depth": 1
+        "crawl_depth": 1,
+        "paginate": true,
+        "max_pages": 10
       },
       "refresh_frequency": "weekly",
       "is_high_priority": false,
@@ -1328,7 +1447,10 @@
       "api_endpoint": null,
       "scraper_config": {
         "use_playwright": true,
-        "crawl_depth": 1
+        "crawl_depth": 1,
+        "paginate": true,
+        "max_pages": 10,
+        "link_filter": "/programs|/grant|/partner"
       },
       "refresh_frequency": "weekly",
       "is_high_priority": false,
@@ -1351,7 +1473,9 @@
       "api_endpoint": null,
       "scraper_config": {
         "use_playwright": true,
-        "crawl_depth": 1
+        "crawl_depth": 1,
+        "paginate": true,
+        "max_pages": 10
       },
       "refresh_frequency": "weekly",
       "is_high_priority": false,
@@ -1376,7 +1500,9 @@
       "api_endpoint": null,
       "scraper_config": {
         "use_playwright": true,
-        "crawl_depth": 1
+        "crawl_depth": 1,
+        "paginate": true,
+        "max_pages": 10
       },
       "refresh_frequency": "weekly",
       "is_high_priority": false,
@@ -1400,7 +1526,9 @@
       "api_endpoint": null,
       "scraper_config": {
         "use_playwright": true,
-        "crawl_depth": 1
+        "crawl_depth": 1,
+        "paginate": true,
+        "max_pages": 10
       },
       "refresh_frequency": "weekly",
       "is_high_priority": false,
@@ -1425,7 +1553,9 @@
       "api_endpoint": null,
       "scraper_config": {
         "use_playwright": true,
-        "crawl_depth": 1
+        "crawl_depth": 1,
+        "paginate": true,
+        "max_pages": 10
       },
       "refresh_frequency": "weekly",
       "is_high_priority": false,
@@ -1447,7 +1577,9 @@
       "api_endpoint": null,
       "scraper_config": {
         "use_playwright": true,
-        "crawl_depth": 1
+        "crawl_depth": 1,
+        "paginate": true,
+        "max_pages": 10
       },
       "refresh_frequency": "weekly",
       "is_high_priority": false,
@@ -1470,7 +1602,9 @@
       "api_endpoint": null,
       "scraper_config": {
         "use_playwright": true,
-        "crawl_depth": 1
+        "crawl_depth": 1,
+        "paginate": true,
+        "max_pages": 10
       },
       "refresh_frequency": "weekly",
       "is_high_priority": false,
@@ -1494,7 +1628,9 @@
       "api_endpoint": null,
       "scraper_config": {
         "use_playwright": true,
-        "crawl_depth": 1
+        "crawl_depth": 1,
+        "paginate": true,
+        "max_pages": 10
       },
       "refresh_frequency": "weekly",
       "is_high_priority": false,
@@ -1516,7 +1652,9 @@
       "api_endpoint": null,
       "scraper_config": {
         "use_playwright": true,
-        "crawl_depth": 1
+        "crawl_depth": 1,
+        "paginate": true,
+        "max_pages": 10
       },
       "refresh_frequency": "weekly",
       "is_high_priority": false,
@@ -1539,7 +1677,9 @@
       "api_endpoint": null,
       "scraper_config": {
         "use_playwright": true,
-        "crawl_depth": 1
+        "crawl_depth": 1,
+        "paginate": true,
+        "max_pages": 10
       },
       "refresh_frequency": "weekly",
       "is_high_priority": false,
@@ -1563,7 +1703,9 @@
       "api_endpoint": null,
       "scraper_config": {
         "use_playwright": true,
-        "crawl_depth": 1
+        "crawl_depth": 1,
+        "paginate": true,
+        "max_pages": 10
       },
       "refresh_frequency": "weekly",
       "is_high_priority": true,
@@ -1606,7 +1748,9 @@
       "api_endpoint": null,
       "scraper_config": {
         "use_playwright": true,
-        "crawl_depth": 0
+        "crawl_depth": 1,
+        "paginate": true,
+        "max_pages": 5
       },
       "refresh_frequency": "weekly",
       "is_high_priority": false,
@@ -1643,7 +1787,9 @@
       "api_endpoint": null,
       "scraper_config": {
         "use_playwright": true,
-        "crawl_depth": 1
+        "crawl_depth": 1,
+        "paginate": true,
+        "max_pages": 5
       },
       "refresh_frequency": "weekly",
       "is_high_priority": true,
@@ -1667,7 +1813,10 @@
       "api_endpoint": null,
       "scraper_config": {
         "use_playwright": true,
-        "crawl_depth": 1
+        "crawl_depth": 1,
+        "paginate": true,
+        "max_pages": 10,
+        "link_filter": "/funding-opportunities|/programme"
       },
       "refresh_frequency": "weekly",
       "is_high_priority": false,
@@ -1690,7 +1839,10 @@
       "api_endpoint": null,
       "scraper_config": {
         "use_playwright": true,
-        "crawl_depth": 1
+        "crawl_depth": 1,
+        "paginate": true,
+        "max_pages": 10,
+        "link_filter": "/funding|/grant"
       },
       "refresh_frequency": "weekly",
       "is_high_priority": false,
@@ -1713,7 +1865,10 @@
       "api_endpoint": null,
       "scraper_config": {
         "use_playwright": true,
-        "crawl_depth": 1
+        "crawl_depth": 1,
+        "paginate": true,
+        "max_pages": 10,
+        "link_filter": "/call|/funding|/programme"
       },
       "refresh_frequency": "weekly",
       "is_high_priority": false,
@@ -1737,7 +1892,9 @@
       "api_endpoint": null,
       "scraper_config": {
         "use_playwright": true,
-        "crawl_depth": 1
+        "crawl_depth": 1,
+        "paginate": true,
+        "max_pages": 5
       },
       "refresh_frequency": "weekly",
       "is_high_priority": true,
@@ -1761,7 +1918,10 @@
       "api_endpoint": null,
       "scraper_config": {
         "use_playwright": true,
-        "crawl_depth": 1
+        "crawl_depth": 1,
+        "paginate": true,
+        "max_pages": 10,
+        "link_filter": "/calls|/grant|/funding"
       },
       "refresh_frequency": "weekly",
       "is_high_priority": false,
@@ -1785,7 +1945,9 @@
       "api_endpoint": null,
       "scraper_config": {
         "use_playwright": true,
-        "crawl_depth": 1
+        "crawl_depth": 1,
+        "paginate": true,
+        "max_pages": 5
       },
       "refresh_frequency": "weekly",
       "is_high_priority": false,
@@ -1809,7 +1971,10 @@
       "api_endpoint": null,
       "scraper_config": {
         "use_playwright": true,
-        "crawl_depth": 1
+        "crawl_depth": 1,
+        "paginate": true,
+        "max_pages": 10,
+        "link_filter": "/call|/funding|/programme"
       },
       "refresh_frequency": "weekly",
       "is_high_priority": false,
@@ -1834,7 +1999,9 @@
       "api_endpoint": null,
       "scraper_config": {
         "use_playwright": true,
-        "crawl_depth": 1
+        "crawl_depth": 1,
+        "paginate": true,
+        "max_pages": 3
       },
       "refresh_frequency": "weekly",
       "is_high_priority": false,
@@ -1859,7 +2026,9 @@
       "api_endpoint": null,
       "scraper_config": {
         "use_playwright": true,
-        "crawl_depth": 1
+        "crawl_depth": 1,
+        "paginate": true,
+        "max_pages": 5
       },
       "refresh_frequency": "weekly",
       "is_high_priority": false,
@@ -1883,7 +2052,9 @@
       "api_endpoint": null,
       "scraper_config": {
         "use_playwright": true,
-        "crawl_depth": 1
+        "crawl_depth": 1,
+        "paginate": true,
+        "max_pages": 5
       },
       "refresh_frequency": "weekly",
       "is_high_priority": false,
@@ -1906,7 +2077,10 @@
       "api_endpoint": null,
       "scraper_config": {
         "use_playwright": true,
-        "crawl_depth": 1
+        "crawl_depth": 1,
+        "paginate": true,
+        "max_pages": 10,
+        "link_filter": "/research-funding|/call"
       },
       "refresh_frequency": "weekly",
       "is_high_priority": false,
@@ -1930,7 +2104,9 @@
       "api_endpoint": null,
       "scraper_config": {
         "use_playwright": true,
-        "crawl_depth": 1
+        "crawl_depth": 1,
+        "paginate": true,
+        "max_pages": 10
       },
       "refresh_frequency": "weekly",
       "is_high_priority": true,
@@ -1954,7 +2130,9 @@
       "api_endpoint": null,
       "scraper_config": {
         "use_playwright": true,
-        "crawl_depth": 1
+        "crawl_depth": 1,
+        "paginate": true,
+        "max_pages": 5
       },
       "refresh_frequency": "weekly",
       "is_high_priority": true,
@@ -1999,7 +2177,9 @@
       "api_endpoint": null,
       "scraper_config": {
         "use_playwright": true,
-        "crawl_depth": 1
+        "crawl_depth": 1,
+        "paginate": true,
+        "max_pages": 3
       },
       "refresh_frequency": "weekly",
       "is_high_priority": false,
@@ -2023,7 +2203,9 @@
       "api_endpoint": null,
       "scraper_config": {
         "use_playwright": true,
-        "crawl_depth": 1
+        "crawl_depth": 1,
+        "paginate": true,
+        "max_pages": 3
       },
       "refresh_frequency": "weekly",
       "is_high_priority": false,
@@ -2048,7 +2230,9 @@
       "api_endpoint": null,
       "scraper_config": {
         "use_playwright": true,
-        "crawl_depth": 1
+        "crawl_depth": 1,
+        "paginate": true,
+        "max_pages": 3
       },
       "refresh_frequency": "weekly",
       "is_high_priority": false,
@@ -2071,7 +2255,9 @@
       "api_endpoint": null,
       "scraper_config": {
         "use_playwright": true,
-        "crawl_depth": 1
+        "crawl_depth": 1,
+        "paginate": true,
+        "max_pages": 3
       },
       "refresh_frequency": "weekly",
       "is_high_priority": true,
@@ -2093,7 +2279,9 @@
       "api_endpoint": null,
       "scraper_config": {
         "use_playwright": true,
-        "crawl_depth": 1
+        "crawl_depth": 1,
+        "paginate": true,
+        "max_pages": 3
       },
       "refresh_frequency": "weekly",
       "is_high_priority": true,
@@ -2115,7 +2303,9 @@
       "api_endpoint": null,
       "scraper_config": {
         "use_playwright": true,
-        "crawl_depth": 1
+        "crawl_depth": 1,
+        "paginate": true,
+        "max_pages": 3
       },
       "refresh_frequency": "weekly",
       "is_high_priority": true,
@@ -2137,7 +2327,9 @@
       "api_endpoint": null,
       "scraper_config": {
         "use_playwright": true,
-        "crawl_depth": 1
+        "crawl_depth": 1,
+        "paginate": true,
+        "max_pages": 5
       },
       "refresh_frequency": "weekly",
       "is_high_priority": false,
@@ -2184,7 +2376,9 @@
       "api_endpoint": null,
       "scraper_config": {
         "use_playwright": true,
-        "crawl_depth": 0
+        "crawl_depth": 1,
+        "paginate": true,
+        "max_pages": 10
       },
       "refresh_frequency": "daily",
       "is_high_priority": true,
@@ -2201,7 +2395,10 @@
       "api_endpoint": null,
       "scraper_config": {
         "use_playwright": true,
-        "crawl_depth": 1
+        "crawl_depth": 1,
+        "paginate": true,
+        "max_pages": 8,
+        "link_filter": "/funding|/programme|/scheme"
       },
       "refresh_frequency": "daily",
       "is_high_priority": true,
@@ -2225,7 +2422,10 @@
       "api_endpoint": null,
       "scraper_config": {
         "use_playwright": true,
-        "crawl_depth": 1
+        "crawl_depth": 1,
+        "paginate": true,
+        "max_pages": 8,
+        "link_filter": "/funding|/programme|/global"
       },
       "refresh_frequency": "weekly",
       "is_high_priority": true,
@@ -2250,7 +2450,10 @@
       "api_endpoint": null,
       "scraper_config": {
         "use_playwright": true,
-        "crawl_depth": 1
+        "crawl_depth": 1,
+        "paginate": true,
+        "max_pages": 5,
+        "link_filter": "/ai-lab|/funding|/program"
       },
       "refresh_frequency": "weekly",
       "is_high_priority": true,
@@ -2273,7 +2476,10 @@
       "api_endpoint": null,
       "scraper_config": {
         "use_playwright": true,
-        "crawl_depth": 1
+        "crawl_depth": 1,
+        "paginate": true,
+        "max_pages": 10,
+        "link_filter": "/funding-for-researchers|/grant"
       },
       "refresh_frequency": "weekly",
       "is_high_priority": true,
@@ -2319,7 +2525,10 @@
       "api_endpoint": null,
       "scraper_config": {
         "use_playwright": true,
-        "crawl_depth": 0
+        "crawl_depth": 1,
+        "paginate": true,
+        "max_pages": 5,
+        "link_filter": "/international-development|/grant"
       },
       "refresh_frequency": "weekly",
       "is_high_priority": false,
@@ -2338,7 +2547,10 @@
       "api_endpoint": null,
       "scraper_config": {
         "use_playwright": true,
-        "crawl_depth": 1
+        "crawl_depth": 1,
+        "paginate": true,
+        "max_pages": 5,
+        "link_filter": "/funding|/grant|/award"
       },
       "refresh_frequency": "weekly",
       "is_high_priority": false,
@@ -2362,7 +2574,10 @@
       "api_endpoint": null,
       "scraper_config": {
         "use_playwright": true,
-        "crawl_depth": 1
+        "crawl_depth": 1,
+        "paginate": true,
+        "max_pages": 5,
+        "link_filter": "/funding|/grant"
       },
       "refresh_frequency": "weekly",
       "is_high_priority": false,
@@ -2386,7 +2601,9 @@
       "api_endpoint": null,
       "scraper_config": {
         "use_playwright": true,
-        "crawl_depth": 1
+        "crawl_depth": 1,
+        "paginate": true,
+        "max_pages": 5
       },
       "refresh_frequency": "weekly",
       "is_high_priority": false,
@@ -2409,7 +2626,9 @@
       "api_endpoint": null,
       "scraper_config": {
         "use_playwright": true,
-        "crawl_depth": 1
+        "crawl_depth": 1,
+        "paginate": true,
+        "max_pages": 5
       },
       "refresh_frequency": "weekly",
       "is_high_priority": false,
@@ -2433,7 +2652,9 @@
       "api_endpoint": null,
       "scraper_config": {
         "use_playwright": true,
-        "crawl_depth": 1
+        "crawl_depth": 1,
+        "paginate": true,
+        "max_pages": 5
       },
       "refresh_frequency": "weekly",
       "is_high_priority": false,
@@ -2458,7 +2679,9 @@
       "api_endpoint": null,
       "scraper_config": {
         "use_playwright": true,
-        "crawl_depth": 1
+        "crawl_depth": 1,
+        "paginate": true,
+        "max_pages": 5
       },
       "refresh_frequency": "weekly",
       "is_high_priority": false,
@@ -2621,7 +2844,10 @@
       "api_endpoint": null,
       "scraper_config": {
         "use_playwright": true,
-        "crawl_depth": 0
+        "crawl_depth": 1,
+        "paginate": true,
+        "max_pages": 5,
+        "link_filter": "/funding|/grant|/call"
       },
       "refresh_frequency": "weekly",
       "is_high_priority": false,
@@ -2691,7 +2917,10 @@
       "api_endpoint": null,
       "scraper_config": {
         "use_playwright": true,
-        "crawl_depth": 0
+        "crawl_depth": 1,
+        "paginate": true,
+        "max_pages": 5,
+        "link_filter": "/funding|/grant|/partner"
       },
       "refresh_frequency": "weekly",
       "is_high_priority": false,
@@ -2712,7 +2941,10 @@
       "api_endpoint": null,
       "scraper_config": {
         "use_playwright": true,
-        "crawl_depth": 0
+        "crawl_depth": 1,
+        "paginate": true,
+        "max_pages": 5,
+        "link_filter": "/funding|/grant|/call"
       },
       "refresh_frequency": "weekly",
       "is_high_priority": false,
@@ -2729,7 +2961,10 @@
       "api_endpoint": null,
       "scraper_config": {
         "use_playwright": true,
-        "crawl_depth": 0
+        "crawl_depth": 1,
+        "paginate": true,
+        "max_pages": 5,
+        "link_filter": "/funding|/grant|/programme"
       },
       "refresh_frequency": "weekly",
       "is_high_priority": false,
@@ -2746,7 +2981,9 @@
       "api_endpoint": null,
       "scraper_config": {
         "use_playwright": true,
-        "crawl_depth": 1
+        "crawl_depth": 1,
+        "paginate": true,
+        "max_pages": 5
       },
       "refresh_frequency": "weekly",
       "is_high_priority": true,
@@ -2768,7 +3005,9 @@
       "api_endpoint": null,
       "scraper_config": {
         "use_playwright": true,
-        "crawl_depth": 1
+        "crawl_depth": 1,
+        "paginate": true,
+        "max_pages": 5
       },
       "refresh_frequency": "weekly",
       "is_high_priority": false,
@@ -2789,7 +3028,9 @@
       "api_endpoint": null,
       "scraper_config": {
         "use_playwright": true,
-        "crawl_depth": 1
+        "crawl_depth": 1,
+        "paginate": true,
+        "max_pages": 5
       },
       "refresh_frequency": "weekly",
       "is_high_priority": false,
@@ -2810,7 +3051,9 @@
       "api_endpoint": null,
       "scraper_config": {
         "use_playwright": true,
-        "crawl_depth": 1
+        "crawl_depth": 1,
+        "paginate": true,
+        "max_pages": 5
       },
       "refresh_frequency": "weekly",
       "is_high_priority": true,
@@ -2834,7 +3077,9 @@
       "api_endpoint": null,
       "scraper_config": {
         "use_playwright": true,
-        "crawl_depth": 1
+        "crawl_depth": 1,
+        "paginate": true,
+        "max_pages": 5
       },
       "refresh_frequency": "weekly",
       "is_high_priority": true,
@@ -2857,7 +3102,9 @@
       "api_endpoint": null,
       "scraper_config": {
         "use_playwright": true,
-        "crawl_depth": 1
+        "crawl_depth": 1,
+        "paginate": true,
+        "max_pages": 5
       },
       "refresh_frequency": "weekly",
       "is_high_priority": false,
@@ -2881,7 +3128,9 @@
       "api_endpoint": null,
       "scraper_config": {
         "use_playwright": true,
-        "crawl_depth": 1
+        "crawl_depth": 1,
+        "paginate": true,
+        "max_pages": 5
       },
       "refresh_frequency": "weekly",
       "is_high_priority": false,
@@ -2903,7 +3152,9 @@
       "api_endpoint": null,
       "scraper_config": {
         "use_playwright": true,
-        "crawl_depth": 1
+        "crawl_depth": 1,
+        "paginate": true,
+        "max_pages": 5
       },
       "refresh_frequency": "weekly",
       "is_high_priority": true,
@@ -2926,7 +3177,9 @@
       "api_endpoint": null,
       "scraper_config": {
         "use_playwright": true,
-        "crawl_depth": 1
+        "crawl_depth": 1,
+        "paginate": true,
+        "max_pages": 5
       },
       "refresh_frequency": "weekly",
       "is_high_priority": true,
@@ -2949,7 +3202,9 @@
       "api_endpoint": null,
       "scraper_config": {
         "use_playwright": true,
-        "crawl_depth": 1
+        "crawl_depth": 1,
+        "paginate": true,
+        "max_pages": 5
       },
       "refresh_frequency": "weekly",
       "is_high_priority": false,
@@ -2973,7 +3228,9 @@
       "api_endpoint": null,
       "scraper_config": {
         "use_playwright": true,
-        "crawl_depth": 0
+        "crawl_depth": 1,
+        "paginate": true,
+        "max_pages": 3
       },
       "refresh_frequency": "weekly",
       "is_high_priority": false,
@@ -2996,7 +3253,9 @@
       "api_endpoint": null,
       "scraper_config": {
         "use_playwright": true,
-        "crawl_depth": 1
+        "crawl_depth": 1,
+        "paginate": true,
+        "max_pages": 5
       },
       "refresh_frequency": "weekly",
       "is_high_priority": true,
@@ -3021,7 +3280,9 @@
       "api_endpoint": null,
       "scraper_config": {
         "use_playwright": true,
-        "crawl_depth": 1
+        "crawl_depth": 1,
+        "paginate": true,
+        "max_pages": 5
       },
       "refresh_frequency": "weekly",
       "is_high_priority": false,
@@ -3045,7 +3306,9 @@
       "api_endpoint": null,
       "scraper_config": {
         "use_playwright": true,
-        "crawl_depth": 1
+        "crawl_depth": 1,
+        "paginate": true,
+        "max_pages": 5
       },
       "refresh_frequency": "weekly",
       "is_high_priority": false,
@@ -3069,7 +3332,9 @@
       "api_endpoint": null,
       "scraper_config": {
         "use_playwright": true,
-        "crawl_depth": 1
+        "crawl_depth": 1,
+        "paginate": true,
+        "max_pages": 5
       },
       "refresh_frequency": "weekly",
       "is_high_priority": false,
@@ -3092,7 +3357,9 @@
       "api_endpoint": null,
       "scraper_config": {
         "use_playwright": true,
-        "crawl_depth": 1
+        "crawl_depth": 1,
+        "paginate": true,
+        "max_pages": 5
       },
       "refresh_frequency": "weekly",
       "is_high_priority": false,
@@ -3116,7 +3383,9 @@
       "api_endpoint": null,
       "scraper_config": {
         "use_playwright": true,
-        "crawl_depth": 1
+        "crawl_depth": 1,
+        "paginate": true,
+        "max_pages": 5
       },
       "refresh_frequency": "weekly",
       "is_high_priority": true,
@@ -3139,7 +3408,9 @@
       "api_endpoint": null,
       "scraper_config": {
         "use_playwright": true,
-        "crawl_depth": 1
+        "crawl_depth": 1,
+        "paginate": true,
+        "max_pages": 5
       },
       "refresh_frequency": "weekly",
       "is_high_priority": true,
@@ -3165,7 +3436,9 @@
       "api_endpoint": null,
       "scraper_config": {
         "use_playwright": true,
-        "crawl_depth": 1
+        "crawl_depth": 1,
+        "paginate": true,
+        "max_pages": 5
       },
       "refresh_frequency": "weekly",
       "is_high_priority": true,
@@ -3189,7 +3462,9 @@
       "api_endpoint": null,
       "scraper_config": {
         "use_playwright": true,
-        "crawl_depth": 1
+        "crawl_depth": 1,
+        "paginate": true,
+        "max_pages": 5
       },
       "refresh_frequency": "weekly",
       "is_high_priority": true,
@@ -3213,7 +3488,9 @@
       "api_endpoint": null,
       "scraper_config": {
         "use_playwright": true,
-        "crawl_depth": 1
+        "crawl_depth": 1,
+        "paginate": true,
+        "max_pages": 5
       },
       "refresh_frequency": "weekly",
       "is_high_priority": true,
@@ -3236,7 +3513,9 @@
       "api_endpoint": null,
       "scraper_config": {
         "use_playwright": true,
-        "crawl_depth": 1
+        "crawl_depth": 1,
+        "paginate": true,
+        "max_pages": 5
       },
       "refresh_frequency": "weekly",
       "is_high_priority": false,
@@ -3258,7 +3537,9 @@
       "api_endpoint": null,
       "scraper_config": {
         "use_playwright": true,
-        "crawl_depth": 1
+        "crawl_depth": 1,
+        "paginate": true,
+        "max_pages": 5
       },
       "refresh_frequency": "weekly",
       "is_high_priority": true,
@@ -3282,7 +3563,9 @@
       "api_endpoint": null,
       "scraper_config": {
         "use_playwright": true,
-        "crawl_depth": 1
+        "crawl_depth": 1,
+        "paginate": true,
+        "max_pages": 5
       },
       "refresh_frequency": "weekly",
       "is_high_priority": false,
@@ -3305,7 +3588,9 @@
       "api_endpoint": null,
       "scraper_config": {
         "use_playwright": true,
-        "crawl_depth": 1
+        "crawl_depth": 1,
+        "paginate": true,
+        "max_pages": 5
       },
       "refresh_frequency": "weekly",
       "is_high_priority": false,
@@ -3328,7 +3613,9 @@
       "api_endpoint": null,
       "scraper_config": {
         "use_playwright": true,
-        "crawl_depth": 1
+        "crawl_depth": 1,
+        "paginate": true,
+        "max_pages": 5
       },
       "refresh_frequency": "weekly",
       "is_high_priority": true,
@@ -3353,7 +3640,9 @@
       "api_endpoint": null,
       "scraper_config": {
         "use_playwright": true,
-        "crawl_depth": 1
+        "crawl_depth": 1,
+        "paginate": true,
+        "max_pages": 5
       },
       "refresh_frequency": "weekly",
       "is_high_priority": true,
@@ -3377,7 +3666,9 @@
       "api_endpoint": null,
       "scraper_config": {
         "use_playwright": true,
-        "crawl_depth": 1
+        "crawl_depth": 1,
+        "paginate": true,
+        "max_pages": 5
       },
       "refresh_frequency": "weekly",
       "is_high_priority": true,
@@ -3400,7 +3691,9 @@
       "api_endpoint": null,
       "scraper_config": {
         "use_playwright": true,
-        "crawl_depth": 1
+        "crawl_depth": 1,
+        "paginate": true,
+        "max_pages": 5
       },
       "refresh_frequency": "weekly",
       "is_high_priority": true,
@@ -3423,7 +3716,9 @@
       "api_endpoint": null,
       "scraper_config": {
         "use_playwright": true,
-        "crawl_depth": 1
+        "crawl_depth": 1,
+        "paginate": true,
+        "max_pages": 5
       },
       "refresh_frequency": "weekly",
       "is_high_priority": true,
@@ -3446,7 +3741,9 @@
       "api_endpoint": null,
       "scraper_config": {
         "use_playwright": true,
-        "crawl_depth": 1
+        "crawl_depth": 1,
+        "paginate": true,
+        "max_pages": 5
       },
       "refresh_frequency": "weekly",
       "is_high_priority": false,
@@ -3471,7 +3768,9 @@
       "api_endpoint": null,
       "scraper_config": {
         "use_playwright": true,
-        "crawl_depth": 1
+        "crawl_depth": 1,
+        "paginate": true,
+        "max_pages": 5
       },
       "refresh_frequency": "weekly",
       "is_high_priority": false,
@@ -3494,7 +3793,9 @@
       "api_endpoint": null,
       "scraper_config": {
         "use_playwright": true,
-        "crawl_depth": 1
+        "crawl_depth": 1,
+        "paginate": true,
+        "max_pages": 5
       },
       "refresh_frequency": "weekly",
       "is_high_priority": false,
@@ -3517,7 +3818,9 @@
       "api_endpoint": null,
       "scraper_config": {
         "use_playwright": true,
-        "crawl_depth": 1
+        "crawl_depth": 1,
+        "paginate": true,
+        "max_pages": 5
       },
       "refresh_frequency": "weekly",
       "is_high_priority": false,
@@ -3542,7 +3845,9 @@
       "api_endpoint": null,
       "scraper_config": {
         "use_playwright": true,
-        "crawl_depth": 1
+        "crawl_depth": 1,
+        "paginate": true,
+        "max_pages": 5
       },
       "refresh_frequency": "weekly",
       "is_high_priority": false,
@@ -3566,7 +3871,9 @@
       "api_endpoint": null,
       "scraper_config": {
         "use_playwright": true,
-        "crawl_depth": 1
+        "crawl_depth": 1,
+        "paginate": true,
+        "max_pages": 5
       },
       "refresh_frequency": "weekly",
       "is_high_priority": false,
@@ -3590,7 +3897,9 @@
       "api_endpoint": null,
       "scraper_config": {
         "use_playwright": true,
-        "crawl_depth": 1
+        "crawl_depth": 1,
+        "paginate": true,
+        "max_pages": 5
       },
       "refresh_frequency": "weekly",
       "is_high_priority": false,
@@ -3613,7 +3922,9 @@
       "api_endpoint": null,
       "scraper_config": {
         "use_playwright": true,
-        "crawl_depth": 1
+        "crawl_depth": 1,
+        "paginate": true,
+        "max_pages": 5
       },
       "refresh_frequency": "weekly",
       "is_high_priority": false,
@@ -3636,7 +3947,9 @@
       "api_endpoint": null,
       "scraper_config": {
         "use_playwright": true,
-        "crawl_depth": 1
+        "crawl_depth": 1,
+        "paginate": true,
+        "max_pages": 5
       },
       "refresh_frequency": "weekly",
       "is_high_priority": false,
@@ -3659,7 +3972,9 @@
       "api_endpoint": null,
       "scraper_config": {
         "use_playwright": true,
-        "crawl_depth": 1
+        "crawl_depth": 1,
+        "paginate": true,
+        "max_pages": 5
       },
       "refresh_frequency": "weekly",
       "is_high_priority": false,
@@ -3682,7 +3997,9 @@
       "api_endpoint": null,
       "scraper_config": {
         "use_playwright": true,
-        "crawl_depth": 1
+        "crawl_depth": 1,
+        "paginate": true,
+        "max_pages": 5
       },
       "refresh_frequency": "weekly",
       "is_high_priority": true,
@@ -3705,7 +4022,9 @@
       "api_endpoint": null,
       "scraper_config": {
         "use_playwright": true,
-        "crawl_depth": 1
+        "crawl_depth": 1,
+        "paginate": true,
+        "max_pages": 5
       },
       "refresh_frequency": "weekly",
       "is_high_priority": false,
@@ -3728,7 +4047,9 @@
       "api_endpoint": null,
       "scraper_config": {
         "use_playwright": true,
-        "crawl_depth": 1
+        "crawl_depth": 1,
+        "paginate": true,
+        "max_pages": 5
       },
       "refresh_frequency": "weekly",
       "is_high_priority": false,
@@ -3751,7 +4072,9 @@
       "api_endpoint": null,
       "scraper_config": {
         "use_playwright": true,
-        "crawl_depth": 1
+        "crawl_depth": 1,
+        "paginate": true,
+        "max_pages": 3
       },
       "refresh_frequency": "weekly",
       "is_high_priority": false,
@@ -3775,7 +4098,9 @@
       "api_endpoint": null,
       "scraper_config": {
         "use_playwright": true,
-        "crawl_depth": 1
+        "crawl_depth": 1,
+        "paginate": true,
+        "max_pages": 3
       },
       "refresh_frequency": "weekly",
       "is_high_priority": false,
@@ -3799,7 +4124,9 @@
       "api_endpoint": null,
       "scraper_config": {
         "use_playwright": true,
-        "crawl_depth": 1
+        "crawl_depth": 1,
+        "paginate": true,
+        "max_pages": 3
       },
       "refresh_frequency": "weekly",
       "is_high_priority": false,
@@ -3823,7 +4150,9 @@
       "api_endpoint": null,
       "scraper_config": {
         "use_playwright": true,
-        "crawl_depth": 1
+        "crawl_depth": 1,
+        "paginate": true,
+        "max_pages": 3
       },
       "refresh_frequency": "weekly",
       "is_high_priority": false,
@@ -3846,7 +4175,9 @@
       "api_endpoint": null,
       "scraper_config": {
         "use_playwright": true,
-        "crawl_depth": 1
+        "crawl_depth": 1,
+        "paginate": true,
+        "max_pages": 3
       },
       "refresh_frequency": "weekly",
       "is_high_priority": false,
@@ -3868,7 +4199,9 @@
       "api_endpoint": null,
       "scraper_config": {
         "use_playwright": true,
-        "crawl_depth": 1
+        "crawl_depth": 1,
+        "paginate": true,
+        "max_pages": 3
       },
       "refresh_frequency": "weekly",
       "is_high_priority": false,
@@ -3892,7 +4225,9 @@
       "api_endpoint": null,
       "scraper_config": {
         "use_playwright": true,
-        "crawl_depth": 1
+        "crawl_depth": 1,
+        "paginate": true,
+        "max_pages": 3
       },
       "refresh_frequency": "weekly",
       "is_high_priority": false,
@@ -3915,7 +4250,9 @@
       "api_endpoint": null,
       "scraper_config": {
         "use_playwright": true,
-        "crawl_depth": 1
+        "crawl_depth": 1,
+        "paginate": true,
+        "max_pages": 3
       },
       "refresh_frequency": "weekly",
       "is_high_priority": true,
@@ -3938,7 +4275,9 @@
       "api_endpoint": null,
       "scraper_config": {
         "use_playwright": true,
-        "crawl_depth": 1
+        "crawl_depth": 1,
+        "paginate": true,
+        "max_pages": 3
       },
       "refresh_frequency": "weekly",
       "is_high_priority": false,
@@ -3961,7 +4300,9 @@
       "api_endpoint": null,
       "scraper_config": {
         "use_playwright": true,
-        "crawl_depth": 1
+        "crawl_depth": 1,
+        "paginate": true,
+        "max_pages": 3
       },
       "refresh_frequency": "weekly",
       "is_high_priority": false,
@@ -3983,7 +4324,9 @@
       "api_endpoint": null,
       "scraper_config": {
         "use_playwright": true,
-        "crawl_depth": 1
+        "crawl_depth": 1,
+        "paginate": true,
+        "max_pages": 3
       },
       "refresh_frequency": "weekly",
       "is_high_priority": true,
@@ -4006,7 +4349,9 @@
       "api_endpoint": null,
       "scraper_config": {
         "use_playwright": true,
-        "crawl_depth": 0
+        "crawl_depth": 1,
+        "paginate": true,
+        "max_pages": 3
       },
       "refresh_frequency": "weekly",
       "is_high_priority": false,
@@ -4023,7 +4368,9 @@
       "api_endpoint": null,
       "scraper_config": {
         "use_playwright": true,
-        "crawl_depth": 0
+        "crawl_depth": 1,
+        "paginate": true,
+        "max_pages": 3
       },
       "refresh_frequency": "weekly",
       "is_high_priority": false,
@@ -4044,7 +4391,9 @@
       "api_endpoint": null,
       "scraper_config": {
         "use_playwright": true,
-        "crawl_depth": 0
+        "crawl_depth": 1,
+        "paginate": true,
+        "max_pages": 3
       },
       "refresh_frequency": "weekly",
       "is_high_priority": false,
@@ -4063,7 +4412,9 @@
       "api_endpoint": null,
       "scraper_config": {
         "use_playwright": true,
-        "crawl_depth": 0
+        "crawl_depth": 1,
+        "paginate": true,
+        "max_pages": 3
       },
       "refresh_frequency": "weekly",
       "is_high_priority": false,
@@ -4082,7 +4433,9 @@
       "api_endpoint": null,
       "scraper_config": {
         "use_playwright": true,
-        "crawl_depth": 0
+        "crawl_depth": 1,
+        "paginate": true,
+        "max_pages": 5
       },
       "refresh_frequency": "weekly",
       "is_high_priority": false,
@@ -4099,7 +4452,9 @@
       "api_endpoint": null,
       "scraper_config": {
         "use_playwright": true,
-        "crawl_depth": 0
+        "crawl_depth": 1,
+        "paginate": true,
+        "max_pages": 5
       },
       "refresh_frequency": "weekly",
       "is_high_priority": false,
@@ -4120,7 +4475,9 @@
       "api_endpoint": null,
       "scraper_config": {
         "use_playwright": true,
-        "crawl_depth": 0
+        "crawl_depth": 1,
+        "paginate": true,
+        "max_pages": 5
       },
       "refresh_frequency": "weekly",
       "is_high_priority": false,
@@ -4141,7 +4498,9 @@
       "api_endpoint": null,
       "scraper_config": {
         "use_playwright": true,
-        "crawl_depth": 1
+        "crawl_depth": 1,
+        "paginate": true,
+        "max_pages": 3
       },
       "refresh_frequency": "weekly",
       "is_high_priority": true,
@@ -4164,7 +4523,9 @@
       "api_endpoint": null,
       "scraper_config": {
         "use_playwright": true,
-        "crawl_depth": 1
+        "crawl_depth": 1,
+        "paginate": true,
+        "max_pages": 3
       },
       "refresh_frequency": "weekly",
       "is_high_priority": true,
@@ -4187,7 +4548,10 @@
       "api_endpoint": null,
       "scraper_config": {
         "use_playwright": true,
-        "crawl_depth": 1
+        "crawl_depth": 1,
+        "paginate": true,
+        "max_pages": 10,
+        "link_filter": "/grant-funding|/scheme"
       },
       "refresh_frequency": "weekly",
       "is_high_priority": true,
@@ -4209,7 +4573,9 @@
       "api_endpoint": null,
       "scraper_config": {
         "use_playwright": true,
-        "crawl_depth": 1
+        "crawl_depth": 1,
+        "paginate": true,
+        "max_pages": 3
       },
       "refresh_frequency": "weekly",
       "is_high_priority": true,
@@ -4232,7 +4598,10 @@
       "api_endpoint": null,
       "scraper_config": {
         "use_playwright": true,
-        "crawl_depth": 1
+        "crawl_depth": 1,
+        "paginate": true,
+        "max_pages": 3,
+        "link_filter": "/applicants|/fellowship"
       },
       "refresh_frequency": "weekly",
       "is_high_priority": true,
@@ -4254,7 +4623,10 @@
       "api_endpoint": null,
       "scraper_config": {
         "use_playwright": true,
-        "crawl_depth": 1
+        "crawl_depth": 1,
+        "paginate": true,
+        "max_pages": 3,
+        "link_filter": "/programs|/fellowship"
       },
       "refresh_frequency": "weekly",
       "is_high_priority": true,
@@ -4275,7 +4647,10 @@
       "api_endpoint": null,
       "scraper_config": {
         "use_playwright": true,
-        "crawl_depth": 1
+        "crawl_depth": 1,
+        "link_filter": "/program",
+        "paginate": true,
+        "max_pages": 3
       },
       "refresh_frequency": "weekly",
       "is_high_priority": true,
@@ -4296,7 +4671,10 @@
       "api_endpoint": null,
       "scraper_config": {
         "use_playwright": true,
-        "crawl_depth": 1
+        "crawl_depth": 1,
+        "paginate": true,
+        "max_pages": 10,
+        "link_filter": "/scholarship|/program|/find-funding"
       },
       "refresh_frequency": "weekly",
       "is_high_priority": true,
@@ -4317,7 +4695,10 @@
       "api_endpoint": null,
       "scraper_config": {
         "use_playwright": true,
-        "crawl_depth": 1
+        "crawl_depth": 1,
+        "paginate": true,
+        "max_pages": 3,
+        "link_filter": "/scholarships"
       },
       "refresh_frequency": "weekly",
       "is_high_priority": true,
@@ -4338,7 +4719,9 @@
       "api_endpoint": null,
       "scraper_config": {
         "use_playwright": true,
-        "crawl_depth": 1
+        "crawl_depth": 1,
+        "paginate": true,
+        "max_pages": 3
       },
       "refresh_frequency": "weekly",
       "is_high_priority": false,
@@ -4361,7 +4744,9 @@
       "api_endpoint": null,
       "scraper_config": {
         "use_playwright": true,
-        "crawl_depth": 1
+        "crawl_depth": 1,
+        "paginate": true,
+        "max_pages": 3
       },
       "refresh_frequency": "weekly",
       "is_high_priority": true,
@@ -4383,7 +4768,9 @@
       "api_endpoint": null,
       "scraper_config": {
         "use_playwright": true,
-        "crawl_depth": 0
+        "crawl_depth": 1,
+        "paginate": true,
+        "max_pages": 3
       },
       "refresh_frequency": "weekly",
       "is_high_priority": false,
@@ -4404,7 +4791,10 @@
       "api_endpoint": null,
       "scraper_config": {
         "use_playwright": true,
-        "crawl_depth": 1
+        "crawl_depth": 1,
+        "paginate": true,
+        "max_pages": 3,
+        "link_filter": "/fellows|/awards"
       },
       "refresh_frequency": "weekly",
       "is_high_priority": true,
@@ -4425,7 +4815,10 @@
       "api_endpoint": null,
       "scraper_config": {
         "use_playwright": true,
-        "crawl_depth": 1
+        "crawl_depth": 1,
+        "paginate": true,
+        "max_pages": 3,
+        "link_filter": "/apply|/scholarships"
       },
       "refresh_frequency": "weekly",
       "is_high_priority": false,
@@ -4446,7 +4839,9 @@
       "api_endpoint": null,
       "scraper_config": {
         "use_playwright": true,
-        "crawl_depth": 0
+        "crawl_depth": 1,
+        "paginate": true,
+        "max_pages": 3
       },
       "refresh_frequency": "weekly",
       "is_high_priority": false,
@@ -4467,7 +4862,9 @@
       "api_endpoint": null,
       "scraper_config": {
         "use_playwright": true,
-        "crawl_depth": 1
+        "crawl_depth": 1,
+        "paginate": true,
+        "max_pages": 3
       },
       "refresh_frequency": "weekly",
       "is_high_priority": false,
@@ -4488,7 +4885,10 @@
       "api_endpoint": null,
       "scraper_config": {
         "use_playwright": true,
-        "crawl_depth": 1
+        "crawl_depth": 1,
+        "paginate": true,
+        "max_pages": 3,
+        "link_filter": "/grants|/fellowship"
       },
       "refresh_frequency": "weekly",
       "is_high_priority": false,
@@ -4509,7 +4909,9 @@
       "api_endpoint": null,
       "scraper_config": {
         "use_playwright": true,
-        "crawl_depth": 1
+        "crawl_depth": 1,
+        "paginate": true,
+        "max_pages": 3
       },
       "refresh_frequency": "weekly",
       "is_high_priority": false,
@@ -4529,7 +4931,9 @@
       "api_endpoint": null,
       "scraper_config": {
         "use_playwright": true,
-        "crawl_depth": 0
+        "crawl_depth": 1,
+        "paginate": true,
+        "max_pages": 3
       },
       "refresh_frequency": "weekly",
       "is_high_priority": false,
@@ -4550,7 +4954,9 @@
       "api_endpoint": null,
       "scraper_config": {
         "use_playwright": true,
-        "crawl_depth": 1
+        "crawl_depth": 1,
+        "paginate": true,
+        "max_pages": 3
       },
       "refresh_frequency": "weekly",
       "is_high_priority": false,
@@ -4570,7 +4976,9 @@
       "api_endpoint": null,
       "scraper_config": {
         "use_playwright": true,
-        "crawl_depth": 1
+        "crawl_depth": 1,
+        "paginate": true,
+        "max_pages": 3
       },
       "refresh_frequency": "weekly",
       "is_high_priority": false,
@@ -4592,7 +5000,9 @@
       "api_endpoint": null,
       "scraper_config": {
         "use_playwright": true,
-        "crawl_depth": 1
+        "crawl_depth": 1,
+        "paginate": true,
+        "max_pages": 3
       },
       "refresh_frequency": "weekly",
       "is_high_priority": false,
@@ -4613,7 +5023,9 @@
       "api_endpoint": null,
       "scraper_config": {
         "use_playwright": true,
-        "crawl_depth": 1
+        "crawl_depth": 1,
+        "paginate": true,
+        "max_pages": 5
       },
       "refresh_frequency": "weekly",
       "is_high_priority": false,
@@ -4636,7 +5048,10 @@
       "api_endpoint": null,
       "scraper_config": {
         "use_playwright": true,
-        "crawl_depth": 1
+        "crawl_depth": 1,
+        "paginate": true,
+        "max_pages": 5,
+        "link_filter": "/research|/grant"
       },
       "refresh_frequency": "weekly",
       "is_high_priority": false,
@@ -4659,7 +5074,10 @@
       "api_endpoint": null,
       "scraper_config": {
         "use_playwright": true,
-        "crawl_depth": 1
+        "crawl_depth": 1,
+        "paginate": true,
+        "max_pages": 5,
+        "link_filter": "/research-programs|/funding"
       },
       "refresh_frequency": "weekly",
       "is_high_priority": false,
@@ -4682,7 +5100,10 @@
       "api_endpoint": null,
       "scraper_config": {
         "use_playwright": true,
-        "crawl_depth": 1
+        "crawl_depth": 1,
+        "paginate": true,
+        "max_pages": 5,
+        "link_filter": "/research|/grant|/funding"
       },
       "refresh_frequency": "weekly",
       "is_high_priority": false,
@@ -4705,7 +5126,10 @@
       "api_endpoint": null,
       "scraper_config": {
         "use_playwright": true,
-        "crawl_depth": 1
+        "crawl_depth": 1,
+        "paginate": true,
+        "max_pages": 5,
+        "link_filter": "/grants|/research"
       },
       "refresh_frequency": "weekly",
       "is_high_priority": false,
@@ -4728,7 +5152,10 @@
       "api_endpoint": null,
       "scraper_config": {
         "use_playwright": true,
-        "crawl_depth": 1
+        "crawl_depth": 1,
+        "paginate": true,
+        "max_pages": 5,
+        "link_filter": "/apply|/grant|/research"
       },
       "refresh_frequency": "weekly",
       "is_high_priority": false,
@@ -4750,7 +5177,9 @@
       "api_endpoint": null,
       "scraper_config": {
         "use_playwright": true,
-        "crawl_depth": 1
+        "crawl_depth": 1,
+        "paginate": true,
+        "max_pages": 3
       },
       "refresh_frequency": "weekly",
       "is_high_priority": false,
@@ -4773,7 +5202,9 @@
       "api_endpoint": null,
       "scraper_config": {
         "use_playwright": true,
-        "crawl_depth": 1
+        "crawl_depth": 1,
+        "paginate": true,
+        "max_pages": 3
       },
       "refresh_frequency": "weekly",
       "is_high_priority": false,
@@ -4796,7 +5227,9 @@
       "api_endpoint": null,
       "scraper_config": {
         "use_playwright": true,
-        "crawl_depth": 1
+        "crawl_depth": 1,
+        "paginate": true,
+        "max_pages": 3
       },
       "refresh_frequency": "weekly",
       "is_high_priority": false,
@@ -4819,7 +5252,9 @@
       "api_endpoint": null,
       "scraper_config": {
         "use_playwright": true,
-        "crawl_depth": 1
+        "crawl_depth": 1,
+        "paginate": true,
+        "max_pages": 3
       },
       "refresh_frequency": "weekly",
       "is_high_priority": false,
@@ -4842,7 +5277,9 @@
       "api_endpoint": null,
       "scraper_config": {
         "use_playwright": true,
-        "crawl_depth": 1
+        "crawl_depth": 1,
+        "paginate": true,
+        "max_pages": 3
       },
       "refresh_frequency": "weekly",
       "is_high_priority": false,
@@ -4865,7 +5302,9 @@
       "api_endpoint": null,
       "scraper_config": {
         "use_playwright": true,
-        "crawl_depth": 1
+        "crawl_depth": 1,
+        "paginate": true,
+        "max_pages": 10
       },
       "refresh_frequency": "weekly",
       "is_high_priority": false,
@@ -5033,7 +5472,9 @@
       "api_endpoint": null,
       "scraper_config": {
         "use_playwright": true,
-        "crawl_depth": 1
+        "crawl_depth": 1,
+        "paginate": true,
+        "max_pages": 10
       },
       "refresh_frequency": "weekly",
       "is_high_priority": false,
@@ -5276,7 +5717,9 @@
       "api_endpoint": null,
       "scraper_config": {
         "use_playwright": true,
-        "crawl_depth": 1
+        "crawl_depth": 1,
+        "paginate": true,
+        "max_pages": 3
       },
       "refresh_frequency": "weekly",
       "is_high_priority": true,
@@ -5299,7 +5742,9 @@
       "api_endpoint": null,
       "scraper_config": {
         "use_playwright": true,
-        "crawl_depth": 1
+        "crawl_depth": 1,
+        "paginate": true,
+        "max_pages": 3
       },
       "refresh_frequency": "weekly",
       "is_high_priority": false,
@@ -5320,7 +5765,10 @@
       "api_endpoint": null,
       "scraper_config": {
         "use_playwright": true,
-        "crawl_depth": 1
+        "crawl_depth": 1,
+        "paginate": true,
+        "max_pages": 5,
+        "link_filter": "/funding|/grant|/program"
       },
       "refresh_frequency": "weekly",
       "is_high_priority": false,
@@ -5345,7 +5793,9 @@
       "api_endpoint": null,
       "scraper_config": {
         "use_playwright": true,
-        "crawl_depth": 1
+        "crawl_depth": 1,
+        "paginate": true,
+        "max_pages": 3
       },
       "refresh_frequency": "weekly",
       "is_high_priority": true,
@@ -5366,7 +5816,9 @@
       "api_endpoint": null,
       "scraper_config": {
         "use_playwright": true,
-        "crawl_depth": 1
+        "crawl_depth": 1,
+        "paginate": true,
+        "max_pages": 3
       },
       "refresh_frequency": "weekly",
       "is_high_priority": true,
@@ -5387,7 +5839,10 @@
       "api_endpoint": null,
       "scraper_config": {
         "use_playwright": true,
-        "crawl_depth": 1
+        "crawl_depth": 1,
+        "paginate": true,
+        "max_pages": 5,
+        "link_filter": "/our-open-funds|/grant|/fund"
       },
       "refresh_frequency": "weekly",
       "is_high_priority": true,
@@ -5409,7 +5864,9 @@
       "api_endpoint": null,
       "scraper_config": {
         "use_playwright": true,
-        "crawl_depth": 1
+        "crawl_depth": 1,
+        "paginate": true,
+        "max_pages": 3
       },
       "refresh_frequency": "weekly",
       "is_high_priority": false,
@@ -5452,7 +5909,9 @@
       "api_endpoint": null,
       "scraper_config": {
         "use_playwright": true,
-        "crawl_depth": 1
+        "crawl_depth": 1,
+        "paginate": true,
+        "max_pages": 3
       },
       "refresh_frequency": "weekly",
       "is_high_priority": false,
@@ -5473,7 +5932,9 @@
       "api_endpoint": null,
       "scraper_config": {
         "use_playwright": true,
-        "crawl_depth": 1
+        "crawl_depth": 1,
+        "paginate": true,
+        "max_pages": 3
       },
       "refresh_frequency": "weekly",
       "is_high_priority": false,
@@ -5494,7 +5955,9 @@
       "api_endpoint": null,
       "scraper_config": {
         "use_playwright": true,
-        "crawl_depth": 1
+        "crawl_depth": 1,
+        "paginate": true,
+        "max_pages": 3
       },
       "refresh_frequency": "weekly",
       "is_high_priority": true,
@@ -5515,7 +5978,9 @@
       "api_endpoint": null,
       "scraper_config": {
         "use_playwright": true,
-        "crawl_depth": 1
+        "crawl_depth": 1,
+        "paginate": true,
+        "max_pages": 3
       },
       "refresh_frequency": "weekly",
       "is_high_priority": true,
@@ -5538,7 +6003,9 @@
       "api_endpoint": null,
       "scraper_config": {
         "use_playwright": true,
-        "crawl_depth": 1
+        "crawl_depth": 1,
+        "paginate": true,
+        "max_pages": 3
       },
       "refresh_frequency": "weekly",
       "is_high_priority": true,
@@ -5560,7 +6027,9 @@
       "api_endpoint": null,
       "scraper_config": {
         "use_playwright": true,
-        "crawl_depth": 1
+        "crawl_depth": 1,
+        "paginate": true,
+        "max_pages": 3
       },
       "refresh_frequency": "weekly",
       "is_high_priority": true,
@@ -5581,7 +6050,10 @@
       "api_endpoint": null,
       "scraper_config": {
         "use_playwright": true,
-        "crawl_depth": 1
+        "crawl_depth": 1,
+        "paginate": true,
+        "max_pages": 3,
+        "link_filter": "/grants|/program|/fund"
       },
       "refresh_frequency": "weekly",
       "is_high_priority": false,
@@ -5603,7 +6075,9 @@
       "api_endpoint": null,
       "scraper_config": {
         "use_playwright": true,
-        "crawl_depth": 1
+        "crawl_depth": 1,
+        "paginate": true,
+        "max_pages": 5
       },
       "refresh_frequency": "weekly",
       "is_high_priority": false,
@@ -5625,7 +6099,9 @@
       "api_endpoint": null,
       "scraper_config": {
         "use_playwright": true,
-        "crawl_depth": 1
+        "crawl_depth": 1,
+        "paginate": true,
+        "max_pages": 3
       },
       "refresh_frequency": "weekly",
       "is_high_priority": false,
@@ -5646,7 +6122,9 @@
       "api_endpoint": null,
       "scraper_config": {
         "use_playwright": true,
-        "crawl_depth": 1
+        "crawl_depth": 1,
+        "paginate": true,
+        "max_pages": 3
       },
       "refresh_frequency": "weekly",
       "is_high_priority": false,
@@ -5686,7 +6164,10 @@
       "api_endpoint": null,
       "scraper_config": {
         "use_playwright": true,
-        "crawl_depth": 1
+        "crawl_depth": 1,
+        "paginate": true,
+        "max_pages": 5,
+        "link_filter": "/Funds|/grant|/award"
       },
       "refresh_frequency": "weekly",
       "is_high_priority": false,
@@ -5728,7 +6209,10 @@
       "api_endpoint": null,
       "scraper_config": {
         "use_playwright": true,
-        "crawl_depth": 1
+        "crawl_depth": 1,
+        "paginate": true,
+        "max_pages": 3,
+        "link_filter": "/arts|/funding|/grant"
       },
       "refresh_frequency": "weekly",
       "is_high_priority": false,
@@ -5768,7 +6252,9 @@
       "api_endpoint": null,
       "scraper_config": {
         "use_playwright": true,
-        "crawl_depth": 1
+        "crawl_depth": 1,
+        "paginate": true,
+        "max_pages": 10
       },
       "refresh_frequency": "weekly",
       "is_high_priority": false,
@@ -5789,7 +6275,9 @@
       "api_endpoint": null,
       "scraper_config": {
         "use_playwright": true,
-        "crawl_depth": 0
+        "crawl_depth": 1,
+        "paginate": true,
+        "max_pages": 5
       },
       "refresh_frequency": "weekly",
       "is_high_priority": false,
@@ -5810,7 +6298,9 @@
       "api_endpoint": null,
       "scraper_config": {
         "use_playwright": true,
-        "crawl_depth": 1
+        "crawl_depth": 1,
+        "paginate": true,
+        "max_pages": 5
       },
       "refresh_frequency": "weekly",
       "is_high_priority": false,
@@ -5831,7 +6321,10 @@
       "api_endpoint": null,
       "scraper_config": {
         "use_playwright": true,
-        "crawl_depth": 1
+        "crawl_depth": 1,
+        "paginate": true,
+        "max_pages": 3,
+        "link_filter": "/funding|/grant|/award"
       },
       "refresh_frequency": "weekly",
       "is_high_priority": false,
@@ -5852,7 +6345,9 @@
       "api_endpoint": null,
       "scraper_config": {
         "use_playwright": true,
-        "crawl_depth": 1
+        "crawl_depth": 1,
+        "paginate": true,
+        "max_pages": 3
       },
       "refresh_frequency": "weekly",
       "is_high_priority": false,
@@ -5926,7 +6421,9 @@
       "api_endpoint": null,
       "scraper_config": {
         "use_playwright": true,
-        "crawl_depth": 1
+        "crawl_depth": 1,
+        "paginate": true,
+        "max_pages": 5
       },
       "refresh_frequency": "weekly",
       "is_high_priority": false,
@@ -5948,7 +6445,9 @@
       "api_endpoint": null,
       "scraper_config": {
         "use_playwright": true,
-        "crawl_depth": 1
+        "crawl_depth": 1,
+        "paginate": true,
+        "max_pages": 5
       },
       "refresh_frequency": "weekly",
       "is_high_priority": false,
@@ -6013,7 +6512,9 @@
       "api_endpoint": null,
       "scraper_config": {
         "use_playwright": true,
-        "crawl_depth": 1
+        "crawl_depth": 1,
+        "paginate": true,
+        "max_pages": 3
       },
       "refresh_frequency": "weekly",
       "is_high_priority": false,
@@ -6034,7 +6535,9 @@
       "api_endpoint": null,
       "scraper_config": {
         "use_playwright": true,
-        "crawl_depth": 1
+        "crawl_depth": 1,
+        "paginate": true,
+        "max_pages": 3
       },
       "refresh_frequency": "weekly",
       "is_high_priority": false,
@@ -6056,7 +6559,9 @@
       "api_endpoint": null,
       "scraper_config": {
         "use_playwright": true,
-        "crawl_depth": 1
+        "crawl_depth": 1,
+        "paginate": true,
+        "max_pages": 3
       },
       "refresh_frequency": "weekly",
       "is_high_priority": false,
@@ -6077,7 +6582,9 @@
       "api_endpoint": null,
       "scraper_config": {
         "use_playwright": true,
-        "crawl_depth": 1
+        "crawl_depth": 1,
+        "paginate": true,
+        "max_pages": 3
       },
       "refresh_frequency": "weekly",
       "is_high_priority": false,
@@ -6098,7 +6605,9 @@
       "api_endpoint": null,
       "scraper_config": {
         "use_playwright": true,
-        "crawl_depth": 1
+        "crawl_depth": 1,
+        "paginate": true,
+        "max_pages": 3
       },
       "refresh_frequency": "weekly",
       "is_high_priority": false,
@@ -6118,7 +6627,9 @@
       "api_endpoint": null,
       "scraper_config": {
         "use_playwright": true,
-        "crawl_depth": 1
+        "crawl_depth": 1,
+        "paginate": true,
+        "max_pages": 10
       },
       "refresh_frequency": "weekly",
       "is_high_priority": false,
@@ -6137,7 +6648,9 @@
       "api_endpoint": null,
       "scraper_config": {
         "use_playwright": true,
-        "crawl_depth": 1
+        "crawl_depth": 1,
+        "paginate": true,
+        "max_pages": 3
       },
       "refresh_frequency": "weekly",
       "is_high_priority": false,
@@ -6216,7 +6729,9 @@
       "api_endpoint": null,
       "scraper_config": {
         "use_playwright": true,
-        "crawl_depth": 1
+        "crawl_depth": 1,
+        "paginate": true,
+        "max_pages": 3
       },
       "refresh_frequency": "weekly",
       "is_high_priority": false,
@@ -6236,7 +6751,9 @@
       "api_endpoint": null,
       "scraper_config": {
         "use_playwright": true,
-        "crawl_depth": 1
+        "crawl_depth": 1,
+        "paginate": true,
+        "max_pages": 3
       },
       "refresh_frequency": "weekly",
       "is_high_priority": false,
@@ -6256,7 +6773,9 @@
       "api_endpoint": null,
       "scraper_config": {
         "use_playwright": true,
-        "crawl_depth": 1
+        "crawl_depth": 1,
+        "paginate": true,
+        "max_pages": 3
       },
       "refresh_frequency": "weekly",
       "is_high_priority": false,
@@ -6276,7 +6795,9 @@
       "api_endpoint": null,
       "scraper_config": {
         "use_playwright": true,
-        "crawl_depth": 1
+        "crawl_depth": 1,
+        "paginate": true,
+        "max_pages": 3
       },
       "refresh_frequency": "weekly",
       "is_high_priority": false,
@@ -6298,7 +6819,9 @@
       "api_endpoint": null,
       "scraper_config": {
         "use_playwright": true,
-        "crawl_depth": 1
+        "crawl_depth": 1,
+        "paginate": true,
+        "max_pages": 5
       },
       "refresh_frequency": "weekly",
       "is_high_priority": false,
@@ -6320,7 +6843,9 @@
       "api_endpoint": null,
       "scraper_config": {
         "use_playwright": true,
-        "crawl_depth": 1
+        "crawl_depth": 1,
+        "paginate": true,
+        "max_pages": 3
       },
       "refresh_frequency": "weekly",
       "is_high_priority": false,
@@ -6341,7 +6866,9 @@
       "api_endpoint": null,
       "scraper_config": {
         "use_playwright": true,
-        "crawl_depth": 1
+        "crawl_depth": 1,
+        "paginate": true,
+        "max_pages": 3
       },
       "refresh_frequency": "weekly",
       "is_high_priority": false,
@@ -6361,7 +6888,9 @@
       "api_endpoint": null,
       "scraper_config": {
         "use_playwright": true,
-        "crawl_depth": 1
+        "crawl_depth": 1,
+        "paginate": true,
+        "max_pages": 3
       },
       "refresh_frequency": "weekly",
       "is_high_priority": false,
@@ -6382,7 +6911,9 @@
       "api_endpoint": null,
       "scraper_config": {
         "use_playwright": true,
-        "crawl_depth": 1
+        "crawl_depth": 1,
+        "paginate": true,
+        "max_pages": 5
       },
       "refresh_frequency": "weekly",
       "is_high_priority": false,
@@ -6404,7 +6935,9 @@
       "api_endpoint": null,
       "scraper_config": {
         "use_playwright": true,
-        "crawl_depth": 1
+        "crawl_depth": 1,
+        "paginate": true,
+        "max_pages": 3
       },
       "refresh_frequency": "weekly",
       "is_high_priority": false,
@@ -6424,7 +6957,9 @@
       "api_endpoint": null,
       "scraper_config": {
         "use_playwright": true,
-        "crawl_depth": 1
+        "crawl_depth": 1,
+        "paginate": true,
+        "max_pages": 3
       },
       "refresh_frequency": "weekly",
       "is_high_priority": false,
@@ -6444,7 +6979,9 @@
       "api_endpoint": null,
       "scraper_config": {
         "use_playwright": true,
-        "crawl_depth": 1
+        "crawl_depth": 1,
+        "paginate": true,
+        "max_pages": 3
       },
       "refresh_frequency": "weekly",
       "is_high_priority": false,
@@ -6466,7 +7003,9 @@
       "api_endpoint": null,
       "scraper_config": {
         "use_playwright": true,
-        "crawl_depth": 1
+        "crawl_depth": 1,
+        "paginate": true,
+        "max_pages": 5
       },
       "refresh_frequency": "weekly",
       "is_high_priority": true,
@@ -6487,7 +7026,9 @@
       "api_endpoint": null,
       "scraper_config": {
         "use_playwright": true,
-        "crawl_depth": 1
+        "crawl_depth": 1,
+        "paginate": true,
+        "max_pages": 5
       },
       "refresh_frequency": "weekly",
       "is_high_priority": true,
@@ -6509,7 +7050,9 @@
       "api_endpoint": null,
       "scraper_config": {
         "use_playwright": true,
-        "crawl_depth": 1
+        "crawl_depth": 1,
+        "paginate": true,
+        "max_pages": 3
       },
       "refresh_frequency": "weekly",
       "is_high_priority": false,
@@ -6531,7 +7074,9 @@
       "api_endpoint": null,
       "scraper_config": {
         "use_playwright": true,
-        "crawl_depth": 1
+        "crawl_depth": 1,
+        "paginate": true,
+        "max_pages": 3
       },
       "refresh_frequency": "weekly",
       "is_high_priority": false,
@@ -6551,7 +7096,9 @@
       "api_endpoint": null,
       "scraper_config": {
         "use_playwright": true,
-        "crawl_depth": 1
+        "crawl_depth": 1,
+        "paginate": true,
+        "max_pages": 3
       },
       "refresh_frequency": "weekly",
       "is_high_priority": false,
@@ -6617,7 +7164,9 @@
       "api_endpoint": null,
       "scraper_config": {
         "use_playwright": true,
-        "crawl_depth": 1
+        "crawl_depth": 1,
+        "paginate": true,
+        "max_pages": 3
       },
       "refresh_frequency": "weekly",
       "is_high_priority": false,
@@ -6637,7 +7186,9 @@
       "api_endpoint": null,
       "scraper_config": {
         "use_playwright": true,
-        "crawl_depth": 1
+        "crawl_depth": 1,
+        "paginate": true,
+        "max_pages": 3
       },
       "refresh_frequency": "weekly",
       "is_high_priority": false,
@@ -6658,7 +7209,10 @@
       "api_endpoint": null,
       "scraper_config": {
         "use_playwright": true,
-        "crawl_depth": 1
+        "crawl_depth": 1,
+        "paginate": true,
+        "max_pages": 5,
+        "link_filter": "/funding|/grant"
       },
       "refresh_frequency": "weekly",
       "is_high_priority": false,
@@ -6680,7 +7234,9 @@
       "api_endpoint": null,
       "scraper_config": {
         "use_playwright": true,
-        "crawl_depth": 1
+        "crawl_depth": 1,
+        "paginate": true,
+        "max_pages": 5
       },
       "refresh_frequency": "weekly",
       "is_high_priority": false,
@@ -6701,7 +7257,9 @@
       "api_endpoint": null,
       "scraper_config": {
         "use_playwright": true,
-        "crawl_depth": 1
+        "crawl_depth": 1,
+        "paginate": true,
+        "max_pages": 5
       },
       "refresh_frequency": "weekly",
       "is_high_priority": true,
@@ -6723,7 +7281,9 @@
       "api_endpoint": null,
       "scraper_config": {
         "use_playwright": true,
-        "crawl_depth": 1
+        "crawl_depth": 1,
+        "paginate": true,
+        "max_pages": 3
       },
       "refresh_frequency": "weekly",
       "is_high_priority": false,
@@ -6744,7 +7304,9 @@
       "api_endpoint": null,
       "scraper_config": {
         "use_playwright": true,
-        "crawl_depth": 1
+        "crawl_depth": 1,
+        "paginate": true,
+        "max_pages": 5
       },
       "refresh_frequency": "weekly",
       "is_high_priority": false,
@@ -6766,7 +7328,9 @@
       "api_endpoint": null,
       "scraper_config": {
         "use_playwright": true,
-        "crawl_depth": 1
+        "crawl_depth": 1,
+        "paginate": true,
+        "max_pages": 3
       },
       "refresh_frequency": "weekly",
       "is_high_priority": false,
@@ -6787,7 +7351,9 @@
       "api_endpoint": null,
       "scraper_config": {
         "use_playwright": true,
-        "crawl_depth": 1
+        "crawl_depth": 1,
+        "paginate": true,
+        "max_pages": 3
       },
       "refresh_frequency": "weekly",
       "is_high_priority": false,
@@ -6808,7 +7374,9 @@
       "api_endpoint": null,
       "scraper_config": {
         "use_playwright": true,
-        "crawl_depth": 1
+        "crawl_depth": 1,
+        "paginate": true,
+        "max_pages": 3
       },
       "refresh_frequency": "weekly",
       "is_high_priority": false,
@@ -6829,7 +7397,9 @@
       "api_endpoint": null,
       "scraper_config": {
         "use_playwright": true,
-        "crawl_depth": 1
+        "crawl_depth": 1,
+        "paginate": true,
+        "max_pages": 3
       },
       "refresh_frequency": "weekly",
       "is_high_priority": false,
@@ -6850,7 +7420,9 @@
       "api_endpoint": null,
       "scraper_config": {
         "use_playwright": true,
-        "crawl_depth": 1
+        "crawl_depth": 1,
+        "paginate": true,
+        "max_pages": 3
       },
       "refresh_frequency": "weekly",
       "is_high_priority": false,
@@ -6871,7 +7443,9 @@
       "api_endpoint": null,
       "scraper_config": {
         "use_playwright": true,
-        "crawl_depth": 1
+        "crawl_depth": 1,
+        "paginate": true,
+        "max_pages": 3
       },
       "refresh_frequency": "weekly",
       "is_high_priority": false,
@@ -6891,7 +7465,9 @@
       "api_endpoint": null,
       "scraper_config": {
         "use_playwright": true,
-        "crawl_depth": 1
+        "crawl_depth": 1,
+        "paginate": true,
+        "max_pages": 3
       },
       "refresh_frequency": "weekly",
       "is_high_priority": false,
@@ -6929,7 +7505,9 @@
       "api_endpoint": null,
       "scraper_config": {
         "use_playwright": true,
-        "crawl_depth": 1
+        "crawl_depth": 1,
+        "paginate": true,
+        "max_pages": 3
       },
       "refresh_frequency": "weekly",
       "is_high_priority": false,
@@ -6988,7 +7566,9 @@
       "api_endpoint": null,
       "scraper_config": {
         "use_playwright": true,
-        "crawl_depth": 1
+        "crawl_depth": 1,
+        "paginate": true,
+        "max_pages": 5
       },
       "refresh_frequency": "weekly",
       "is_high_priority": true,

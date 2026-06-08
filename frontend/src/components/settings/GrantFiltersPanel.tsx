@@ -44,6 +44,33 @@ interface GrantFiltersPanelProps {
   isOrgAdmin: boolean;
 }
 
+function ReadOnlyTagList({
+  label,
+  tags,
+  emptyText = 'None set',
+}: {
+  label: string;
+  tags: string[];
+  emptyText?: string;
+}) {
+  return (
+    <div>
+      <label className="block text-xs font-medium text-gray-600 mb-1">{label}</label>
+      {tags.length === 0 ? (
+        <p className="text-xs text-gray-400 italic">{emptyText}</p>
+      ) : (
+        <div className="flex flex-wrap gap-1.5">
+          {tags.map(t => (
+            <span key={t} className="inline-flex items-center bg-gray-100 text-gray-600 text-xs px-2 py-0.5 rounded-full">
+              {t}
+            </span>
+          ))}
+        </div>
+      )}
+    </div>
+  );
+}
+
 function TagInput({
   label,
   hint,
@@ -235,50 +262,87 @@ export function GrantFiltersPanel({ institutionId, isOrgAdmin }: GrantFiltersPan
         <div className="p-3 bg-green-50 border border-green-200 rounded-lg text-sm text-green-800">{message}</div>
       )}
 
-      {isOrgAdmin && (
-        <section className="border border-gray-200 rounded-lg p-5 bg-white space-y-4">
-          <div>
-            <h3 className="text-sm font-semibold text-gray-900">Organization filters</h3>
-            <p className="text-xs text-gray-400 mt-0.5">Frozen for all members. Used to score and surface grants for your team.</p>
-          </div>
-          <TagInput
-            label="Keywords & themes"
-            hint="e.g. AI for health, maternal health, Mamai"
-            tags={orgProfile.keywords ?? []}
-            onChange={keywords => setOrgProfile(p => ({ ...p, keywords }))}
-            placeholder="Add keyword…"
-          />
-          <TagInput
-            label="Geographies"
-            tags={orgProfile.geographies ?? []}
-            onChange={geographies => setOrgProfile(p => ({ ...p, geographies }))}
-            placeholder="e.g. sub-Saharan Africa"
-          />
-          <TagInput
-            label="Excluded keywords"
-            tags={orgProfile.excluded_keywords ?? []}
-            onChange={excluded_keywords => setOrgProfile(p => ({ ...p, excluded_keywords }))}
-            placeholder="e.g. agriculture"
-          />
-          <div>
-            <label className="block text-xs font-medium text-gray-600 mb-1">Team / project context</label>
-            <textarea
-              value={orgProfile.projects ?? ''}
-              onChange={e => setOrgProfile(p => ({ ...p, projects: e.target.value }))}
-              rows={3}
-              placeholder="Describe active projects (Mamai, federated learning, etc.) for AI summaries"
-              className="w-full border border-gray-300 rounded-md px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
+      <section className="border border-gray-200 rounded-lg p-5 bg-white space-y-4">
+        <div>
+          <h3 className="text-sm font-semibold text-gray-900">Organization filters</h3>
+          <p className="text-xs text-gray-400 mt-0.5">
+            {isOrgAdmin
+              ? 'Applies to all members. Used to score and surface grants for your team.'
+              : 'Set by your organization admin. Used to score and surface grants for your team.'}
+          </p>
+        </div>
+
+        {isOrgAdmin ? (
+          <>
+            <TagInput
+              label="Keywords & themes"
+              hint="e.g. AI for health, maternal health, Mamai"
+              tags={orgProfile.keywords ?? []}
+              onChange={keywords => setOrgProfile(p => ({ ...p, keywords }))}
+              placeholder="Add keyword…"
             />
-          </div>
-          <button
-            onClick={saveOrgProfile}
-            disabled={savingOrg}
-            className="text-sm px-4 py-2 bg-gray-900 text-white rounded-md hover:bg-gray-800 disabled:opacity-50"
-          >
-            {savingOrg ? 'Saving…' : 'Save organization filters'}
-          </button>
-        </section>
-      )}
+            <TagInput
+              label="Geographies"
+              tags={orgProfile.geographies ?? []}
+              onChange={geographies => setOrgProfile(p => ({ ...p, geographies }))}
+              placeholder="e.g. sub-Saharan Africa"
+            />
+            <TagInput
+              label="Excluded keywords"
+              tags={orgProfile.excluded_keywords ?? []}
+              onChange={excluded_keywords => setOrgProfile(p => ({ ...p, excluded_keywords }))}
+              placeholder="e.g. agriculture"
+            />
+            <div>
+              <label className="block text-xs font-medium text-gray-600 mb-1">Team / project context</label>
+              <textarea
+                value={orgProfile.projects ?? ''}
+                onChange={e => setOrgProfile(p => ({ ...p, projects: e.target.value }))}
+                rows={3}
+                placeholder="Describe active projects (Mamai, federated learning, etc.) for AI summaries"
+                className="w-full border border-gray-300 rounded-md px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
+              />
+            </div>
+            <button
+              onClick={saveOrgProfile}
+              disabled={savingOrg}
+              className="text-sm px-4 py-2 bg-gray-900 text-white rounded-md hover:bg-gray-800 disabled:opacity-50"
+            >
+              {savingOrg ? 'Saving…' : 'Save organization filters'}
+            </button>
+          </>
+        ) : (
+          <>
+            <ReadOnlyTagList
+              label="Keywords & themes"
+              tags={orgProfile.keywords ?? []}
+              emptyText="No org keywords set"
+            />
+            <ReadOnlyTagList
+              label="Geographies"
+              tags={orgProfile.geographies ?? []}
+              emptyText="No geographies set"
+            />
+            <ReadOnlyTagList
+              label="Excluded keywords"
+              tags={orgProfile.excluded_keywords ?? []}
+              emptyText="None"
+            />
+            {orgProfile.projects && (
+              <div>
+                <label className="block text-xs font-medium text-gray-600 mb-1">Team / project context</label>
+                <p className="text-sm text-gray-600 bg-gray-50 rounded-md px-3 py-2">{orgProfile.projects}</p>
+              </div>
+            )}
+            <p className="text-xs text-gray-400 flex items-center gap-1">
+              <svg className="w-3.5 h-3.5 shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+                <path strokeLinecap="round" strokeLinejoin="round" d="M12 15v2m0 0v2m0-2h2m-2 0H10m2-6V7m0 0a4 4 0 100 8 4 4 0 000-8z" />
+              </svg>
+              To update these filters, contact your organization admin.
+            </p>
+          </>
+        )}
+      </section>
 
       <section className="border border-gray-200 rounded-lg p-5 bg-white space-y-4">
         <div>

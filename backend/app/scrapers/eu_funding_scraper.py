@@ -9,12 +9,12 @@ Calls/grants API key: SEDIA (passed as ?apiKey= query param)
 Projects API key: SEDIA_NONH2020_PROD — do NOT use for grant calls
 API docs: https://ec.europa.eu/info/funding-tenders/opportunities/portal/screen/support/apis
 
-Two modes:
-  - Full scrape:        fetches all open/forthcoming grants (paginated)
-  - Incremental scrape: fetches only grants with startDate >= last_successful_run - 1 day
+Always fetches all open/forthcoming calls (no incremental filter).
+Prior incremental mode filtered by startDate which caused most open calls to be
+missed because Horizon calls start months before the scraper last ran.
 """
 import json
-from datetime import datetime, timedelta
+from datetime import datetime
 
 import httpx
 import structlog
@@ -50,26 +50,12 @@ class EUFundingScraper(BaseScraper):
         # Allow an optional override API key from scraper_config
         api_key = cfg.get("api_key") or cfg.get("eu_api_key") or _CALLS_API_KEY
 
-        # Determine incremental window: if this source has run before, only
-        # fetch grants that started/were posted since that run (minus 1 day buffer).
-        # Force a full scrape when the source has never actually added any grants
-        # (e.g. prior runs succeeded but returned 0 due to a bug).
-        since_date: datetime | None = None
-        last_run = getattr(self.source, "last_successful_run", None)
-        never_added = getattr(self.source, "opportunities_added", 0) == 0
-        if last_run and not never_added:
-            since_date = last_run - timedelta(days=1)
-            logger.info(
-                "EU scraper: incremental mode",
-                since=since_date.isoformat(),
-            )
-        else:
-            logger.info(
-                "EU scraper: full scrape mode",
-                reason="no prior run" if not last_run else "no grants added yet",
-            )
-
-        results = self._fetch_all_pages(api_key, since_date)
+        # Always fetch all open/forthcoming calls — no incremental date filter.
+        # A startDate filter causes most open Horizon calls to be missed because
+        # calls typically open months before the scraper re-runs. Dedup handles
+        # duplicates across runs efficiently without a date window.
+        logger.info("EU scraper: full scrape mode (all open/forthcoming calls)")
+        results = self._fetch_all_pages(api_key)
 
         # If the API returned nothing, fall back to Playwright scrape
         if not results:
@@ -95,23 +81,14 @@ class EUFundingScraper(BaseScraper):
     # Core fetch: POST-based paginated API call
     # ------------------------------------------------------------------
 
-    def _fetch_all_pages(
-        self, api_key: str, since_date: datetime | None
-    ) -> list[dict]:
+    def _fetch_all_pages(self, api_key: str) -> list[dict]:
         """Paginate through the EC Search API until all results are retrieved."""
         results: list[dict] = []
         page = 1
 
-        # Build the Elasticsearch-style boolean query
-        must_clauses: list[dict] = [
-            {"terms": {"status": _OPEN_STATUSES}},
-        ]
-        if since_date:
-            must_clauses.append(
-                {"range": {"startDate": {"gte": since_date.strftime("%Y-%m-%d")}}}
-            )
-
-        query = {"bool": {"must": must_clauses}}
+        # Fetch all open/forthcoming calls — no date filter so we don't miss
+        # calls that started before our last run.
+        query = {"bool": {"must": [{"terms": {"status": _OPEN_STATUSES}}]}}
         sort = [{"field": "startDate", "order": "DESC"}]
         languages = ["en"]
 

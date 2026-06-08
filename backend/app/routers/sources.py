@@ -284,13 +284,87 @@ async def get_source_runs(
             "ended_at": r.ended_at.isoformat() if r.ended_at else None,
             "status": r.status,
             "new_opportunities": r.new_opportunities,
+            "updated_opportunities": r.updated_opportunities,
             "duplicates": r.duplicates,
             "records_found": r.records_found,
             "errors": r.errors or [],
+            "warnings": r.warnings or [],
             "log_summary": r.log_summary,
+            "traceback": r.notes,
         }
         for r in runs
     ]
+
+
+@router.post("/{source_id}/runs/{run_id}/diagnose", dependencies=[Depends(require_org_admin())])
+async def diagnose_run(
+    source_id: str,
+    run_id: str,
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    """Ask the LLM to explain why a run failed and suggest scraper_config fixes."""
+    src_result = await db.execute(select(Source).where(Source.id == source_id))
+    source = src_result.scalar_one_or_none()
+    if not source:
+        raise HTTPException(404, "Source not found")
+
+    run_result = await db.execute(
+        select(SourceRun).where(SourceRun.id == run_id, SourceRun.source_id == source_id)
+    )
+    run = run_result.scalar_one_or_none()
+    if not run:
+        raise HTTPException(404, "Run not found")
+
+    try:
+        from app.ai.client import chat_complete
+
+        prompt = f"""A web scraper for grant funding failed. Diagnose the problem and suggest fixes.
+
+SOURCE CONFIG:
+  Name: {source.name}
+  URL: {source.url or "none"}
+  API endpoint: {source.api_endpoint or "none"}
+  Scraper type: {source.source_type}
+  Scraper config (JSON): {source.scraper_config or {}}
+
+LAST RUN RESULT:
+  Status: {run.status}
+  Records fetched: {run.records_found}
+  New opportunities: {run.new_opportunities}
+  Duplicates: {run.duplicates}
+  Log summary: {run.log_summary or "none"}
+  Errors: {run.errors or []}
+  Warnings: {run.warnings or []}
+  Traceback (last 1000 chars): {(run.notes or "")[-1000:]}
+
+Respond with a JSON object in exactly this shape:
+{{
+  "diagnosis": "plain-English explanation of what went wrong (2-4 sentences)",
+  "root_cause": "one-line technical root cause",
+  "suggested_config": {{... complete scraper_config JSON to replace the current one, or null if no change needed ...}},
+  "suggested_type": "scraper type to switch to, or null if unchanged",
+  "action_items": ["step 1", "step 2"]
+}}
+
+If records_found is 0 and status is success, the scraper ran without error but found nothing — this usually means the page structure changed, JS rendering is needed, pagination is missing, or the URL is wrong.
+Return only valid JSON, no markdown.
+"""
+        raw = await chat_complete(
+            messages=[{"role": "user", "content": prompt}],
+            temperature=0.2,
+            json_mode=True,
+        )
+
+        import json as _json
+        try:
+            result = _json.loads(raw)
+        except Exception:
+            result = {"diagnosis": raw, "root_cause": None, "suggested_config": None, "suggested_type": None, "action_items": []}
+
+        return result
+    except Exception as e:
+        raise HTTPException(500, f"Diagnosis failed: {e}")
 
 
 # ── Internal helpers (sync — called from BackgroundTasks) ─────────────────────

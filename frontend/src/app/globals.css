@@ -240,3 +240,26 @@ body {
   outline: 2px solid var(--focus-ring);
   outline-offset: 2px;
 }
+
+/* ─────────────────────────────────────────────────────────────
+   SIDEBAR LIGHTHOUSE — animation keyframes
+───────────────────────────────────────────────────────────── */
+@keyframes lh-wave {
+  0%   { transform: translateX(-70%); opacity: 0; }
+  20%  { opacity: 0.6; }
+  60%  { opacity: 0.3; }
+  100% { transform: translateX(70%); opacity: 0; }
+}
+
+@keyframes lh-beam {
+  0%, 100% { opacity: 0.10; transform: translateX(11%) rotate(23deg) scaleX(0.90); }
+  40%       { opacity: 0.28; transform: translateX(11%) rotate(23deg) scaleX(1.02); }
+  48%       { opacity: 0.52; transform: translateX(11%) rotate(23deg) scaleX(1.06); }
+  58%       { opacity: 0.18; transform: translateX(11%) rotate(23deg) scaleX(1.00); }
+}
+
+@keyframes lh-ray {
+  0%, 100% { opacity: 0.14; }
+  48%       { opacity: 0.80; }
+  58%       { opacity: 0.28; }
+}

@@ -1,6 +1,4 @@
 'use client';
-import { useAuth } from '@/lib/auth';
-import OrgOnboardingSteps from './OrgOnboardingSteps';
 import PersonalOnboardingSteps from './PersonalOnboardingSteps';
 
 interface Props {
@@ -8,9 +6,6 @@ interface Props {
 }
 
 export default function OnboardingWizard({ onClose }: Props) {
-  const { user } = useAuth();
-  const isAdmin = user?.institution_role === 'admin';
-
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/30 backdrop-blur-sm p-4">
       <div className="bg-white rounded-2xl shadow-2xl w-full max-w-xl mx-auto overflow-hidden max-h-[90vh] flex flex-col">
@@ -25,19 +20,13 @@ export default function OnboardingWizard({ onClose }: Props) {
               <h1 className="text-base font-semibold text-gray-900">
                 Welcome to Grant Engine
               </h1>
-              <p className="text-sm text-gray-500">
-                {isAdmin ? 'Set up your organization profile' : 'Set up your personal preferences'}
-              </p>
+              <p className="text-sm text-gray-500">Set up your personal preferences</p>
             </div>
           </div>
         </div>
 
         <div className="px-6 py-5 overflow-y-auto flex-1">
-          {isAdmin ? (
-            <OrgOnboardingSteps onComplete={onClose} />
-          ) : (
-            <PersonalOnboardingSteps onComplete={onClose} />
-          )}
+          <PersonalOnboardingSteps onComplete={onClose} />
         </div>
       </div>
     </div>

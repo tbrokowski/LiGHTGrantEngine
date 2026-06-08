@@ -470,6 +470,7 @@ export const sources = {
   runNow: (id: string) => api.post(`/sources/${id}/run-now`),
   runAll: () => api.post('/sources/run-all'),
   getRuns: (id: string) => api.get(`/sources/${id}/runs`),
+  diagnoseRun: (sourceId: string, runId: string) => api.post(`/sources/${sourceId}/runs/${runId}/diagnose`),
   recentRuns: (limit = 20) => api.get(`/sources/status/recent-runs?limit=${limit}`),
   summary: () => api.get('/sources/status/summary'),
 };

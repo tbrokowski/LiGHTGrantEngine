@@ -82,22 +82,75 @@ export default function Sidebar() {
 
       {/* Nav + brand area */}
       <div className="flex-1 relative overflow-hidden">
-        {/* Subtle watermark behind nav */}
+        {/* Lighthouse watermark with animations */}
         <div
-          className="absolute inset-0 flex items-center justify-center pointer-events-none select-none"
+          className="absolute inset-0 pointer-events-none select-none overflow-hidden"
           aria-hidden
         >
-          <span
+          {/* Gradient wave — translateX(%) is relative to its own width = sidebar width, auto-scales */}
+          <div
             style={{
-              fontSize: '80px',
-              fontWeight: 800,
-              letterSpacing: '-0.04em',
-              color: 'rgba(255,255,255,0.025)',
-              userSelect: 'none',
+              position: 'absolute',
+              top: 0, left: 0, right: 0, bottom: 0,
+              background: 'linear-gradient(90deg, transparent 0%, rgba(255,255,255,0.05) 50%, transparent 100%)',
+              animation: 'lh-wave 9s ease-in-out infinite',
+            }}
+          />
+
+          {/* Lighthouse + beam assembly
+              width: 50% of sidebar → scales automatically.
+              aspect-ratio: 2/3 matches the image → height scales with width.
+              All child positions use % → proportional to this container. */}
+          <div
+            style={{
+              position: 'absolute',
+              bottom: 0,
+              left: '50%',
+              transform: 'translateX(-50%)',
+              width: '50%',
+              aspectRatio: '2 / 3',
             }}
           >
-            L
-          </span>
+            {/* Broad beam — origin at lantern (top-center of image) */}
+            <div
+              style={{
+                position: 'absolute',
+                top: '5%',
+                left: '50%',
+                width: '220%',
+                height: '38%',
+                transformOrigin: '0 0',
+                background: 'linear-gradient(90deg, rgba(255,255,255,0.22) 0%, transparent 100%)',
+                borderRadius: '0 30% 30% 0',
+                animation: 'lh-beam 6s ease-in-out infinite',
+              }}
+            />
+            {/* Thin ray */}
+            <div
+              style={{
+                position: 'absolute',
+                top: '7%',
+                left: '50%',
+                width: '220%',
+                height: '1px',
+                transformOrigin: '0 0',
+                background: 'linear-gradient(90deg, rgba(255,255,255,0.75) 0%, transparent 80%)',
+                animation: 'lh-ray 6s ease-in-out infinite',
+              }}
+            />
+            {/* Lighthouse image fills the container */}
+            <Image
+              src="/lighthouse.png"
+              alt=""
+              fill
+              style={{
+                opacity: 0.09,
+                objectFit: 'contain',
+                objectPosition: 'bottom center',
+                filter: 'brightness(0) invert(1)',
+              }}
+            />
+          </div>
         </div>
 
         {/* Navigation links */}

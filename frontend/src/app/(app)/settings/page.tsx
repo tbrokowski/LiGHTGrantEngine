@@ -521,6 +521,76 @@ function SettingsPageInner() {
   const [newScraperConfig, setNewScraperConfig] = useState<Record<string, string | number | boolean>>({});
   const [saving, setSaving] = useState(false);
   const [expandedSource, setExpandedSource] = useState<string | null>(null);
+  const [expandedTab, setExpandedTab] = useState<Record<string, 'edit' | 'runs'>>({});
+
+  // Run history state
+  interface SourceRunRecord {
+    id: string;
+    started_at: string | null;
+    ended_at: string | null;
+    status: string;
+    records_found: number;
+    new_opportunities: number;
+    updated_opportunities: number;
+    duplicates: number;
+    errors: string[];
+    warnings: string[];
+    log_summary: string | null;
+    traceback: string | null;
+  }
+  const [sourceRuns, setSourceRuns] = useState<Record<string, SourceRunRecord[]>>({});
+  const [loadingRuns, setLoadingRuns] = useState<string | null>(null);
+  const [diagnosing, setDiagnosing] = useState<string | null>(null);
+  const [diagnoses, setDiagnoses] = useState<Record<string, {
+    diagnosis: string;
+    root_cause: string | null;
+    suggested_config: Record<string, unknown> | null;
+    suggested_type: string | null;
+    action_items: string[];
+  }>>({});
+
+  async function fetchRunHistory(sourceId: string) {
+    setLoadingRuns(sourceId);
+    try {
+      const res = await sources.getRuns(sourceId);
+      setSourceRuns(prev => ({ ...prev, [sourceId]: res.data }));
+    } catch {
+      // silently fail — shows empty state
+    } finally {
+      setLoadingRuns(null);
+    }
+  }
+
+  async function handleDiagnose(sourceId: string, runId: string) {
+    setDiagnosing(runId);
+    try {
+      const res = await sources.diagnoseRun(sourceId, runId);
+      setDiagnoses(prev => ({ ...prev, [runId]: res.data }));
+    } catch {
+      setDiagnoses(prev => ({ ...prev, [runId]: {
+        diagnosis: 'Diagnosis failed — check that the AI service is configured.',
+        root_cause: null,
+        suggested_config: null,
+        suggested_type: null,
+        action_items: [],
+      }}));
+    } finally {
+      setDiagnosing(null);
+    }
+  }
+
+  function applyDiagnosisFix(sourceId: string, runId: string) {
+    const diag = diagnoses[runId];
+    if (!diag?.suggested_config) return;
+    setDetailDraft(prev => ({
+      ...prev,
+      [sourceId]: {
+        ...prev[sourceId],
+        _scraperConfigText: JSON.stringify(diag.suggested_config, null, 2),
+      },
+    }));
+    setExpandedTab(prev => ({ ...prev, [sourceId]: 'edit' }));
+  }
 
   // Source review / inline edit state
   const [statusFilter, setStatusFilter] = useState<'all' | 'active' | 'under_review' | 'paused' | 'broken'>('all');
@@ -1308,7 +1378,11 @@ function SettingsPageInner() {
                     onClick={() => {
                       const next = expandedSource === s.id ? null : s.id;
                       setExpandedSource(next);
-                      if (next) initDetailDraft(s);
+                      if (next) {
+                        initDetailDraft(s);
+                        fetchRunHistory(s.id);
+                        setExpandedTab(prev => ({ ...prev, [s.id]: prev[s.id] ?? 'runs' }));
+                      }
                     }}
                     onMouseEnter={e => { if (s.status !== 'under_review') e.currentTarget.style.background = 'var(--selection-bg)'; }}
                     onMouseLeave={e => { e.currentTarget.style.background = s.status === 'under_review' ? 'var(--state-warning-bg)' : 'transparent'; }}
@@ -1477,15 +1551,18 @@ function SettingsPageInner() {
                   {expandedSource === s.id && (() => {
                     const draft = detailDraft[s.id];
                     if (!draft) return null;
+                    const tab = expandedTab[s.id] ?? 'runs';
                     const discoveryConf = s.scraper_config?._discovery_confidence;
                     const discoveryNotes = s.scraper_config?._discovery_notes;
                     const jsonError = (() => {
                       try { JSON.parse(draft._scraperConfigText || '{}'); return ''; }
                       catch (e) { return (e as Error).message; }
                     })();
+                    const runs = sourceRuns[s.id] ?? [];
                     return (
                     <tr key={`${s.id}-expanded`} style={{ background: 'var(--surface-sunken)' }}>
                       <td colSpan={5} className="px-5 py-5" style={{ borderTop: '1px solid var(--rule-subtle)' }}>
+
                         {/* Exa discovery banner */}
                         {s.status === 'under_review' && discoveryConf != null && (
                           <div
@@ -1507,140 +1584,371 @@ function SettingsPageInner() {
                           </div>
                         )}
 
-                        <div className="grid grid-cols-1 md:grid-cols-2 gap-4 text-xs">
-                          {/* Name */}
-                          <div>
-                            <label className="block ledger-label mb-1">Name</label>
-                            <input
-                              value={draft.name}
-                              onChange={e => setDetailDraft(prev => ({ ...prev, [s.id]: { ...prev[s.id], name: e.target.value } }))}
-                              style={settingsInputStyle}
-                              onFocus={e => (e.currentTarget.style.borderColor = 'var(--accent-primary)')}
-                              onBlur={e => (e.currentTarget.style.borderColor = 'var(--rule-subtle)')}
-                            />
-                          </div>
-
-                          {/* URL */}
-                          <div>
-                            <label className="block ledger-label mb-1">URL</label>
-                            <input
-                              value={draft.url}
-                              onChange={e => setDetailDraft(prev => ({ ...prev, [s.id]: { ...prev[s.id], url: e.target.value } }))}
-                              style={settingsInputStyle}
-                              onFocus={e => (e.currentTarget.style.borderColor = 'var(--accent-primary)')}
-                              onBlur={e => (e.currentTarget.style.borderColor = 'var(--rule-subtle)')}
-                              placeholder="https://…"
-                            />
-                          </div>
-
-                          {/* Scraper type (read-only) */}
-                          <div>
-                            <label className="block ledger-label mb-1">Scraper Type</label>
-                            <TypeBadge type={s.source_type} />
-                          </div>
-
-                          {/* Frequency */}
-                          <div>
-                            <label className="block ledger-label mb-1">Frequency</label>
-                            <select
-                              value={draft.refresh_frequency}
-                              onChange={e => setDetailDraft(prev => ({ ...prev, [s.id]: { ...prev[s.id], refresh_frequency: e.target.value } }))}
-                              style={settingsInputStyle}
-                              onFocus={e => (e.currentTarget.style.borderColor = 'var(--accent-primary)')}
-                              onBlur={e => (e.currentTarget.style.borderColor = 'var(--rule-subtle)')}
+                        {/* Sub-tabs: Run History / Edit Config */}
+                        <div className="flex items-center gap-0 mb-4" style={{ borderBottom: '1px solid var(--rule-subtle)' }}>
+                          {(['runs', 'edit'] as const).map(t => {
+                            const labels = { runs: 'Run History', edit: 'Edit Config' };
+                            const isActive = tab === t;
+                            return (
+                              <button
+                                key={t}
+                                onClick={e => { e.stopPropagation(); setExpandedTab(prev => ({ ...prev, [s.id]: t })); }}
+                                className="relative pb-2.5 pt-1 pr-5 text-xs font-medium transition-colors"
+                                style={{ color: isActive ? 'var(--ink-primary)' : 'var(--ink-muted)' }}
+                                onMouseEnter={e => { if (!isActive) e.currentTarget.style.color = 'var(--ink-secondary)'; }}
+                                onMouseLeave={e => { if (!isActive) e.currentTarget.style.color = 'var(--ink-muted)'; }}
+                              >
+                                {labels[t]}
+                                {isActive && (
+                                  <span className="absolute bottom-0 left-0 right-5 h-0.5" style={{ background: 'var(--accent-primary)' }} />
+                                )}
+                              </button>
+                            );
+                          })}
+                          <div className="ml-auto">
+                            <button
+                              onClick={e => { e.stopPropagation(); setExpandedSource(null); }}
+                              className="text-xs px-2 py-1"
+                              style={{ color: 'var(--ink-faint)' }}
+                              title="Close"
                             >
-                              {FREQUENCIES.map(f => <option key={f} value={f} className="capitalize">{f}</option>)}
-                            </select>
+                              ✕
+                            </button>
                           </div>
+                        </div>
 
-                          {/* Themes */}
-                          <div className="md:col-span-2">
-                            <label className="block ledger-label mb-1">
-                              Themes <span className="font-normal normal-case" style={{ color: 'var(--ink-faint)' }}>(comma-separated)</span>
-                            </label>
-                            <input
-                              value={draft.relevant_themes.join(', ')}
-                              onChange={e => setDetailDraft(prev => ({ ...prev, [s.id]: { ...prev[s.id], relevant_themes: e.target.value.split(',').map(t => t.trim()).filter(Boolean) } }))}
-                              style={settingsInputStyle}
-                              onFocus={e => (e.currentTarget.style.borderColor = 'var(--accent-primary)')}
-                              onBlur={e => (e.currentTarget.style.borderColor = 'var(--rule-subtle)')}
-                              placeholder="e.g. health, education, arts"
-                            />
-                          </div>
+                        {/* ── Run History tab ── */}
+                        {tab === 'runs' && (
+                          <div className="space-y-3">
+                            {/* Source info row */}
+                            <div className="flex flex-wrap items-center gap-3 text-xs pb-3" style={{ borderBottom: '1px solid var(--rule-subtle)', color: 'var(--ink-muted)' }}>
+                              <TypeBadge type={s.source_type} />
+                              {s.url && (
+                                <a href={s.url} target="_blank" rel="noopener noreferrer" className="flex items-center gap-1 hover:underline" style={{ color: 'var(--accent-primary)' }}>
+                                  {s.url.replace(/^https?:\/\//, '').slice(0, 60)}
+                                  <svg className="w-3 h-3" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}><path strokeLinecap="round" strokeLinejoin="round" d="M10 6H6a2 2 0 00-2 2v10a2 2 0 002 2h10a2 2 0 002-2v-4M14 4h6m0 0v6m0-6L10 14" /></svg>
+                                </a>
+                              )}
+                              {s.api_endpoint && (
+                                <a href={s.api_endpoint} target="_blank" rel="noopener noreferrer" className="flex items-center gap-1 hover:underline" style={{ color: 'var(--state-info)' }}>
+                                  API: {s.api_endpoint.replace(/^https?:\/\//, '').slice(0, 50)}
+                                  <svg className="w-3 h-3" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}><path strokeLinecap="round" strokeLinejoin="round" d="M10 6H6a2 2 0 00-2 2v10a2 2 0 002 2h10a2 2 0 002-2v-4M14 4h6m0 0v6m0-6L10 14" /></svg>
+                                </a>
+                              )}
+                              <button
+                                onClick={e => { e.stopPropagation(); fetchRunHistory(s.id); }}
+                                className="ml-auto text-xs flex items-center gap-1 transition-colors"
+                                style={{ color: 'var(--accent-primary)' }}
+                                title="Refresh run history"
+                              >
+                                {loadingRuns === s.id ? (
+                                  <svg className="animate-spin h-3 w-3" fill="none" viewBox="0 0 24 24"><circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"/><path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z"/></svg>
+                                ) : (
+                                  <svg className="w-3 h-3" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}><path strokeLinecap="round" strokeLinejoin="round" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" /></svg>
+                                )}
+                                Refresh
+                              </button>
+                            </div>
 
-                          {/* Notes */}
-                          <div className="md:col-span-2">
-                            <label className="block ledger-label mb-1">Notes</label>
-                            <textarea
-                              value={draft.notes}
-                              onChange={e => setDetailDraft(prev => ({ ...prev, [s.id]: { ...prev[s.id], notes: e.target.value } }))}
-                              rows={2}
-                              className="resize-none"
-                              style={settingsInputStyle}
-                              onFocus={e => (e.currentTarget.style.borderColor = 'var(--accent-primary)')}
-                              onBlur={e => (e.currentTarget.style.borderColor = 'var(--rule-subtle)')}
-                            />
-                          </div>
+                            {loadingRuns === s.id ? (
+                              <p className="text-xs py-6 text-center" style={{ color: 'var(--ink-faint)' }}>Loading run history…</p>
+                            ) : runs.length === 0 ? (
+                              <p className="text-xs py-6 text-center" style={{ color: 'var(--ink-faint)' }}>No runs recorded yet. Click Run now to trigger the first scan.</p>
+                            ) : (
+                              <div className="space-y-2">
+                                {runs.map(run => {
+                                  const isFailed = run.status === 'failed';
+                                  const isSuccess = run.status === 'success';
+                                  const hasWarnings = run.warnings?.length > 0;
+                                  const runDiag = diagnoses[run.id];
+                                  const duration = run.started_at && run.ended_at
+                                    ? Math.round((new Date(run.ended_at).getTime() - new Date(run.started_at).getTime()) / 1000)
+                                    : null;
 
-                          {/* Scraper Config JSON editor */}
-                          <div className="md:col-span-2">
-                            <label className="block ledger-label mb-1">
-                              Scraper Config <span className="font-normal normal-case" style={{ color: 'var(--ink-faint)' }}>(JSON)</span>
-                            </label>
-                            <textarea
-                              value={draft._scraperConfigText}
-                              onChange={e => setDetailDraft(prev => ({ ...prev, [s.id]: { ...prev[s.id], _scraperConfigText: e.target.value } }))}
-                              rows={8}
-                              spellCheck={false}
-                              className="resize-y"
-                              style={{
-                                ...settingsInputStyle,
-                                fontFamily: 'var(--font-mono, monospace)',
-                                ...(jsonError ? { borderColor: 'var(--state-danger)', background: 'var(--state-danger-bg)' } : {}),
-                              }}
-                              onFocus={e => (e.currentTarget.style.borderColor = jsonError ? 'var(--state-danger)' : 'var(--accent-primary)')}
-                              onBlur={e => (e.currentTarget.style.borderColor = jsonError ? 'var(--state-danger)' : 'var(--rule-subtle)')}
-                            />
-                            {jsonError && (
-                              <p className="mt-1 text-xs" style={{ color: 'var(--state-danger)' }}>JSON error: {jsonError}</p>
+                                  return (
+                                    <div
+                                      key={run.id}
+                                      className="p-3 space-y-2"
+                                      style={{
+                                        border: `1px solid ${isFailed ? 'var(--state-danger)' : hasWarnings ? 'var(--state-warning)' : 'var(--rule-subtle)'}`,
+                                        borderRadius: 'var(--radius-sm)',
+                                        background: isFailed ? 'var(--state-danger-bg)' : hasWarnings ? 'var(--state-warning-bg)' : 'var(--surface-panel)',
+                                      }}
+                                    >
+                                      {/* Run header */}
+                                      <div className="flex items-center gap-2 flex-wrap">
+                                        <span
+                                          className="text-[10px] font-semibold px-1.5 py-0.5 rounded-[var(--radius-xs)]"
+                                          style={{
+                                            background: isFailed ? 'var(--state-danger)' : isSuccess ? 'var(--state-success)' : 'var(--state-warning)',
+                                            color: 'var(--ink-inverse)',
+                                          }}
+                                        >
+                                          {run.status.toUpperCase()}
+                                        </span>
+                                        <span className="mono-data text-[11px]" style={{ color: 'var(--ink-muted)' }}>
+                                          {run.started_at ? formatDate(run.started_at) : '—'}
+                                        </span>
+                                        {duration !== null && (
+                                          <span className="mono-data text-[10px]" style={{ color: 'var(--ink-faint)' }}>{duration}s</span>
+                                        )}
+                                        <div className="ml-auto flex items-center gap-3 mono-data text-[11px]" style={{ color: 'var(--ink-muted)' }}>
+                                          <span title="Records fetched">{run.records_found ?? 0} fetched</span>
+                                          <span title="New opportunities" style={{ color: run.new_opportunities > 0 ? 'var(--state-success)' : undefined }}>+{run.new_opportunities ?? 0} new</span>
+                                          <span title="Duplicates skipped">{run.duplicates ?? 0} dupes</span>
+                                        </div>
+                                      </div>
+
+                                      {/* Log summary */}
+                                      {run.log_summary && (
+                                        <p className="mono-data text-[10px] px-2 py-1.5 rounded" style={{ background: 'var(--surface-sunken)', color: 'var(--ink-secondary)', whiteSpace: 'pre-wrap', wordBreak: 'break-all' }}>
+                                          {run.log_summary}
+                                        </p>
+                                      )}
+
+                                      {/* Warnings */}
+                                      {hasWarnings && (
+                                        <div className="space-y-1">
+                                          {run.warnings.map((w, i) => (
+                                            <p key={i} className="text-[11px] flex items-start gap-1.5" style={{ color: 'var(--state-warning)' }}>
+                                              <svg className="w-3 h-3 shrink-0 mt-0.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}><path strokeLinecap="round" strokeLinejoin="round" d="M12 9v2m0 4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" /></svg>
+                                              {w}
+                                            </p>
+                                          ))}
+                                        </div>
+                                      )}
+
+                                      {/* Errors */}
+                                      {run.errors?.length > 0 && (
+                                        <div className="space-y-1">
+                                          {run.errors.map((err, i) => (
+                                            <p key={i} className="mono-data text-[10px] px-2 py-1.5 rounded" style={{ background: 'var(--state-danger-bg)', color: 'var(--state-danger)', whiteSpace: 'pre-wrap', wordBreak: 'break-all', border: '1px solid var(--state-danger)' }}>
+                                              {err}
+                                            </p>
+                                          ))}
+                                        </div>
+                                      )}
+
+                                      {/* Traceback (collapsed) */}
+                                      {run.traceback && (
+                                        <details className="text-[10px]">
+                                          <summary className="cursor-pointer" style={{ color: 'var(--state-danger)', opacity: 0.8 }}>Full traceback</summary>
+                                          <pre className="mt-1 px-2 py-1.5 rounded overflow-auto max-h-40 text-[10px]" style={{ background: 'var(--surface-base)', color: 'var(--ink-secondary)', whiteSpace: 'pre-wrap', wordBreak: 'break-all' }}>
+                                            {run.traceback}
+                                          </pre>
+                                        </details>
+                                      )}
+
+                                      {/* Diagnosis result */}
+                                      {runDiag && (
+                                        <div className="mt-2 p-2.5 space-y-2 rounded" style={{ background: 'var(--state-info-bg)', border: '1px solid var(--state-info)' }}>
+                                          <p className="text-[11px] font-semibold" style={{ color: 'var(--state-info)' }}>AI Diagnosis</p>
+                                          <p className="text-[11px]" style={{ color: 'var(--ink-secondary)' }}>{runDiag.diagnosis}</p>
+                                          {runDiag.root_cause && (
+                                            <p className="mono-data text-[10px]" style={{ color: 'var(--ink-muted)' }}>Root cause: {runDiag.root_cause}</p>
+                                          )}
+                                          {runDiag.action_items?.length > 0 && (
+                                            <ul className="list-disc list-inside space-y-0.5">
+                                              {runDiag.action_items.map((item, i) => (
+                                                <li key={i} className="text-[11px]" style={{ color: 'var(--ink-secondary)' }}>{item}</li>
+                                              ))}
+                                            </ul>
+                                          )}
+                                          {(runDiag.suggested_config || runDiag.suggested_type) && (
+                                            <button
+                                              onClick={e => { e.stopPropagation(); applyDiagnosisFix(s.id, run.id); }}
+                                              className="text-[11px] px-2.5 py-1 transition-colors"
+                                              style={{ background: 'var(--accent-primary)', color: 'var(--ink-inverse)', borderRadius: 'var(--radius-xs)' }}
+                                            >
+                                              Apply suggested config →
+                                            </button>
+                                          )}
+                                        </div>
+                                      )}
+
+                                      {/* Diagnose button */}
+                                      {!runDiag && (isFailed || run.new_opportunities === 0) && (
+                                        <button
+                                          onClick={e => { e.stopPropagation(); handleDiagnose(s.id, run.id); }}
+                                          disabled={diagnosing === run.id}
+                                          className="text-[11px] px-2.5 py-1 transition-colors disabled:opacity-50 flex items-center gap-1.5"
+                                          style={{
+                                            color: 'var(--accent-primary)',
+                                            border: '1px solid var(--accent-primary)',
+                                            borderRadius: 'var(--radius-xs)',
+                                            background: 'transparent',
+                                          }}
+                                          onMouseEnter={e => (e.currentTarget.style.background = 'var(--state-info-bg)')}
+                                          onMouseLeave={e => (e.currentTarget.style.background = 'transparent')}
+                                        >
+                                          {diagnosing === run.id ? (
+                                            <>
+                                              <svg className="animate-spin h-3 w-3" fill="none" viewBox="0 0 24 24"><circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"/><path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z"/></svg>
+                                              Diagnosing…
+                                            </>
+                                          ) : (
+                                            <>
+                                              <svg className="w-3 h-3" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}><path strokeLinecap="round" strokeLinejoin="round" d="M9.663 17h4.673M12 3v1m6.364 1.636l-.707.707M21 12h-1M4 12H3m3.343-5.657l-.707-.707m2.828 9.9a5 5 0 117.072 0l-.548.547A3.374 3.374 0 0014 18.469V19a2 2 0 11-4 0v-.531c0-.895-.356-1.754-.988-2.386l-.548-.547z" /></svg>
+                                              Diagnose with AI
+                                            </>
+                                          )}
+                                        </button>
+                                      )}
+                                    </div>
+                                  );
+                                })}
+                              </div>
                             )}
                           </div>
-                        </div>
+                        )}
 
-                        {/* Save / error row */}
-                        <div className="mt-4 flex items-center justify-between gap-3">
-                          {detailError[s.id] && !jsonError && (
-                            <p className="text-xs" style={{ color: 'var(--state-danger)' }}>{detailError[s.id]}</p>
-                          )}
-                          <div className="ml-auto flex items-center gap-2">
-                            <button
-                              onClick={() => setExpandedSource(null)}
-                              className="text-xs px-3 py-1.5 transition-colors"
-                              style={{
-                                color: 'var(--accent-primary)',
-                                border: '1px solid var(--accent-primary)',
-                                borderRadius: 'var(--radius-sm)',
-                                background: 'transparent',
-                              }}
-                              onMouseEnter={e => (e.currentTarget.style.background = 'var(--state-info-bg)')}
-                              onMouseLeave={e => (e.currentTarget.style.background = 'transparent')}
-                            >
-                              Cancel
-                            </button>
-                            <button
-                              onClick={() => handleSaveDetail(s.id)}
-                              disabled={savingDetail === s.id || Boolean(jsonError)}
-                              className="text-xs px-4 py-1.5 transition-colors disabled:opacity-50"
-                              style={{
-                                background: 'var(--accent-primary)',
-                                color: 'var(--ink-inverse)',
-                                borderRadius: 'var(--radius-sm)',
-                              }}
-                            >
-                              {savingDetail === s.id ? 'Saving…' : 'Save changes'}
-                            </button>
+                        {/* ── Edit Config tab ── */}
+                        {tab === 'edit' && (
+                          <div>
+                            <div className="grid grid-cols-1 md:grid-cols-2 gap-4 text-xs">
+                              {/* Name */}
+                              <div>
+                                <label className="block ledger-label mb-1">Name</label>
+                                <input
+                                  value={draft.name}
+                                  onChange={e => setDetailDraft(prev => ({ ...prev, [s.id]: { ...prev[s.id], name: e.target.value } }))}
+                                  style={settingsInputStyle}
+                                  onFocus={e => (e.currentTarget.style.borderColor = 'var(--accent-primary)')}
+                                  onBlur={e => (e.currentTarget.style.borderColor = 'var(--rule-subtle)')}
+                                />
+                              </div>
+
+                              {/* URL */}
+                              <div>
+                                <label className="block ledger-label mb-1">URL</label>
+                                <div className="flex items-center gap-2">
+                                  <input
+                                    value={draft.url}
+                                    onChange={e => setDetailDraft(prev => ({ ...prev, [s.id]: { ...prev[s.id], url: e.target.value } }))}
+                                    style={{ ...settingsInputStyle, flex: 1 }}
+                                    onFocus={e => (e.currentTarget.style.borderColor = 'var(--accent-primary)')}
+                                    onBlur={e => (e.currentTarget.style.borderColor = 'var(--rule-subtle)')}
+                                    placeholder="https://…"
+                                  />
+                                  {draft.url && (
+                                    <a href={draft.url} target="_blank" rel="noopener noreferrer" title="Open URL" style={{ color: 'var(--accent-primary)' }}>
+                                      <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}><path strokeLinecap="round" strokeLinejoin="round" d="M10 6H6a2 2 0 00-2 2v10a2 2 0 002 2h10a2 2 0 002-2v-4M14 4h6m0 0v6m0-6L10 14" /></svg>
+                                    </a>
+                                  )}
+                                </div>
+                              </div>
+
+                              {/* Scraper type (read-only) */}
+                              <div>
+                                <label className="block ledger-label mb-1">Scraper Type</label>
+                                <TypeBadge type={s.source_type} />
+                              </div>
+
+                              {/* Frequency */}
+                              <div>
+                                <label className="block ledger-label mb-1">Frequency</label>
+                                <select
+                                  value={draft.refresh_frequency}
+                                  onChange={e => setDetailDraft(prev => ({ ...prev, [s.id]: { ...prev[s.id], refresh_frequency: e.target.value } }))}
+                                  style={settingsInputStyle}
+                                  onFocus={e => (e.currentTarget.style.borderColor = 'var(--accent-primary)')}
+                                  onBlur={e => (e.currentTarget.style.borderColor = 'var(--rule-subtle)')}
+                                >
+                                  {FREQUENCIES.map(f => <option key={f} value={f} className="capitalize">{f}</option>)}
+                                </select>
+                              </div>
+
+                              {/* Themes */}
+                              <div className="md:col-span-2">
+                                <label className="block ledger-label mb-1">
+                                  Themes <span className="font-normal normal-case" style={{ color: 'var(--ink-faint)' }}>(comma-separated)</span>
+                                </label>
+                                <input
+                                  value={draft.relevant_themes.join(', ')}
+                                  onChange={e => setDetailDraft(prev => ({ ...prev, [s.id]: { ...prev[s.id], relevant_themes: e.target.value.split(',').map(t => t.trim()).filter(Boolean) } }))}
+                                  style={settingsInputStyle}
+                                  onFocus={e => (e.currentTarget.style.borderColor = 'var(--accent-primary)')}
+                                  onBlur={e => (e.currentTarget.style.borderColor = 'var(--rule-subtle)')}
+                                  placeholder="e.g. health, education, arts"
+                                />
+                              </div>
+
+                              {/* Notes */}
+                              <div className="md:col-span-2">
+                                <label className="block ledger-label mb-1">Notes</label>
+                                <textarea
+                                  value={draft.notes}
+                                  onChange={e => setDetailDraft(prev => ({ ...prev, [s.id]: { ...prev[s.id], notes: e.target.value } }))}
+                                  rows={2}
+                                  className="resize-none"
+                                  style={settingsInputStyle}
+                                  onFocus={e => (e.currentTarget.style.borderColor = 'var(--accent-primary)')}
+                                  onBlur={e => (e.currentTarget.style.borderColor = 'var(--rule-subtle)')}
+                                />
+                              </div>
+
+                              {/* Scraper Config JSON editor */}
+                              <div className="md:col-span-2">
+                                <label className="block ledger-label mb-1">
+                                  Scraper Config <span className="font-normal normal-case" style={{ color: 'var(--ink-faint)' }}>(JSON)</span>
+                                </label>
+                                <textarea
+                                  value={draft._scraperConfigText}
+                                  onChange={e => setDetailDraft(prev => ({ ...prev, [s.id]: { ...prev[s.id], _scraperConfigText: e.target.value } }))}
+                                  rows={8}
+                                  spellCheck={false}
+                                  className="resize-y"
+                                  style={{
+                                    ...settingsInputStyle,
+                                    fontFamily: 'var(--font-mono, monospace)',
+                                    ...(jsonError ? { borderColor: 'var(--state-danger)', background: 'var(--state-danger-bg)' } : {}),
+                                  }}
+                                  onFocus={e => (e.currentTarget.style.borderColor = jsonError ? 'var(--state-danger)' : 'var(--accent-primary)')}
+                                  onBlur={e => (e.currentTarget.style.borderColor = jsonError ? 'var(--state-danger)' : 'var(--rule-subtle)')}
+                                />
+                                {jsonError && (
+                                  <p className="mt-1 text-xs" style={{ color: 'var(--state-danger)' }}>JSON error: {jsonError}</p>
+                                )}
+                              </div>
+                            </div>
+
+                            {/* Save / error row */}
+                            <div className="mt-4 flex items-center justify-between gap-3">
+                              {detailError[s.id] && !jsonError && (
+                                <p className="text-xs" style={{ color: 'var(--state-danger)' }}>{detailError[s.id]}</p>
+                              )}
+                              <div className="ml-auto flex items-center gap-2">
+                                <button
+                                  onClick={e => { e.stopPropagation(); setExpandedSource(null); }}
+                                  className="text-xs px-3 py-1.5 transition-colors"
+                                  style={{
+                                    color: 'var(--accent-primary)',
+                                    border: '1px solid var(--accent-primary)',
+                                    borderRadius: 'var(--radius-sm)',
+                                    background: 'transparent',
+                                  }}
+                                  onMouseEnter={e => (e.currentTarget.style.background = 'var(--state-info-bg)')}
+                                  onMouseLeave={e => (e.currentTarget.style.background = 'transparent')}
+                                >
+                                  Cancel
+                                </button>
+                                <button
+                                  onClick={e => { e.stopPropagation(); handleSaveDetail(s.id); }}
+                                  disabled={savingDetail === s.id || Boolean(jsonError)}
+                                  className="text-xs px-4 py-1.5 transition-colors disabled:opacity-50"
+                                  style={{
+                                    background: 'var(--accent-primary)',
+                                    color: 'var(--ink-inverse)',
+                                    borderRadius: 'var(--radius-sm)',
+                                  }}
+                                >
+                                  {savingDetail === s.id ? 'Saving…' : 'Save changes'}
+                                </button>
+                              </div>
+                            </div>
                           </div>
-                        </div>
+                        )}
+
                       </td>
                     </tr>
                     );

@@ -191,6 +191,7 @@ def scan_source(self, source_id: str):
         db.commit()
 
         try:
+            import traceback
             # Get the appropriate scraper
             from app.scrapers import get_scraper
             scraper = get_scraper(source)
@@ -199,6 +200,8 @@ def scan_source(self, source_id: str):
             new_count = 0
             updated_count = 0
             dup_count = 0
+            skipped_count = 0
+            warnings: list[str] = []
 
             for listing in raw_listings:
                 result = _process_listing(
@@ -210,6 +213,17 @@ def scan_source(self, source_id: str):
                     updated_count += 1
                 elif result == "duplicate":
                     dup_count += 1
+                elif result == "skipped":
+                    skipped_count += 1
+
+            if len(raw_listings) == 0:
+                warnings.append("Scraper returned 0 listings — page may have changed structure, be rate-limited, or require JS rendering.")
+            elif new_count == 0 and dup_count == len(raw_listings):
+                warnings.append(f"All {dup_count} listings were duplicates of existing opportunities.")
+            elif skipped_count > 0:
+                warnings.append(f"{skipped_count} listings skipped (no URL, award records, or invalid data).")
+
+            duration_s = round((datetime.utcnow() - run.started_at).total_seconds(), 1)
 
             # Update run record
             run.status = SourceRunStatus.SUCCESS
@@ -218,6 +232,14 @@ def scan_source(self, source_id: str):
             run.new_opportunities = new_count
             run.updated_opportunities = updated_count
             run.duplicates = dup_count
+            run.warnings = warnings
+            run.log_summary = (
+                f"type={source.source_type} | "
+                f"fetched={len(raw_listings)} | new={new_count} | "
+                f"updated={updated_count} | dupes={dup_count} | "
+                f"skipped={skipped_count} | duration={duration_s}s"
+                + (f" | WARNINGS: {'; '.join(warnings)}" if warnings else "")
+            )
 
             # Update source stats; restore broken/under_review sources on success
             source.status = "active"
@@ -232,9 +254,14 @@ def scan_source(self, source_id: str):
             return {"source": source.name, "new": new_count, "updated": updated_count, "duplicates": dup_count}
 
         except Exception as e:
+            tb = traceback.format_exc()
             run.status = SourceRunStatus.FAILED
             run.ended_at = datetime.utcnow()
             run.errors = [str(e)]
+            run.log_summary = f"type={source.source_type} | FAILED: {type(e).__name__}: {e}"
+            run.warnings = []
+            # Store the full traceback in notes for debugging
+            run.notes = tb[-2000:] if len(tb) > 2000 else tb
             source.error_log = (source.error_log or []) + [{"time": str(datetime.utcnow()), "error": str(e)}]
             db.commit()
             logger.error("Source scan failed", source=source.name, error=str(e))
