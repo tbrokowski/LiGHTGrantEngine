@@ -87,110 +87,47 @@ export default function Sidebar() {
           className="absolute inset-0 pointer-events-none select-none overflow-hidden"
           aria-hidden
         >
-          {/* Wave layer A — primary, 3 peaks baked into a 300%-wide gradient.
-              background-position scrolls the peaks left→right at 11s/cycle. */}
-          <div
-            style={{
-              position: 'absolute',
-              inset: 0,
-              backgroundImage: [
-                'linear-gradient(180deg,',
-                '  transparent        0%,',
-                '  rgba(255,255,255,0.012)  8%,',
-                '  rgba(255,255,255,0.062) 14%,',
-                '  rgba(255,255,255,0.012) 20%,',
-                '  transparent       30%,',
-                '  rgba(255,255,255,0.009) 43%,',
-                '  rgba(255,255,255,0.050) 49%,',
-                '  rgba(255,255,255,0.009) 55%,',
-                '  transparent       65%,',
-                '  rgba(255,255,255,0.006) 78%,',
-                '  rgba(255,255,255,0.036) 84%,',
-                '  transparent      100%)',
-              ].join(''),
-              backgroundSize: '100% 300%',
-              animation: 'lh-wave 11s linear infinite',
-            }}
-          />
-          {/* Wave layer B — slightly narrower peaks, faster, phase-offset.
-              Constructive interference at crossings creates convincing swell. */}
-          <div
-            style={{
-              position: 'absolute',
-              inset: 0,
-              backgroundImage: [
-                'linear-gradient(180deg,',
-                '  transparent        0%,',
-                '  rgba(255,255,255,0.010) 11%,',
-                '  rgba(255,255,255,0.048) 17%,',
-                '  rgba(255,255,255,0.010) 23%,',
-                '  transparent       36%,',
-                '  rgba(255,255,255,0.007) 51%,',
-                '  rgba(255,255,255,0.040) 58%,',
-                '  rgba(255,255,255,0.007) 65%,',
-                '  transparent       80%,',
-                '  transparent      100%)',
-              ].join(''),
-              backgroundSize: '100% 250%',
-              animation: 'lh-wave 7.5s linear infinite',
-              animationDelay: '-3.8s',
-            }}
-          />
-
           {/* Lighthouse + beam assembly
-              width: 100% of sidebar; aspect-ratio 2/3 sets height to 150% of width.
-              Vertically centered so the tower fills the nav area. */}
+              width: 150% of sidebar (overflows, clipped); aspect-ratio 2/3
+              gives height = 225% of sidebar width — fills the nav area. */}
           <div
             style={{
               position: 'absolute',
               top: '50%',
               left: '50%',
               transform: 'translate(-50%, -50%)',
-              width: '100%',
+              width: '150%',
               aspectRatio: '2 / 3',
             }}
           >
-            {/* Fan beam — behind image, pivots at lantern (left-center of element) */}
+            {/* Narrow triangle beam — true single-point apex, opens as it extends.
+                clipPath polygon(0 50%, …) starts at one pixel-thin point at the
+                left-center, expanding to a slim cone at the far end.
+                rotate(75deg) in the keyframe points it steeply downward. */}
             <div
               style={{
                 position: 'absolute',
                 top: '7%',
                 left: '50%',
-                width: '240%',
-                height: '45%',
+                width: '200%',
+                height: '50%',
                 transformOrigin: '0 50%',
-                clipPath: 'polygon(0 28%, 0 72%, 100% 100%, 100% 0%)',
-                background: 'linear-gradient(to right, rgba(255,255,255,0.16), transparent 85%)',
+                clipPath: 'polygon(0 50%, 100% 20%, 100% 80%)',
+                background: 'linear-gradient(to right, rgba(255,255,255,0.22) 0%, transparent 85%)',
                 animation: 'lh-beam 6s ease-in-out infinite',
               }}
             />
 
-            {/* Lighthouse silhouette — in front of beam, behind ray */}
+            {/* Lighthouse silhouette — rendered above beam */}
             <Image
               src="/lighthouse.png"
               alt=""
               fill
               style={{
-                opacity: 0.10,
+                opacity: 0.11,
                 objectFit: 'contain',
                 objectPosition: 'center',
                 filter: 'brightness(0) invert(1)',
-              }}
-            />
-
-            {/* Thin ray — same apex as fan, rotates downward to complement
-                the upper-right beam (≈95° apart, creating a diverging pair). */}
-            <div
-              style={{
-                position: 'absolute',
-                top: '8%',
-                left: '50%',
-                width: '180%',
-                height: '1px',
-                transformOrigin: '0 0',
-                transform: 'rotate(70deg)',
-                background: 'linear-gradient(to right, rgba(255,255,255,0.60), transparent 75%)',
-                animation: 'lh-ray 6s ease-in-out infinite',
               }}
             />
           </div>

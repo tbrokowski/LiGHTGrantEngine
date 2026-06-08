@@ -253,10 +253,10 @@ body {
 }
 
 @keyframes lh-beam {
-  0%, 100% { opacity: 0.07; transform: rotate(-25deg) scaleX(0.90); }
-  40%       { opacity: 0.20; transform: rotate(-25deg) scaleX(1.02); }
-  48%       { opacity: 0.42; transform: rotate(-25deg) scaleX(1.06); }
-  58%       { opacity: 0.12; transform: rotate(-25deg) scaleX(1.00); }
+  0%, 100% { opacity: 0.07; transform: rotate(75deg) scaleX(0.90); }
+  40%       { opacity: 0.20; transform: rotate(75deg) scaleX(1.02); }
+  48%       { opacity: 0.42; transform: rotate(75deg) scaleX(1.06); }
+  58%       { opacity: 0.12; transform: rotate(75deg) scaleX(1.00); }
 }
 
 @keyframes lh-ray {
