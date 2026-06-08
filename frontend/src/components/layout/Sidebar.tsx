@@ -93,7 +93,7 @@ export default function Sidebar() {
           <div
             style={{
               position: 'absolute',
-              top: '58%',
+              top: '63%',
               left: '50%',
               transform: 'translate(-50%, -50%)',
               width: '150%',
@@ -108,7 +108,7 @@ export default function Sidebar() {
             <div
               style={{
                 position: 'absolute',
-                top: '15%',
+                top: '10%',
                 left: '50%',
                 width: '200%',
                 height: '40%',
