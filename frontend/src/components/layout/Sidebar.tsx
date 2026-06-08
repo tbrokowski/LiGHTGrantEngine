@@ -88,27 +88,27 @@ export default function Sidebar() {
           aria-hidden
         >
           {/* Lighthouse + beam assembly
-              width: 150% of sidebar (same as before, clipped by overflow-hidden).
-              height: 90% of nav area — independent of width so the lighthouse
-              fills most of the vertical space regardless of screen size.
-              objectFit cover + objectPosition top keeps the tower/lantern visible. */}
+              top:58% shifts the center below mid-point so the base sits lower
+              in the nav area. width/height unchanged. */}
           <div
             style={{
               position: 'absolute',
-              top: '50%',
+              top: '58%',
               left: '50%',
               transform: 'translate(-50%, -50%)',
               width: '150%',
               height: '90%',
             }}
           >
-            {/* Narrow triangle beam — apex at lantern (y≈20%, x≈50% of image).
-                rotate(-10deg) in keyframe matches the upper-right ray baked into
-                the lighthouse PNG (pixel-traced from lantern at y=312, x=512). */}
+            {/* Narrow triangle beam — apex at lantern.
+                top:15% (moved up from 20%) sits at the glass lantern room,
+                just above the structural tower top.
+                rotate(25deg) points the beam downward-right to match the
+                lighthouse image's ray direction. */}
             <div
               style={{
                 position: 'absolute',
-                top: '20%',
+                top: '15%',
                 left: '50%',
                 width: '200%',
                 height: '40%',
