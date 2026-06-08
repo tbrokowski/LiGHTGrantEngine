@@ -299,7 +299,7 @@ export function GrantFiltersPanel({ institutionId, isOrgAdmin }: GrantFiltersPan
                 value={orgProfile.projects ?? ''}
                 onChange={e => setOrgProfile(p => ({ ...p, projects: e.target.value }))}
                 rows={3}
-                placeholder="Describe active projects (Mamai, federated learning, etc.) for AI summaries"
+                placeholder="Describe active projects and research areas for AI summaries"
                 className="w-full border border-gray-300 rounded-md px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
               />
             </div>
