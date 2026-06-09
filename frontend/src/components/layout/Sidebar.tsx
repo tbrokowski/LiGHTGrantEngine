@@ -109,8 +109,8 @@ export default function Sidebar() {
             <div
               style={{
                 position: 'absolute',
-                top: '2%',
-                left: '50%',
+                top: '5%',
+                left: '53%',
                 width: '200%',
                 height: '40%',
                 transformOrigin: '0 50%',
