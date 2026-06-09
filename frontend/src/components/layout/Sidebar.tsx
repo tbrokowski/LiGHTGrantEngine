@@ -109,7 +109,7 @@ export default function Sidebar() {
             <div
               style={{
                 position: 'absolute',
-                top: '-2%',
+                top: '2%',
                 left: '50%',
                 width: '200%',
                 height: '40%',
