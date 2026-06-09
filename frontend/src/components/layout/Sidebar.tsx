@@ -100,15 +100,16 @@ export default function Sidebar() {
               height: '90%',
             }}
           >
-            {/* Narrow triangle beam — apex at lantern.
-                top:15% (moved up from 20%) sits at the glass lantern room,
-                just above the structural tower top.
-                rotate(25deg) points the beam downward-right to match the
-                lighthouse image's ray direction. */}
+            {/* Narrow triangle beam.
+                KEY: transformOrigin is '0 50%' so the pivot (apex) sits at
+                     top + height/2 in container coords, NOT at top.
+                     With height:40%, apex = top + 20%.
+                     Lantern is at ~20% of container → top = 20% - 20% = 0%.
+                     Using top:-2% puts apex at 18%, just above the glass dome. */}
             <div
               style={{
                 position: 'absolute',
-                top: '10%',
+                top: '-2%',
                 left: '50%',
                 width: '200%',
                 height: '40%',
