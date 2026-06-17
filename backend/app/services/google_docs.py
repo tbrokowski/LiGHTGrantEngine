@@ -5,13 +5,18 @@ edited in the user's own Google account.  Call
 google_auth.get_valid_google_token() before invoking these functions to ensure
 the token is not expired.
 
-Push flow:  TipTap HTML  →  parse with html.parser  →  Docs API batchUpdate
-Pull flow:  Docs API document body  →  walk structural elements  →  HTML string
+Push flow:  TipTap HTML  →  Drive API files.update (text/html media)  →  Google converts natively
+Pull flow:  Drive API files.export (text/html)  →  extract body  →  TipTap HTML
+
+Using the Drive API for push/pull preserves all formatting (tables, images,
+headings, lists, bold/italic) because Google handles the HTML↔Docs conversion
+internally — no manual parsing or batchUpdate required.
 
 Requires: google-api-python-client, google-auth
 """
 from __future__ import annotations
 
+import io
 import logging
 import re
 from html.parser import HTMLParser
@@ -428,43 +433,34 @@ def push_to_doc(
     content_html: str,
     access_token: str,
 ) -> None:
-    """Overwrite Google Doc body with content_html.
+    """Overwrite Google Doc body with content_html via Drive API.
+
+    Uploads HTML as a media body so Google converts it natively, preserving
+    tables, images, headings, lists, and all inline formatting.
 
     Args:
         doc_id: Google Docs document ID.
         content_html: HTML content to write.
         access_token: Valid Google OAuth access token for the user.
     """
-    docs_svc = _build_docs_service(access_token)
+    from googleapiclient.http import MediaIoBaseUpload  # type: ignore[import]
 
-    doc = docs_svc.documents().get(documentId=doc_id).execute()
-    body = doc.get("body", {})
-    content = body.get("content", [])
-    end_index = 1
-    if content:
-        last_elem = content[-1]
-        end_index = last_elem.get("endIndex", 1)
+    drive_svc = _build_drive_service(access_token)
 
-    requests: list[dict] = []
+    # Wrap in a minimal HTML document so the Drive importer gets proper charset
+    full_html = (
+        '<!DOCTYPE html><html><head><meta charset="utf-8"></head>'
+        f'<body>{content_html}</body></html>'
+    )
+    html_bytes = full_html.encode("utf-8")
+    media = MediaIoBaseUpload(
+        io.BytesIO(html_bytes),
+        mimetype="text/html",
+        resumable=False,
+    )
+    drive_svc.files().update(fileId=doc_id, media_body=media).execute()
 
-    if end_index > 2:
-        requests.append(
-            {
-                "deleteContentRange": {
-                    "range": {"startIndex": 1, "endIndex": end_index - 1}
-                }
-            }
-        )
-
-    paragraphs = _html_to_paragraphs(content_html)
-    requests.extend(_build_insert_requests(paragraphs))
-
-    if requests:
-        docs_svc.documents().batchUpdate(
-            documentId=doc_id, body={"requests": requests}
-        ).execute()
-
-    logger.info("Pushed content to Google Doc %s", doc_id)
+    logger.info("Pushed content to Google Doc %s via Drive API", doc_id)
 
 
 def _paragraph_elements_to_html(paragraph: dict, inline_objects: dict) -> str:
@@ -547,81 +543,43 @@ def _get_list_glyph_type(doc_lists: dict, bullet: dict) -> str:
     return "ORDERED"
 
 
+def _extract_body_for_tiptap(full_html: str) -> str:
+    """Extract and lightly clean body content from Google Docs exported HTML.
+
+    Google's export HTML wraps content in <html><head>...</head><body>...</body>.
+    We pull out the body, strip Google-internal IDs and empty spans, and return
+    clean HTML ready for TipTap's setContent().
+    """
+    body_match = re.search(r"<body[^>]*>(.*?)</body>", full_html, re.I | re.S)
+    body = body_match.group(1) if body_match else full_html
+
+    # Strip Google's internal tracking IDs
+    body = re.sub(r'\s+id="docs-internal-[^"]*"', "", body)
+
+    # Remove empty spans (Google wraps single characters in spans for styling)
+    body = re.sub(r"<span[^>]*>\s*</span>", "", body)
+
+    return body.strip()
+
+
 def pull_from_doc(
     doc_id: str,
     access_token: str,
 ) -> str:
-    """Read Google Doc and return HTML representation.
+    """Read Google Doc and return HTML for TipTap via Drive API export.
+
+    Uses files.export(mimeType='text/html') which returns perfect-fidelity HTML
+    including tables, inline images (as lh3.googleusercontent.com URLs that
+    render in a browser without auth), headings, lists, and all formatting.
 
     Args:
         doc_id: Google Docs document ID.
         access_token: Valid Google OAuth access token for the user.
     """
-    docs_svc = _build_docs_service(access_token)
-    doc = docs_svc.documents().get(documentId=doc_id).execute()
-    body = doc.get("body", {})
-    content = body.get("content", [])
-    inline_objects = doc.get("inlineObjects", {})
-    doc_lists = doc.get("lists", {})
-
-    html_parts: list[str] = []
-
-    # Track open list context: (list_id, nesting_level, "ol"|"ul")
-    # We open/close list tags as list membership changes.
-    _open_list_id: str | None = None
-    _open_list_type: str | None = None  # "ol" or "ul"
-    _open_nesting: int = 0
-
-    def _close_open_list() -> None:
-        nonlocal _open_list_id, _open_list_type, _open_nesting
-        if _open_list_id is not None:
-            html_parts.append(f"</{_open_list_type}>")
-            _open_list_id = None
-            _open_list_type = None
-            _open_nesting = 0
-
-    for element in content:
-        # Tables — close any open list first
-        if "table" in element:
-            _close_open_list()
-            html_parts.append(_table_to_html(element["table"], inline_objects))
-            continue
-
-        paragraph = element.get("paragraph")
-        if not paragraph:
-            continue
-
-        bullet = paragraph.get("bullet")
-        inline_html = _paragraph_elements_to_html(paragraph, inline_objects)
-
-        if bullet:
-            list_id = bullet.get("listId", "")
-            nesting = bullet.get("nestingLevel", 0)
-            glyph_kind = _get_list_glyph_type(doc_lists, bullet)
-            list_tag = "ol" if glyph_kind == "ORDERED" else "ul"
-
-            # Open or switch list context when list_id or type changes
-            if _open_list_id != list_id or _open_list_type != list_tag:
-                _close_open_list()
-                html_parts.append(f"<{list_tag}>")
-                _open_list_id = list_id
-                _open_list_type = list_tag
-                _open_nesting = nesting
-
-            html_parts.append(f"<li>{inline_html}</li>")
-        else:
-            # Non-list paragraph — close any open list
-            _close_open_list()
-
-            style = paragraph.get("paragraphStyle", {}).get("namedStyleType", "NORMAL_TEXT")
-            tag = _style_to_tag(style)
-            if inline_html:
-                html_parts.append(f"<{tag}>{inline_html}</{tag}>")
-
-    # Close any list still open at end of document
-    _close_open_list()
-
-    return "\n".join(html_parts)
+    drive_svc = _build_drive_service(access_token)
+    content = drive_svc.files().export(fileId=doc_id, mimeType="text/html").execute()
+    html = content.decode("utf-8") if isinstance(content, bytes) else content
+    return _extract_body_for_tiptap(html)
 
 
 def read_document_as_text(
