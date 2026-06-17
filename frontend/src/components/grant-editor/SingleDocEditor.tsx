@@ -20,10 +20,14 @@ import Underline from '@tiptap/extension-underline';
 import TextAlign from '@tiptap/extension-text-align';
 import { Image } from '@tiptap/extension-image';
 import { Table, TableRow, TableHeader, TableCell } from '@tiptap/extension-table';
+import Link from '@tiptap/extension-link';
+import { TextStyle } from '@tiptap/extension-text-style';
+import { Color } from '@tiptap/extension-color';
+import { Extension } from '@tiptap/core';
 import {
   Bold, Italic, UnderlineIcon, Highlighter, List, ListOrdered,
-  AlignLeft, AlignCenter, Heading2, Heading3, Quote, Scissors,
-  TableIcon, ImageIcon,
+  AlignLeft, AlignCenter, Heading1, Heading2, Heading3, Quote, Scissors,
+  TableIcon, ImageIcon, Link2,
 } from 'lucide-react';
 import { api } from '@/lib/api';
 
@@ -74,6 +78,34 @@ const PageBreak = Node.create({
         ({ commands }: CommandProps) =>
           commands.insertContent({ type: this.name }),
     } as unknown as Partial<RawCommands>;
+  },
+});
+
+// ── Inline font style extension ────────────────────────────────────────────────
+// Adds fontSize and fontFamily attributes to the textStyle mark so Google Docs
+// exported HTML (which carries these as inline CSS) is faithfully round-tripped.
+const InlineFontStyles = Extension.create({
+  name: 'inlineFontStyles',
+  addGlobalAttributes() {
+    return [
+      {
+        types: ['textStyle'],
+        attributes: {
+          fontSize: {
+            default: null,
+            parseHTML: (el: Element) => (el as HTMLElement).style.fontSize || null,
+            renderHTML: (attrs: Record<string, unknown>) =>
+              attrs.fontSize ? { style: `font-size: ${attrs.fontSize}` } : {},
+          },
+          fontFamily: {
+            default: null,
+            parseHTML: (el: Element) => (el as HTMLElement).style.fontFamily || null,
+            renderHTML: (attrs: Record<string, unknown>) =>
+              attrs.fontFamily ? { style: `font-family: ${attrs.fontFamily}` } : {},
+          },
+        },
+      },
+    ];
   },
 });
 
@@ -132,7 +164,7 @@ export default function SingleDocEditor({
 
   const editor = useEditor({
     extensions: [
-      StarterKit.configure({ heading: { levels: [2, 3, 4] } }),
+      StarterKit.configure({ heading: { levels: [1, 2, 3, 4] } }),
       PageBreak,
       Highlight.configure({ multicolor: false }),
       Placeholder.configure({
@@ -151,17 +183,35 @@ export default function SingleDocEditor({
       TableRow,
       TableHeader,
       TableCell,
+      // Link — preserves hyperlinks from Google Docs; Cmd/Ctrl+click to open
+      Link.configure({
+        openOnClick: false,
+        HTMLAttributes: {
+          target: '_blank',
+          rel: 'noopener noreferrer',
+          class: 'text-blue-600 underline hover:text-blue-800 cursor-pointer',
+        },
+      }),
+      // TextStyle + Color + InlineFontStyles — preserve colors, font sizes, and
+      // font families from Google Docs exported HTML
+      TextStyle,
+      Color,
+      InlineFontStyles,
     ],
     content: documentHtml || '',
     editorProps: {
       attributes: {
         class: [
           'prose prose-sm max-w-none focus:outline-none',
-          'prose-headings:font-semibold prose-h2:text-base prose-h2:mt-8 prose-h2:mb-2',
+          'prose-headings:font-semibold',
+          'prose-h1:text-xl prose-h1:mt-8 prose-h1:mb-3',
+          'prose-h2:text-base prose-h2:mt-8 prose-h2:mb-2',
           'prose-h2:border-b prose-h2:border-gray-200 prose-h2:pb-1',
           'prose-p:my-1',
           'prose-table:border-collapse prose-td:border prose-td:border-gray-300 prose-td:p-1',
           'prose-th:border prose-th:border-gray-300 prose-th:p-1 prose-th:bg-gray-50',
+          'prose-img:max-w-full prose-img:h-auto prose-img:rounded prose-img:my-2',
+          'prose-a:text-blue-600 prose-a:underline prose-a:cursor-pointer',
           'text-gray-800',
         ].join(' '),
       },
@@ -285,6 +335,13 @@ export default function SingleDocEditor({
       {/* Persistent formatting toolbar */}
       <div className="flex-shrink-0 flex items-center gap-0.5 px-3 py-1.5 border-b border-gray-200 flex-wrap bg-white shadow-sm">
         <ToolbarButton
+          onClick={() => editor.chain().focus().toggleHeading({ level: 1 }).run()}
+          active={editor.isActive('heading', { level: 1 })}
+          title="Heading 1 (title)"
+        >
+          <Heading1 className="w-3.5 h-3.5" />
+        </ToolbarButton>
+        <ToolbarButton
           onClick={() => editor.chain().focus().toggleHeading({ level: 2 }).run()}
           active={editor.isActive('heading', { level: 2 })}
           title="Heading 2 (section)"
@@ -389,6 +446,20 @@ export default function SingleDocEditor({
           title="Insert image"
         >
           <ImageIcon className="w-3.5 h-3.5" />
+        </ToolbarButton>
+        <ToolbarButton
+          onClick={() => {
+            if (editor.isActive('link')) {
+              editor.chain().focus().unsetLink().run();
+              return;
+            }
+            const url = window.prompt('URL:');
+            if (url) editor.chain().focus().setLink({ href: url }).run();
+          }}
+          active={editor.isActive('link')}
+          title={editor.isActive('link') ? 'Remove link' : 'Add link'}
+        >
+          <Link2 className="w-3.5 h-3.5" />
         </ToolbarButton>
         <div className="flex-1" />
         {/* Stats: show selection counts when text is highlighted, doc totals otherwise */}
