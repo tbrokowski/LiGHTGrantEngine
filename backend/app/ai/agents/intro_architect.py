@@ -69,6 +69,7 @@ async def draft_introduction(
         min_words=min_words,
         user_instructions=user_instructions,
         intro_arc_str=arc_str,
+        refinement_feedback=kwargs.get("refinement_feedback", ""),
     )
 
     user_prompt = ctx.user_prompt + "\n\nFollow all 6 beats in order. Return JSON with draft, beats_covered, citations_used, word_count, warnings."

@@ -1,6 +1,6 @@
 ai:
   base_url: https://api.openai.com/v1
-  model: gpt-4o-mini
+  model: gpt-4o  # upgraded from gpt-4o-mini — all agents now default to 4o
   api_key: EMPTY  # set OPENAI_API_KEY env var — this field is overridden by config.py
   embeddings:
     base_url: https://api.openai.com/v1
@@ -8,120 +8,49 @@ ai:
     dimension: 1536
   generation:
     temperature: 0.3
-    max_tokens: 4096
+    max_tokens: 8192
     top_p: 0.9
-    timeout_seconds: 120
+    timeout_seconds: 180
   agent_overrides:
+    # ── Call analysis ──────────────────────────────────────────────────────────
     call_analyzer:
       model: gpt-4o
       temperature: 0.1
       max_tokens: 16000
     call_analyzer_scan:
-      model: gpt-4o-mini
+      model: gpt-4o-mini   # fast structural scan — mini is fine
       temperature: 0.1
       max_tokens: 2000
     call_analyzer_classifier:
-      model: gpt-4o-mini
+      model: gpt-4o-mini   # single-label classification — mini is fine
       temperature: 0.0
       max_tokens: 300
+    # ── Strategy & alignment ───────────────────────────────────────────────────
     go_no_go:
+      model: gpt-4o
       temperature: 0.2
-      max_tokens: 1500
+      max_tokens: 2000
     call_strategy_agent:
       model: gpt-4o
       temperature: 0.5
-      max_tokens: 3000
+      max_tokens: 4000
     idea_alignment_agent:
       model: gpt-4o
       temperature: 0.5
-      max_tokens: 3000
-    section_drafter:
-      model: gpt-4o
-      temperature: 0.4
-      max_tokens: 12000
-    draft_narrative_digest:
-      model: gpt-4o-mini
-      temperature: 0.2
-      max_tokens: 800
-    draft_orchestrator:
-      model: gpt-4o
-      temperature: 0.2
-      max_tokens: 6000
-    methods_agent:
-      model: gpt-4o
-      temperature: 0.5
-      max_tokens: 12000
-    work_package_agent:
-      model: gpt-4o
-      temperature: 0.4
-      max_tokens: 12000
-    impact_agent:
-      model: gpt-4o
-      temperature: 0.35
-      max_tokens: 8000
-    section_expander:
-      model: gpt-4o
-      temperature: 0.4
-      max_tokens: 12000
-    section_compressor:
-      model: gpt-4o-mini
-      temperature: 0.2
-      max_tokens: 8000
-    section_stitcher:
-      model: gpt-4o
-      temperature: 0.3
-      max_tokens: 12000
-    subsection_planner:
-      model: gpt-4o-mini
-      temperature: 0.2
-      max_tokens: 2000
-    domain_reviewer:
-      model: gpt-4o-mini
-      temperature: 0.1
-      max_tokens: 1500
-
-    section_splitter:
-      temperature: 0.1
-      max_tokens: 8000
-    compliance_checker:
-      temperature: 0.1
-      max_tokens: 4096
-    fit_scorer:
-      temperature: 0.1
-      max_tokens: 512
-    opportunity_summarizer:
-      model: gpt-4o-mini
-      temperature: 0.3
       max_tokens: 4000
-    style_profiler:
-      temperature: 0.5
-      max_tokens: 2048
-    style_reviewer:
-      temperature: 0.1
-      max_tokens: 2048
-    grant_reviewer:
-      temperature: 0.2
+    # ── Skeleton ───────────────────────────────────────────────────────────────
+    skeleton_planning_agent:
+      model: gpt-4o          # upgraded from mini — skeleton quality matters
+      temperature: 0.3
       max_tokens: 6000
-    intro_architect:
-      model: gpt-4o
-      temperature: 0.5
-      max_tokens: 8000
-    meta_agent:
-      model: gpt-4o
-      temperature: 0.5
-      max_tokens: 4096
+    skeleton_reviewer:
+      model: gpt-4o          # upgraded from mini
+      temperature: 0.1
+      max_tokens: 4000
     proposal_architect:
       model: gpt-4o
       temperature: 0.5
-      max_tokens: 8000
-    skeleton_planning_agent:
-      model: gpt-4o-mini
-      temperature: 0.3
-      max_tokens: 3000
-    skeleton_reviewer:
-      model: gpt-4o-mini
-      temperature: 0.1
-      max_tokens: 2000
+      max_tokens: 16000      # upgraded from 8000
     limits_extractor:
       model: gpt-4o-mini
       temperature: 0.1
@@ -134,37 +63,122 @@ ai:
       model: gpt-4o-mini
       temperature: 0.2
       max_tokens: 3000
-    hyde_expander:
-      model: gpt-4o-mini
-      temperature: 0.4
-      max_tokens: 200
+    # ── Research & planning ────────────────────────────────────────────────────
     planning_agent:
-      model: gpt-4o-mini
+      model: gpt-4o          # upgraded from mini — research plan quality matters
       temperature: 0.3
-      max_tokens: 2048
+      max_tokens: 4000       # upgraded from 2048
     research_agent:
+      model: gpt-4o          # upgraded from mini — evidence synthesis is critical
+      temperature: 0.2
+      max_tokens: 4000       # upgraded from 2048
+    hyde_expander:
+      model: gpt-4o-mini     # short query expansion — mini fine
+      temperature: 0.4
+      max_tokens: 300
+    # ── Drafting ───────────────────────────────────────────────────────────────
+    section_drafter:
+      model: gpt-4o
+      temperature: 0.4
+      max_tokens: 16000      # upgraded from 12000
+    intro_architect:
+      model: gpt-4o
+      temperature: 0.45
+      max_tokens: 16000      # upgraded from 8000
+    methods_agent:
+      model: gpt-4o
+      temperature: 0.4
+      max_tokens: 16000      # upgraded from 12000
+    work_package_agent:
+      model: gpt-4o
+      temperature: 0.4
+      max_tokens: 16000      # upgraded from 12000
+    impact_agent:
+      model: gpt-4o
+      temperature: 0.35
+      max_tokens: 12000      # upgraded from 8000
+    section_expander:
+      model: gpt-4o
+      temperature: 0.4
+      max_tokens: 12000
+    section_compressor:
       model: gpt-4o-mini
+      temperature: 0.2
+      max_tokens: 8000
+    section_stitcher:
+      model: gpt-4o
+      temperature: 0.3
+      max_tokens: 16000      # upgraded from 12000
+    subsection_planner:
+      model: gpt-4o-mini
+      temperature: 0.2
+      max_tokens: 2000
+    section_splitter:
+      model: gpt-4o
       temperature: 0.1
-      max_tokens: 2048
-    meta_agent:
+      max_tokens: 8000
+    draft_narrative_digest:
+      model: gpt-4o-mini
+      temperature: 0.2
+      max_tokens: 1000
+    draft_orchestrator:
       model: gpt-4o
       temperature: 0.2
-      max_tokens: 4096
-    citation_agent:
+      max_tokens: 8000       # upgraded from 6000
+    # ── QA & review ───────────────────────────────────────────────────────────
+    domain_reviewer:
+      model: gpt-4o          # upgraded from mini — domain accuracy check matters
       temperature: 0.1
-      max_tokens: 2048
+      max_tokens: 2000
+    meta_agent:
+      model: gpt-4o
+      temperature: 0.3
+      max_tokens: 8000       # upgraded from 4096
+    compliance_checker:
+      model: gpt-4o
+      temperature: 0.1
+      max_tokens: 8000       # upgraded from 4096
+    grant_reviewer:
+      model: gpt-4o
+      temperature: 0.2
+      max_tokens: 12000      # upgraded from 6000
+    style_profiler:
+      model: gpt-4o
+      temperature: 0.5
+      max_tokens: 4096       # upgraded from 2048
+    style_reviewer:
+      model: gpt-4o
+      temperature: 0.1
+      max_tokens: 3000
+    # ── Citations ─────────────────────────────────────────────────────────────
+    citation_agent:
+      model: gpt-4o          # upgraded from default mini
+      temperature: 0.1
+      max_tokens: 4000       # upgraded from 2048
+    # ── Misc ──────────────────────────────────────────────────────────────────
     grant_writer:
+      model: gpt-4o
       temperature: 0.5
       max_tokens: 8000
     memory_agent:
+      model: gpt-4o
       temperature: 0.2
       max_tokens: 6000
+    opportunity_summarizer:
+      model: gpt-4o-mini
+      temperature: 0.3
+      max_tokens: 4000
     ai_scraper:
+      model: gpt-4o-mini
       temperature: 0.0
       max_tokens: 4096
     grant_tagger:
-      model: gpt-4o-mini
+      model: gpt-4o-mini     # classification only — mini is fine
       temperature: 0.0
+      max_tokens: 512
+    fit_scorer:
+      model: gpt-4o-mini
+      temperature: 0.1
       max_tokens: 512
 database:
   url: postgresql://light:light@localhost:5432/light_grants
@@ -265,10 +279,10 @@ notifications:
 rag:
   chunk_size: 800
   chunk_overlap: 100
-  top_k: 8
+  top_k: 12              # upgraded from 8 — retrieve more for richer context
   keyword_weight: 0.3
   vector_weight: 0.7
-  min_similarity: 0.6
+  min_similarity: 0.55   # slightly lower threshold to surface more archive material
   enforce_ai_permissions: true
 web_search:
   enabled: true
@@ -277,7 +291,7 @@ web_search:
 citations:
   openalex_base_url: https://api.openalex.org
   pubmed_email: team@light.epfl.ch
-  max_results_per_query: 5
+  max_results_per_query: 8   # upgraded from 5
   cache_ttl_hours: 24
 parsing:
   supported_formats:

@@ -32,6 +32,7 @@ async def draft_impact_section(section_name: str, **kwargs) -> dict:
         style_profile=kwargs.get("style_profile"),
         target_words=kwargs.get("target_words"),
         min_words=kwargs.get("min_words"),
+        refinement_feedback=kwargs.get("refinement_feedback", ""),
     )
     resp = await chat_complete(
         messages=[

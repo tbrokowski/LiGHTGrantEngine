@@ -27,6 +27,7 @@ async def draft_work_packages_section(section_name: str, **kwargs) -> dict:
         target_words=kwargs.get("target_words"),
         min_words=kwargs.get("min_words"),
         user_instructions=str(kwargs.get("required_subsections") or ""),
+        refinement_feedback=kwargs.get("refinement_feedback", ""),
     )
     resp = await chat_complete(
         messages=[

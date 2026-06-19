@@ -36,6 +36,7 @@ def _common_kwargs(kwargs: dict) -> dict:
         "min_words": kwargs.get("min_words"),
         "opening_hook": kwargs.get("opening_hook", ""),
         "strategic_framing": kwargs.get("strategic_framing", ""),
+        "refinement_feedback": kwargs.get("refinement_feedback", ""),
     }
 
 

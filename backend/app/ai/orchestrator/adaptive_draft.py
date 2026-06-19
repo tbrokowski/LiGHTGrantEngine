@@ -19,7 +19,7 @@ from app.ai.agents.grant_meta_synthesizer import GrantMetaSynthesizer
 from app.ai.agents.meta_agent import check_narrative_coherence, evaluate_and_improve_section
 from app.ai.agents.planning_agent import plan_draft_research
 from app.ai.agents.research_agent import gather_section_evidence
-from app.ai.agents.draft_section_context import compress_prior_sections, evidence_coverage_check
+from app.ai.agents.draft_section_context import compress_prior_sections, evidence_coverage_check, build_refinement_feedback
 from app.ai.agents.section_length_adjuster import compress_section, expand_section
 from app.ai.agents.section_router import draft_section_routed, INTRO_KEYWORDS
 from app.ai.agents.section_stitcher import stitch_subsections
@@ -446,6 +446,24 @@ async def run_adaptive_draft_stream(
             else:
                 result = await draft_section_routed(agent, name, **draft_kwargs)
 
+                # Per-section refinement: one targeted re-draft if coverage check fails
+                draft_text_check = result.get("draft", "")
+                cov = evidence_coverage_check(
+                    draft_text_check,
+                    spec.get("must_surface_from_idea"),
+                    key_evidence,
+                    len(rag_exemplars),
+                )
+                if not cov["passed"] and cov.get("issues"):
+                    feedback = build_refinement_feedback(cov, name)
+                    if feedback:
+                        try:
+                            result = await draft_section_routed(
+                                agent, name, **{**draft_kwargs, "refinement_feedback": feedback}
+                            )
+                        except Exception:
+                            result = {"draft": draft_text_check, "word_count": len(draft_text_check.split()), "warnings": []}
+
         draft_text = result.get("draft", "")
         actual_wc = result.get("word_count") or len(draft_text.split())
         if min_words and actual_wc < min_words:
@@ -626,7 +644,7 @@ async def run_adaptive_draft_stream(
     # Bibliography
     yield sse({"event": "bibliography_start"})
     try:
-        bib = await generate_bibliography(draft_results=all_draft_results, use_llm_cleanup=False)
+        bib = await generate_bibliography(draft_results=all_draft_results, use_llm_cleanup=True)
         if bib.get("references_html"):
             html = html + "\n" + bib["references_html"]
             grant.editor_document = html

@@ -66,6 +66,7 @@ async def draft_section(
         target_words=target_words,
         min_words=min_words,
         user_instructions=user_instructions,
+        refinement_feedback=kwargs.get("refinement_feedback", ""),
     )
 
     response = await chat_complete(
