@@ -13,14 +13,14 @@
     "@tailwindcss/typography": "^0.5.19",
     "@tanstack/react-query": "^5.56.2",
     "@tiptap/extension-character-count": "^3.23.6",
-    "@tiptap/extension-color": "^3.27.0",
+    "@tiptap/extension-color": "^3.23.6",
     "@tiptap/extension-highlight": "^3.23.6",
     "@tiptap/extension-image": "^3.23.6",
-    "@tiptap/extension-link": "^3.27.0",
+    "@tiptap/extension-link": "^3.23.6",
     "@tiptap/extension-placeholder": "^3.23.6",
     "@tiptap/extension-table": "^3.23.6",
     "@tiptap/extension-text-align": "^3.23.6",
-    "@tiptap/extension-text-style": "^3.27.0",
+    "@tiptap/extension-text-style": "^3.23.6",
     "@tiptap/extension-typography": "^3.23.6",
     "@tiptap/extension-underline": "^3.23.6",
     "@tiptap/react": "^3.23.6",
@@ -42,6 +42,11 @@
     "sharp": "^0.34.5",
     "sonner": "^2.0.7",
     "tailwind-merge": "^2.5.2"
+  },
+  "overrides": {
+    "@tiptap/extension-link": "^3.23.6",
+    "@tiptap/extension-color": "^3.23.6",
+    "@tiptap/extension-text-style": "^3.23.6"
   },
   "devDependencies": {
     "@types/node": "^20",
