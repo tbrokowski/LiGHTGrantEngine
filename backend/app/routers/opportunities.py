@@ -9,6 +9,7 @@ import hashlib
 import json as _json
 from sqlalchemy import select, and_, or_, func, desc, case, text as sa_text
 from sqlalchemy import Text as SaText
+from sqlalchemy.dialects.postgresql import JSONB
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.database import get_db
@@ -33,6 +34,16 @@ settings = get_settings()
 
 QUEUE_STATUSES = ["new", "needs_review", "in_review"]
 SHORTLIST_STATUSES = ["potential_fit"]
+
+# Raw `priority`/`fit_score` labels are written inconsistently across scoring
+# pipelines (keyword_scorer writes "high"/"medium"/"low", the AI surfacing
+# pipeline writes "high_priority"/"worth_reviewing"/"low_fit"/"watchlist").
+# Group them so the single "Fit level" filter matches records from either.
+PRIORITY_GROUPS: dict[str, list[str]] = {
+    "high": ["high", "high_priority"],
+    "medium": ["medium", "worth_reviewing"],
+    "low": ["low", "low_fit", "watchlist"],
+}
 
 # ── Semantic search helpers ────────────────────────────────────────────────────
 
@@ -281,15 +292,16 @@ async def list_opportunities(
     if funder:
         filters.append(Opportunity.funder.ilike(f"%{funder}%"))
     if priority:
+        priority_values = PRIORITY_GROUPS.get(priority, [priority])
         if inst_id:
             filters.append(
                 or_(
-                    InstitutionOpportunity.priority == priority,
-                    and_(InstitutionOpportunity.priority.is_(None), Opportunity.priority == priority),
+                    InstitutionOpportunity.priority.in_(priority_values),
+                    and_(InstitutionOpportunity.priority.is_(None), Opportunity.priority.in_(priority_values)),
                 )
             )
         else:
-            filters.append(Opportunity.priority == priority)
+            filters.append(Opportunity.priority.in_(priority_values))
     if min_fit_score is not None:
         if inst_id:
             relevance_score = func.coalesce(InstitutionOpportunity.fit_score, Opportunity.fit_score, 0)
@@ -301,11 +313,11 @@ async def list_opportunities(
     if deadline_after:
         filters.append(Opportunity.deadline >= deadline_after)
     if theme:
-        filters.append(Opportunity.thematic_areas.contains([theme]))
+        filters.append(func.cast(Opportunity.thematic_areas, JSONB).contains([theme]))
     if opportunity_type:
         filters.append(Opportunity.opportunity_type == opportunity_type)
     if geography:
-        filters.append(Opportunity.geography.contains([geography]))
+        filters.append(func.cast(Opportunity.geography, JSONB).contains([geography]))
     if source_id:
         filters.append(Opportunity.source_id == source_id)
     if funder_category:
@@ -606,11 +618,11 @@ async def get_graph_data(
     if funder:
         q = q.where(Opportunity.funder.ilike(f"%{funder}%"))
     if theme:
-        q = q.where(Opportunity.thematic_areas.contains([theme]))
+        q = q.where(func.cast(Opportunity.thematic_areas, JSONB).contains([theme]))
     if min_score is not None:
         q = q.where(Opportunity.fit_score >= min_score)
     if geography:
-        q = q.where(Opportunity.geography.contains([geography]))
+        q = q.where(func.cast(Opportunity.geography, JSONB).contains([geography]))
     if deadline_days is not None:
         from datetime import date, timedelta
         cutoff = date.today() + timedelta(days=deadline_days)
