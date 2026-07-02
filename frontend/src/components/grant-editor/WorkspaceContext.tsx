@@ -11,6 +11,12 @@ export interface WorkspaceCitation {
   source_type?: string;
   url?: string;
   claim_text?: string;
+  metadata?: {
+    authors?: string[];
+    year?: string | number;
+    title?: string;
+    doi?: string;
+  };
 }
 
 export interface CoherenceResult {

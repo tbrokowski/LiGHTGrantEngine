@@ -21,10 +21,17 @@ import {
 } from '@/lib/callAnalysisStore';
 import UnifiedWorkspace from './UnifiedWorkspace';
 import AIChatPanel from './AIChatPanel';
+import CitationsPanel from './CitationsPanel';
 import WorkspaceContext, { type SyncState, type WorkspaceCitation, type CoherenceResult } from './WorkspaceContext';
 import type { MetaAgentEvent, AgentQuestion } from './MetaAgentPanel';
-import { AlertCircle, Sparkles } from 'lucide-react';
+import { AlertCircle, Sparkles, Quote } from 'lucide-react';
 import type { PanelTabType } from './split-view/types';
+import {
+  formatInlineCitation,
+  formatMlaCitation,
+  insertParagraphIntoSection,
+  ensureBibliographyAndAppend,
+} from '@/lib/citationFormat';
 
 interface GrantDetail {
   id: string;
@@ -134,6 +141,7 @@ export default function GrantEditor({ grant, onGrantUpdate, onHeadingsChange }: 
 
   // ── AI sidebar + Comments panel ───────────────────────────────────────────────
   const [aiOpen, setAiOpen] = useState(false);
+  const [sidebarTab, setSidebarTab] = useState<'assistant' | 'citations'>('assistant');
   const [aiWidth, setAiWidth] = useState<number>(() => {
     if (typeof window === 'undefined') return 340;
     return parseInt(localStorage.getItem(`aiSidebarWidth:${grant.id}`) || '340');
@@ -439,18 +447,17 @@ export default function GrantEditor({ grant, onGrantUpdate, onHeadingsChange }: 
   };
 
   const insertIntoSection = (text: string) => {
-    if (!activeSection) {
-      setDocumentHtml((prev) => prev + `<p>${text}</p>`);
-      return;
-    }
-    const regex = new RegExp(
-      `(<h2[^>]*>${activeSection.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}</h2>)([\\s\\S]*?)(?=<h2|$)`, 'i'
-    );
-    if (documentHtml.match(regex)) {
-      setDocumentHtml(documentHtml.replace(regex, `$1\n<p>${text}</p>$2`));
-    } else {
-      setDocumentHtml((prev) => prev + `<p>${text}</p>`);
-    }
+    setDocumentHtml((prev) => insertParagraphIntoSection(prev, activeSection, `<p>${text}</p>`));
+  };
+
+  const handleInsertCitation = (citation: WorkspaceCitation) => {
+    const inline = formatInlineCitation(citation);
+    const mla = formatMlaCitation(citation);
+    const dedupeKey = citation.id || citation.url || mla.slice(0, 60);
+    setDocumentHtml((prev) => {
+      const withInline = insertParagraphIntoSection(prev, activeSection, `<p>${inline}</p>`);
+      return ensureBibliographyAndAppend(withInline, mla, dedupeKey);
+    });
   };
 
   const extractError = (e: unknown): string => {
@@ -606,12 +613,32 @@ export default function GrantEditor({ grant, onGrantUpdate, onHeadingsChange }: 
 
           {/* Right: status + controls */}
           <div className="flex items-center gap-2 flex-shrink-0">
+            {/* Citations sidebar toggle */}
+            <button
+              onClick={() => {
+                if (aiOpen && sidebarTab === 'citations') { setAiOpen(false); return; }
+                setSidebarTab('citations');
+                setAiOpen(true);
+              }}
+              title={aiOpen && sidebarTab === 'citations' ? 'Hide Citations' : 'Show Citations'}
+              className={`p-1.5 rounded-lg transition-colors ${
+                aiOpen && sidebarTab === 'citations'
+                  ? 'bg-indigo-100 text-indigo-600'
+                  : 'text-gray-400 hover:bg-gray-100 hover:text-indigo-600'
+              }`}
+            >
+              <Quote className="w-4 h-4" />
+            </button>
             {/* AI sidebar toggle */}
             <button
-              onClick={() => setAiOpen((v) => !v)}
-              title={aiOpen ? 'Hide AI Assistant' : 'Show AI Assistant'}
+              onClick={() => {
+                if (aiOpen && sidebarTab === 'assistant') { setAiOpen(false); return; }
+                setSidebarTab('assistant');
+                setAiOpen(true);
+              }}
+              title={aiOpen && sidebarTab === 'assistant' ? 'Hide AI Assistant' : 'Show AI Assistant'}
               className={`p-1.5 rounded-lg transition-colors ${
-                aiOpen
+                aiOpen && sidebarTab === 'assistant'
                   ? 'bg-indigo-100 text-indigo-600'
                   : 'text-gray-400 hover:bg-gray-100 hover:text-indigo-600'
               }`}
@@ -651,18 +678,28 @@ export default function GrantEditor({ grant, onGrantUpdate, onHeadingsChange }: 
                 title="Drag to resize"
               />
               <div className="flex flex-1 min-w-0 overflow-hidden">
-                <AIChatPanel
-                  grantId={grant.id}
-                  selectedText={selectedText}
-                  activeSection={activeSection}
-                  writingPhase={activePhaseContext}
-                  getDocumentContext={getDocumentContext}
-                  onInsertText={insertIntoSection}
-                  callRequirements={callRequirements}
-                  useWritingStudio
-                  googleDocUrl={docLinked ? docUrl : null}
-                  activeDocLabel={activeDocLabel}
-                />
+                {sidebarTab === 'citations' ? (
+                  <CitationsPanel
+                    grantId={grant.id}
+                    citations={citations}
+                    onCitationsUpdate={setCitations}
+                    activeSection={activeSection}
+                    onInsertCitation={handleInsertCitation}
+                  />
+                ) : (
+                  <AIChatPanel
+                    grantId={grant.id}
+                    selectedText={selectedText}
+                    activeSection={activeSection}
+                    writingPhase={activePhaseContext}
+                    getDocumentContext={getDocumentContext}
+                    onInsertText={insertIntoSection}
+                    callRequirements={callRequirements}
+                    useWritingStudio
+                    googleDocUrl={docLinked ? docUrl : null}
+                    activeDocLabel={activeDocLabel}
+                  />
+                )}
               </div>
             </div>
           )}

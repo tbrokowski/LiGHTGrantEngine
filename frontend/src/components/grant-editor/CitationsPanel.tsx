@@ -1,22 +1,18 @@
 'use client';
 
 import { useState } from 'react';
-import { Search, ExternalLink, Loader2 } from 'lucide-react';
+import { Search, ExternalLink, Loader2, Quote } from 'lucide-react';
 import { grantWriting } from '@/lib/api';
+import type { InsertableCitation } from '@/lib/citationFormat';
 
-interface Citation {
-  id?: string;
-  formatted_citation?: string;
-  source_type?: string;
-  url?: string;
-  claim_text?: string;
-}
+type Citation = InsertableCitation & { claim_text?: string };
 
 interface CitationsPanelProps {
   grantId: string;
   citations: Citation[];
   onCitationsUpdate: (citations: Citation[]) => void;
   activeSection?: string;
+  onInsertCitation: (citation: Citation) => void;
 }
 
 export default function CitationsPanel({
@@ -24,15 +20,17 @@ export default function CitationsPanel({
   citations,
   onCitationsUpdate,
   activeSection,
+  onInsertCitation,
 }: CitationsPanelProps) {
   const [query, setQuery] = useState('');
   const [searching, setSearching] = useState(false);
+  const [insertedIds, setInsertedIds] = useState<Set<string>>(new Set());
 
   const handleSearch = async () => {
     if (!query.trim()) return;
     setSearching(true);
     try {
-      const res = await grantWriting.searchCitations(grantId, {
+      await grantWriting.searchCitations(grantId, {
         query: query.trim(),
         section_title: activeSection,
       });
@@ -41,6 +39,11 @@ export default function CitationsPanel({
     } finally {
       setSearching(false);
     }
+  };
+
+  const handleInsert = (c: Citation, key: string) => {
+    onInsertCitation(c);
+    setInsertedIds((prev) => new Set(prev).add(key));
   };
 
   return (
@@ -70,24 +73,41 @@ export default function CitationsPanel({
             Search for citations to support claims in your proposal.
           </div>
         ) : (
-          citations.map((c, i) => (
-            <div key={c.id || i} className="text-xs border border-gray-100 rounded p-2">
-              {c.source_type && (
-                <span className="text-[9px] uppercase tracking-wide text-gray-400">{c.source_type}</span>
-              )}
-              <div className="text-gray-700 mt-0.5">{c.formatted_citation}</div>
-              {c.url && (
-                <a
-                  href={c.url}
-                  target="_blank"
-                  rel="noopener noreferrer"
-                  className="inline-flex items-center gap-0.5 text-indigo-600 hover:underline mt-1"
-                >
-                  <ExternalLink className="w-3 h-3" /> Source
-                </a>
-              )}
-            </div>
-          ))
+          citations.map((c, i) => {
+            const key = c.id || String(i);
+            const inserted = insertedIds.has(key);
+            return (
+              <div key={key} className="text-xs border border-gray-100 rounded p-2">
+                {c.source_type && (
+                  <span className="text-[9px] uppercase tracking-wide text-gray-400">{c.source_type}</span>
+                )}
+                <div className="text-gray-700 mt-0.5">{c.formatted_citation}</div>
+                <div className="flex items-center gap-3 mt-1.5">
+                  {c.url && (
+                    <a
+                      href={c.url}
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      className="inline-flex items-center gap-0.5 text-indigo-600 hover:underline"
+                    >
+                      <ExternalLink className="w-3 h-3" /> Source
+                    </a>
+                  )}
+                  <button
+                    onClick={() => handleInsert(c, key)}
+                    title="Insert (Author, Year) into the active section and add to Bibliography"
+                    className={`ml-auto inline-flex items-center gap-1 rounded px-1.5 py-0.5 ${
+                      inserted
+                        ? 'text-green-600'
+                        : 'text-indigo-600 hover:bg-indigo-50'
+                    }`}
+                  >
+                    <Quote className="w-3 h-3" /> {inserted ? 'Inserted' : 'Insert'}
+                  </button>
+                </div>
+              </div>
+            );
+          })
         )}
       </div>
     </div>
