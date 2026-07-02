@@ -3,7 +3,7 @@ Build document_constraints: extract → verify → allocate → align with idea 
 """
 from __future__ import annotations
 
-from app.ai.agents.idea_constraints_aligner import MAX_ADDITIONAL_SECTIONS, align_constraints_to_idea
+from app.ai.agents.idea_constraints_aligner import align_constraints_to_idea
 from app.ai.agents.limits_extractor import extract_limits
 from app.ai.agents.limits_verifier import verify_limits
 from app.ai.services.constraint_allocator import (
@@ -189,7 +189,7 @@ async def build_document_constraints(
     # These are additive within the existing (locked) total_words budget, not on top of it.
     next_order = max((s.get("order", 0) for s in by_name.values()), default=0) + 1
     added_sections = 0
-    for extra in (alignment.get("additional_sections") or [])[:MAX_ADDITIONAL_SECTIONS]:
+    for extra in alignment.get("additional_sections") or []:
         name = (extra.get("name") or "").strip()
         if not name:
             continue

@@ -69,9 +69,9 @@ KEY EVALUATION CRITERIA:
 
 For each section that will appear in the skeleton, produce a research plan.
 Use the SECTION CONSTRAINTS if provided (they may rename or reorder sections).
-Otherwise use REQUIRED SECTIONS from the call. Include at most 18 sections — if the SECTION
-CONSTRAINTS list an enumerated set of work packages or components, plan a section for every one
-of them; do not drop or merge any to stay under a smaller count.
+Otherwise use REQUIRED SECTIONS from the call. Plan a section for every one of them — there is
+no limit on section count. If the SECTION CONSTRAINTS list an enumerated set of work packages or
+components, plan a section for every one of them; never drop or merge any to shorten the list.
 
 Respond with valid JSON:
 {{
@@ -144,7 +144,7 @@ def _format_section_constraints(section_constraints: list[dict] | None) -> str:
     if not section_constraints:
         return "None — use sections from call analysis"
     lines = []
-    for s in section_constraints[:18]:
+    for s in section_constraints:
         name = s.get("name") or s.get("title") or "Untitled"
         wl = s.get("word_limit") or s.get("wordLimit")
         pl = s.get("page_limit") or s.get("pageLimit")
