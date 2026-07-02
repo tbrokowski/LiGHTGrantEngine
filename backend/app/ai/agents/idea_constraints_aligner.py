@@ -7,7 +7,9 @@ import json
 
 from app.ai.client import chat_complete
 
-SYSTEM_PROMPT = """You align proposal section structure and word budget priorities with the team's grant idea.
+MAX_ADDITIONAL_SECTIONS = 12
+
+SYSTEM_PROMPT = f"""You align proposal section structure and word budget priorities with the team's grant idea.
 
 Do NOT change the document's total word/page limit — you are re-partitioning it, not growing it.
 
@@ -20,7 +22,15 @@ You may:
   (e.g. the idea covers three separate interventions but the call only names one generic
   "Project Description" section). Only propose a new section when the idea genuinely warrants
   a dedicated section — do not fragment content that already fits an existing section.
-  Propose at most 4 new sections total.
+  Propose at most {MAX_ADDITIONAL_SECTIONS} new sections total.
+
+Priority order when the idea enumerates a fixed set of components:
+- If the grant idea explicitly numbers or names a fixed set of work packages / components
+  (e.g. "WP1", "WP2", ... or a numbered list of sub-projects), each one is its OWN section.
+  Never collapse or drop any of them to make room for other proposed sections — they take
+  priority over any inferred thematic section (dissemination, ethics, sustainability, etc.).
+  Only fall back to merging enumerated components if the count exceeds the section budget above,
+  and even then, cut inferred/thematic sections first, not the enumerated components.
 
 Rules for new sections:
 - Never rename, remove, or skip a REQUIRED call section.
