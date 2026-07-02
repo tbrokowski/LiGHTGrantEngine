@@ -392,6 +392,7 @@ export default function GrantEditor({ grant, onGrantUpdate, onHeadingsChange }: 
     setMetaAgentEvents([]);
     setAgentQuestions([]);
     setCoherenceResult(null);
+    setDraftQaReport(null);
     try {
       await grantWritingApi.enqueueDraft(grant.id, flaggedSections ? { flagged_sections: flaggedSections } : undefined);
       startDraftGeneration(grant.id);

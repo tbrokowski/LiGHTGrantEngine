@@ -1,5 +1,6 @@
 """Route section drafting to specialized agents."""
 from __future__ import annotations
+import re
 from app.ai.agents.section_drafter import draft_section
 from app.ai.agents.intro_architect import draft_introduction
 from app.ai.agents.methods_agent import draft_methods_section
@@ -7,6 +8,24 @@ from app.ai.agents.work_package_agent import draft_work_packages_section
 from app.ai.agents.impact_agent import draft_impact_section
 
 INTRO_KEYWORDS = ("intro", "background", "problem", "executive", "rationale", "summary")
+
+_FENCE_RE = re.compile(r"^\s*```(?:html)?\s*\n?|\n?```\s*$", re.IGNORECASE)
+
+
+def _strip_markdown_fence(html: str) -> str:
+    """Strip a stray ```html / ``` code-fence the model sometimes wraps the
+    draft in despite json_mode + explicit "NO markdown" instructions — json_mode
+    only guarantees the outer JSON is valid, not that a string field's content
+    matches the requested format. Leaves ordinary HTML untouched."""
+    if not html or "```" not in html:
+        return html
+    return _FENCE_RE.sub("", html).strip()
+
+
+def _sanitize(result: dict) -> dict:
+    if isinstance(result, dict) and result.get("draft"):
+        result["draft"] = _strip_markdown_fence(result["draft"])
+    return result
 
 
 def _common_kwargs(kwargs: dict) -> dict:
@@ -49,21 +68,21 @@ async def draft_section_routed(
     """Dispatch to the appropriate drafter."""
     common = _common_kwargs(kwargs)
     if is_intro or agent == "intro":
-        return await draft_introduction(**common)
+        return _sanitize(await draft_introduction(**common))
     common["section_name"] = section_name
     if agent == "methods":
-        return await draft_methods_section(**common)
+        return _sanitize(await draft_methods_section(**common))
     if agent == "work_packages":
-        return await draft_work_packages_section(
+        return _sanitize(await draft_work_packages_section(
             **common,
             required_subsections=kwargs.get("required_subsections"),
-        )
+        ))
     if agent == "impact":
-        return await draft_impact_section(**common)
-    return await draft_section(
+        return _sanitize(await draft_impact_section(**common))
+    return _sanitize(await draft_section(
         section_name=section_name,
         section_type=kwargs.get("section_type", "other"),
         word_limit=kwargs.get("target_words") or kwargs.get("word_limit"),
         user_instructions=kwargs.get("user_instructions", ""),
         **common,
-    )
+    ))

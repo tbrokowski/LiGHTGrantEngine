@@ -575,14 +575,13 @@ async def run_adaptive_draft_stream(
             0,
         )
         _, ev_bundle = section_evidence_map.get(name, (sec, {}))
-        cov_check = evidence_coverage_check(
+        pre_cov_check = evidence_coverage_check(
             draft_text,
             spec.get("must_surface_from_idea"),
             ev_bundle.get("key_evidence"),
             exemplar_count,
         )
-        qa_report["evidence_coverage"].append({"section": name, **cov_check})
-        initial_issues = cov_check.get("issues") or []
+        initial_issues = pre_cov_check.get("issues") or []
 
         # 3-round LLM critique → refine loop for every section
         improved_html = draft_html
@@ -609,6 +608,17 @@ async def run_adaptive_draft_stream(
             qa_report["meta_sections"].append(name)
         except Exception:
             pass
+
+        # Re-check evidence coverage on the POST-improvement content — checking
+        # draft_text here (before evaluate_and_improve_section runs) would report
+        # citation/archive-usage issues the critique loop already fixed.
+        post_cov_check = evidence_coverage_check(
+            improved_html,
+            spec.get("must_surface_from_idea"),
+            ev_bundle.get("key_evidence"),
+            exemplar_count,
+        )
+        qa_report["evidence_coverage"].append({"section": name, **post_cov_check})
 
         final_section_content[name] = improved_html
         html = insert_section_content(html, name, improved_html)

@@ -174,6 +174,19 @@ Return valid JSON only."""
             section_constraints or [],
         )
 
+    # Defensive dedup: the model occasionally repeats a heading verbatim in
+    # raw_text (or emits the same section twice in its JSON "sections" array) —
+    # keep the first occurrence only, by exact lowercase name match.
+    deduped: list[dict] = []
+    seen_names: set[str] = set()
+    for sec in result.get("sections") or []:
+        name_key = (sec.get("name") or "").strip().lower()
+        if not name_key or name_key in seen_names:
+            continue
+        seen_names.add(name_key)
+        deduped.append(sec)
+    result["sections"] = deduped
+
     # Carry forward document-level limits if not returned by model
     if total_word_limit and not result.get("total_word_limit"):
         result["total_word_limit"] = total_word_limit

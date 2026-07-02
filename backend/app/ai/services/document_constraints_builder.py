@@ -14,6 +14,22 @@ from app.ai.services.constraint_allocator import (
 )
 
 
+def _overlaps_existing_section(candidate_key: str, existing_keys) -> bool:
+    """True if candidate_key names the same section as one already present, even
+    under a shorter or reworded name (e.g. "Ethics" vs "WP7: Ethics and
+    Sustainability"). Exact match is always an overlap; substring containment
+    only counts for names long enough (>=5 chars) that a short generic word or
+    acronym ("AI", "MEL") can't falsely collide with an unrelated section."""
+    if candidate_key in existing_keys:
+        return True
+    if len(candidate_key) < 5:
+        return False
+    return any(
+        len(existing) >= 5 and (candidate_key in existing or existing in candidate_key)
+        for existing in existing_keys
+    )
+
+
 def _build_section_list(
     call_analysis: dict,
     call_intelligence: dict,
@@ -193,8 +209,8 @@ async def build_document_constraints(
         if not name:
             continue
         key = name.lower()
-        if key in by_name:
-            continue  # already covered by a required/existing section
+        if _overlaps_existing_section(key, by_name.keys()):
+            continue  # already covered by a required/existing section (exact or near-duplicate name)
         by_name[key] = {
             "name": name,
             "word_limit": None,
