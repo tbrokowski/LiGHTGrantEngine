@@ -527,7 +527,7 @@ async def run_adaptive_draft_stream(
             except Exception:
                 continue
 
-    # Phase 4: Conditional QA
+    # Phase 4: 3-round critique → refine loop (all sections)
     constraints_issues: list = []
     doc_constraints = getattr(grant, "document_constraints", None) or {}
     audit = doc_constraints.get("audit") or doc_constraints.get("constraints_audit") or {}
@@ -543,8 +543,9 @@ async def run_adaptive_draft_stream(
         "research_coverage": research_coverage,
         "evidence_coverage": [],
         "constraints_issues": constraints_issues,
+        "critique_rounds": 3,
     }
-    yield sse({"event": "meta_agent_start", "total": len(sections)})
+    yield sse({"event": "meta_agent_start", "total": len(sections), "rounds_per_section": 3})
     collected_questions: list[dict] = []
     all_warnings: list[str] = []
     prior_summary = ""
@@ -568,6 +569,7 @@ async def run_adaptive_draft_stream(
             except Exception:
                 pass
 
+        # Deterministic pre-check — seeds Round 1 with known issues
         exemplar_count = next(
             (c.get("exemplar_count", 0) for c in research_coverage if c.get("section") == name),
             0,
@@ -580,30 +582,33 @@ async def run_adaptive_draft_stream(
             exemplar_count,
         )
         qa_report["evidence_coverage"].append({"section": name, **cov_check})
+        initial_issues = cov_check.get("issues") or []
 
+        # 3-round LLM critique → refine loop for every section
         improved_html = draft_html
-        run_meta = name in meta_sections_set
-        if run_meta:
-            try:
-                async for meta_event in evaluate_and_improve_section(
-                    section_name=name, section_content=draft_html,
-                    section_type=sec.get("type") or "other",
-                    prior_sections_summary=prior_summary,
-                    call_requirements=call_req,
-                    narrative_context=narrative_context,
-                    style_profile=grant.style_profile or {},
-                    db=db, funder=grant.funder or "",
-                    grant_idea=grant.grant_idea or "",
-                    max_rounds=2,
-                ):
-                    if meta_event.get("event") == "meta_agent_accepted":
-                        improved_html = meta_event.get("content") or draft_html
-                    elif meta_event.get("event") == "meta_agent_question":
-                        collected_questions.append(meta_event)
-                    yield sse(meta_event)
-                qa_report["meta_sections"].append(name)
-            except Exception:
-                pass
+        try:
+            async for meta_event in evaluate_and_improve_section(
+                section_name=name,
+                section_content=draft_html,
+                section_type=sec.get("type") or "other",
+                prior_sections_summary=prior_summary,
+                call_requirements=call_req,
+                narrative_context=narrative_context,
+                style_profile=grant.style_profile or {},
+                db=db,
+                funder=grant.funder or "",
+                grant_idea=grant.grant_idea or "",
+                max_rounds=3,
+                initial_issues=initial_issues,
+            ):
+                if meta_event.get("event") == "meta_agent_accepted":
+                    improved_html = meta_event.get("content") or draft_html
+                elif meta_event.get("event") == "meta_agent_question":
+                    collected_questions.append(meta_event)
+                yield sse(meta_event)
+            qa_report["meta_sections"].append(name)
+        except Exception:
+            pass
 
         final_section_content[name] = improved_html
         html = insert_section_content(html, name, improved_html)
@@ -621,13 +626,27 @@ async def run_adaptive_draft_stream(
 
     # Coherence + compliance (fuller context)
     coherence_result: dict = {}
+    yield sse({"event": "overview_pass_start", "message": "Running high-level overview pass across assembled proposal…"})
     try:
-        section_dicts = [{"name": n, "content": c[:3000]} for n, c in final_section_content.items()]
+        section_dicts = [
+            {"name": n, "type": next((s.get("type", "other") for s in sections if (s.get("name") or s.get("title")) == n), "other"), "content": c[:3000]}
+            for n, c in final_section_content.items()
+        ]
         coherence_result = await check_narrative_coherence(
             sections=section_dicts, narrative_context=narrative_context,
             call_requirements=call_req, grant_idea=grant.grant_idea or "",
         )
-        yield sse({"event": "coherence_check", "overall": coherence_result.get("overall", "adequate"), "issues": coherence_result.get("issues", [])[:8]})
+        yield sse({
+            "event": "coherence_check",
+            "overall": coherence_result.get("overall", "adequate"),
+            "narrative_arc": coherence_result.get("narrative_arc", "adequate"),
+            "issues": coherence_result.get("issues", [])[:10],
+            "strengths": coherence_result.get("strengths", [])[:5],
+            "criteria_coverage": coherence_result.get("criteria_coverage", {}),
+            "top_priority_fixes": coherence_result.get("top_priority_fixes", [])[:3],
+            "fundability_assessment": coherence_result.get("fundability_assessment", ""),
+        })
+        qa_report["coherence_result"] = coherence_result
     except Exception:
         pass
 
@@ -694,4 +713,9 @@ async def run_adaptive_draft_stream(
         "under_length_resolved": len(under_length),
         "execution_plan_score": execution_plan.get("alignment_score"),
         "coherence": coherence_result.get("overall", "adequate"),
+        "narrative_arc": coherence_result.get("narrative_arc", "adequate"),
+        "fundability_assessment": coherence_result.get("fundability_assessment", ""),
+        "top_priority_fixes": coherence_result.get("top_priority_fixes", [])[:3],
+        "criteria_coverage": coherence_result.get("criteria_coverage", {}),
+        "critique_rounds_per_section": 3,
     })
