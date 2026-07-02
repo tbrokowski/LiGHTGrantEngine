@@ -1,7 +1,7 @@
 """AI billing utilities — cost accumulation and limit enforcement."""
 import uuid
 import logging
-from datetime import datetime
+from datetime import datetime, timezone
 from typing import Optional
 
 from fastapi import HTTPException
@@ -88,7 +88,7 @@ async def accumulate_ai_usage(
             prompt_tokens=prompt_tokens,
             completion_tokens=completion_tokens,
             cost_cents=cost_cents,
-            completed_at=datetime.utcnow(),
+            completed_at=datetime.now(timezone.utc),
         )
         db.add(run)
         # Accumulate usage on personal accounts

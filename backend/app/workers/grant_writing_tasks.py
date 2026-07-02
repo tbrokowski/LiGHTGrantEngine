@@ -141,7 +141,7 @@ def _log_ai_run_sync(grant_id: str, user_id: str | None, output: dict) -> None:
                 status=AIRunStatus.COMPLETED,
                 output_structured=output,
                 model_used=settings.ai.model,
-                completed_at=datetime.utcnow(),
+                completed_at=datetime.now(timezone.utc),
             )
             db.add(run)
             db.commit()

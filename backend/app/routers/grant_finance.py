@@ -3,7 +3,7 @@ import csv
 import io
 import json
 import uuid
-from datetime import date, datetime
+from datetime import date, datetime, timezone
 from typing import Optional, Callable
 
 from fastapi import APIRouter, Depends, HTTPException, UploadFile, File
@@ -572,7 +572,7 @@ async def _transition_fund_request(
     if new_status == FundRequestStatus.APPROVED.value:
         await _check_category_capacity(db, fr.category_id, fr.amount, exclude_request_id=fr.id)
         fr.approved_by_id = user.id
-        fr.approved_at = datetime.utcnow()
+        fr.approved_at = datetime.now(timezone.utc)
         fr.rejection_reason = None
     elif new_status == FundRequestStatus.REJECTED.value:
         fr.rejection_reason = rejection_reason

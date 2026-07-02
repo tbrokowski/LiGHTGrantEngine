@@ -591,7 +591,7 @@ async def _complete_ai_run(
         run.output = json.dumps(output)[:10000]
         run.sources_retrieved = [s.get("id", "") for s in (sources or [])]
         run.warnings = warnings or []
-        run.completed_at = datetime.utcnow()
+        run.completed_at = datetime.now(timezone.utc)
         await db.commit()
 
 

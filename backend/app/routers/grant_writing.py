@@ -21,7 +21,7 @@ from app.models.document import Document, DocumentType, ProcessingStatus
 from app.models.workspace_file import WorkspaceFile, FileCategory, FileSourceType
 from app.models.grant_writing import GrantCitation, GrantWritingConversation
 from app.models.ai_run import AIRun, AgentType, AIRunStatus
-from datetime import datetime
+from datetime import datetime, timezone
 from app.models.user import User
 from app.routers.auth import get_current_user
 from app.services.citation_lookup import search_citations
@@ -111,7 +111,7 @@ async def _log_ai_run(
         status=AIRunStatus.COMPLETED,
         output_structured=output,
         model_used=get_settings().ai.model,
-        completed_at=datetime.utcnow(),
+        completed_at=datetime.now(timezone.utc),
     )
     db.add(run)
     await db.commit()
@@ -805,7 +805,7 @@ async def writing_chat_stream(
     for m in effective_messages[-2:]:
         stored.append({"role": m.role, "content": m.content})
     conv.messages = stored[-20:]
-    conv.updated_at = datetime.utcnow()
+    conv.updated_at = datetime.now(timezone.utc)
     await db.commit()
 
     # Resolve institution_id for opportunity lookup

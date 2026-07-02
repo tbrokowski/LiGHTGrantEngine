@@ -1,7 +1,7 @@
 """Slack interactive component callbacks for fund request approvals."""
 import json
 import logging
-from datetime import datetime
+from datetime import datetime, timezone
 
 from fastapi import APIRouter, Request, HTTPException
 from sqlalchemy import select, create_engine
@@ -93,7 +93,7 @@ async def slack_interactive(request: Request):
 
         if new_status == FundRequestStatus.APPROVED.value:
             fr.approved_by_id = approver_id
-            fr.approved_at = datetime.utcnow()
+            fr.approved_at = datetime.now(timezone.utc)
             fr.rejection_reason = None
         else:
             fr.rejection_reason = f"Rejected via Slack by {slack_user_id}"

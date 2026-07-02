@@ -4,7 +4,7 @@ from __future__ import annotations
 import secrets
 import string
 import uuid
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 from typing import Optional
 
 from fastapi import APIRouter, Depends, HTTPException, status
@@ -479,7 +479,7 @@ async def approve_join_request(
 
     req.status = JoinRequestStatus.APPROVED
     req.reviewed_by_id = current_user.id
-    req.reviewed_at = datetime.utcnow()
+    req.reviewed_at = datetime.now(timezone.utc)
 
     if req.user_id:
         user = (await db.execute(select(User).where(User.id == req.user_id))).scalar_one_or_none()
@@ -519,7 +519,7 @@ async def reject_join_request(
 
     req.status = JoinRequestStatus.REJECTED
     req.reviewed_by_id = current_user.id
-    req.reviewed_at = datetime.utcnow()
+    req.reviewed_at = datetime.now(timezone.utc)
     await db.commit()
     return {"status": "rejected"}
 
@@ -536,7 +536,7 @@ async def generate_access_code(
     inst = await _get_institution_or_404(institution_id, db)
     code = _generate_access_code()
     inst.access_code = code
-    inst.access_code_expires_at = datetime.utcnow() + timedelta(hours=_ACCESS_CODE_TTL_HOURS)
+    inst.access_code_expires_at = datetime.now(timezone.utc) + timedelta(hours=_ACCESS_CODE_TTL_HOURS)
     await db.commit()
     return {
         "code": code,
@@ -556,7 +556,7 @@ async def join_by_access_code(
     inst = (await db.execute(
         select(Institution).where(
             Institution.access_code == code,
-            Institution.access_code_expires_at > datetime.utcnow(),
+            Institution.access_code_expires_at > datetime.now(timezone.utc),
         )
     )).scalar_one_or_none()
 

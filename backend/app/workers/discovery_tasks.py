@@ -5,7 +5,7 @@ These tasks are triggered by the beat scheduler or manually via the API.
 import asyncio
 import re
 import uuid
-from datetime import datetime
+from datetime import datetime, timezone
 from celery import shared_task
 from app.workers.celery_app import celery_app
 
@@ -183,7 +183,7 @@ def scan_source(self, source_id: str):
         run = SourceRun(
             id=str(uuid.uuid4()),
             source_id=source_id,
-            started_at=datetime.utcnow(),
+            started_at=datetime.now(timezone.utc),
             status=SourceRunStatus.RUNNING,
             parser_version="1.0",
         )
@@ -232,11 +232,11 @@ def scan_source(self, source_id: str):
             if intra_run_dups > 0:
                 warnings.append(f"{intra_run_dups} within-run duplicates removed before processing.")
 
-            duration_s = round((datetime.utcnow() - run.started_at).total_seconds(), 1)
+            duration_s = round((datetime.now(timezone.utc) - run.started_at).total_seconds(), 1)
 
             # Update run record
             run.status = SourceRunStatus.SUCCESS
-            run.ended_at = datetime.utcnow()
+            run.ended_at = datetime.now(timezone.utc)
             run.records_found = len(raw_listings)
             run.new_opportunities = new_count
             run.updated_opportunities = updated_count
@@ -252,8 +252,8 @@ def scan_source(self, source_id: str):
 
             # Update source stats; restore broken/under_review sources on success
             source.status = "active"
-            source.last_checked = datetime.utcnow()
-            source.last_successful_run = datetime.utcnow()
+            source.last_checked = datetime.now(timezone.utc)
+            source.last_successful_run = datetime.now(timezone.utc)
             source.opportunities_discovered += len(raw_listings)
             source.opportunities_added += new_count
             source.duplicates_detected += dup_count
@@ -265,13 +265,13 @@ def scan_source(self, source_id: str):
         except Exception as e:
             tb = traceback.format_exc()
             run.status = SourceRunStatus.FAILED
-            run.ended_at = datetime.utcnow()
+            run.ended_at = datetime.now(timezone.utc)
             run.errors = [str(e)]
             run.log_summary = f"type={source.source_type} | FAILED: {type(e).__name__}: {e}"
             run.warnings = []
             # Store the full traceback in notes for debugging
             run.notes = tb[-2000:] if len(tb) > 2000 else tb
-            source.error_log = (source.error_log or []) + [{"time": str(datetime.utcnow()), "error": str(e)}]
+            source.error_log = (source.error_log or []) + [{"time": str(datetime.now(timezone.utc)), "error": str(e)}]
             db.commit()
             logger.error("Source scan failed", source=source.name, error=str(e))
             raise self.retry(exc=e, countdown=300)
@@ -512,7 +512,7 @@ def check_source_health():
 
     settings = get_settings()
     engine = create_engine(settings.database_url)
-    cutoff = datetime.utcnow() - timedelta(days=10)
+    cutoff = datetime.now(timezone.utc) - timedelta(days=10)
 
     with Session(engine) as db:
         # Only flag sources that have been scanned before but haven't been

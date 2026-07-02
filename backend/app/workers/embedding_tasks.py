@@ -44,8 +44,8 @@ def parse_and_embed_document(document_id: str):
                 doc.embedding = _run_async(_embed())
 
             doc.processing_status = ProcessingStatus.PROCESSED
-            from datetime import datetime
-            doc.last_parsed_at = datetime.utcnow()
+            from datetime import datetime, timezone
+            doc.last_parsed_at = datetime.now(timezone.utc)
             db.commit()
 
         except Exception as e:

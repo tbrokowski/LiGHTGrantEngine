@@ -1,5 +1,5 @@
 """Notification Celery tasks — deadline reminders and alerts."""
-from datetime import datetime, timedelta, date
+from datetime import datetime, timedelta, date, timezone
 from app.workers.celery_app import celery_app
 
 
@@ -240,7 +240,7 @@ def send_pending_emails():
                 if user and user.email:
                     _send_email(user.email, user.name, notif.message, notif_cfg)
                     notif.status = NotificationStatus.SENT
-                    notif.sent_at = datetime.utcnow()
+                    notif.sent_at = datetime.now(timezone.utc)
                     sent += 1
             except Exception:
                 notif.status = NotificationStatus.FAILED
@@ -283,7 +283,7 @@ def send_pending_slack():
             try:
                 _send_slack(notif.message, webhook_url)
                 notif.status = NotificationStatus.SENT
-                notif.sent_at = datetime.utcnow()
+                notif.sent_at = datetime.now(timezone.utc)
                 sent += 1
             except Exception:
                 notif.status = NotificationStatus.FAILED

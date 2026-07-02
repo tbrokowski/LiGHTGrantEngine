@@ -2,7 +2,7 @@
 import uuid
 import logging
 from typing import Optional
-from datetime import date, datetime
+from datetime import date, datetime, timezone
 
 from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel
@@ -242,7 +242,7 @@ async def create_grant(
     # Personal grants have no institution until promoted
     institution_id = None if data.is_personal else current_user.institution_id
 
-    now = datetime.utcnow()
+    now = datetime.now(timezone.utc)
     grant = ActiveGrant(
         id=str(uuid.uuid4()),
         internal_lead_id=current_user.id,
@@ -590,7 +590,7 @@ async def transition_stage(
     if data.notes:
         grant.stage_notes = data.notes
 
-    now = datetime.utcnow()
+    now = datetime.now(timezone.utc)
 
     if new_stage == "pending":
         # Submitted: snapshot the proposal into the archive (outcome=pending, grant stays live)

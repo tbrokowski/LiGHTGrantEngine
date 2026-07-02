@@ -125,7 +125,7 @@ async def get_scan_summary(
     """Dashboard-friendly scraping system health summary."""
     from sqlalchemy import func
     from app.models.opportunity import Opportunity
-    from datetime import datetime, timedelta
+    from datetime import datetime, timedelta, timezone
 
     src_counts = (await db.execute(
         select(Source.status, func.count(Source.id).label("n"))
@@ -138,7 +138,7 @@ async def get_scan_summary(
         select(SourceRun).order_by(desc(SourceRun.started_at)).limit(1)
     )).scalar_one_or_none()
 
-    cutoff = datetime.utcnow() - timedelta(hours=24)
+    cutoff = datetime.now(timezone.utc) - timedelta(hours=24)
     recent_errors = (await db.execute(
         select(func.count(SourceRun.id)).where(
             SourceRun.status == "failed",

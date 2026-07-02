@@ -70,7 +70,7 @@ def get_password_hash(password: str) -> str:
 
 
 def create_access_token(data: dict) -> str:
-    expire = datetime.utcnow() + timedelta(minutes=settings.access_token_expire_minutes)
+    expire = datetime.now(timezone.utc) + timedelta(minutes=settings.access_token_expire_minutes)
     return jwt.encode({**data, "exp": expire}, settings.secret_key, algorithm=settings.algorithm)
 
 
@@ -108,7 +108,7 @@ async def login(
     if not user or not user.hashed_password or not verify_password(form.password, user.hashed_password):
         raise HTTPException(status_code=400, detail="Incorrect email or password")
 
-    user.last_login = datetime.utcnow()
+    user.last_login = datetime.now(timezone.utc)
     await db.commit()
 
     token = create_access_token({"sub": user.id, "role": user.role})
@@ -473,7 +473,7 @@ async def verify_email(
     if verification.expires_at < datetime.now(timezone.utc):
         raise HTTPException(400, "Verification token expired")
 
-    verification.used_at = datetime.utcnow()
+    verification.used_at = datetime.now(timezone.utc)
     user_result = await db.execute(select(User).where(User.id == verification.user_id))
     user = user_result.scalar_one_or_none()
     if user:
@@ -622,7 +622,7 @@ async def google_oauth_callback(
     user.google_access_token = token_data.get("access_token")
     user.google_refresh_token = token_data.get("refresh_token")
     if token_data.get("expires_in"):
-        user.google_token_expiry = datetime.utcnow() + timedelta(seconds=token_data["expires_in"])
+        user.google_token_expiry = datetime.now(timezone.utc) + timedelta(seconds=token_data["expires_in"])
 
     await db.commit()
     # Redirect user back to settings

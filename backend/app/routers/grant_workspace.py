@@ -2,7 +2,7 @@
 import logging
 import uuid
 from typing import Optional
-from datetime import date, datetime
+from datetime import date, datetime, timezone
 
 from fastapi import APIRouter, Depends, HTTPException, UploadFile, File
 from fastapi.responses import StreamingResponse
@@ -169,7 +169,7 @@ async def update_task(
     for k, v in updates.items():
         setattr(task, k, v)
     if updates.get("status") == TaskStatus.COMPLETE and not task.completed_at:
-        task.completed_at = datetime.utcnow()
+        task.completed_at = datetime.now(timezone.utc)
     await log_activity(db, grant_id, "task_updated", current_user.id, "task", task_id, f"Task updated: {task.title}")
     await db.commit()
     return _task_dict(task)
@@ -1630,7 +1630,7 @@ async def create_google_doc(
         logger.exception("create_grant_doc failed for grant %s", grant_id)
         raise HTTPException(502, f"Google Docs API error: {exc}") from exc
 
-    now = datetime.utcnow()
+    now = datetime.now(timezone.utc)
     grant.google_doc_id = result["doc_id"]
     grant.google_doc_url = result["doc_url"]
     grant.google_doc_last_synced = now
@@ -1704,7 +1704,7 @@ async def link_google_doc(
     grant = await _get_grant_or_404(grant_id, db)
     grant.google_doc_id = doc_id
     grant.google_doc_url = doc_url
-    grant.google_doc_last_synced = datetime.utcnow()
+    grant.google_doc_last_synced = datetime.now(timezone.utc)
 
     await log_activity(
         db, grant_id, "google_doc_linked", current_user.id,
@@ -1758,7 +1758,7 @@ async def push_to_google_doc(
         logger.exception("push_to_doc failed for grant %s doc %s", grant_id, grant.google_doc_id)
         raise HTTPException(502, f"Google Docs API error: {exc}") from exc
 
-    now = datetime.utcnow()
+    now = datetime.now(timezone.utc)
     grant.google_doc_last_synced = now
     await log_activity(
         db, grant_id, "google_doc_pushed", current_user.id,
@@ -1837,7 +1837,7 @@ async def pull_from_google_doc(
         raise HTTPException(502, f"Google Docs API error: {exc}") from exc
 
     grant.editor_document = html
-    now = datetime.utcnow()
+    now = datetime.now(timezone.utc)
     grant.google_doc_last_synced = now
 
     # Sync workspace sections from updated headings
