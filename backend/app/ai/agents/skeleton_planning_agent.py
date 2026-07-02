@@ -69,7 +69,7 @@ KEY EVALUATION CRITERIA:
 
 For each section that will appear in the skeleton, produce a research plan.
 Use the SECTION CONSTRAINTS if provided (they may rename or reorder sections).
-Otherwise use REQUIRED SECTIONS from the call. Include at most 10 sections.
+Otherwise use REQUIRED SECTIONS from the call. Include at most 14 sections.
 
 Respond with valid JSON:
 {{

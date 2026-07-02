@@ -173,6 +173,7 @@ async def build_document_constraints(
         grant_idea=grant_idea,
         aligned_concept=aligned_concept,
         call_analysis=call_analysis,
+        call_intelligence=call_intelligence,
     )
     aligned_sections = alignment.get("sections") or allocated
     by_name = {s["name"].lower(): s for s in allocated}
@@ -182,7 +183,43 @@ async def build_document_constraints(
             by_name[key]["priority"] = als["priority"]
             if als.get("rationale"):
                 by_name[key]["rationale"] = als["rationale"]
+
+    # Idea-driven sections: the funder's call only dictates the REQUIRED structure —
+    # the grant idea may describe distinct components that warrant their own section.
+    # These are additive within the existing (locked) total_words budget, not on top of it.
+    next_order = max((s.get("order", 0) for s in by_name.values()), default=0) + 1
+    added_sections = 0
+    for extra in (alignment.get("additional_sections") or [])[:4]:
+        name = (extra.get("name") or "").strip()
+        if not name:
+            continue
+        key = name.lower()
+        if key in by_name:
+            continue  # already covered by a required/existing section
+        by_name[key] = {
+            "name": name,
+            "word_limit": None,
+            "page_limit": None,
+            "priority": extra.get("priority") or "medium",
+            "order": next_order,
+            "required": False,
+            "idea_derived": True,
+            "rationale": extra.get("rationale"),
+        }
+        next_order += 1
+        added_sections += 1
+
     final_sections = sorted(by_name.values(), key=lambda x: x.get("order", 99))
+
+    if added_sections:
+        # Re-partition the same total_words across the larger section list — existing
+        # sections yield a little room, new ones land at least MIN_SECTION_WORDS.
+        final_sections = allocate_section_budgets(
+            final_sections,
+            total_words,
+            eval_weights=eval_weights,
+            per_section_caps=per_caps,
+        )
 
     final_sections, tw, tp = merge_user_section_overrides(
         final_sections,

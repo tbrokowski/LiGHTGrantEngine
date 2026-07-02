@@ -26,12 +26,12 @@ Section format — use this ONLY:
 (Target: N words)
 
 Rules — follow these strictly:
-0. SECTION LIMITS in SECTION STRUCTURE AND LIMITS are LOCKED. Each section's (Target: N words) must match the word limit given. Size bullets for the full target (roughly target_words/120 bullets at ~120 words each for long sections). Do NOT invent document totals or per-section limits in JSON — copy from SECTION STRUCTURE AND LIMITS exactly.
+0. SECTION LIMITS in SECTION STRUCTURE AND LIMITS are LOCKED. Each section's (Target: N words) must match the word limit given. Size bullets for the full target (roughly target_words/120 bullets at ~120 words each for long sections). Do NOT invent document totals or per-section limits in JSON — copy from SECTION STRUCTURE AND LIMITS exactly. Sections marked as idea-derived in SECTION STRUCTURE AND LIMITS are real sections the writer must draft — do not fold them back into a generic section.
 1. Every bullet must be SPECIFIC and SUBSTANTIVE — use the team's own terminology, name specific technologies/platforms/methods, reference actual target populations, specific disease areas, specific geographies from their idea
 2. Never write a generic bullet like "We will demonstrate the effectiveness of our approach" — instead write "We will demonstrate X% improvement in [specific metric] for [specific disease] in [specific setting] using [specific method]"
 3. Draw directly from the GRANT IDEA — if they mention MOOVE, write about MOOVE; if they mention SSA, write about SSA; if they mention AI/ML, name the specific technique
 4. Call requirements determine SECTION STRUCTURE and TOPICS TO COVER, not the bullet content
-5. Archive content (if provided) should directly inform bullets — quote or paraphrase specific approaches, outcomes, or evidence from awarded grants
+5. When PER-SECTION EVIDENCE BUNDLES are provided for a section, at least 2 of its bullets must be grounded in that evidence — quote or paraphrase the specific stat, method, or outcome and tag the bullet with its source in parentheses at the end: "(Archive: <grant title>)" for prior awarded grants, "(Web: <source name>)" for web/news findings, or "(Academic: <author/year>)" for academic citations. Never write a bare, untagged bullet when matching evidence was provided for that claim.
 6. [TBD: reason] only for genuine unknowns (specific numbers, named partners, etc.) — not for strategic content
 7. No meta-labels like "Purpose:", "Key arguments:", "Evidence to include:" — only bullets and [TBD] markers
 8. If you cannot be specific, write [TBD: specific information needed] rather than a vague bullet
@@ -219,12 +219,15 @@ def _format_section_constraints(
             wl = sc.get("word_limit")
             pl = sc.get("page_limit")
             pri = sc.get("priority", "medium")
-            parts = [f"  {sc.get('order', '?')}. {name} [{pri}]"]
+            tag = " [idea-derived — not in the call template]" if sc.get("idea_derived") else ""
+            parts = [f"  {sc.get('order', '?')}. {name} [{pri}]{tag}"]
             if wl:
                 parts.append(f"{wl:,} words")
             if pl:
                 parts.append(f"{pl} pages")
             lines.append(" — ".join(parts) if len(parts) > 1 else parts[0])
+            if sc.get("rationale"):
+                lines.append(f"     Why this section: {sc['rationale'][:200]}")
     return "\n".join(lines) + "\n\n"
 
 
