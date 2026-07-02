@@ -56,11 +56,20 @@ export default function OpportunityCard({ opp, onClick, selected, variant = 'def
         ) : !opp.has_description ? (
           <p className="text-sm text-gray-300 italic mb-4">Fetching description…</p>
         ) : null
-      ) : opp.short_summary ? (
-        <p className="text-sm text-gray-500 leading-relaxed line-clamp-3 mb-4">
-          {opp.short_summary}
-        </p>
-      ) : null}
+      ) : (
+        <>
+          {(opp.short_summary || opp.description) && (
+            <p className="text-sm text-gray-500 leading-relaxed line-clamp-3 mb-3">
+              {opp.short_summary || opp.description}
+            </p>
+          )}
+          {opp.fit_rationale && (
+            <p className="text-xs text-blue-700 bg-blue-50 border border-blue-100 rounded px-2.5 py-1.5 leading-relaxed line-clamp-2 mb-4">
+              {opp.fit_rationale}
+            </p>
+          )}
+        </>
+      )}
 
       <div className="flex flex-wrap items-center gap-2 text-xs text-gray-400 mb-3">
         {formatDate(opp.deadline) && <span>Deadline: {formatDate(opp.deadline)}</span>}

@@ -18,6 +18,7 @@ export interface Opportunity {
   funder_logo_url: string | null;
   opportunity_url: string | null;
   source_id: string | null;
+  fit_rationale?: string | null;
   is_read?: boolean;
   is_personal_shortlisted?: boolean;
   is_on_org_shortlist?: boolean;

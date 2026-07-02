@@ -51,9 +51,9 @@ export default function OpportunityRow({
               >
                 {opp.title}
               </span>
-              {opp.short_summary ? (
+              {(opp.short_summary || opp.description) ? (
                 <span className="text-xs mt-0.5 line-clamp-2 block" style={{ color: 'var(--ink-muted)' }}>
-                  {opp.short_summary}
+                  {opp.short_summary || opp.description}
                 </span>
               ) : opp.thematic_areas?.length > 0 ? (
                 <span className="mono-data text-[11px] mt-0.5 block" style={{ color: 'var(--ink-faint)' }}>
