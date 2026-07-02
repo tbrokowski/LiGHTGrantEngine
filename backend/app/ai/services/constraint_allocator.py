@@ -10,6 +10,7 @@ DEFAULT_WORDS_PER_PAGE = 500
 MIN_SECTION_WORDS = 400
 MAX_SECTION_FRACTION = 0.25
 PRIORITY_MULTIPLIERS = {"high": 1.2, "medium": 1.0, "low": 0.7}
+SIZE_MULTIPLIERS = {"small": 0.5, "medium": 1.0, "large": 1.8}
 
 
 def parse_int_limit(value: Any) -> int | None:
@@ -51,14 +52,16 @@ def _section_weight(sec: dict, eval_weights: dict[str, float]) -> float:
     name = (sec.get("name") or "").strip()
     pri = (sec.get("priority") or "medium").lower()
     mult = PRIORITY_MULTIPLIERS.get(pri, 1.0)
+    size = (sec.get("relative_size") or "medium").lower()
+    size_mult = SIZE_MULTIPLIERS.get(size, 1.0)
     ew = eval_weights.get(name.lower(), 0.0)
     if ew > 0:
         return ew * mult
     if pri == "high":
-        return 1.2 * mult
+        return 1.2 * mult * size_mult
     if pri == "low":
-        return 0.7 * mult
-    return 1.0 * mult
+        return 0.7 * mult * size_mult
+    return 1.0 * mult * size_mult
 
 
 def evaluation_weights_from_call_intelligence(call_intelligence: dict) -> dict[str, float]:

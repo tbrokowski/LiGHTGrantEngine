@@ -22,6 +22,12 @@ You may:
   a dedicated section — do not fragment content that already fits an existing section. There is
   no fixed limit on how many sections you may propose — propose exactly as many as the idea's
   distinct components warrant, no more, no fewer.
+- Propose additional sections the CALL itself typically expects but the idea hasn't explicitly
+  named yet — dissemination/exploitation, ethics and data governance, risk mitigation, capacity
+  building/sustainability, stakeholder or regional engagement, etc. — whenever the call context,
+  evaluation criteria, or grant idea implies the proposal needs to address them. Do this even
+  when the idea already enumerates work packages: enumerated components and inferred call-topic
+  sections are not mutually exclusive, propose both where warranted.
 
 Priority order when the idea enumerates a fixed set of components:
 - If the grant idea explicitly numbers or names a fixed set of work packages / components
@@ -32,6 +38,10 @@ Rules for new sections:
 - Never rename, remove, or skip a REQUIRED call section.
 - Never propose a name that duplicates or closely overlaps an existing section.
 - Ground every proposed section in a specific part of the grant idea — name it in the rationale.
+- Estimate "relative_size" for every new section: "small" (a page or less — e.g. a compliance
+  or engagement section), "medium" (a standard work package or thematic section), or "large"
+  (a section carrying the technical core of the proposal). Base this on how much the idea
+  actually says about that component, not on priority.
 
 Return valid JSON only."""
 
@@ -90,11 +100,18 @@ Required call sections: {(call_analysis or {}).get('required_sections', [])[:12]
 
 Return JSON:
 - "sections": same names as CURRENT SECTION BUDGETS; adjust priority (high/medium/low) and add "rationale" per section.
-- "additional_sections": new, non-required sections the idea warrants that aren't already covered above.
+- "additional_sections": new, non-required sections the idea (and the call's typical expectations)
+  warrant that aren't already covered above — both enumerated components (e.g. each work package)
+  and inferred call-topic sections (dissemination, ethics, sustainability, engagement, etc.).
 {{
   "sections": [...],
   "additional_sections": [
-    {{"name": "...", "rationale": "why this needs its own section, citing the specific idea component", "priority": "high"|"medium"|"low"}}
+    {{
+      "name": "...",
+      "rationale": "why this needs its own section, citing the specific idea component or call expectation",
+      "priority": "high"|"medium"|"low",
+      "relative_size": "small"|"medium"|"large"
+    }}
   ],
   "emphasis_notes": ["..."],
   "sections_deemphasized": ["optional section names lowered in priority"]

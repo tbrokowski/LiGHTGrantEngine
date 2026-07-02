@@ -188,7 +188,6 @@ async def build_document_constraints(
     # the grant idea may describe distinct components that warrant their own section.
     # These are additive within the existing (locked) total_words budget, not on top of it.
     next_order = max((s.get("order", 0) for s in by_name.values()), default=0) + 1
-    added_sections = 0
     for extra in alignment.get("additional_sections") or []:
         name = (extra.get("name") or "").strip()
         if not name:
@@ -201,40 +200,44 @@ async def build_document_constraints(
             "word_limit": None,
             "page_limit": None,
             "priority": extra.get("priority") or "medium",
+            "relative_size": extra.get("relative_size") or "medium",
             "order": next_order,
             "required": False,
             "idea_derived": True,
             "rationale": extra.get("rationale"),
         }
         next_order += 1
-        added_sections += 1
 
     final_sections = sorted(by_name.values(), key=lambda x: x.get("order", 99))
 
-    if added_sections:
-        # Re-partition the same total_words across the larger section list — existing
-        # sections yield a little room, new ones land at least MIN_SECTION_WORDS.
-        final_sections = allocate_section_budgets(
-            final_sections,
-            total_words,
-            eval_weights=eval_weights,
-            per_section_caps=per_caps,
-        )
-
-    final_sections, tw, tp = merge_user_section_overrides(
+    final_sections, _, tp = merge_user_section_overrides(
         final_sections,
         user_section_constraints,
         user_total_word_limit or total_words,
         user_total_page_limit or (str(total_page_limit) if total_page_limit else None),
     )
 
-    if user_total_word_limit:
-        final_sections = allocate_section_budgets(
-            final_sections,
-            user_total_word_limit,
-            eval_weights=eval_weights,
-        )
-        total_words = user_total_word_limit
+    # merge_user_section_overrides folds in the frontend's currently-displayed table,
+    # which on a full "regenerate skeleton from idea" is usually just an echo of the
+    # PREVIOUS run's computed numbers rather than a deliberate per-section edit. Priority,
+    # naming, and order from that table are real signal worth keeping — but treating its
+    # word_limit/page_limit values as permanent pins means every previously-seen section's
+    # word count freezes forever and only newly-introduced sections ever get a fresh,
+    # priority-based share. Clear them (unless the section carries a genuine call-mandated
+    # hard cap in per_caps) so the proportional allocator below recomputes every section
+    # together, on the same scale.
+    for sec in final_sections:
+        if (sec.get("name") or "").lower() not in per_caps:
+            sec["word_limit"] = None
+            sec["page_limit"] = None
+
+    final_sections = allocate_section_budgets(
+        final_sections,
+        user_total_word_limit or total_words,
+        eval_weights=eval_weights,
+        per_section_caps=per_caps,
+    )
+    total_words = user_total_word_limit or total_words
 
     return {
         "total_word_limit": total_words,
