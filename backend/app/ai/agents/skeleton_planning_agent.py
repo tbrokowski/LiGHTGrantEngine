@@ -193,7 +193,7 @@ async def plan_skeleton_research(
         opportunity_title=opportunity_title or "Grant Proposal",
         funder=funder or "Funder",
         grant_type_context=grant_type_context[:300] if grant_type_context else "Not classified",
-        grant_idea=(grant_idea or "")[:3000],
+        grant_idea=(grant_idea or "")[:8000],
         aligned_framing=aligned_framing[:1500] if aligned_framing else "Not available",
         narrative_brief=narrative_brief[:800] if narrative_brief else "Not available",
         required_sections=_format_required_sections(call_analysis, section_constraints),

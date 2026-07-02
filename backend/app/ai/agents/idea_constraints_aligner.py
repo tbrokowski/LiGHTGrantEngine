@@ -79,7 +79,7 @@ async def align_constraints_to_idea(
         }, indent=2)[:2000]
 
     user_prompt = f"""GRANT IDEA:
-{(grant_idea or 'Not provided')[:3000]}
+{(grant_idea or 'Not provided')[:8000]}
 
 ALIGNMENT CONTEXT:
 {alignment_snip or 'Not available'}
