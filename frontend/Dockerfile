@@ -25,6 +25,9 @@ ENV NEXT_TELEMETRY_DISABLED=1
 COPY --from=builder /app/.next/standalone ./
 COPY --from=builder /app/.next/static ./.next/static
 COPY --from=builder /app/public ./public
+# sharp is a native module not bundled by Next.js standalone — copy explicitly
+COPY --from=builder /app/node_modules/sharp ./node_modules/sharp
+COPY --from=builder /app/node_modules/@img ./node_modules/@img
 EXPOSE 8080
 ENV PORT=8080
 CMD ["sh", "-c", "test -f server.js && exec node server.js || (echo 'ERROR: server.js missing — build did not produce standalone output' && exit 1)"]
