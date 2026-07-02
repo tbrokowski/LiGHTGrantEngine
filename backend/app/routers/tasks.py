@@ -16,7 +16,7 @@ router = APIRouter()
 
 @router.get("/my-tasks")
 async def my_tasks(db: AsyncSession = Depends(get_db), current_user: User = Depends(get_current_user)):
-    # Return all open tasks from every grant the user can access (institution-scoped)
+    # Return open tasks assigned to the current user across all their accessible grants
     accessible_grant_ids = await _get_accessible_grant_ids(current_user, db)
     if not accessible_grant_ids:
         return []
@@ -27,7 +27,11 @@ async def my_tasks(db: AsyncSession = Depends(get_db), current_user: User = Depe
         Task.parent_task_id.is_(None),  # top-level tasks only
     )
     result = await db.execute(q)
-    task_list = result.scalars().all()
+    uid = str(current_user.id)
+    task_list = [
+        t for t in result.scalars().all()
+        if t.owner_id == uid or uid in (t.assignee_ids or [])
+    ]
 
     # Batch-fetch grant titles and colors for all unique grant IDs
     grant_ids = list({t.grant_id for t in task_list})

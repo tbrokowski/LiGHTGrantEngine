@@ -1,5 +1,4 @@
 'use client';
-import { useState } from 'react';
 import Link from 'next/link';
 
 export interface GrantItem {
@@ -127,18 +126,12 @@ interface FocusPanelProps {
   currentUserId?: string | null;
 }
 
-export default function FocusPanel({ tasks, loading, currentUserId }: FocusPanelProps) {
-  const [assignedOnly, setAssignedOnly] = useState(false);
-
-  const visibleTasks = assignedOnly && currentUserId
-    ? tasks.filter(t => t.owner_id === currentUserId || (t.assignee_ids ?? []).includes(currentUserId))
-    : tasks;
-
-  const withDate = visibleTasks
+export default function FocusPanel({ tasks, loading }: FocusPanelProps) {
+  const withDate = tasks
     .filter(t => t.due_date != null)
     .sort((a, b) => new Date(a.due_date!).getTime() - new Date(b.due_date!).getTime());
 
-  const withoutDate = visibleTasks
+  const withoutDate = tasks
     .filter(t => t.due_date == null)
     .sort((a, b) => (PRIORITY_ORDER[a.priority] ?? 99) - (PRIORITY_ORDER[b.priority] ?? 99));
 
@@ -179,29 +172,12 @@ export default function FocusPanel({ tasks, loading, currentUserId }: FocusPanel
         >
           Focus
         </h2>
-        <div className="flex items-center gap-2 ml-auto">
-          <button
-            onClick={() => setAssignedOnly(v => !v)}
-            className="text-[10px] font-semibold px-2 py-1 rounded-full border transition-colors whitespace-nowrap"
-            style={assignedOnly ? {
-              background: 'rgba(28,60,114,0.12)',
-              color: 'var(--panel-header-text)',
-              borderColor: 'rgba(28,60,114,0.25)',
-            } : {
-              background: 'transparent',
-              color: 'var(--ink-muted)',
-              borderColor: 'var(--rule-subtle)',
-            }}
-          >
-            Assigned to me
-          </button>
-          <p
-            className="text-[10px] font-medium shrink-0"
-            style={{ color: 'var(--ink-muted)' }}
-          >
-            {summaryText}
-          </p>
-        </div>
+        <p
+          className="text-[10px] font-medium ml-auto shrink-0"
+          style={{ color: 'var(--ink-muted)' }}
+        >
+          {summaryText}
+        </p>
       </div>
 
       {loading ? (
@@ -220,7 +196,7 @@ export default function FocusPanel({ tasks, loading, currentUserId }: FocusPanel
             </svg>
           </div>
           <p className="text-sm font-medium text-gray-500">No open tasks</p>
-          <p className="text-xs text-gray-300 mt-1">Tasks from your grants will appear here</p>
+          <p className="text-xs text-gray-300 mt-1">Tasks assigned to you will appear here</p>
         </div>
       ) : (
         <div className="flex-1 flex flex-col overflow-hidden">
