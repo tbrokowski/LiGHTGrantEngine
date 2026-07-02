@@ -491,6 +491,7 @@ export const admin = {
 // ── Tasks ────────────────────────────────────────────────────────────────────
 export const tasks = {
   myTasks: () => api.get('/tasks/my-tasks'),
+  all: () => api.get('/tasks/all'),
   overdue: () => api.get('/tasks/overdue'),
   dueSoon: (days?: number) => api.get('/tasks/due-soon', { params: { days } }),
 };

@@ -1,15 +1,38 @@
 'use client';
 import { useState, useRef, useEffect } from 'react';
 import Link from 'next/link';
-import type { GrantItem } from './FocusPanel';
+import type { GrantItem, TaskItem } from './FocusPanel';
 
-interface TaskDot {
-  id: string;
-  title: string;
-  grant_id: string;
-  due_date: string | null;
-  status: string;
-}
+type TaskDot = TaskItem;
+
+const STATUS_LABEL: Record<string, string> = {
+  backlog: 'Backlog',
+  not_started: 'Not Started',
+  in_progress: 'In Progress',
+  needs_input: 'Needs Input',
+  needs_review: 'Needs Review',
+  blocked: 'Blocked',
+  complete: 'Complete',
+  dropped: 'Dropped',
+};
+
+const STATUS_COLOR: Record<string, string> = {
+  backlog: 'bg-gray-100 text-gray-500',
+  not_started: 'bg-gray-100 text-gray-500',
+  in_progress: 'bg-blue-50 text-blue-600',
+  needs_input: 'bg-amber-50 text-amber-600',
+  needs_review: 'bg-amber-50 text-amber-600',
+  blocked: 'bg-red-50 text-red-600',
+  complete: 'bg-emerald-50 text-emerald-600',
+  dropped: 'bg-gray-100 text-gray-400',
+};
+
+const TASK_PRIORITY_COLOR: Record<string, string> = {
+  critical: 'bg-red-50 text-red-600',
+  high: 'bg-orange-50 text-orange-600',
+  medium: 'bg-amber-50 text-amber-600',
+  low: 'bg-gray-100 text-gray-400',
+};
 
 const STAGE_DOT: Record<string, string> = {
   proposal: 'bg-blue-400',
@@ -256,8 +279,86 @@ function SectionHeaderRow({ label, count, labelW }: SectionHeaderRowProps) {
   );
 }
 
+type ViewMode = 'timeline' | 'list';
+
+function daysUntil(d?: string | null): number | null {
+  if (!d) return null;
+  try { return Math.ceil((new Date(d).getTime() - Date.now()) / (1000 * 60 * 60 * 24)); }
+  catch { return null; }
+}
+
+function TaskListRow({ task }: { task: TaskDot }) {
+  const days = daysUntil(task.due_date);
+  const isDone = task.status === 'complete' || task.status === 'dropped';
+  const isOverdue = !isDone && days !== null && days < 0;
+
+  const dayLabel = task.due_date == null ? 'No due date'
+    : days === null ? null
+    : days < 0 ? `${Math.abs(days)}d overdue`
+    : days === 0 ? 'Today'
+    : `${days}d`;
+
+  return (
+    <Link
+      href={`/grants/${task.grant_id}/workspace?tab=tasks`}
+      className="flex items-center gap-3 px-2 py-2.5 hover:bg-gray-50/80 transition-colors border-t border-gray-50 first:border-t-0"
+      style={task.grant_color ? { borderLeft: `3px solid ${task.grant_color}` } : { borderLeft: '3px solid transparent' }}
+    >
+      <span className={`w-1.5 h-1.5 rounded-full shrink-0 ${isOverdue ? 'bg-red-400' : isDone ? 'bg-gray-300' : 'bg-indigo-400'}`} />
+      <div className="flex-1 min-w-0 pl-1">
+        <p className={`text-sm truncate leading-snug ${isDone ? 'line-through text-gray-400' : 'text-gray-700 font-medium'}`}>
+          {task.title}
+        </p>
+        <p className="text-[11px] text-gray-400 truncate mt-0.5">{task.grant_title}</p>
+      </div>
+      <span className={`hidden sm:inline shrink-0 text-[10px] font-semibold px-1.5 py-0.5 rounded-full whitespace-nowrap ${TASK_PRIORITY_COLOR[task.priority] ?? 'bg-gray-100 text-gray-500'}`}>
+        {task.priority ?? '—'}
+      </span>
+      <span className={`shrink-0 text-[10px] font-semibold px-1.5 py-0.5 rounded-full whitespace-nowrap ${STATUS_COLOR[task.status] ?? 'bg-gray-100 text-gray-500'}`}>
+        {STATUS_LABEL[task.status] ?? task.status}
+      </span>
+      {dayLabel && (
+        <span className={`shrink-0 text-[11px] font-semibold tabular-nums w-20 text-right ${isOverdue ? 'text-red-500' : 'text-gray-400'}`}>
+          {dayLabel}
+        </span>
+      )}
+    </Link>
+  );
+}
+
+function TaskListView({ tasks, loading }: { tasks: TaskDot[]; loading: boolean }) {
+  const sorted = [...tasks].sort((a, b) => {
+    if (a.due_date == null && b.due_date == null) return 0;
+    if (a.due_date == null) return 1;
+    if (b.due_date == null) return -1;
+    return new Date(a.due_date).getTime() - new Date(b.due_date).getTime();
+  });
+
+  if (loading) {
+    return (
+      <div className="space-y-2">
+        {[1, 2, 3, 4].map(i => (
+          <div key={i} className="h-10 bg-gray-50 rounded-xl animate-pulse" />
+        ))}
+      </div>
+    );
+  }
+
+  if (sorted.length === 0) {
+    return (
+      <div className="py-10 text-center">
+        <p className="text-sm text-gray-400">No tasks across your grants</p>
+        <p className="text-xs text-gray-300 mt-1">Tasks created in a grant workspace will appear here</p>
+      </div>
+    );
+  }
+
+  return <div>{sorted.map(t => <TaskListRow key={t.id} task={t} />)}</div>;
+}
+
 export default function GrantTimeline({ grants, loading, starredIds = new Set(), tasks = [] }: GrantTimelineProps) {
   const [window, setWindow] = useState<Window>(60);
+  const [viewMode, setViewMode] = useState<ViewMode>('timeline');
   const containerRef = useRef<HTMLDivElement>(null);
   const [containerW, setContainerW] = useState(700);
 
@@ -337,8 +438,38 @@ export default function GrantTimeline({ grants, loading, starredIds = new Set(),
         >
           Grant Timeline
         </h2>
-        <div className="flex items-center gap-1">
-          {([30, 60, 90] as Window[]).map(w => (
+        <div className="flex items-center gap-3">
+          <div className="flex items-center gap-1 pr-2 mr-1" style={{ borderRight: '1px solid var(--panel-header-rule)' }}>
+            {(['timeline', 'list'] as ViewMode[]).map(mode => (
+              <button
+                key={mode}
+                onClick={() => setViewMode(mode)}
+                className="text-xs px-2.5 py-1 rounded-md font-medium capitalize transition-colors"
+                style={viewMode === mode ? {
+                  background: 'var(--panel-header-text)',
+                  color: '#FFFFFF',
+                } : {
+                  color: 'var(--ink-muted)',
+                  background: 'transparent',
+                }}
+                onMouseEnter={e => {
+                  if (viewMode !== mode) {
+                    (e.currentTarget as HTMLButtonElement).style.background = 'rgba(28,60,114,0.08)';
+                    (e.currentTarget as HTMLButtonElement).style.color = 'var(--panel-header-text)';
+                  }
+                }}
+                onMouseLeave={e => {
+                  if (viewMode !== mode) {
+                    (e.currentTarget as HTMLButtonElement).style.background = 'transparent';
+                    (e.currentTarget as HTMLButtonElement).style.color = 'var(--ink-muted)';
+                  }
+                }}
+              >
+                {mode}
+              </button>
+            ))}
+          </div>
+          {viewMode === 'timeline' && ([30, 60, 90] as Window[]).map(w => (
             <button
               key={w}
               onClick={() => setWindow(w)}
@@ -370,7 +501,9 @@ export default function GrantTimeline({ grants, loading, starredIds = new Set(),
       </div>
 
       <div className="px-5 py-4">
-        {loading ? (
+        {viewMode === 'list' ? (
+          <TaskListView tasks={tasks} loading={loading} />
+        ) : loading ? (
           <div className="space-y-2">
             {[1,2,3,4].map(i => (
               <div key={i} className="h-9 bg-gray-50 rounded-xl animate-pulse" />

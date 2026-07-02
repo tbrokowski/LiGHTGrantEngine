@@ -51,6 +51,36 @@ async def my_tasks(db: AsyncSession = Depends(get_db), current_user: User = Depe
         for t in task_list
     ]
 
+@router.get("/all")
+async def all_tasks(db: AsyncSession = Depends(get_db), current_user: User = Depends(get_current_user)):
+    # Return every task (any owner/assignee, any status, including subtasks) across the
+    # user's accessible grants — mirrors what /grants/{id}/tasks shows per-grant, so the
+    # dashboard timeline matches what's visible on each grant's Tasks page.
+    accessible_grant_ids = await _get_accessible_grant_ids(current_user, db)
+    if not accessible_grant_ids:
+        return []
+
+    q = select(Task).where(Task.grant_id.in_(accessible_grant_ids))
+    result = await db.execute(q)
+    task_list = result.scalars().all()
+
+    grant_ids = list({t.grant_id for t in task_list})
+    grant_map: dict[str, tuple[str, str | None]] = {}
+    if grant_ids:
+        grants_result = await db.execute(
+            select(ActiveGrant.id, ActiveGrant.title, ActiveGrant.color).where(ActiveGrant.id.in_(grant_ids))
+        )
+        grant_map = {row[0]: (row[1], row[2]) for row in grants_result.all()}
+
+    return [
+        {
+            **_task_dict(t),
+            "grant_title": grant_map.get(t.grant_id, ("", None))[0],
+            "grant_color": grant_map.get(t.grant_id, ("", None))[1],
+        }
+        for t in task_list
+    ]
+
 @router.get("/overdue")
 async def overdue_tasks(db: AsyncSession = Depends(get_db), current_user: User = Depends(get_current_user)):
     today = date.today()

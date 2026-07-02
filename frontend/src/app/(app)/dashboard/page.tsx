@@ -120,6 +120,7 @@ export default function DashboardPage() {
   const [queue, setQueue] = useState<QueueItem[]>([]);
   const [grantList, setGrantList] = useState<GrantItem[]>([]);
   const [taskList, setTaskList] = useState<TaskItem[]>([]);
+  const [allTaskList, setAllTaskList] = useState<TaskItem[]>([]);
   const [loading, setLoading] = useState(true);
   const [starredIds, setStarredIds] = useState<Set<string>>(new Set());
 
@@ -130,11 +131,13 @@ export default function DashboardPage() {
       opportunities.newOpportunities({ unread_only: true, limit: 10 }).catch(() => ({ data: { items: [] } })),
       grants.list({ limit: 50 }).catch(() => ({ data: [] })),
       tasksApi.myTasks().catch(() => ({ data: [] })),
-    ]).then(([statsRes, queueRes, grantsRes, tasksRes]) => {
+      tasksApi.all().catch(() => ({ data: [] })),
+    ]).then(([statsRes, queueRes, grantsRes, tasksRes, allTasksRes]) => {
       setStats(statsRes.data);
       setQueue((queueRes.data?.items ?? []) as QueueItem[]);
       setGrantList(grantsRes.data as GrantItem[]);
       setTaskList(tasksRes.data as TaskItem[]);
+      setAllTaskList(allTasksRes.data as TaskItem[]);
     }).finally(() => setLoading(false));
   }, []);
 
@@ -230,7 +233,7 @@ export default function DashboardPage() {
 
         {/* Row 2 — Grant Timeline full width */}
         <div className="px-5 pb-5">
-          <GrantTimeline grants={grantList} loading={loading} starredIds={starredIds} tasks={taskList} />
+          <GrantTimeline grants={grantList} loading={loading} starredIds={starredIds} tasks={allTaskList} />
         </div>
 
         {/* Row 3 — New Opportunities full width */}
