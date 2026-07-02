@@ -210,6 +210,8 @@ export default function SkeletonPhase({
   const [placeholdersExpanded, setPlaceholdersExpanded] = useState(false);
   const dragIndexRef = useRef<number | null>(null);
   const [dragOverIdx, setDragOverIdx] = useState<number | null>(null);
+  const [localDraftPlan, setLocalDraftPlan] = useState<Record<string, unknown> | null>(null);
+  const [previewingPlan, setPreviewingPlan] = useState(false);
 
   // TBD counts
   const tbdCount = (skeleton as Record<string, unknown>).tbd_count as number | undefined;
