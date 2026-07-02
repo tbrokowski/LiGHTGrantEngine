@@ -1,4 +1,5 @@
 """Grant Management Workspace sub-resource endpoints."""
+import logging
 import uuid
 from typing import Optional
 from datetime import date, datetime
@@ -25,6 +26,8 @@ from app.models.grant_member import GrantMember, GrantMemberRole, GrantMemberSta
 from app.routers.auth import get_current_user
 from app.auth.permissions import grant_access, invalidate_permission_cache, get_redis
 import redis.asyncio as aioredis
+
+logger = logging.getLogger(__name__)
 
 # All workspace routes require at minimum read membership on the grant
 router = APIRouter(dependencies=[Depends(grant_access())])
@@ -1392,6 +1395,7 @@ async def create_drive_folder(
     try:
         result = create_grant_folder_tree(grant.title, access_token)
     except Exception as exc:
+        logger.exception("create_grant_folder_tree failed for grant %s", grant_id)
         raise HTTPException(502, f"Google Drive API error: {exc}") from exc
 
     # Persist the folder URL on the grant record
@@ -1623,6 +1627,7 @@ async def create_google_doc(
             parent_folder_id=parent_folder_id,
         )
     except Exception as exc:
+        logger.exception("create_grant_doc failed for grant %s", grant_id)
         raise HTTPException(502, f"Google Docs API error: {exc}") from exc
 
     now = datetime.utcnow()
@@ -1672,6 +1677,7 @@ async def create_standalone_google_doc(
             parent_folder_id=parent_folder_id,
         )
     except Exception as exc:
+        logger.exception("create_grant_doc failed for grant %s", grant_id)
         raise HTTPException(502, f"Google Docs API error: {exc}") from exc
 
     return {"doc_id": result["doc_id"], "doc_url": result["doc_url"]}
@@ -1749,6 +1755,7 @@ async def push_to_google_doc(
             access_token=access_token,
         )
     except Exception as exc:
+        logger.exception("push_to_doc failed for grant %s doc %s", grant_id, grant.google_doc_id)
         raise HTTPException(502, f"Google Docs API error: {exc}") from exc
 
     now = datetime.utcnow()
@@ -1792,6 +1799,7 @@ async def push_figure_to_google_doc(
             heading_text="Introduction",
         )
     except Exception as exc:
+        logger.exception("insert_image_after_heading failed for grant %s doc %s", grant_id, grant.google_doc_id)
         raise HTTPException(502, f"Google Docs API error: {exc}") from exc
 
     await log_activity(
@@ -1825,6 +1833,7 @@ async def pull_from_google_doc(
             access_token=access_token,
         )
     except Exception as exc:
+        logger.exception("pull_from_doc failed for grant %s doc %s", grant_id, grant.google_doc_id)
         raise HTTPException(502, f"Google Docs API error: {exc}") from exc
 
     grant.editor_document = html
@@ -1865,6 +1874,7 @@ async def get_google_doc_content(
             access_token=access_token,
         )
     except Exception as exc:
+        logger.exception("read_document_as_text failed for grant %s doc %s", grant_id, grant.google_doc_id)
         raise HTTPException(502, f"Google Docs API error: {exc}") from exc
 
     return {"text": text, "word_count": len(text.split()), "google_doc_url": grant.google_doc_url}
@@ -2006,6 +2016,7 @@ async def push_content_to_doc(
             access_token=access_token,
         )
     except Exception as exc:
+        logger.exception("push_content_to_doc failed for grant %s doc %s", grant_id, body.doc_id)
         raise HTTPException(502, f"Google Docs API error: {exc}") from exc
 
     return {"ok": True}
@@ -2026,6 +2037,7 @@ async def pull_content_from_doc(
     try:
         html = pull_from_doc(doc_id=body.doc_id, access_token=access_token)
     except Exception as exc:
+        logger.exception("pull_content_from_doc failed for grant %s doc %s", grant_id, body.doc_id)
         raise HTTPException(502, f"Google Docs API error: {exc}") from exc
 
     return {"ok": True, "content_html": html}
@@ -2055,6 +2067,7 @@ async def upload_editor_image(
         storage.upload_file(key, data, content_type=file.content_type or "image/png")
         url = storage.get_presigned_url(key, expires_in=86400 * 7)  # 7 days
     except Exception as exc:
+        logger.exception("upload_editor_image failed for grant %s", grant_id)
         raise HTTPException(502, f"Storage error: {exc}") from exc
 
     return {"url": url, "key": key}
