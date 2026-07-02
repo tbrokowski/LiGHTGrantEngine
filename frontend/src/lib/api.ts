@@ -404,6 +404,8 @@ export const grantWriting = {
     }
   ) =>
     api.patch(`/grants/${grantId}/writing/skeleton-constraints`, data),
+  previewDraftPlan: (grantId: string) =>
+    api.post(`/grants/${grantId}/writing/preview-draft-plan`, null, { timeout: 60_000 }),
   enqueueDraft: (grantId: string, body?: { flagged_sections?: string[] }) =>
     api.post(`/grants/${grantId}/writing/generate-draft`, body ?? null),
   resetDraft: (grantId: string) =>
@@ -473,6 +475,7 @@ export const sources = {
   diagnoseRun: (sourceId: string, runId: string) => api.post(`/sources/${sourceId}/runs/${runId}/diagnose`),
   recentRuns: (limit = 20) => api.get(`/sources/status/recent-runs?limit=${limit}`),
   summary: () => api.get('/sources/status/summary'),
+  workerStatus: () => api.get('/sources/worker-status'),
 };
 
 // ── Admin ─────────────────────────────────────────────────────────────────────

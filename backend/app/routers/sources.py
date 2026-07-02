@@ -186,6 +186,32 @@ async def create_source(
     return _source_to_dict(source)
 
 
+@router.get("/worker-status")
+async def get_worker_status(current_user: User = Depends(get_current_user)):
+    """Ping Celery workers to check if the discovery pipeline is actually running.
+
+    Returns worker_reachable=True only when at least one worker responds within
+    3 seconds. Use this to diagnose 'no new grants' — if False, manual scan
+    triggers are being queued but never executed.
+    """
+    try:
+        from app.workers.celery_app import celery_app
+        import asyncio
+
+        def _ping():
+            inspector = celery_app.control.inspect(timeout=3.0)
+            ping_result = inspector.ping() or {}
+            active_result = inspector.active() or {}
+            workers = list(ping_result.keys())
+            active_count = sum(len(v) for v in active_result.values())
+            return {"worker_reachable": bool(workers), "workers": workers, "active_tasks": active_count}
+
+        result = await asyncio.get_event_loop().run_in_executor(None, _ping)
+        return result
+    except Exception as exc:
+        return {"worker_reachable": False, "workers": [], "active_tasks": 0, "error": str(exc)}
+
+
 @router.post("/run-all", dependencies=[Depends(require_org_admin())])
 async def run_all_sources(
     bg: BackgroundTasks,

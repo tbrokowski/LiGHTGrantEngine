@@ -22,6 +22,7 @@ celery_app = Celery(
         "app.workers.archive_clustering_tasks",
         "app.workers.grant_writing_tasks",
         "app.workers.partner_tasks",
+        "app.workers.tagging_tasks",
     ],
 )
 

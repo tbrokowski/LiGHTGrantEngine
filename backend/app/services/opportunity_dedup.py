@@ -13,8 +13,11 @@ Signal weights:
   100  External ID match (opportunity_number / normalised program_name)
    80  Grant-specific URL path match (ID in path, not query-only)
    70  Normalised title + funder prefix + deadline within 60 days
+   70  Normalised title + same source_id (elevated from 30 — prevents weekly
+       re-insertion of grants that have no per-grant URL and fall back to the
+       source listing page URL)
    50  Normalised title + funder prefix (no deadline constraint)
-   30  Normalised title + same source_id (weak, same-source only)
+   50  Normalised title + funder prefix + deadline outside 60-day window
 """
 import re
 from datetime import date
@@ -385,7 +388,12 @@ def find_existing_duplicate(
             # Score 50: title+prefix matched but deadline outside window
             return candidates[0], False
 
-    # ── Score 30: Title + same source (weakest signal) ───────────────────────
+    # ── Score 70: Title + same source (definitive when source is the URL) ───
+    # Elevated from score-30 "possible" to score-70 "definitive" because
+    # many grants have no specific per-grant URL; we store the source listing
+    # page URL as fallback. Re-discovering the same title from the same source
+    # on a subsequent scan is almost certainly the same grant — block re-ingest
+    # instead of accumulating POSSIBLE_DUPLICATE records each weekly scan.
     if title and source_id:
         existing = _one(
             select(Opportunity).where(
@@ -395,6 +403,6 @@ def find_existing_duplicate(
             )
         )
         if existing:
-            return existing, False
+            return existing, True
 
     return None, False

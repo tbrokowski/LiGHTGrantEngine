@@ -187,13 +187,19 @@ class BaseScraper:
 
     def _normalize(self, raw: dict) -> dict:
         title = raw.get("title", "")
+        url = self._finalize_opportunity_url(
+            raw.get("url") or raw.get("link", ""),
+            title,
+        )
+        # When no specific call URL is found, fall back to the source listing
+        # page so the opportunity isn't silently discarded. Dedup handles
+        # re-discovery across weekly scans via title+source_id matching.
+        if not url:
+            url = self.source.url or ""
         return {
             "title": title,
             "description": raw.get("description", ""),
-            "url": self._finalize_opportunity_url(
-                raw.get("url") or raw.get("link", ""),
-                title,
-            ),
+            "url": url,
             "funder": raw.get("funder", self.source.name),
             "deadline": raw.get("deadline"),
             "program_name": raw.get("program") or raw.get("program_name"),

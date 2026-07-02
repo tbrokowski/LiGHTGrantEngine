@@ -495,6 +495,7 @@ function SettingsPageInner() {
   const [running, setRunning] = useState<string | null>(null);
   const [scanningAll, setScanningAll] = useState(false);
   const [scanAllResult, setScanAllResult] = useState<string | null>(null);
+  const [workerStatus, setWorkerStatus] = useState<{ worker_reachable: boolean; workers: string[]; active_tasks: number } | null>(null);
   const [deduplicating, setDeduplicating] = useState(false);
   const [dedupResult, setDedupResult] = useState<string | null>(null);
   const [discoveringSource, setDiscoveringSource] = useState(false);
@@ -605,6 +606,9 @@ function SettingsPageInner() {
       .then(r => setSourceList(r.data))
       .catch(console.error)
       .finally(() => setLoading(false));
+    sources.workerStatus()
+      .then(r => setWorkerStatus(r.data))
+      .catch(() => setWorkerStatus({ worker_reachable: false, workers: [], active_tasks: 0 }));
   }
 
   useEffect(() => { fetchSources(); }, []);
@@ -903,6 +907,25 @@ function SettingsPageInner() {
 
       {isPlatformAdmin && (
       <>
+      {/* Worker health banner */}
+      {workerStatus !== null && (
+        <div
+          className="mb-4 flex items-center gap-2.5 px-4 py-2.5 rounded text-xs"
+          style={{
+            background: workerStatus.worker_reachable ? 'var(--state-success-bg)' : 'var(--state-error-bg)',
+            border: `1px solid ${workerStatus.worker_reachable ? 'var(--state-success)' : 'var(--state-error)'}`,
+            color: workerStatus.worker_reachable ? 'var(--state-success)' : 'var(--state-error)',
+          }}
+        >
+          <span
+            className="inline-block w-2 h-2 rounded-full shrink-0"
+            style={{ background: workerStatus.worker_reachable ? 'var(--state-success)' : 'var(--state-error)' }}
+          />
+          {workerStatus.worker_reachable
+            ? `Worker online — ${workerStatus.workers.length} worker${workerStatus.workers.length !== 1 ? 's' : ''} active${workerStatus.active_tasks > 0 ? `, ${workerStatus.active_tasks} task${workerStatus.active_tasks !== 1 ? 's' : ''} running` : ''}`
+            : 'Worker offline — scheduled scans and manual triggers are queued but not executing. Check that the Celery worker and beat services are running.'}
+        </div>
+      )}
       <div className="mb-8 flex items-start justify-between gap-4">
         <div>
           <h2 className="text-sm font-semibold" style={{ color: 'var(--ink-primary)' }}>Data Sources</h2>

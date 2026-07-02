@@ -194,8 +194,15 @@ def scan_source(self, source_id: str):
             import traceback
             # Get the appropriate scraper
             from app.scrapers import get_scraper
+            from app.services.opportunity_dedup import dedup_listings
             scraper = get_scraper(source)
             raw_listings = scraper.fetch()
+
+            # Within-run dedup: remove duplicates returned in the same batch
+            # (can happen when paginating or crawling multiple sub-pages).
+            pre_dedup_count = len(raw_listings)
+            raw_listings = dedup_listings(raw_listings)
+            intra_run_dups = pre_dedup_count - len(raw_listings)
 
             new_count = 0
             updated_count = 0
@@ -222,6 +229,8 @@ def scan_source(self, source_id: str):
                 warnings.append(f"All {dup_count} listings were duplicates of existing opportunities.")
             elif skipped_count > 0:
                 warnings.append(f"{skipped_count} listings skipped (no URL, award records, or invalid data).")
+            if intra_run_dups > 0:
+                warnings.append(f"{intra_run_dups} within-run duplicates removed before processing.")
 
             duration_s = round((datetime.utcnow() - run.started_at).total_seconds(), 1)
 
@@ -235,9 +244,9 @@ def scan_source(self, source_id: str):
             run.warnings = warnings
             run.log_summary = (
                 f"type={source.source_type} | "
-                f"fetched={len(raw_listings)} | new={new_count} | "
-                f"updated={updated_count} | dupes={dup_count} | "
-                f"skipped={skipped_count} | duration={duration_s}s"
+                f"fetched={pre_dedup_count} | deduped={len(raw_listings)} | "
+                f"new={new_count} | updated={updated_count} | "
+                f"dupes={dup_count} | skipped={skipped_count} | duration={duration_s}s"
                 + (f" | WARNINGS: {'; '.join(warnings)}" if warnings else "")
             )
 
