@@ -7,6 +7,7 @@ import {
   CloudUpload, CloudDownload, Check, Loader2, Link2, ExternalLink,
   MessageCircle, AlertTriangle, AlertCircle,
 } from 'lucide-react';
+import { toast } from 'sonner';
 import SingleDocEditor from '../SingleDocEditor';
 import IdeaPhase from '../phases/IdeaPhase';
 import SkeletonPhase from '../phases/SkeletonPhase';
@@ -697,6 +698,9 @@ function GoogleDocsSubToolbar({
     try {
       const res = await grants.createGoogleDoc(grantId);
       onDocLinked(res.data.doc_id, res.data.doc_url);
+    } catch (err: unknown) {
+      const msg = (err as { response?: { data?: { detail?: string } } })?.response?.data?.detail;
+      toast.error(msg || 'Failed to create Google Doc.');
     } finally {
       setLinking(false);
     }
@@ -710,8 +714,21 @@ function GoogleDocsSubToolbar({
       onDocLinked(res.data.doc_id, res.data.doc_url);
       setLinkMode('none');
       setLinkUrl('');
+    } catch (err: unknown) {
+      const msg = (err as { response?: { data?: { detail?: string } } })?.response?.data?.detail;
+      toast.error(msg || 'Failed to link Google Doc.');
     } finally {
       setLinking(false);
+    }
+  };
+
+  const handleUnlink = async () => {
+    try {
+      await grants.unlinkGoogleDoc(grantId);
+      onUnlink();
+    } catch (err: unknown) {
+      const msg = (err as { response?: { data?: { detail?: string } } })?.response?.data?.detail;
+      toast.error(msg || 'Failed to unlink Google Doc.');
     }
   };
 
@@ -781,7 +798,7 @@ function GoogleDocsSubToolbar({
                 <CloudDownload className="w-3.5 h-3.5" />
               </button>
               <button
-                onClick={async () => { await grants.unlinkGoogleDoc(grantId); onUnlink(); }}
+                onClick={() => void handleUnlink()}
                 title="Unlink Google Doc"
                 className="text-gray-300 hover:text-red-400 transition-colors"
               >
