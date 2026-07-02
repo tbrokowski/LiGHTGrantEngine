@@ -1,17 +1,18 @@
 """
 Agentic chat loop — streaming tool-calling response.
 
-Wraps OpenAI's .stream() context manager to handle interleaved tool calls
-and text generation, yielding SSE-ready dicts throughout.
+Uses client.chat.completions.create(stream=True) for broad SDK compatibility.
+Accumulates tool-call argument fragments from raw chunks, then executes tools
+between rounds, yielding SSE-ready dicts throughout.
 
 SSE event types emitted:
-  {"type": "tool_start",  "tool": name, "display": label}
-  {"type": "tool_result", "tool": name, "count": n}
-  {"type": "content",     "content": delta_text}
-  {"type": "sources",     "items": [...]}
+  {"type": "tool_start",    "tool": name, "display": label}
+  {"type": "tool_result",   "tool": name, "count": n}
+  {"type": "content",       "content": delta_text}
+  {"type": "sources",       "items": [...]}
   {"type": "context_chips", "chips": [...]}
   {"type": "done"}
-  {"type": "error",       "message": str}
+  {"type": "error",         "message": str}
 """
 from __future__ import annotations
 
@@ -37,86 +38,98 @@ async def run_agent_loop(
     """
     Streaming agentic loop — yields SSE-ready dicts.
 
-    Pauses streaming when the LLM requests a tool call, executes the tool,
-    feeds the result back, then continues streaming the final response.
+    Pauses streaming when the LLM requests tool calls, executes them,
+    feeds results back, then continues streaming the final response.
     Collects all tool results to emit a 'sources' event at the end.
     """
     from app.ai.client import _get_client
 
+    client = _get_client()
     round_messages = list(messages)
     all_sources: list[dict] = []
 
     try:
-        for round_num in range(MAX_TOOL_ROUNDS):
-            tool_calls_this_round: dict[int, dict] = {}
-            got_text = False
+        for _round in range(MAX_TOOL_ROUNDS):
+            # Accumulator: index -> {id, name, arguments_str}
+            tc_accum: dict[int, dict] = {}
 
-            client = _get_client()
-            async with client.chat.completions.stream(
+            stream = await client.chat.completions.create(
                 model=model,
                 messages=round_messages,
                 tools=tools if tools else None,
                 tool_choice="auto" if tools else None,
                 temperature=temperature,
                 max_tokens=4096,
-            ) as stream:
-                async for event in stream:
-                    event_type = getattr(event, "type", None)
+                stream=True,
+            )
 
-                    if event_type == "content.delta":
-                        delta = getattr(event, "delta", "") or ""
-                        if delta:
-                            got_text = True
-                            yield {"type": "content", "content": delta}
+            async for chunk in stream:
+                if not chunk.choices:
+                    continue
+                delta = chunk.choices[0].delta
 
-                    elif event_type == "tool_calls.function.arguments.done":
-                        tc_name = getattr(event, "name", "") or ""
-                        tc_args = getattr(event, "parsed_arguments", {}) or {}
-                        tc_id = getattr(event, "tool_call_id", "") or ""
-                        tc_index = getattr(event, "index", 0) or 0
+                # ── Text token ────────────────────────────────────────────────
+                if delta.content:
+                    yield {"type": "content", "content": delta.content}
 
-                        display = tool_display_label(tc_name, tc_args)
-                        yield {"type": "tool_start", "tool": tc_name, "display": display}
+                # ── Tool-call fragment ────────────────────────────────────────
+                if delta.tool_calls:
+                    for tc_delta in delta.tool_calls:
+                        idx = tc_delta.index
+                        if idx not in tc_accum:
+                            tc_accum[idx] = {"id": "", "name": "", "arguments": ""}
+                        if tc_delta.id:
+                            tc_accum[idx]["id"] = tc_delta.id
+                        if tc_delta.function:
+                            if tc_delta.function.name:
+                                tc_accum[idx]["name"] += tc_delta.function.name
+                            if tc_delta.function.arguments:
+                                tc_accum[idx]["arguments"] += tc_delta.function.arguments
 
-                        try:
-                            result = await tool_executor(tc_name, tc_args)
-                        except Exception as exc:
-                            result = {"error": str(exc)}
-                            logger.warning("tool_executor error", tool=tc_name, error=str(exc))
-
-                        count = _extract_count(tc_name, result)
-                        yield {"type": "tool_result", "tool": tc_name, "count": count}
-
-                        tool_calls_this_round[tc_index] = {
-                            "id": tc_id,
-                            "name": tc_name,
-                            "arguments": tc_args,
-                            "result": result,
-                        }
-
-                        # Accumulate sources for the final sources event
-                        _accumulate_sources(tc_name, result, all_sources)
-
-            if not tool_calls_this_round:
-                # Pure text response — we're done
+            # ── No tool calls → pure text response, done ──────────────────────
+            if not tc_accum:
                 break
 
-            # Add assistant tool-call message + tool result messages for next round
-            round_messages.append(
-                _make_assistant_tool_call_message(tool_calls_this_round)
-            )
-            for tc in tool_calls_this_round.values():
-                round_messages.append(
-                    _make_tool_result_message(tc["id"], tc["result"])
-                )
+            # ── Execute each tool call ────────────────────────────────────────
+            tool_calls_this_round: dict[int, dict] = {}
+            for idx, tc in tc_accum.items():
+                tc_name = tc["name"]
+                try:
+                    tc_args = json.loads(tc["arguments"] or "{}")
+                except json.JSONDecodeError:
+                    tc_args = {}
+                tc_id = tc["id"]
 
-        # Emit aggregated sources
+                display = tool_display_label(tc_name, tc_args)
+                yield {"type": "tool_start", "tool": tc_name, "display": display}
+
+                try:
+                    result = await tool_executor(tc_name, tc_args)
+                except Exception as exc:
+                    result = {"error": str(exc)}
+                    logger.warning("tool_executor error", tool=tc_name, error=str(exc))
+
+                count = _extract_count(tc_name, result)
+                yield {"type": "tool_result", "tool": tc_name, "count": count}
+
+                tool_calls_this_round[idx] = {
+                    "id": tc_id,
+                    "name": tc_name,
+                    "arguments": tc_args,
+                    "result": result,
+                }
+                _accumulate_sources(tc_name, result, all_sources)
+
+            # ── Feed tool results back for the next round ─────────────────────
+            round_messages.append(_make_assistant_tool_call_message(tool_calls_this_round))
+            for tc in tool_calls_this_round.values():
+                round_messages.append(_make_tool_result_message(tc["id"], tc["result"]))
+
+        # ── Final events ──────────────────────────────────────────────────────
         if all_sources:
             yield {"type": "sources", "items": all_sources}
-
         if context_chips:
             yield {"type": "context_chips", "chips": context_chips}
-
         yield {"type": "done"}
 
     except Exception as exc:
@@ -128,7 +141,6 @@ async def run_agent_loop(
 # ── Helpers ───────────────────────────────────────────────────────────────────
 
 def _extract_count(tool_name: str, result: Any) -> int:
-    """Extract a result count for display in the tool_result event."""
     if not isinstance(result, dict):
         return 0
     if tool_name in ("search_archive", "search_org_docs"):
@@ -141,7 +153,6 @@ def _extract_count(tool_name: str, result: Any) -> int:
 
 
 def _accumulate_sources(tool_name: str, result: Any, sources: list[dict]) -> None:
-    """Extract source items from tool results and append to the running list."""
     if not isinstance(result, dict):
         return
 
@@ -196,7 +207,6 @@ def _accumulate_sources(tool_name: str, result: Any, sources: list[dict]) -> Non
 
 
 def _make_assistant_tool_call_message(tool_calls: dict[int, dict]) -> dict:
-    """Build the assistant message containing tool calls for the next round."""
     return {
         "role": "assistant",
         "content": None,
@@ -215,7 +225,6 @@ def _make_assistant_tool_call_message(tool_calls: dict[int, dict]) -> dict:
 
 
 def _make_tool_result_message(tool_call_id: str, result: Any) -> dict:
-    """Build a tool result message. Cap size to avoid context overflow."""
     content = json.dumps(result)
     if len(content) > 8000:
         content = content[:8000] + "…"
