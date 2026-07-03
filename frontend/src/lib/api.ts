@@ -442,6 +442,7 @@ export const documents = {
 export const archive = {
   list: (params?: Record<string, unknown>) => api.get('/archive/', { params }),
   get: (id: string) => api.get(`/archive/${id}`),
+  getSection: (sectionId: string) => api.get(`/archive/sections/${sectionId}`),
   create: (data: Record<string, unknown>) => api.post('/archive/', data),
   createWithDocument: (formData: FormData) =>
     api.post('/archive/create-with-document', formData, {

@@ -1,7 +1,7 @@
 'use client';
 
 import { useState } from 'react';
-import { Search, ExternalLink, Loader2, Quote } from 'lucide-react';
+import { Search, ExternalLink, Loader2, Quote, BookOpen } from 'lucide-react';
 import { grantWriting } from '@/lib/api';
 import type { InsertableCitation } from '@/lib/citationFormat';
 
@@ -13,6 +13,7 @@ interface CitationsPanelProps {
   onCitationsUpdate: (citations: Citation[]) => void;
   activeSection?: string;
   onInsertCitation: (citation: Citation) => void;
+  onOpenArchiveSection?: (meta: { sectionId: string; archiveId?: string; grantTitle?: string; sectionType?: string }) => void;
 }
 
 export default function CitationsPanel({
@@ -21,6 +22,7 @@ export default function CitationsPanel({
   onCitationsUpdate,
   activeSection,
   onInsertCitation,
+  onOpenArchiveSection,
 }: CitationsPanelProps) {
   const [query, setQuery] = useState('');
   const [searching, setSearching] = useState(false);
@@ -83,7 +85,19 @@ export default function CitationsPanel({
                 )}
                 <div className="text-gray-700 mt-0.5">{c.formatted_citation}</div>
                 <div className="flex items-center gap-3 mt-1.5">
-                  {c.url && (
+                  {c.source_type === 'archive' && c.external_id ? (
+                    <button
+                      onClick={() => onOpenArchiveSection?.({
+                        sectionId: c.external_id!,
+                        archiveId: c.metadata?.archive_id,
+                        grantTitle: c.metadata?.grant_title,
+                        sectionType: c.metadata?.section_type,
+                      })}
+                      className="inline-flex items-center gap-0.5 text-indigo-600 hover:underline"
+                    >
+                      <BookOpen className="w-3 h-3" /> View source
+                    </button>
+                  ) : c.url && (
                     <a
                       href={c.url}
                       target="_blank"

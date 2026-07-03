@@ -17,8 +17,7 @@ import uuid
 from typing import AsyncIterator, TYPE_CHECKING
 
 from app.ai.client import chat_complete, chat_complete_with_tools
-from app.ai.rag.retriever import retrieve_content_exemplars
-from app.services.web_search import search_web_multi
+from app.ai.agents.rag_tools import RAG_TOOL_DEFS, build_rag_tool_executor
 
 if TYPE_CHECKING:
     from sqlalchemy.ext.asyncio import AsyncSession
@@ -68,8 +67,11 @@ QUALITY DIMENSIONS (assess all):
    formal, technical, and impact-focused?
 
 TOOL PROTOCOL:
-- search_rag_corpus → retrieve prior awarded proposal excerpts on a concept
+- search_rag_corpus → retrieve prior awarded proposal excerpts on a concept (search by the
+  underlying method/concept, never by this proposal's own named platforms/tools/acronyms)
+- search_named_archive → look up a SPECIFIC prior proposal by name and search within it
 - search_web → retrieve current evidence, statistics, or citations
+- search_academic → retrieve a peer-reviewed citation for a scientific/clinical/technical claim
 - rewrite_section → targeted rewrite to incorporate what you found (always pair with a search)
 - ask_user → LAST RESORT for data the AI cannot have (team prelim results, partner names,
   budget figures, PI credentials). Maximum 1 ask_user call per pass.
@@ -83,47 +85,7 @@ RULES:
 
 # ── Tool definitions ──────────────────────────────────────────────────────────
 
-TOOLS = [
-    {
-        "type": "function",
-        "function": {
-            "name": "search_rag_corpus",
-            "description": (
-                "Search the institutional archive of prior awarded and submitted proposals "
-                "for sections matching a concept, methodology, disease area, or geography. "
-                "Use when the drafted section mentions something that likely exists in the archive."
-            ),
-            "parameters": {
-                "type": "object",
-                "properties": {
-                    "query": {"type": "string", "description": "Concept, method, claim, or topic to search for"},
-                    "section_type": {"type": "string", "description": "Optional section type filter"},
-                },
-                "required": ["query"],
-            },
-        },
-    },
-    {
-        "type": "function",
-        "function": {
-            "name": "search_web",
-            "description": (
-                "Search the web for evidence, statistics, or citations to support a specific claim. "
-                "Use when a factual claim needs backing or a statistic is missing."
-            ),
-            "parameters": {
-                "type": "object",
-                "properties": {
-                    "queries": {
-                        "type": "array",
-                        "items": {"type": "string"},
-                        "description": "1–3 targeted search queries",
-                    },
-                },
-                "required": ["queries"],
-            },
-        },
-    },
+TOOLS = RAG_TOOL_DEFS + [
     {
         "type": "function",
         "function": {
@@ -215,57 +177,27 @@ async def _build_tool_executor(
     db: "AsyncSession",
     round_num: int,
 ):
-    async def executor(tool_name: str, arguments: dict) -> dict:
-        if tool_name == "search_rag_corpus":
-            query = arguments.get("query", "")
-            sec_type = arguments.get("section_type", section_type)
-            results = await retrieve_content_exemplars(
-                query=query, db=db, section_type=sec_type, funder=funder, top_k=4,
-            )
-            state.events.append({
-                "event": "meta_agent_action",
-                "tool": "search_rag_corpus",
-                "query": query,
-                "section": section_name,
-                "round": round_num,
-                "results_count": len(results),
-            })
-            if not results:
-                return {"found": False, "results": []}
-            return {
-                "found": True,
-                "results": [
-                    {
-                        "grant_title": r.get("grant_title", ""),
-                        "section_type": r.get("section_type", ""),
-                        "outcome": r.get("outcome", ""),
-                        "excerpt": r.get("full_text", "")[:1000],
-                    }
-                    for r in results[:4]
-                ],
-            }
-
+    def _log_search(tool_name: str, arguments: dict, result: dict) -> None:
+        if tool_name == "search_named_archive":
+            query_label = f"{arguments.get('archive_name', '')}: {arguments.get('query', '')}"
         elif tool_name == "search_web":
-            queries = arguments.get("queries", [])
-            if not queries:
-                return {"found": False, "results": []}
-            state.events.append({
-                "event": "meta_agent_action",
-                "tool": "search_web",
-                "query": "; ".join(queries[:2]),
-                "section": section_name,
-                "round": round_num,
-            })
-            results = await search_web_multi(queries[:3], max_results_per_query=3)
-            if not results:
-                return {"found": False, "results": []}
-            return {
-                "found": True,
-                "results": [
-                    {"title": r["title"], "url": r["url"], "content": r["content"][:600]}
-                    for r in results[:5]
-                ],
-            }
+            query_label = "; ".join((arguments.get("queries") or [])[:2])
+        else:
+            query_label = arguments.get("query", "")
+        state.events.append({
+            "event": "meta_agent_action",
+            "tool": tool_name,
+            "query": query_label,
+            "section": section_name,
+            "round": round_num,
+            "results_count": len(result.get("results") or []),
+        })
+
+    rag_executor = build_rag_tool_executor(db, section_type, funder, on_result=_log_search)
+
+    async def executor(tool_name: str, arguments: dict) -> dict:
+        if tool_name in ("search_rag_corpus", "search_named_archive", "search_web", "search_academic"):
+            return await rag_executor(tool_name, arguments)
 
         elif tool_name == "rewrite_section":
             instruction = arguments.get("instruction", "")

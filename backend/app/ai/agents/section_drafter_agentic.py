@@ -4,10 +4,10 @@ Agentic section drafter.
 Replaces the old "draft once, then redraft-if-evidence-check-fails" pair of
 top-level LLM calls with a single tool-calling session: the model gets a
 warm-start evidence bundle (from the existing Phase 2 research pass) but can
-also call search_rag_corpus / search_web / search_academic mid-draft to pull
-more evidence on demand, then calls submit_draft when the section is done.
-This lets the model self-correct citation/grounding gaps inline instead of
-needing a separate redraft pass.
+also call search_rag_corpus / search_named_archive / search_web / search_academic
+mid-draft to pull more evidence on demand, then calls submit_draft when the
+section is done. This lets the model self-correct citation/grounding gaps
+inline instead of needing a separate redraft pass.
 """
 from __future__ import annotations
 
@@ -16,107 +16,59 @@ from typing import Any, TYPE_CHECKING
 
 from app.ai.client import chat_complete_with_tools
 from app.ai.agents.draft_section_context import build_section_draft_context
+from app.ai.agents.rag_tools import RAG_TOOL_DEFS, build_rag_tool_executor
 from app.ai.context.grant_context import DEFAULT_INTRO_ARC
-from app.ai.rag.retriever import retrieve_content_exemplars
-from app.services.web_search import search_web_multi
-from app.services.citation_lookup import search_citations
 
 if TYPE_CHECKING:
     from sqlalchemy.ext.asyncio import AsyncSession
 
 
-TOOLS = [
-    {
-        "type": "function",
-        "function": {
-            "name": "search_rag_corpus",
-            "description": (
-                "Search the institutional archive of prior awarded and submitted proposals "
-                "for excerpts matching a concept, methodology, disease area, or geography. "
-                "Use while writing whenever you need a specific detail, number, or framing "
-                "not already covered in the evidence provided below."
-            ),
-            "parameters": {
-                "type": "object",
-                "properties": {
-                    "query": {"type": "string", "description": "Concept, method, claim, or topic to search for"},
-                },
-                "required": ["query"],
-            },
-        },
-    },
-    {
-        "type": "function",
-        "function": {
-            "name": "search_web",
-            "description": (
-                "Search the web for current evidence, statistics, or citations to support a specific claim. "
-                "Use when a factual claim needs backing you don't already have."
-            ),
-            "parameters": {
-                "type": "object",
-                "properties": {
-                    "queries": {
-                        "type": "array",
-                        "items": {"type": "string"},
-                        "description": "1-3 targeted search queries",
-                    },
-                },
-                "required": ["queries"],
-            },
-        },
-    },
-    {
-        "type": "function",
-        "function": {
-            "name": "search_academic",
-            "description": (
-                "Search academic literature (PubMed, OpenAlex) for a peer-reviewed citation backing "
-                "a specific scientific, clinical, or technical claim."
-            ),
-            "parameters": {
-                "type": "object",
-                "properties": {
-                    "query": {"type": "string", "description": "The specific claim or topic needing a citation"},
-                },
-                "required": ["query"],
-            },
-        },
-    },
-    {
-        "type": "function",
-        "function": {
-            "name": "submit_draft",
-            "description": (
-                "Submit the finished section. Call this exactly once, when the section is complete, "
-                "specific, evidence-grounded (every quantitative/comparative claim has an inline "
-                "(Author, Year) citation or a [VERIFY: ...] marker), and within the word target."
-            ),
-            "parameters": {
-                "type": "object",
-                "properties": {
-                    "draft": {"type": "string", "description": "Full section HTML (<p>, <h3>, <ul><li>, <table> only, no markdown)"},
-                    "word_count": {"type": "integer"},
-                    "citations_used": {"type": "array", "items": {"type": "string"}},
-                    "citation_markers": {
-                        "type": "array",
-                        "items": {
-                            "type": "object",
-                            "properties": {"marker": {"type": "string"}, "full_citation": {"type": "string"}},
+_SUBMIT_DRAFT_TOOL = {
+    "type": "function",
+    "function": {
+        "name": "submit_draft",
+        "description": (
+            "Submit the finished section. Call this exactly once, when the section is complete, "
+            "specific, evidence-grounded (every quantitative/comparative claim has an inline "
+            "(Author, Year) citation or a [VERIFY: ...] marker), and within the word target."
+        ),
+        "parameters": {
+            "type": "object",
+            "properties": {
+                "draft": {"type": "string", "description": "Full section HTML (<p>, <h3>, <ul><li>, <table> only, no markdown)"},
+                "word_count": {"type": "integer"},
+                "citations_used": {"type": "array", "items": {"type": "string"}},
+                "citation_markers": {
+                    "type": "array",
+                    "items": {
+                        "type": "object",
+                        "properties": {
+                            "marker": {"type": "string"},
+                            "full_citation": {"type": "string"},
+                            "source_type": {
+                                "type": "string",
+                                "description": "\"archive\" if this came from search_rag_corpus/search_named_archive, \"web\" or \"academic\" otherwise",
+                            },
+                            "source_ref": {
+                                "type": "string",
+                                "description": "The exact \"id\" field from the search_rag_corpus/search_named_archive result this citation came from — omit for web/academic sources",
+                            },
                         },
                     },
-                    "sources_used": {"type": "array", "items": {"type": "string"}},
-                    "warnings": {"type": "array", "items": {"type": "string"}},
-                    "human_review_required": {"type": "boolean"},
-                    "evaluation_criteria_addressed": {"type": "array", "items": {"type": "string"}},
-                    "key_asks_addressed": {"type": "array", "items": {"type": "string"}},
-                    "gaps_identified": {"type": "array", "items": {"type": "string"}},
                 },
-                "required": ["draft", "word_count"],
+                "sources_used": {"type": "array", "items": {"type": "string"}},
+                "warnings": {"type": "array", "items": {"type": "string"}},
+                "human_review_required": {"type": "boolean"},
+                "evaluation_criteria_addressed": {"type": "array", "items": {"type": "string"}},
+                "key_asks_addressed": {"type": "array", "items": {"type": "string"}},
+                "gaps_identified": {"type": "array", "items": {"type": "string"}},
             },
+            "required": ["draft", "word_count"],
         },
     },
-]
+}
+
+TOOLS = RAG_TOOL_DEFS + [_SUBMIT_DRAFT_TOOL]
 
 _TOOL_MODE_ADDENDUM = """
 
@@ -124,8 +76,14 @@ _TOOL_MODE_ADDENDUM = """
 TOOL-CALLING MODE
 ═══════════════════════════════════════════════════════════════
 Ignore the "Return valid JSON" instruction above — this session uses tool-calling instead:
-- Call search_rag_corpus / search_web / search_academic whenever you need a specific detail,
-  statistic, or citation you don't already have from the evidence provided.
+- Call search_rag_corpus / search_named_archive / search_web / search_academic whenever you
+  need a specific detail, statistic, or citation you don't already have from the evidence
+  provided. Use search_named_archive when a specific prior proposal/program is named; use
+  search_rag_corpus for a general concept search — search by the underlying method or concept,
+  never by this proposal's own named platforms/tools/acronyms.
+- When you cite something from a search_rag_corpus/search_named_archive result, include its
+  "id" field as source_ref and set source_type to "archive" in that citation_marker — this is
+  what makes the citation clickable back to its source later.
 - When the section is complete, call submit_draft exactly once with the same fields
   (draft, word_count, citations_used, citation_markers, sources_used, warnings,
   human_review_required, evaluation_criteria_addressed, key_asks_addressed, gaps_identified).
@@ -138,58 +96,13 @@ def _build_tool_executor(
     funder: str,
     submitted: dict,
 ) -> Any:
+    rag_executor = build_rag_tool_executor(db, section_type, funder)
+
     async def executor(tool_name: str, arguments: dict) -> dict:
-        if tool_name == "search_rag_corpus":
-            query = arguments.get("query", "")
-            if not query:
-                return {"found": False, "results": []}
-            results = await retrieve_content_exemplars(
-                query=query, db=db, section_type=section_type, funder=funder, top_k=4,
-            )
-            if not results:
-                return {"found": False, "results": []}
-            return {
-                "found": True,
-                "results": [
-                    {
-                        "grant_title": r.get("grant_title", ""),
-                        "section_type": r.get("section_type", ""),
-                        "outcome": r.get("outcome", ""),
-                        "excerpt": r.get("full_text", "")[:1000],
-                    }
-                    for r in results[:4]
-                ],
-            }
-
-        elif tool_name == "search_web":
-            queries = arguments.get("queries", [])
-            if not queries:
-                return {"found": False, "results": []}
-            results = await search_web_multi(queries[:3], max_results_per_query=3)
-            if not results:
-                return {"found": False, "results": []}
-            return {
-                "found": True,
-                "results": [
-                    {"title": r["title"], "url": r["url"], "content": r["content"][:600]}
-                    for r in results[:5]
-                ],
-            }
-
-        elif tool_name == "search_academic":
-            query = arguments.get("query", "")
-            if not query:
-                return {"found": False, "results": []}
-            results = await search_citations(query, max_results=5)
-            if not results:
-                return {"found": False, "results": []}
-            return {"found": True, "results": results[:5]}
-
-        elif tool_name == "submit_draft":
+        if tool_name == "submit_draft":
             submitted.update(arguments)
             return {"received": True}
-
-        return {"error": f"Unknown tool: {tool_name}"}
+        return await rag_executor(tool_name, arguments)
 
     return executor
 

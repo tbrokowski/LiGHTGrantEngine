@@ -11,6 +11,11 @@ export interface CitationMetadata {
   year?: string | number;
   title?: string;
   doi?: string;
+  // Present for source_type === 'archive' citations (see backend
+  // adaptive_draft.py's _persist_archive_citations).
+  archive_id?: string;
+  section_type?: string;
+  grant_title?: string;
 }
 
 export interface InsertableCitation {
@@ -18,6 +23,9 @@ export interface InsertableCitation {
   formatted_citation?: string;
   source_type?: string;
   url?: string;
+  // For source_type === 'archive', this is the ProposalSection.id to open in the
+  // archive-section pane — see CitationsPanel's "View source" action.
+  external_id?: string;
   metadata?: CitationMetadata;
 }
 

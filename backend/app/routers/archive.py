@@ -342,6 +342,41 @@ async def get_archive(
     return data
 
 
+@router.get("/sections/{section_id}")
+async def get_archive_section(
+    section_id: str,
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    """Fetch a single archive section's full text + metadata — used by the editor's
+    archive-source pane when a user clicks through a RAG-derived citation."""
+    result = await db.execute(select(ProposalSection).where(ProposalSection.id == section_id))
+    section = result.scalar_one_or_none()
+    if not section:
+        raise HTTPException(404, "Archive section not found")
+
+    archive_title = None
+    if section.archive_id:
+        archive_result = await db.execute(
+            select(GrantArchive.title).where(GrantArchive.id == section.archive_id)
+        )
+        archive_title = archive_result.scalar_one_or_none()
+
+    return {
+        "id": section.id,
+        "archive_id": section.archive_id,
+        "archive_title": archive_title,
+        "grant_title": section.grant_title,
+        "funder": section.funder,
+        "year": section.year,
+        "outcome": section.outcome,
+        "section_type": section.section_type,
+        "section_title": section.section_title,
+        "section_text": section.section_text,
+        "word_count": section.word_count,
+    }
+
+
 @router.patch("/{archive_id}", dependencies=[Depends(require_archive_editor())])
 async def update_archive(
     archive_id: str,

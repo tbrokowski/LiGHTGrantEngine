@@ -76,6 +76,26 @@ ai:
       model: gpt-4o
       temperature: 0.5
       max_tokens: 6000
+    concept_classifier:
+      model: gpt-4o-mini
+      temperature: 0.0
+      max_tokens: 800
+    section_ledger:
+      model: gpt-4o-mini
+      temperature: 0.1
+      max_tokens: 400
+    section_drafter_agentic:
+      model: gpt-4o
+      temperature: 0.5
+      max_tokens: 8000
+    document_editor:
+      model: gpt-4o
+      temperature: 0.3
+      max_tokens: 10000
+    editor_chat_search:
+      model: gpt-4o-mini
+      temperature: 0.1
+      max_tokens: 1500
     citation_agent:
       temperature: 0.1
       max_tokens: 2048

@@ -11,7 +11,7 @@
 
 import { useState, useCallback, useEffect, useRef } from 'react';
 import SplitViewLayout from './split-view/SplitViewLayout';
-import type { PanelConfig, PanelTabType } from './split-view/types';
+import type { PanelConfig, PanelTab, PanelTabType } from './split-view/types';
 
 const PANEL_LABELS: Record<PanelTabType, string> = {
   idea: 'Idea',
@@ -21,6 +21,7 @@ const PANEL_LABELS: Record<PanelTabType, string> = {
   'workspace-file': 'File',
   'new-document': 'New Document',
   browser: 'Browser',
+  'archive-section': 'Archive Source',
 };
 
 function buildDefaultPanels(type: PanelTabType): PanelConfig[] {
@@ -59,7 +60,7 @@ function loadWidths(grantId: string, panels: PanelConfig[]): Record<string, numb
 interface UnifiedWorkspaceProps {
   grantId: string;
   defaultPanelType: PanelTabType;
-  openPanelRef: React.MutableRefObject<((type: PanelTabType) => void) | null>;
+  openPanelRef: React.MutableRefObject<((type: PanelTabType, meta?: PanelTab['meta']) => void) | null>;
 }
 
 export default function UnifiedWorkspace({ grantId, defaultPanelType, openPanelRef }: UnifiedWorkspaceProps) {
@@ -88,13 +89,18 @@ export default function UnifiedWorkspace({ grantId, defaultPanelType, openPanelR
     localStorage.setItem(`panelWidths:${grantId}`, JSON.stringify(widths));
   }, [grantId, widths]);
 
-  // Expose openOrFocusPanel to GrantEditor via ref
-  const openOrFocusPanel = useCallback((type: PanelTabType) => {
+  // Expose openOrFocusPanel to GrantEditor via ref. For most panel types, a tab of
+  // that type is unique and gets focused if already open. For 'archive-section',
+  // different sectionIds are genuinely different content — match on type + sectionId
+  // so clicking a second, different archive citation opens/focuses a distinct tab
+  // instead of silently swapping content in the first one.
+  const openOrFocusPanel = useCallback((type: PanelTabType, meta?: PanelTab['meta']) => {
     setPanels((prev) => {
-      // If a panel already has a tab of this type, just make it the active tab
-      const existingPanel = prev.find((p) => p.tabs.some((t) => t.type === type));
+      const matchesTab = (t: PanelTab) =>
+        t.type === type && (type !== 'archive-section' || t.meta?.sectionId === meta?.sectionId);
+      const existingPanel = prev.find((p) => p.tabs.some(matchesTab));
       if (existingPanel) {
-        const tab = existingPanel.tabs.find((t) => t.type === type)!;
+        const tab = existingPanel.tabs.find(matchesTab)!;
         return prev.map((p) =>
           p.id === existingPanel.id ? { ...p, activeTabId: tab.id } : p
         );
@@ -102,9 +108,12 @@ export default function UnifiedWorkspace({ grantId, defaultPanelType, openPanelR
       // Otherwise add a new panel
       const newPanelId = `panel-${Date.now()}`;
       const newTabId = `${type}-${Date.now()}`;
+      const label = type === 'archive-section' && meta?.grantTitle
+        ? `${meta.grantTitle}${meta.sectionType ? ` — ${meta.sectionType}` : ''}`
+        : PANEL_LABELS[type];
       const newPanel: PanelConfig = {
         id: newPanelId,
-        tabs: [{ id: newTabId, type, label: PANEL_LABELS[type] }],
+        tabs: [{ id: newTabId, type, label, meta }],
         activeTabId: newTabId,
       };
       setWidths((w) => ({ ...w, [newPanelId]: 1 }));

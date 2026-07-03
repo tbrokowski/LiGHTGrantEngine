@@ -13,6 +13,7 @@ import IdeaPhase from '../phases/IdeaPhase';
 import SkeletonPhase from '../phases/SkeletonPhase';
 import WebBrowserPane from './WebBrowserPane';
 import NewDocumentPane from './NewDocumentPane';
+import ArchiveSourcePane from './ArchiveSourcePane';
 import CommentsPanel from '../CommentsPanel';
 import { useWorkspace } from '../WorkspaceContext';
 import { grants, api } from '@/lib/api';
@@ -39,6 +40,7 @@ const TAB_META: Record<PanelTabType, { icon: React.ReactNode; label: string }> =
   'workspace-file': { icon: <FileText className="w-3 h-3" />, label: 'File' },
   'new-document':   { icon: <FilePlus className="w-3 h-3" />, label: 'New Document' },
   browser:          { icon: <Globe className="w-3 h-3" />, label: 'Browser' },
+  'archive-section': { icon: <FileSearch className="w-3 h-3" />, label: 'Archive Source' },
 };
 
 // Color coding: Draft=indigo (matches AI), Idea=amber, Skeleton=blue, new-doc=teal
@@ -50,6 +52,7 @@ const TAB_COLORS: Record<PanelTabType, { active: string; inactive: string; dot: 
   browser:          { active: 'bg-gray-100 text-gray-700',                                  inactive: 'text-gray-500 hover:bg-gray-50',       dot: 'bg-gray-400' },
   'call-doc':       { active: 'bg-gray-100 text-gray-700',                                  inactive: 'text-gray-500 hover:bg-gray-50',       dot: 'bg-gray-400' },
   'workspace-file': { active: 'bg-gray-100 text-gray-700',                                  inactive: 'text-gray-500 hover:bg-gray-50',       dot: 'bg-gray-400' },
+  'archive-section': { active: 'bg-gray-100 text-gray-700',                                 inactive: 'text-gray-500 hover:bg-gray-50',       dot: 'bg-gray-400' },
 };
 
 interface WorkspaceFile {
@@ -452,6 +455,16 @@ export default function DocumentPane({
             onActiveDocChange={workspace.onActiveDocChange}
           />
         );
+
+      case 'archive-section':
+        if (!activeTab.meta?.sectionId) {
+          return (
+            <div className="flex-1 flex items-center justify-center text-sm text-gray-400 italic">
+              No archive section specified.
+            </div>
+          );
+        }
+        return <ArchiveSourcePane key={activeTab.id} sectionId={activeTab.meta.sectionId} />;
 
       case 'browser':
         return <WebBrowserPane onInsertText={workspace.onInsertText} />;

@@ -47,6 +47,12 @@ ARCHIVE EXEMPLAR USAGE (mandatory when provided)
   named methods, quantified outcomes, evaluation frameworks, institutional partners, or exact phrasing
 - Do not summarise exemplars generically — extract the precise detail that strengthens this section
 - If an exemplar is from an awarded grant, prioritise its framing and evidence patterns
+- The archive holds OTHER teams' past proposals — it will never mention THIS proposal's own
+  named platforms, tools, or project acronyms by name. Never write a hedge like "no proposal
+  mentions X" about your own project's name; that's expected, not a gap. Search and cite by the
+  underlying method or concept instead (e.g. cite prior work on the general technique your
+  platform uses). If genuinely nothing comparable exists, simply don't force a citation there —
+  don't call out its absence.
 
 PARAGRAPH STRUCTURE
 - Each paragraph: topic sentence → evidence (with citation) → implication for this grant's evaluation criteria

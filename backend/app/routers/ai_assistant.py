@@ -644,6 +644,65 @@ Guidelines:
 - Reference the document context to maintain consistency and avoid contradictions"""
 
 
+async def _gather_agentic_rag_context(
+    user_message: str,
+    active_section: str,
+    db: AsyncSession,
+    funder: str,
+    accessible_grant_ids: Optional[List[str]],
+) -> str:
+    """Bounded tool-calling search pass: let the model decide whether — and how — to
+    search the archive/web/academic literature based on what the user actually asked,
+    instead of a blind one-shot pre-fetch. Handles both a generic conceptual search
+    (search_rag_corpus) and an explicit named-proposal lookup (search_named_archive,
+    e.g. "give me the methods from CADLUS4TB relevant to this section")."""
+    from app.ai.client import chat_complete_with_tools
+    from app.ai.agents.rag_tools import RAG_TOOL_DEFS, build_rag_tool_executor
+
+    tool_results: list[dict] = []
+
+    def _capture(tool_name: str, arguments: dict, result: dict) -> None:
+        tool_results.append({"tool": tool_name, "result": result})
+
+    executor = build_rag_tool_executor(
+        db, section_type="other", funder=funder, on_result=_capture,
+        accessible_grant_ids=accessible_grant_ids,
+    )
+    search_prompt = f"""A researcher is chatting with their grant-writing assistant. Decide whether their
+message needs supporting information looked up (a general concept, or a SPECIFIC named prior
+proposal/program they mention) — if so, call the relevant search tool(s). If their message doesn't
+need any lookup (a general question, an editing instruction, etc.), don't call any tools.
+
+USER MESSAGE: {user_message}
+ACTIVE SECTION: {active_section or 'Not specified'}"""
+    try:
+        await chat_complete_with_tools(
+            messages=[{"role": "user", "content": search_prompt}],
+            tools=RAG_TOOL_DEFS,
+            tool_executor=executor,
+            agent_name="editor_chat_search",
+            max_rounds=4,
+        )
+    except Exception:
+        return ""
+
+    if not tool_results:
+        return ""
+    lines = ["\n\nRELEVANT MATERIAL FOUND VIA SEARCH:"]
+    for tr in tool_results:
+        for r in (tr["result"].get("results") or [])[:4]:
+            if "excerpt" in r:
+                lines.append(
+                    f"\n[{r.get('section_type', '?')} — {r.get('grant_title', '?')}, outcome: {r.get('outcome', '?')}]\n"
+                    f"{r.get('excerpt', '')[:1200]}"
+                )
+            elif "content" in r:
+                lines.append(f"\n[Web: {r.get('title', '?')}]\n{r.get('content', '')[:600]}")
+            elif "title" in r:
+                lines.append(f"\n[Academic] {r.get('title', '?')}")
+    return "\n".join(lines)
+
+
 @router.post("/editor-chat-stream")
 async def editor_chat_stream(
     req: EditorChatRequest,
@@ -661,25 +720,20 @@ async def editor_chat_stream(
     grant = await _get_grant(req.grant_id, db)
     accessible_grant_ids = await _get_accessible_grant_ids(current_user, db, redis)
 
-    # Build RAG context from the last user message
+    # Build RAG context from the last user message — an agentic search pass decides
+    # whether/how to search (generic concept vs. a specifically named prior proposal)
+    # rather than a blind one-shot pre-fetch on every message.
     last_user_msg = next((m.content for m in reversed(req.messages) if m.role == "user"), "")
     rag_context = ""
     if last_user_msg:
-        rag_sections = await retrieve_similar_sections(
-            query=f"{last_user_msg} {req.active_section or ''}",
-            db=db,
-            top_k=3,
-            accessible_grant_ids=accessible_grant_ids,
+        rag_context = await _gather_agentic_rag_context(
+            last_user_msg, req.active_section or "", db, grant.funder or "", accessible_grant_ids,
         )
         reusable = await retrieve_reusable_language(
             query=last_user_msg,
             db=db,
             top_k=2,
         )
-        if rag_sections:
-            rag_context += "\n\nRELEVANT PRIOR GRANTS FROM ARCHIVE:\n"
-            for s in rag_sections:
-                rag_context += f"\n[{s.get('section_type','?')} — {s.get('grant_title','?')}, {s.get('funder','?')}, {s.get('outcome','?')}]\n{s.get('full_text','')[:1200]}\n"
         if reusable:
             rag_context += "\n\nAPPROVED REUSABLE LANGUAGE:\n"
             for b in reusable:

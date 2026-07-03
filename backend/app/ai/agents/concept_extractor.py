@@ -2,13 +2,22 @@
 Concept Extractor — lightweight named-concept extraction from skeleton/idea text.
 
 Identifies proper nouns, acronyms, and multi-word named entities (programs, methodologies,
-geographies, technologies) that the team explicitly references. These are used to
-proactively pre-fetch RAG archive content so section drafters have specific context
-(e.g. if the skeleton mentions "MOOVE", the drafters get all archive content about MOOVE).
+geographies, technologies) that the team explicitly references. These feed RAG archive
+pre-fetch — but a concept like "MOOVE" might be the CURRENT team's own named platform,
+which by definition cannot appear in the archive of OTHER teams' past proposals. Searching
+the archive for that literal name (or worse, a substring match via retrieve_entity_mentions)
+just fails or misleads, and the drafter ends up writing "no proposal mentions MOOVE"-style
+hedges instead of citing genuinely relevant prior work on the underlying method.
+classify_proposal_entities() below distinguishes "this team's own name" (search by its
+generic descriptor instead) from "a generic reusable concept" (safe to search literally).
 
-No LLM needed — uses regex heuristics optimised for scientific/health grant text.
+No LLM needed for extract_concepts() — uses regex heuristics optimised for scientific/health
+grant text. classify_proposal_entities() makes one cheap LLM call to disambiguate.
 """
+import json
 import re
+
+from app.ai.client import chat_complete
 
 # Patterns that strongly signal named concepts:
 # - ALL-CAPS acronyms (2+ chars): MOOVE, WASH, WHO, OneHealth, AIR, LiGHT
@@ -106,3 +115,54 @@ def _deduplicate(concepts: list[str]) -> list[str]:
         if not dominated:
             result.append(c)
     return result
+
+
+_CLASSIFY_SYSTEM_PROMPT = """You classify named concepts extracted from a grant proposal idea.
+
+For each concept, decide:
+- is_proposal_specific: true if this is a name THIS team invented for their OWN platform,
+  tool, project, or program (it could not possibly appear in an archive of OTHER teams' past
+  proposals — searching for it literally there will always fail or mislead). false if it's a
+  generic, reusable method/technology/disease/geography/standard term that plausibly appears
+  in other proposals too (e.g. "TB", "federated learning", "LMIC", "RCT").
+- generic_descriptor: ONLY for is_proposal_specific=true concepts — a short, generic phrase
+  describing the underlying method/technology/domain this name represents, with no proper
+  nouns, suitable as a semantic search query against an archive of unrelated proposals.
+  For is_proposal_specific=false concepts, leave this empty string.
+
+Return JSON: {"concepts": {"<concept>": {"is_proposal_specific": bool, "generic_descriptor": str}}}"""
+
+
+async def classify_proposal_entities(grant_idea: str, concepts: list[str]) -> dict[str, dict]:
+    """Classify extracted concepts as proposal-specific (this team's own naming) vs. generic
+    reusable terms, and give proposal-specific ones a generic descriptor safe to search the
+    archive with. One cheap LLM call per draft run — not per section."""
+    if not concepts:
+        return {}
+    try:
+        response = await chat_complete(
+            messages=[
+                {"role": "system", "content": _CLASSIFY_SYSTEM_PROMPT},
+                {
+                    "role": "user",
+                    "content": (
+                        f"GRANT IDEA:\n{(grant_idea or '')[:3000]}\n\n"
+                        f"CONCEPTS TO CLASSIFY:\n" + "\n".join(f"- {c}" for c in concepts[:12])
+                    ),
+                },
+            ],
+            agent_name="concept_classifier",
+            json_mode=True,
+        )
+        data = json.loads(response)
+        result = data.get("concepts") or {}
+        return {
+            k: {
+                "is_proposal_specific": bool(v.get("is_proposal_specific")),
+                "generic_descriptor": v.get("generic_descriptor") or "",
+            }
+            for k, v in result.items()
+            if isinstance(v, dict)
+        }
+    except Exception:
+        return {}

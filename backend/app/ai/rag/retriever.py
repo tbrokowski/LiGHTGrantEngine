@@ -231,12 +231,17 @@ async def retrieve_content_exemplars(
     require_ai_retrieval: bool = True,
     accessible_grant_ids: Optional[list[str]] = None,
     current_grant_id: Optional[str] = None,
+    archive_ids: Optional[list[str]] = None,
 ) -> list[dict]:
     """Topic-relevant retrieval for substantive content inspiration.
 
     When `current_grant_id` is provided, workspace-uploaded reference documents
     indexed for that grant are always included in the candidate pool alongside
     the org-wide archive sections.
+
+    When `archive_ids` is provided, results are scoped to those specific archive
+    entries only — used for "look up this named prior proposal" lookups (see
+    retrieve_from_named_archive) rather than a generic archive-wide search.
     """
     rag_cfg = settings.rag
     k = top_k or rag_cfg.top_k
@@ -248,6 +253,8 @@ async def retrieve_content_exemplars(
         filters.append(ProposalSection.section_type == section_type)
     if funder:
         filters.append(ProposalSection.funder.ilike(f"%{funder}%"))
+    if archive_ids:
+        filters.append(ProposalSection.archive_id.in_(archive_ids))
     grant_filter = _grant_access_filter(accessible_grant_ids)
     if grant_filter is not None:
         # Always include per-grant reference sections regardless of access filter
@@ -290,6 +297,49 @@ async def retrieve_content_exemplars(
 
     scored.sort(key=lambda x: x[1], reverse=True)
     return [_section_to_dict(s, sc) for s, sc in scored[:k]]
+
+
+async def retrieve_from_named_archive(
+    archive_name_query: str,
+    content_query: str,
+    db: AsyncSession,
+    section_type: Optional[str] = None,
+    top_k: int = 5,
+    accessible_grant_ids: Optional[list[str]] = None,
+) -> dict:
+    """Resolve a named prior proposal (e.g. "CADLUS4TB") to its archive entry, then
+    search within just that entry's sections — for explicit lookups like "give me
+    the methods from CADLUS4TB relevant to this section", as opposed to a generic
+    archive-wide search that has no way to target one specific past proposal.
+
+    Returns {"matched_archives": [...titles...], "results": [...]} on success, or
+    {"matched_archives": [], "results": [], "error": "..."} if no archive title
+    matches archive_name_query.
+    """
+    archive_rows = await db.execute(
+        select(GrantArchive).where(GrantArchive.title.ilike(f"%{archive_name_query}%")).limit(5)
+    )
+    archives = archive_rows.scalars().all()
+    if not archives:
+        return {
+            "matched_archives": [],
+            "results": [],
+            "error": f"No archive entry found matching '{archive_name_query}'.",
+        }
+
+    archive_ids = [a.id for a in archives]
+    results = await retrieve_content_exemplars(
+        query=content_query,
+        db=db,
+        section_type=section_type,
+        top_k=top_k,
+        archive_ids=archive_ids,
+        accessible_grant_ids=accessible_grant_ids,
+    )
+    return {
+        "matched_archives": [a.title for a in archives],
+        "results": results,
+    }
 
 
 async def retrieve_document_structure(

@@ -25,7 +25,7 @@ import CitationsPanel from './CitationsPanel';
 import WorkspaceContext, { type SyncState, type WorkspaceCitation, type CoherenceResult } from './WorkspaceContext';
 import type { MetaAgentEvent, AgentQuestion } from './MetaAgentPanel';
 import { AlertCircle, Sparkles, Quote } from 'lucide-react';
-import type { PanelTabType } from './split-view/types';
+import type { PanelTab, PanelTabType } from './split-view/types';
 import {
   formatInlineCitation,
   formatMlaCitation,
@@ -160,7 +160,7 @@ export default function GrantEditor({ grant, onGrantUpdate, onHeadingsChange }: 
   const activeDocLabelRef = useRef('Draft');
   const pollingIntervalRef = useRef<ReturnType<typeof setInterval> | null>(null);
   // Exposed to UnifiedWorkspace so skeleton/draft generation can open the right panel
-  const openPanelRef = useRef<((type: PanelTabType) => void) | null>(null);
+  const openPanelRef = useRef<((type: PanelTabType, meta?: PanelTab['meta']) => void) | null>(null);
 
   useEffect(() => { onGrantUpdateRef.current = onGrantUpdate; });
   useEffect(() => { docLinkedRef.current = docLinked; }, [docLinked]);
@@ -686,6 +686,7 @@ export default function GrantEditor({ grant, onGrantUpdate, onHeadingsChange }: 
                     onCitationsUpdate={setCitations}
                     activeSection={activeSection}
                     onInsertCitation={handleInsertCitation}
+                    onOpenArchiveSection={(meta) => openPanelRef.current?.('archive-section', meta)}
                   />
                 ) : (
                   <AIChatPanel

@@ -4,11 +4,12 @@ from __future__ import annotations
 import asyncio
 from typing import AsyncIterator, Callable
 
+from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.ai.agents.bibliography_generator import generate_bibliography
 from app.ai.agents.compliance_checker import check_compliance
-from app.ai.agents.concept_extractor import extract_concepts
+from app.ai.agents.concept_extractor import classify_proposal_entities, extract_concepts
 from app.ai.agents.document_editor import apply_document_edits, review_document_alignment
 from app.ai.agents.domain_reviewer import review_section_domain
 from app.ai.agents.draft_orchestrator import (
@@ -65,6 +66,63 @@ async def wait_for_call_intelligence(grant: ActiveGrant, db: AsyncSession, timeo
         return grant.call_intelligence or {}
 
 
+async def _persist_archive_citations(
+    grant_id: str,
+    section_name: str,
+    citation_markers: list[dict],
+    db: AsyncSession,
+) -> None:
+    """Insert a GrantCitation row for each archive-sourced citation_marker (source_type
+    == "archive", carrying the archive ProposalSection.id as source_ref — see the
+    submit_draft tool schema in section_drafter_agentic.py). This is what makes an
+    archive citation show up in the existing citations list/CitationsPanel with a
+    click-through reference back to its source, instead of being lost once the draft
+    run ends (citation_markers previously only existed in-memory for the bibliography)."""
+    from app.models.grant_writing import GrantCitation
+    from app.models.section import ProposalSection
+
+    archive_markers = [
+        m for m in (citation_markers or [])
+        if isinstance(m, dict) and m.get("source_type") == "archive" and m.get("source_ref")
+    ]
+    if not archive_markers:
+        return
+    section_ids = list({m["source_ref"] for m in archive_markers})
+    rows = await db.execute(select(ProposalSection).where(ProposalSection.id.in_(section_ids)))
+    sections_by_id = {s.id: s for s in rows.scalars().all()}
+    for marker in archive_markers:
+        section = sections_by_id.get(marker["source_ref"])
+        if not section:
+            continue
+        db.add(GrantCitation(
+            grant_id=grant_id,
+            section_title=section_name,
+            claim_text=marker.get("marker", ""),
+            source_type="archive",
+            external_id=section.id,
+            formatted_citation=marker.get("full_citation") or marker.get("marker", ""),
+            metadata_={
+                "archive_id": section.archive_id,
+                "section_type": section.section_type,
+                "grant_title": section.grant_title,
+            },
+        ))
+    await db.commit()
+
+
+def _genericize(text: str, entity_classification: dict[str, dict]) -> str:
+    """Replace any proposal-specific named entity in text with its generic descriptor
+    before it's embedded into an archive query — the raw name can't appear in OTHER
+    teams' past proposals, so searching (or asking an LLM to write a HyDE excerpt) with
+    it literally in the query just fails or misleads."""
+    if not entity_classification:
+        return text
+    for term, info in entity_classification.items():
+        if info.get("is_proposal_specific") and info.get("generic_descriptor") and term in text:
+            text = text.replace(term, info["generic_descriptor"])
+    return text
+
+
 def _spec_for_section(execution_plan: dict, name: str) -> dict:
     for s in execution_plan.get("sections") or []:
         if s.get("section_name") == name:
@@ -89,10 +147,18 @@ async def _gather_entity_and_concept_bundles(
     db: AsyncSession,
     funder: str,
     grant_id: str,
+    entity_classification: dict[str, dict] | None = None,
 ) -> list[dict]:
-    """Substring concept match plus mandatory entity RAG for orchestrator terms."""
+    """Substring concept match plus mandatory entity RAG for orchestrator terms.
+
+    For terms classified as proposal-specific (this team's own platform/project name —
+    see concept_extractor.classify_proposal_entities), a literal archive substring search
+    is guaranteed to fail or mislead, since that name can't appear in OTHER teams' past
+    proposals. Those terms are searched by their generic descriptor instead.
+    """
     seen: set[str] = set()
     bundles: list[dict] = []
+    entity_classification = entity_classification or {}
 
     def _add(docs: list[dict]) -> None:
         for d in docs or []:
@@ -106,15 +172,26 @@ async def _gather_entity_and_concept_bundles(
         _add(concept_rag_map.get(term, []))
         if not term:
             continue
+        classification = entity_classification.get(term) or {}
         try:
-            mentions = await retrieve_entity_mentions(
-                entity=term,
-                db=db,
-                funder=funder,
-                top_k=4,
-                current_grant_id=grant_id,
-            )
-            _add(mentions if isinstance(mentions, list) else [])
+            if classification.get("is_proposal_specific") and classification.get("generic_descriptor"):
+                hits = await retrieve_content_exemplars(
+                    query=classification["generic_descriptor"],
+                    db=db,
+                    funder=funder,
+                    top_k=4,
+                    current_grant_id=grant_id,
+                )
+                _add(hits if isinstance(hits, list) else [])
+            else:
+                mentions = await retrieve_entity_mentions(
+                    entity=term,
+                    db=db,
+                    funder=funder,
+                    top_k=4,
+                    current_grant_id=grant_id,
+                )
+                _add(mentions if isinstance(mentions, list) else [])
         except Exception:
             pass
     return bundles[:12]
@@ -225,10 +302,20 @@ async def run_adaptive_draft_stream(
     theme_terms = call_analysis.get("thematic_areas") or []
     concepts = list(dict.fromkeys(extract_concepts(grant.grant_idea or "", sections) + theme_terms[:5]))[:12]
     concept_rag_map: dict[str, list[dict]] = {}
+    # Classify which concepts are THIS team's own naming (can't appear in the archive of
+    # other teams' proposals — search by generic descriptor instead) vs. generic reusable
+    # terms (safe to search literally). One cheap LLM call for the whole draft.
+    entity_classification = await classify_proposal_entities(grant.grant_idea or "", concepts) if concepts else {}
     if concepts:
         yield sse({"event": "concept_extraction", "concepts": concepts[:8]})
+        queries = [
+            (entity_classification.get(c) or {}).get("generic_descriptor") or c
+            if (entity_classification.get(c) or {}).get("is_proposal_specific")
+            else c
+            for c in concepts[:8]
+        ]
         results = await asyncio.gather(
-            *[retrieve_for_concept(c, db, grant.funder, str(grant.id)) for c in concepts[:8]],
+            *[retrieve_for_concept(q, db, grant.funder, str(grant.id)) for q in queries],
             return_exceptions=True,
         )
         for concept, result in zip(concepts[:8], results):
@@ -255,18 +342,26 @@ async def run_adaptive_draft_stream(
         async with _RESEARCH_SEMAPHORE:
             rag_content: list[dict] = []
             if tier in ("deep", "standard"):
+                # Genericize the grant title/label for HyDE — a raw proposal-specific name
+                # (like a team's own platform) would just get echoed into the hypothetical
+                # excerpt and then embedded, polluting the search with a term that can't
+                # exist in OTHER teams' archived proposals.
+                hyde_label = _genericize(grant.title or "this grant", entity_classification)
                 queries = spec.get("archive_queries") or [name]
                 for q in queries[:2]:
                     try:
                         hyde = await retrieve_with_hyde(
-                            hyde_prompt=f"Excerpt from {name} section about {q} for {grant.title}",
+                            hyde_prompt=f"Excerpt from {name} section about {q} for {hyde_label}",
                             db=db, funder=grant.funder, section_type=sec_type,
                             top_k=4, current_grant_id=str(grant.id),
                         )
                         rag_content.extend(hyde)
                     except Exception:
                         pass
-                rag_query = f"{name} {content[:200]} {section_guide[:80]} {grant.grant_idea or ''}"
+                rag_query = _genericize(
+                    f"{name} {content[:200]} {section_guide[:80]} {grant.grant_idea or ''}",
+                    entity_classification,
+                )
                 try:
                     rag_content.extend(await retrieve_content_exemplars(
                         query=rag_query, db=db, section_type=sec_type,
@@ -276,14 +371,24 @@ async def run_adaptive_draft_stream(
                     pass
             for term in spec.get("must_surface_from_idea") or []:
                 rag_content.extend(concept_rag_map.get(term, []))
+                classification = entity_classification.get(term) or {}
                 try:
-                    entity_hits = await retrieve_entity_mentions(
-                        entity=term,
-                        db=db,
-                        funder=grant.funder,
-                        top_k=3,
-                        current_grant_id=str(grant.id),
-                    )
+                    if classification.get("is_proposal_specific") and classification.get("generic_descriptor"):
+                        entity_hits = await retrieve_content_exemplars(
+                            query=classification["generic_descriptor"],
+                            db=db,
+                            funder=grant.funder,
+                            top_k=3,
+                            current_grant_id=str(grant.id),
+                        )
+                    else:
+                        entity_hits = await retrieve_entity_mentions(
+                            entity=term,
+                            db=db,
+                            funder=grant.funder,
+                            top_k=3,
+                            current_grant_id=str(grant.id),
+                        )
                     if isinstance(entity_hits, list):
                         rag_content.extend(entity_hits)
                 except Exception:
@@ -386,6 +491,7 @@ async def run_adaptive_draft_stream(
             db,
             grant.funder or "",
             str(grant.id),
+            entity_classification,
         )
         key_evidence = evidence_bundle.get("key_evidence") or []
         rag_exemplars = evidence_bundle.get("rag_content_exemplars") or []
@@ -479,6 +585,12 @@ async def run_adaptive_draft_stream(
             section_results[idx] = (name, result)
             all_draft_results.append(result)
             draft_text = result.get("draft", "")
+            try:
+                await _persist_archive_citations(
+                    str(grant.id), name, result.get("citation_markers") or [], db,
+                )
+            except Exception:
+                pass
             entry = await build_ledger_entry(name, draft_text)
             ledger_entries.append(entry)
             adjacent_window.append((name, draft_text))
