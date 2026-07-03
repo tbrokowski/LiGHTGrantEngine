@@ -2,7 +2,6 @@
 from __future__ import annotations
 
 import asyncio
-import os
 from typing import AsyncIterator, Callable
 
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -10,20 +9,21 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.ai.agents.bibliography_generator import generate_bibliography
 from app.ai.agents.compliance_checker import check_compliance
 from app.ai.agents.concept_extractor import extract_concepts
+from app.ai.agents.document_editor import apply_document_edits, review_document_alignment
 from app.ai.agents.domain_reviewer import review_section_domain
 from app.ai.agents.draft_orchestrator import (
     apply_word_budgets_to_skeleton,
     build_draft_execution_plan,
 )
 from app.ai.agents.grant_meta_synthesizer import GrantMetaSynthesizer
-from app.ai.agents.meta_agent import check_narrative_coherence, evaluate_and_improve_section
+from app.ai.agents.meta_agent import evaluate_and_improve_section
 from app.ai.agents.planning_agent import plan_draft_research
 from app.ai.agents.research_agent import gather_section_evidence
-from app.ai.agents.draft_section_context import compress_prior_sections, evidence_coverage_check, build_refinement_feedback
+from app.ai.agents.draft_section_context import evidence_coverage_check
+from app.ai.agents.section_ledger import build_ledger_entry, render_ledger_for_prompt, LedgerEntry
 from app.ai.agents.section_length_adjuster import compress_section, expand_section
 from app.ai.agents.section_router import draft_section_routed, INTRO_KEYWORDS
-from app.ai.agents.section_stitcher import stitch_subsections
-from app.ai.agents.subsection_planner import plan_subsections
+from app.ai.client import get_call_counts, reset_call_counts
 from app.ai.context.grant_context import insert_section_content, parse_document_sections, skeleton_to_html
 from app.ai.rag.retriever import (
     retrieve_content_exemplars,
@@ -37,8 +37,7 @@ from app.models.active_grant import ActiveGrant
 
 _RESEARCH_SEMAPHORE = asyncio.Semaphore(4)
 _DRAFT_SEMAPHORE = asyncio.Semaphore(3)
-_SUBSECTION_SEMAPHORE = asyncio.Semaphore(3)
-_EXPANSION_WORD_THRESHOLD = 1500
+_ADJACENT_WINDOW = 2  # how many immediately-preceding sections get full text vs. the compact ledger
 
 
 async def wait_for_call_intelligence(grant: ActiveGrant, db: AsyncSession, timeout_sec: int = 60) -> dict:
@@ -129,6 +128,8 @@ async def run_adaptive_draft_stream(
     parse_raw_sections,
 ) -> AsyncIterator[str]:
     """Full ADO pipeline; yields SSE strings via sse(dict)."""
+    reset_call_counts()
+
     skeleton = grant.proposal_skeleton or {}
     all_sections = skeleton.get("sections") or []
     if not all_sections and skeleton.get("raw_text"):
@@ -352,20 +353,23 @@ async def run_adaptive_draft_stream(
     await db.commit()
     yield sse({"event": "research_complete", "total": len(sections), "research_coverage": research_coverage})
 
-    # Phase 3: Routed drafting
+    # Phase 3: Sequential agentic drafting. Always sequential (no parallel mode) —
+    # later sections need real context of earlier ones, which is the whole point
+    # of the ledger/adjacent-context mechanism below.
     word_count_warnings: list[dict] = []
     under_length: list[dict] = []
     all_draft_results: list[dict] = []
     section_results: dict[int, tuple[str, dict]] = {}
-    draft_parallel = os.environ.get("DRAFT_PARALLEL_SECTIONS", "false").lower() in ("1", "true", "yes")
+    ledger_entries: list[LedgerEntry] = []
 
-    async def _draft_one(sec: dict, idx: int, prior_summary: str) -> tuple[int, str, dict]:
+    async def _draft_one(
+        sec: dict, idx: int, adjacent_sections: list[tuple[str, str]], ledger_block: str,
+    ) -> tuple[int, str, dict]:
         name = sec.get("name") or sec.get("title") or f"Section {idx + 1}"
         spec = spec_by_name.get(name) or {}
         agent = spec.get("agent") or sec.get("draft_agent") or "default"
         target_words = spec.get("target_words") or sec.get("word_limit")
         min_words = spec.get("min_words") or (int(target_words * 0.85) if target_words else None)
-        expansion = spec.get("expansion_mode") or "single"
         sec_type = sec.get("type") or "other"
         is_intro = any(k in name.lower() for k in INTRO_KEYWORDS)
         _, evidence_bundle = section_evidence_map.get(name, (sec, {}))
@@ -385,13 +389,15 @@ async def run_adaptive_draft_stream(
         )
         key_evidence = evidence_bundle.get("key_evidence") or []
         rag_exemplars = evidence_bundle.get("rag_content_exemplars") or []
-        archive_exemplars_used = [
-            (e.get("title") or e.get("grant_title") or "Archive")[:80]
-            for e in rag_exemplars[:4]
-        ]
         sec_specific_req = section_requirements_map.get(name) or section_requirements_map.get(name.lower()) or {}
         if isinstance(sec_specific_req, dict) and sec_specific_req.get("word_limit"):
             target_words = target_words or sec_specific_req["word_limit"]
+
+        # Long sections get a structural outline embedded in the drafting
+        # instructions instead of being fragmented into independently-drafted
+        # subsections + a stitch call — one coherent agentic pass, not several.
+        outline = spec.get("required_subsections") if spec.get("expansion_mode") == "hierarchical" else None
+
         draft_kwargs = dict(
             grant_idea=grant.grant_idea or "",
             call_requirements=(sec.get("requirements") or call_req),
@@ -401,10 +407,8 @@ async def run_adaptive_draft_stream(
             reusable_language=evidence_bundle.get("rag_reusable_language") or [],
             target_words=target_words,
             min_words=min_words,
-            word_limit=target_words,
             funder=grant.funder or "",
             style_profile=grant.style_profile,
-            prior_sections_summary=prior_summary,
             citations=[{"formatted_citation": c} for c in suggested_citations if c],
             section_specific_requirements=sec_specific_req,
             call_narrative_brief=call_narrative_brief,
@@ -412,9 +416,6 @@ async def run_adaptive_draft_stream(
             compliance_guidance=sec.get("requirements") or "",
             evidence_summary=evidence_summary,
             key_evidence=key_evidence,
-            archive_exemplars_used=archive_exemplars_used,
-            web_results=evidence_bundle.get("web_results") or [],
-            academic_results=evidence_bundle.get("academic_results") or [],
             narrative_context=narrative_context,
             strategic_guidance=strategy_section_map.get(name) or strategy_section_map.get(name.lower()) or "",
             emphasis_direction=emphasis_map.get(name) or emphasis_map.get(name.lower()) or "",
@@ -423,46 +424,17 @@ async def run_adaptive_draft_stream(
             opening_hook=aligned_concept.get("opening_hook", ""),
             strategic_framing=call_strategy.get("narrative_framing", ""),
             section_type=sec_type,
-            required_subsections=spec.get("required_subsections"),
             is_intro=is_intro,
         )
 
         async with _DRAFT_SEMAPHORE:
-            if expansion == "hierarchical" and target_words and target_words > _EXPANSION_WORD_THRESHOLD:
-                subs = await plan_subsections(name, target_words, skeleton_content, section_briefs_map.get(name) or {}, grant.grant_idea or "")
-
-                async def _draft_sub(sub: dict) -> dict:
-                    sub_name = f"{name} — {sub.get('title', 'Part')}"
-                    sub_target = sub.get("target_words") or 500
-                    sub_spec = {**spec, "target_words": sub_target, "min_words": int(sub_target * 0.85), "expansion_mode": "single"}
-                    async with _SUBSECTION_SEMAPHORE:
-                        r = await draft_section_routed(agent, sub_name, **{**draft_kwargs, "skeleton_content": sub.get("focus", "") + "\n" + skeleton_content[:2000], "target_words": sub_target, "min_words": int(sub_target * 0.85)})
-                    return {"title": sub.get("title"), "draft": r.get("draft", "")}
-
-                sub_drafts = await asyncio.gather(*[_draft_sub(s) for s in subs[:8]], return_exceptions=True)
-                valid_subs = [sd for sd in sub_drafts if isinstance(sd, dict)]
-                draft_text = await stitch_subsections(name, valid_subs, target_words)
-                result = {"draft": draft_text, "word_count": len(draft_text.split()), "warnings": []}
-            else:
-                result = await draft_section_routed(agent, name, **draft_kwargs)
-
-                # Per-section refinement: one targeted re-draft if coverage check fails
-                draft_text_check = result.get("draft", "")
-                cov = evidence_coverage_check(
-                    draft_text_check,
-                    spec.get("must_surface_from_idea"),
-                    key_evidence,
-                    len(rag_exemplars),
-                )
-                if not cov["passed"] and cov.get("issues"):
-                    feedback = build_refinement_feedback(cov, name)
-                    if feedback:
-                        try:
-                            result = await draft_section_routed(
-                                agent, name, **{**draft_kwargs, "refinement_feedback": feedback}
-                            )
-                        except Exception:
-                            result = {"draft": draft_text_check, "word_count": len(draft_text_check.split()), "warnings": []}
+            result = await draft_section_routed(
+                agent, name, db,
+                adjacent_sections=adjacent_sections,
+                ledger_block=ledger_block,
+                outline=outline,
+                **draft_kwargs,
+            )
 
         draft_text = result.get("draft", "")
         actual_wc = result.get("word_count") or len(draft_text.split())
@@ -494,40 +466,32 @@ async def run_adaptive_draft_stream(
         key=lambda i: sections[i].get("order", i) if sections[i].get("order") is not None else i,
     )
 
-    if draft_parallel:
-        for i, sec in enumerate(sections):
-            yield sse({"event": "section_start", "section": sec.get("name") or sec.get("title"), "index": i, "total": len(sections)})
-        completed = await asyncio.gather(
-            *[_draft_one(sec, i, "") for i, sec in enumerate(sections)],
-            return_exceptions=True,
-        )
-        for res in completed:
-            if isinstance(res, Exception):
-                continue
-            idx, name, result = res
+    adjacent_window: list[tuple[str, str]] = []
+    for ord_pos, idx in enumerate(ordered_indices):
+        sec = sections[idx]
+        name = sec.get("name") or sec.get("title") or f"Section {idx + 1}"
+        yield sse({"event": "section_start", "section": name, "index": ord_pos, "total": len(sections)})
+        try:
+            adjacent_names = {n for n, _ in adjacent_window}
+            ledger_block = render_ledger_for_prompt([e for e in ledger_entries if e.section_name not in adjacent_names])
+            res = await _draft_one(sec, idx, list(adjacent_window), ledger_block)
+            _, name, result = res
             section_results[idx] = (name, result)
             all_draft_results.append(result)
-    else:
-        sections_done: list[tuple[str, str]] = []
-        prior_digest = ""
-        for ord_pos, idx in enumerate(ordered_indices):
-            sec = sections[idx]
-            name = sec.get("name") or sec.get("title") or f"Section {idx + 1}"
-            yield sse({"event": "section_start", "section": name, "index": ord_pos, "total": len(sections)})
-            try:
-                res = await _draft_one(sec, idx, prior_digest)
-                if isinstance(res, Exception):
-                    continue
-                _, name, result = res
-                section_results[idx] = (name, result)
-                all_draft_results.append(result)
-                draft_plain = result.get("draft", "")
-                sections_done.append((name, draft_plain))
-                prior_digest = await compress_prior_sections(sections_done)
-            except Exception:
-                continue
+            draft_text = result.get("draft", "")
+            entry = await build_ledger_entry(name, draft_text)
+            ledger_entries.append(entry)
+            adjacent_window.append((name, draft_text))
+            if len(adjacent_window) > _ADJACENT_WINDOW:
+                adjacent_window.pop(0)
+        except Exception:
+            continue
 
-    # Phase 4: 3-round critique → refine loop (all sections)
+    # Phase 4: reduced-scope critique pass — only for user-flagged sections and
+    # sections the execution plan singles out. Agentic drafting already
+    # self-corrects most evidence/citation gaps inline, and the whole-document
+    # alignment pass below catches cross-section issues with full-document
+    # visibility a per-section loop never had anyway.
     constraints_issues: list = []
     doc_constraints = getattr(grant, "document_constraints", None) or {}
     audit = doc_constraints.get("audit") or doc_constraints.get("constraints_audit") or {}
@@ -543,12 +507,11 @@ async def run_adaptive_draft_stream(
         "research_coverage": research_coverage,
         "evidence_coverage": [],
         "constraints_issues": constraints_issues,
-        "critique_rounds": 3,
+        "critique_rounds": 1,
     }
-    yield sse({"event": "meta_agent_start", "total": len(sections), "rounds_per_section": 3})
+    yield sse({"event": "meta_agent_start", "total": len(meta_sections_set), "rounds_per_section": 1})
     collected_questions: list[dict] = []
     all_warnings: list[str] = []
-    prior_summary = ""
     final_section_content: dict[str, str] = {}
 
     for i, sec in enumerate(sections):
@@ -569,49 +532,49 @@ async def run_adaptive_draft_stream(
             except Exception:
                 pass
 
-        # Deterministic pre-check — seeds Round 1 with known issues
         exemplar_count = next(
             (c.get("exemplar_count", 0) for c in research_coverage if c.get("section") == name),
             0,
         )
         _, ev_bundle = section_evidence_map.get(name, (sec, {}))
-        pre_cov_check = evidence_coverage_check(
-            draft_text,
-            spec.get("must_surface_from_idea"),
-            ev_bundle.get("key_evidence"),
-            exemplar_count,
-        )
-        initial_issues = pre_cov_check.get("issues") or []
 
-        # 3-round LLM critique → refine loop for every section
         improved_html = draft_html
-        try:
-            async for meta_event in evaluate_and_improve_section(
-                section_name=name,
-                section_content=draft_html,
-                section_type=sec.get("type") or "other",
-                prior_sections_summary=prior_summary,
-                call_requirements=call_req,
-                narrative_context=narrative_context,
-                style_profile=grant.style_profile or {},
-                db=db,
-                funder=grant.funder or "",
-                grant_idea=grant.grant_idea or "",
-                max_rounds=3,
-                initial_issues=initial_issues,
-            ):
-                if meta_event.get("event") == "meta_agent_accepted":
-                    improved_html = meta_event.get("content") or draft_html
-                elif meta_event.get("event") == "meta_agent_question":
-                    collected_questions.append(meta_event)
-                yield sse(meta_event)
-            qa_report["meta_sections"].append(name)
-        except Exception:
-            pass
+        if name in meta_sections_set:
+            pre_cov_check = evidence_coverage_check(
+                draft_text,
+                spec.get("must_surface_from_idea"),
+                ev_bundle.get("key_evidence"),
+                exemplar_count,
+            )
+            initial_issues = pre_cov_check.get("issues") or []
+            try:
+                full_ledger_block = render_ledger_for_prompt([e for e in ledger_entries if e.section_name != name])
+                async for meta_event in evaluate_and_improve_section(
+                    section_name=name,
+                    section_content=draft_html,
+                    section_type=sec.get("type") or "other",
+                    prior_sections_summary=full_ledger_block,
+                    call_requirements=call_req,
+                    narrative_context=narrative_context,
+                    style_profile=grant.style_profile or {},
+                    db=db,
+                    funder=grant.funder or "",
+                    grant_idea=grant.grant_idea or "",
+                    initial_issues=initial_issues,
+                ):
+                    if meta_event.get("event") == "meta_agent_accepted":
+                        improved_html = meta_event.get("content") or draft_html
+                    elif meta_event.get("event") == "meta_agent_question":
+                        collected_questions.append(meta_event)
+                    yield sse(meta_event)
+                qa_report["meta_sections"].append(name)
+            except Exception:
+                pass
 
-        # Re-check evidence coverage on the POST-improvement content — checking
-        # draft_text here (before evaluate_and_improve_section runs) would report
-        # citation/archive-usage issues the critique loop already fixed.
+        # Evidence coverage is checked for every section (for the report), even
+        # though only flagged/meta-agent sections go through the critique loop —
+        # this reflects the agentic drafter's own self-correction, not a stale
+        # pre-refinement snapshot.
         post_cov_check = evidence_coverage_check(
             improved_html,
             spec.get("must_surface_from_idea"),
@@ -622,7 +585,6 @@ async def run_adaptive_draft_stream(
 
         final_section_content[name] = improved_html
         html = insert_section_content(html, name, improved_html)
-        prior_summary += f"\n{name}: {improved_html[:800]}"
         all_warnings.extend(result.get("warnings", []))
         yield sse({"event": "section_complete", "section": name, "index": i, "total": len(sections), "word_count": result.get("word_count", 0)})
 
@@ -634,18 +596,38 @@ async def run_adaptive_draft_stream(
         grant.proposal_skeleton = sk
     await db.commit()
 
-    # Coherence + compliance (fuller context)
+    # Whole-document alignment pass — Reviewer + Rewriter (replaces the old
+    # check_narrative_coherence, which only reported findings and never acted
+    # on them). This is the first place call_intelligence.evaluation_framework
+    # and adversarial_challenges are actually cross-referenced against drafted
+    # content instead of just being extracted and displayed.
     coherence_result: dict = {}
-    yield sse({"event": "overview_pass_start", "message": "Running high-level overview pass across assembled proposal…"})
+    yield sse({"event": "overview_pass_start", "message": "Running whole-document alignment review…"})
     try:
-        section_dicts = [
-            {"name": n, "type": next((s.get("type", "other") for s in sections if (s.get("name") or s.get("title")) == n), "other"), "content": c[:3000]}
-            for n, c in final_section_content.items()
-        ]
-        coherence_result = await check_narrative_coherence(
-            sections=section_dicts, narrative_context=narrative_context,
-            call_requirements=call_req, grant_idea=grant.grant_idea or "",
+        coherence_result = await review_document_alignment(
+            html=html,
+            call_intelligence=grant.call_intelligence or {},
+            document_constraints=doc_constraints,
+            call_requirements=call_req,
+            grant_idea=grant.grant_idea or "",
+            narrative_context=narrative_context,
         )
+        findings = coherence_result.get("issues") or []
+        if findings:
+            yield sse({"event": "alignment_edits_start", "total_findings": len(findings)})
+            html, edit_log = await apply_document_edits(
+                html=html,
+                findings=findings,
+                grant_idea=grant.grant_idea or "",
+                funder=grant.funder or "",
+                style_profile=grant.style_profile,
+                db=db,
+            )
+            grant.editor_document = html
+            await db.commit()
+            for e in edit_log:
+                yield sse({"event": "alignment_edit_applied", "section": e["section"], "reason": e["reason"]})
+            qa_report["alignment_edits"] = edit_log
         yield sse({
             "event": "coherence_check",
             "overall": coherence_result.get("overall", "adequate"),
@@ -713,6 +695,11 @@ async def run_adaptive_draft_stream(
             if not any(req.lower() in dn or dn in req.lower() for dn in drafted_lower):
                 missing_sections.append(req)
 
+    call_counts = get_call_counts()
+    qa_report["llm_call_counts"] = call_counts
+    grant.draft_qa_report = qa_report
+    await db.commit()
+
     yield sse({
         "event": "draft_complete",
         "document_html": html,
@@ -727,5 +714,7 @@ async def run_adaptive_draft_stream(
         "fundability_assessment": coherence_result.get("fundability_assessment", ""),
         "top_priority_fixes": coherence_result.get("top_priority_fixes", [])[:3],
         "criteria_coverage": coherence_result.get("criteria_coverage", {}),
-        "critique_rounds_per_section": 3,
+        "critique_rounds_per_section": 1,
+        "total_llm_calls": sum(call_counts.values()),
+        "llm_call_counts": call_counts,
     })

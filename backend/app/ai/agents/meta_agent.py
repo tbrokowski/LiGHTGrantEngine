@@ -1,28 +1,18 @@
 """
-Grant Meta-Agent Coordinator — 3-round critique → refine loop per section.
+Grant Meta-Agent Coordinator — single combined critique -> refine pass per section.
 
-Each section goes through three explicit, escalating critique rounds before
-being accepted:
-
-  Round 1 — EVIDENCE GROUNDING
-    Focus: citation completeness, claim support, factual specificity.
-    Actions: RAG corpus search, web search, targeted rewrite to embed evidence.
-
-  Round 2 — CALL COMPLIANCE & STRUCTURAL STRENGTH
-    Focus: evaluation-criteria coverage, section structure, gap-filling.
-    Actions: RAG for coverage exemplars, rewrite to address missed criteria.
-
-  Round 3 — NARRATIVE COHERENCE & VOICE POLISH
-    Focus: consistency with proposal narrative, institutional voice, final polish.
-    Actions: targeted rewrite for coherence, accept when section passes all checks.
-
-After all sections complete their per-section loop the orchestrator runs a
-separate high-level overview pass (check_narrative_coherence) across the full
-assembled document.
+Runs one agentic critique-refine pass covering evidence grounding, call
+compliance, and narrative/voice coherence together — reserved for
+user-flagged priority sections and sections the execution plan singles out,
+not every section. Agentic drafting (section_drafter_agentic.py) already
+self-corrects most evidence/citation gaps inline, and the whole-document
+alignment pass (document_editor.py, which replaces the old
+check_narrative_coherence) catches cross-section issues with full-document
+visibility a per-section loop never had anyway — so this pass exists for the
+smaller set of sections that warrant an extra, deliberate look.
 """
 from __future__ import annotations
 
-import json
 import uuid
 from typing import AsyncIterator, TYPE_CHECKING
 
@@ -34,51 +24,29 @@ if TYPE_CHECKING:
     from sqlalchemy.ext.asyncio import AsyncSession
 
 
-# ── Round-specific critique focus ─────────────────────────────────────────────
+# ── Combined critique focus ────────────────────────────────────────────────────
 
-_ROUND_FOCUS = {
-    1: """ROUND 1 — EVIDENCE GROUNDING
-Your primary mission this round:
-• Check EVERY quantitative claim — does it have an inline citation (Author, Year)?
-  If not, search_rag_corpus or search_web to find one, then rewrite_section to embed it.
-• Flag any [VERIFY: ...] placeholders — search for the actual evidence and replace them.
-• Check that statistics, prevalence rates, model performance numbers, and outcome data
-  are all backed by real sources, not generic assertions.
-• If archive exemplars show better-evidenced versions of any claim, incorporate them.
-Do NOT focus on structure or narrative this round — just evidence and citations.""",
-
-    2: """ROUND 2 — CALL COMPLIANCE & STRUCTURAL STRENGTH
-Your primary mission this round:
-• Map every evaluation criterion from the call requirements against this section.
-  For each criterion that is under-addressed, use search_rag_corpus to find strong
-  exemplar language, then rewrite_section to fill the gap.
-• Check section structure: does it have a clear topic sentence per paragraph?
-  Does it address all key asks in the funder's requirements?
-• Identify any section-type requirements not yet met
-  (e.g. Methods needs: study design, population, analysis plan, feasibility).
-• Add any missing structural elements via targeted rewrite.
-Do NOT focus on citations this round — they were handled in Round 1.""",
-
-    3: """ROUND 3 — NARRATIVE COHERENCE & VOICE POLISH
-Your primary mission this round:
-• Check that this section connects to the proposal's theory of change and cross-section themes.
-• Ensure it builds on or references prior sections without redundancy.
-• Verify the institutional voice and tone matches the style profile.
-• Check the opening and closing sentences — the opener should hook, the closer should
-  bridge toward what comes next or land the section's key contribution.
-• Make only targeted polish rewrites — do not restructure if the section is fundamentally sound.
-• Call accept_section when the section is ready. Be decisive: if it passed Round 1 and 2, it
-  likely just needs minor polish. Do not over-critique at this stage.""",
-}
+_COMBINED_FOCUS = """Your mission, covering all of the following together:
+• EVIDENCE — Check every quantitative claim for an inline citation (Author, Year). If missing,
+  search_rag_corpus or search_web to find one, then rewrite_section to embed it. Replace any
+  [VERIFY: ...] placeholders you can source; leave genuinely unsourceable ones as-is.
+• CALL COMPLIANCE — Map every evaluation criterion from the call requirements against this
+  section. For any that are under-addressed, use search_rag_corpus for strong exemplar language,
+  then rewrite_section to fill the gap.
+• COHERENCE & VOICE — Check that this section connects to the proposal's theory of change and
+  cross-section themes without repeating prior sections, and that voice/tone matches the style
+  profile.
+Be decisive: only rewrite where there's a substantive gap in one of these dimensions, not for
+cosmetic reasons. Call accept_section once the section is solid across all three."""
 
 # ── System prompt ─────────────────────────────────────────────────────────────
 
 SYSTEM_PROMPT = """You are a rigorous grant quality auditor embedded inside a proposal writing pipeline.
 
-You are running one round of a 3-round critique-refine loop on a single section.
-Each round has a specific focus (provided in the user message) — concentrate on THAT focus only.
+You are running a single combined critique-refine pass on one section — evidence grounding,
+call compliance, and narrative coherence/voice are all in scope for this one pass.
 
-QUALITY DIMENSIONS (assess all, but prioritise this round's focus):
+QUALITY DIMENSIONS (assess all):
 
 1. SPECIFICITY: Name concrete methods, datasets, geographies, timelines, model architectures,
    sample sizes. "We will use AI" is not specific. "We will fine-tune a ResNet-50 on the X
@@ -104,14 +72,13 @@ TOOL PROTOCOL:
 - search_web → retrieve current evidence, statistics, or citations
 - rewrite_section → targeted rewrite to incorporate what you found (always pair with a search)
 - ask_user → LAST RESORT for data the AI cannot have (team prelim results, partner names,
-  budget figures, PI credentials). Maximum 1 ask_user call per round.
-- accept_section → call when this round's focus is satisfied
+  budget figures, PI credentials). Maximum 1 ask_user call per pass.
+- accept_section → call when the section is solid across all dimensions
 
 RULES:
-- Be decisive. If the section already passes this round's focus, call accept_section immediately.
+- Be decisive. If the section already passes, call accept_section immediately.
 - Do NOT rewrite for cosmetic reasons — only when there is a substantive quality gap.
 - After a rewrite, briefly re-evaluate before deciding to accept or search more.
-- Do not repeat work from prior rounds (citations from Round 1, structure from Round 2).
 """
 
 # ── Tool definitions ──────────────────────────────────────────────────────────
@@ -390,14 +357,8 @@ async def _rewrite_section_content(
         if voice or tone:
             style_str = f"\nINSTITUTIONAL VOICE: {voice} {tone}".strip()
 
-    round_label = {
-        1: "evidence grounding (add citations, replace [VERIFY] placeholders, back all claims)",
-        2: "call compliance & structure (fill evaluation-criteria gaps, improve section structure)",
-        3: "narrative coherence & voice polish (connect to theory of change, final polish)",
-    }.get(round_num, "quality improvement")
-
-    prompt = f"""You are doing a targeted rewrite of a grant proposal section.
-Round {round_num} focus: {round_label}
+    prompt = f"""You are doing a targeted rewrite of a grant proposal section as part of a
+combined evidence/compliance/coherence critique pass.
 
 SECTION: {section_name} (type: {section_type})
 FUNDER: {funder}
@@ -413,7 +374,7 @@ CALL REQUIREMENTS:
 THEORY OF CHANGE: {narrative_context.get('theory_of_change', 'See grant idea')}
 FUNDER PRIORITIES: {', '.join(narrative_context.get('funder_priorities_to_emphasize', [])[:6])}
 
-REWRITE INSTRUCTION (Round {round_num}):
+REWRITE INSTRUCTION:
 {instruction}
 
 RULES:
@@ -446,72 +407,59 @@ async def evaluate_and_improve_section(
     db: "AsyncSession",
     funder: str = "",
     grant_idea: str = "",
-    max_rounds: int = 3,
     initial_issues: list[str] | None = None,
 ) -> AsyncIterator[dict]:
     """
-    Run 3 explicit critique-refine rounds on a section.
-
-    Round 1: Evidence grounding (citations, claim support)
-    Round 2: Call compliance & structure (criteria coverage, section completeness)
-    Round 3: Narrative coherence & voice polish
+    Run one combined critique-refine pass on a section — evidence grounding,
+    call compliance, and narrative coherence/voice together (see _COMBINED_FOCUS).
 
     Yields SSE-compatible event dicts:
-      meta_agent_thinking   — starting a round
-      meta_agent_action     — tool being called (rag / web / rewrite)
-      meta_agent_revision   — section was rewritten
-      meta_agent_question   — user input needed
-      meta_agent_round_complete — one round finished
-      meta_agent_accepted   — all rounds done; final content in event["content"]
+      meta_agent_thinking  — pass starting
+      meta_agent_action    — tool being called (rag / web / rewrite)
+      meta_agent_revision  — section was rewritten
+      meta_agent_question  — user input needed
+      meta_agent_round_complete — pass finished
+      meta_agent_accepted  — final content in event["content"]
     """
     state = _SectionRewriteState(content=section_content)
-    num_rounds = min(max_rounds, 3)
+    round_num = 1
 
     theory_of_change = narrative_context.get("theory_of_change", "")
     funder_priorities = ", ".join(narrative_context.get("funder_priorities_to_emphasize", []))
     style_voice = (style_profile or {}).get("voice_summary", "")
     cross_themes = ", ".join(narrative_context.get("cross_section_themes", []))
 
-    carry_issues: list[str] = list(initial_issues or [])
+    yield {
+        "event": "meta_agent_thinking",
+        "section": section_name,
+        "round": round_num,
+        "total_rounds": 1,
+        "message": f"Combined critique pass: {_COMBINED_FOCUS.split(chr(10))[0]}",
+    }
 
-    for round_num in range(1, num_rounds + 1):
-        round_focus = _ROUND_FOCUS.get(round_num, _ROUND_FOCUS[3])
+    executor = await _build_tool_executor(
+        state=state,
+        section_name=section_name,
+        section_type=section_type,
+        call_requirements=call_requirements,
+        narrative_context=narrative_context,
+        style_profile=style_profile or {},
+        grant_idea=grant_idea,
+        funder=funder,
+        db=db,
+        round_num=round_num,
+    )
 
-        yield {
-            "event": "meta_agent_thinking",
-            "section": section_name,
-            "round": round_num,
-            "total_rounds": num_rounds,
-            "message": f"Round {round_num}/{num_rounds}: {round_focus.split(chr(10))[0]}",
-        }
-
-        # Reset accept flag for this round
-        state.accepted = False
-        state.events = []
-
-        executor = await _build_tool_executor(
-            state=state,
-            section_name=section_name,
-            section_type=section_type,
-            call_requirements=call_requirements,
-            narrative_context=narrative_context,
-            style_profile=style_profile or {},
-            grant_idea=grant_idea,
-            funder=funder,
-            db=db,
-            round_num=round_num,
+    issues_block = ""
+    if initial_issues:
+        issues_block = (
+            "\nKNOWN ISSUES (from a deterministic pre-check — fix these):\n"
+            + "\n".join(f"  • {iss}" for iss in initial_issues[:6])
         )
 
-        carry_block = ""
-        if carry_issues:
-            carry_block = (
-                "\nISSUES CARRIED FROM PRIOR ROUNDS (handle if within this round's focus):\n"
-                + "\n".join(f"  • {iss}" for iss in carry_issues[:6])
-            )
+    user_prompt = f"""You are running a combined critique-refine pass on one section.
 
-        user_prompt = f"""You are running Round {round_num} of a 3-round critique-refine loop.
-
-{round_focus}
+{_COMBINED_FOCUS}
 
 ━━━ PROPOSAL CONTEXT ━━━
 Grant: {grant_idea[:700]}
@@ -525,165 +473,58 @@ Institutional voice: {style_voice or 'Professional academic'}
 Section name: {section_name}
 Section type: {section_type}
 
-CURRENT CONTENT (after any rewrites from prior rounds):
+CURRENT CONTENT:
 {state.current_content}
 
 ━━━ CALL REQUIREMENTS ━━━
 {call_requirements[:2000]}
 
-━━━ PRIOR SECTIONS (for coherence) ━━━
-{prior_sections_summary[:1200] if prior_sections_summary else 'No prior sections yet.'}
-{carry_block}
+━━━ DOCUMENT SO FAR (for coherence) ━━━
+{prior_sections_summary[:4500] if prior_sections_summary else 'No prior sections yet.'}
+{issues_block}
 ━━━ YOUR TASK ━━━
-Focus ONLY on the Round {round_num} dimensions above.
-Use tools to search and fix. Then call accept_section with your verdict and any
-issues_remaining for the next round.
-Do not address issues outside this round's focus."""
+Use tools to search and fix substantive gaps. Then call accept_section with your verdict."""
 
-        messages = [
-            {"role": "system", "content": SYSTEM_PROMPT},
-            {"role": "user", "content": user_prompt},
-        ]
+    messages = [
+        {"role": "system", "content": SYSTEM_PROMPT},
+        {"role": "user", "content": user_prompt},
+    ]
 
-        await chat_complete_with_tools(
-            messages=messages,
-            tools=TOOLS,
-            tool_executor=executor,
-            agent_name="meta_agent",
-            max_rounds=4,  # tool-call budget per critique round
-        )
+    await chat_complete_with_tools(
+        messages=messages,
+        tools=TOOLS,
+        tool_executor=executor,
+        agent_name="meta_agent",
+        max_rounds=6,  # tool-call budget for the combined pass
+    )
 
-        # Yield all events from this round
-        for event in state.events:
-            yield event
+    for event in state.events:
+        yield event
 
-        if not state.accepted:
-            # Agent didn't call accept_section — treat as auto-accepted
-            yield {
-                "event": "meta_agent_round_complete",
-                "section": section_name,
-                "round": round_num,
-                "verdict": "Round completed (auto-accepted)",
-            }
-
-        # Carry unresolved issues into the next round
-        carry_issues = list(state.issues_for_next_round)
-        state.issues_for_next_round = []
-
+    if not state.accepted:
         yield {
             "event": "meta_agent_round_complete",
             "section": section_name,
             "round": round_num,
-            "total_rounds": num_rounds,
-            "verdict": state.round_verdicts[-1] if state.round_verdicts else f"Round {round_num} complete",
+            "verdict": "Pass completed (auto-accepted)",
+        }
+    else:
+        yield {
+            "event": "meta_agent_round_complete",
+            "section": section_name,
+            "round": round_num,
+            "total_rounds": 1,
+            "verdict": state.round_verdicts[-1] if state.round_verdicts else "Pass complete",
         }
 
-    # All rounds done — emit final accepted event with current content
     yield {
         "event": "meta_agent_accepted",
         "section": section_name,
-        "verdict": " | ".join(state.round_verdicts) or "3-round critique complete",
+        "verdict": " | ".join(state.round_verdicts) or "Combined critique pass complete",
         "content": state.current_content,
-        "rounds_completed": num_rounds,
+        "rounds_completed": 1,
     }
 
-    # Surface any collected user questions
     for q in state.user_questions:
         if q.get("event") == "meta_agent_question":
             yield q
-
-
-# ── High-level overview pass ──────────────────────────────────────────────────
-
-async def check_narrative_coherence(
-    sections: list[dict],
-    narrative_context: dict,
-    call_requirements: str,
-    grant_idea: str,
-) -> dict:
-    """
-    Final high-level overview pass across the assembled proposal.
-
-    Checks:
-    - Narrative arc: does the proposal tell a coherent story from start to finish?
-    - Cross-section consistency: do sections contradict each other?
-    - Evaluation criteria coverage: which criteria are addressed, which are thin?
-    - Redundancy: which sections repeat each other unnecessarily?
-    - Missing bridges: where does the reader need a transition?
-
-    Returns {"issues": [...], "overall": "strong|adequate|weak", "strengths": [...],
-             "criteria_coverage": {...}, "recommended_edits": [...]}
-    """
-    if not sections:
-        return {"issues": [], "overall": "adequate"}
-
-    summaries = "\n\n".join(
-        f"## {s.get('name', '?')} ({s.get('type', 'section')})\n{(s.get('content') or '')[:600]}"
-        for s in sections[:12]
-    )
-    theory = narrative_context.get("theory_of_change", "")
-    themes = ", ".join(narrative_context.get("cross_section_themes", []))
-    priorities = narrative_context.get("funder_priorities_to_emphasize", [])
-
-    prompt = f"""You are doing the FINAL HIGH-LEVEL OVERVIEW PASS on an assembled grant proposal.
-
-All sections have already been individually critiqued and refined across 3 rounds.
-Your job now is to assess the proposal AS A WHOLE and identify any remaining issues
-that only become visible at the document level.
-
-THEORY OF CHANGE: {theory or 'See grant idea and sections'}
-CROSS-SECTION THEMES: {themes or 'Not specified'}
-FUNDER PRIORITIES: {', '.join(priorities[:8]) if priorities else 'See call requirements'}
-GRANT IDEA: {grant_idea[:600]}
-CALL REQUIREMENTS (summary): {call_requirements[:1200]}
-
-ASSEMBLED PROPOSAL SECTIONS:
-{summaries}
-
-EVALUATE ACROSS THESE DIMENSIONS:
-
-1. NARRATIVE ARC — Does the proposal tell a coherent story from first to last section?
-   Is there a clear problem → solution → evidence → impact thread?
-
-2. CONSISTENCY — Do the sections agree with each other on: methodology, timelines,
-   team roles, budget implications, outcome claims? Flag any contradictions.
-
-3. EVALUATION CRITERIA COVERAGE — For each funder evaluation criterion you can identify
-   in the call requirements, rate coverage: "strong / partial / absent".
-
-4. REDUNDANCY — Which sections repeat each other? What should be cut or consolidated?
-
-5. MISSING BRIDGES — Where does the reader need a transition paragraph or forward reference?
-
-6. OVERALL PROPOSAL STRENGTH — Synthesise: is this fundable as written?
-
-Return JSON exactly:
-{{
-  "overall": "strong" | "adequate" | "weak",
-  "narrative_arc": "strong" | "adequate" | "weak",
-  "issues": [
-    {{
-      "section": "<section name or 'global'>",
-      "dimension": "<arc|consistency|coverage|redundancy|bridge>",
-      "issue": "<specific issue>",
-      "severity": "high" | "medium" | "low",
-      "recommended_edit": "<specific action to fix>"
-    }}
-  ],
-  "strengths": ["<strength 1>", ...],
-  "criteria_coverage": {{
-    "<criterion>": "strong" | "partial" | "absent"
-  }},
-  "fundability_assessment": "<1-2 sentence overall verdict>",
-  "top_priority_fixes": ["<most important fix 1>", "<fix 2>", "<fix 3>"]
-}}"""
-
-    response = await chat_complete(
-        messages=[{"role": "user", "content": prompt}],
-        agent_name="meta_agent",
-        json_mode=True,
-    )
-    try:
-        return json.loads(response)
-    except (json.JSONDecodeError, TypeError):
-        return {"issues": [], "overall": "adequate", "strengths": []}

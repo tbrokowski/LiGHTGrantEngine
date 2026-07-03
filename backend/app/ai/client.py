@@ -20,6 +20,25 @@ from app.config import get_settings
 logger = structlog.get_logger()
 settings = get_settings()
 
+# Lightweight per-process LLM call counter, tagged by agent_name — used to verify
+# the draft pipeline's call count during/after a run. Safe under the Celery
+# --pool=solo model (one task at a time per worker process): reset at the start
+# of a run and read at the end within the same synchronous task execution.
+_call_counts: dict[str, int] = {}
+
+
+def reset_call_counts() -> None:
+    _call_counts.clear()
+
+
+def get_call_counts() -> dict[str, int]:
+    return dict(_call_counts)
+
+
+def _record_call(agent_name: Optional[str]) -> None:
+    key = agent_name or "unknown"
+    _call_counts[key] = _call_counts.get(key, 0) + 1
+
 
 def _get_client() -> AsyncOpenAI:
     ai_cfg = settings.ai
@@ -81,6 +100,7 @@ async def chat_complete(
 
     async with _get_client() as client:
         response = await client.chat.completions.create(**kwargs)
+    _record_call(agent_name)
 
     content = response.choices[0].message.content or ""
     logger.debug("AI chat response", agent=agent_name, tokens=response.usage.total_tokens if response.usage else None)
@@ -180,6 +200,7 @@ async def chat_complete_tracked(
 
     async with _get_client() as client:
         response = await client.chat.completions.create(**kwargs)
+    _record_call(agent_name)
 
     content = response.choices[0].message.content or ""
     usage = response.usage
@@ -236,6 +257,7 @@ async def chat_complete_with_tools(
                 max_tokens=tokens,
                 top_p=gen.top_p,
             )
+        _record_call(agent_name)
 
         choice = response.choices[0]
         message = choice.message

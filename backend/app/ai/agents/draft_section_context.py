@@ -521,47 +521,6 @@ def build_section_draft_context(
     )
 
 
-async def compress_prior_sections(sections_done: list[tuple[str, str]]) -> str:
-    """Compress completed section drafts into a rolling narrative digest (~3k chars)."""
-    if not sections_done:
-        return ""
-    if len(sections_done) == 1:
-        name, text = sections_done[0]
-        return f"{name}:\n{(text or '')[:3000]}"
-    from app.ai.client import chat_complete
-
-    raw = "\n\n".join(
-        f"## {name}\n{(text or '')[:1500]}" for name, text in sections_done[-6:]
-    )
-    prompt = f"""Summarise these completed proposal sections into a narrative digest for the next section author.
-
-KEEP:
-- All named entities (programs, datasets, tools, acronyms — spell them out on first use)
-- All quantitative claims and their sources
-- Key methods and approaches stated
-- All promises or commitments made (partners, deliverables, outcomes)
-- The theory of change as articulated
-
-DO NOT:
-- Add new claims
-- Generalise specific details
-- Exceed 3000 characters
-
-SECTIONS:
-{raw[:14000]}
-
-Return plain text summary only (no headings, no bullets — prose digest)."""
-    try:
-        resp = await chat_complete(
-            messages=[{"role": "user", "content": prompt}],
-            agent_name="draft_narrative_digest",
-            json_mode=False,
-        )
-        return (resp or "")[:3200]
-    except Exception:
-        return "\n".join(f"{n}: {(t or '')[:500]}" for n, t in sections_done[-4:])
-
-
 def evidence_coverage_check(
     draft_text: str,
     must_surface_terms: list[str] | None,

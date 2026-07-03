@@ -16,7 +16,7 @@ from app.ai.agents.concept_extractor import extract_concepts
 from app.ai.agents.grant_reviewer import review_proposal
 from app.ai.agents.idea_alignment_agent import align_idea_to_call
 from app.ai.agents.intro_architect import draft_introduction
-from app.ai.agents.meta_agent import check_narrative_coherence, evaluate_and_improve_section
+from app.ai.agents.meta_agent import evaluate_and_improve_section
 from app.ai.agents.planning_agent import plan_draft_research
 from app.ai.agents.proposal_architect import generate_proposal_outline
 from app.ai.agents.research_agent import gather_section_evidence
