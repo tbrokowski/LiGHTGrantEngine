@@ -3,7 +3,7 @@
 import sqlalchemy as sa
 from alembic import op
 
-revision = "044_institution_opportunity_outcome"
+revision = "044_institution_opp_outcome"
 down_revision = "043_add_nihr_source"
 branch_labels = None
 depends_on = None
