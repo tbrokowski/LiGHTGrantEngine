@@ -35,7 +35,9 @@ from .grant_writing import GrantWritingConversation, GrantCitation
 from .user_opportunity_state import UserOpportunityState
 from .grant_member import GrantMember
 from .institution_opportunity import InstitutionOpportunity
+from .institution_taste_profile import InstitutionTasteProfile
 from .institution_source import InstitutionSource
+from .funder_org import FunderOrg
 from .preseed_run import PreseedRun
 from .email_verification import EmailVerification
 from .org_join_request import OrgJoinRequest
@@ -55,6 +57,6 @@ __all__ = [
     "SlackGrantConfig",
     "GrantActivityLog", "GrantWritingConversation", "GrantCitation",
     "UserOpportunityState", "GrantMember",
-    "InstitutionOpportunity", "InstitutionSource", "PreseedRun",
+    "InstitutionOpportunity", "InstitutionTasteProfile", "InstitutionSource", "PreseedRun", "FunderOrg",
     "EmailVerification", "OrgJoinRequest", "PasswordResetToken",
 ]

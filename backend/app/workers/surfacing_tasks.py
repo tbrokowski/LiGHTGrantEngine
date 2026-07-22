@@ -103,11 +103,40 @@ def surface_opportunity_for_institutions(opportunity_id: str) -> dict:
 _LLM_TIERS = {"high_priority", "worth_reviewing", "watchlist", "low_fit"}
 
 
+def _apply_taste_adjustment(result: dict, opp, profile_row) -> dict:
+    """Blend a taste-profile adjustment into a keyword_score_opportunity() result.
+    No-op (returns result unchanged) when there's no profile row or embedding."""
+    from app.services.keyword_scorer import tier_from_score
+    from app.services.taste_profile_scorer import taste_adjustment
+
+    if not profile_row or opp.embedding is None:
+        return result
+    adjustment = taste_adjustment(
+        opp_embedding=opp.embedding,
+        positive_embedding=profile_row.positive_embedding,
+        negative_embedding=profile_row.negative_embedding,
+        positive_count=profile_row.positive_count,
+        negative_count=profile_row.negative_count,
+    )
+    if abs(adjustment) < 0.5:
+        return result
+    result = dict(result)
+    result["fit_score"] = max(0, min(100, round(result["fit_score"] + adjustment)))
+    result["priority"] = tier_from_score(result["fit_score"])
+    sign = "+" if adjustment >= 0 else ""
+    result["fit_rationale"] = (
+        f"{result.get('fit_rationale', '')} ({sign}{adjustment:.0f} based on your "
+        f"org's shortlist/award history)"
+    ).strip()
+    return result
+
+
 @celery_app.task(name="app.workers.surfacing_tasks.rescore_institution", bind=True, max_retries=2)
 def rescore_institution(self, institution_id: str) -> dict:
     from app.config import get_settings
     from app.models.institution import Institution
     from app.models.institution_opportunity import InstitutionOpportunity
+    from app.models.institution_taste_profile import InstitutionTasteProfile
     from app.models.opportunity import Opportunity
     from app.schemas.grant_profile import GrantProfile
     from app.services.keyword_scorer import keyword_score_opportunity
@@ -122,6 +151,7 @@ def rescore_institution(self, institution_id: str) -> dict:
             return {"scored": 0}
         profile = GrantProfile.from_dict(inst.grant_profile or {})
         threshold = profile.auto_queue_threshold
+        taste_profile = db.get(InstitutionTasteProfile, institution_id)
         rows = db.execute(
             select(InstitutionOpportunity, Opportunity)
             .join(Opportunity, Opportunity.id == InstitutionOpportunity.opportunity_id)
@@ -145,6 +175,7 @@ def rescore_institution(self, institution_id: str) -> dict:
                     profile_geographies=profile.geographies,
                     excluded_keywords=profile.excluded_keywords,
                 )
+                result = _apply_taste_adjustment(result, opp, taste_profile)
                 io.fit_score = result["fit_score"]
                 io.priority = result["priority"]
                 io.fit_rationale = result.get("fit_rationale", "")
@@ -165,6 +196,7 @@ def rescore_opportunity_for_institutions(opportunity_id: str) -> dict:
     from app.config import get_settings
     from app.models.institution import Institution
     from app.models.institution_opportunity import InstitutionOpportunity
+    from app.models.institution_taste_profile import InstitutionTasteProfile
     from app.models.opportunity import Opportunity
     from app.schemas.grant_profile import GrantProfile
     from app.services.keyword_scorer import keyword_score_opportunity
@@ -189,6 +221,7 @@ def rescore_opportunity_for_institutions(opportunity_id: str) -> dict:
                 continue  # preserve LLM score, do not overwrite with keyword score
             profile = GrantProfile.from_dict(inst.grant_profile or {})
             threshold = profile.auto_queue_threshold
+            taste_profile = db.get(InstitutionTasteProfile, inst.id)
             try:
                 result = keyword_score_opportunity(
                     title=opp.title,
@@ -204,6 +237,7 @@ def rescore_opportunity_for_institutions(opportunity_id: str) -> dict:
                     profile_geographies=profile.geographies,
                     excluded_keywords=profile.excluded_keywords,
                 )
+                result = _apply_taste_adjustment(result, opp, taste_profile)
                 io.fit_score = result["fit_score"]
                 io.priority = result["priority"]
                 io.fit_rationale = result.get("fit_rationale", "")

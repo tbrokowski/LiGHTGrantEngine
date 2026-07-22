@@ -108,6 +108,93 @@ async def _get_semantic_candidate_ids(
         return []
 
 
+def _build_opportunity_filters(
+    *,
+    funder: Optional[str] = None,
+    opportunity_type: Optional[str] = None,
+    geography: Optional[str] = None,
+    source_id: Optional[str] = None,
+    funder_org_id: Optional[str] = None,
+    funder_category: Optional[str] = None,
+    award_min_filter: Optional[float] = None,
+    award_max_filter: Optional[float] = None,
+    priority: Optional[str] = None,
+    min_fit_score: Optional[float] = None,
+    deadline_before: Optional[date] = None,
+    deadline_after: Optional[date] = None,
+    has_deadline: bool = False,
+    theme: Optional[str] = None,
+    inst_id: Optional[str] = None,
+) -> list:
+    """
+    Shared filter-expression builder used by the main opportunity list, the
+    personal shortlist, and the org shortlist so all three respond to the same
+    sidebar filters instead of only the main list applying them server-side.
+    """
+    filters: list = []
+    if funder:
+        filters.append(Opportunity.funder.ilike(f"%{funder}%"))
+    if priority:
+        priority_values = PRIORITY_GROUPS.get(priority, [priority])
+        if inst_id:
+            filters.append(
+                or_(
+                    InstitutionOpportunity.priority.in_(priority_values),
+                    and_(InstitutionOpportunity.priority.is_(None), Opportunity.priority.in_(priority_values)),
+                )
+            )
+        else:
+            filters.append(Opportunity.priority.in_(priority_values))
+    if min_fit_score is not None:
+        if inst_id:
+            relevance_score = func.coalesce(InstitutionOpportunity.fit_score, Opportunity.fit_score, 0)
+        else:
+            relevance_score = func.coalesce(Opportunity.fit_score, 0)
+        filters.append(relevance_score >= min_fit_score)
+    if deadline_before:
+        filters.append(Opportunity.deadline <= deadline_before)
+    if deadline_after:
+        filters.append(Opportunity.deadline >= deadline_after)
+    if has_deadline:
+        filters.append(Opportunity.deadline.isnot(None))
+    if theme:
+        filters.append(func.cast(Opportunity.thematic_areas, JSONB).contains([theme]))
+    if opportunity_type:
+        filters.append(Opportunity.opportunity_type == opportunity_type)
+    if geography:
+        filters.append(func.cast(Opportunity.geography, JSONB).contains([geography]))
+    if source_id:
+        filters.append(Opportunity.source_id == source_id)
+    if funder_org_id:
+        filters.append(Opportunity.funder_org_id == funder_org_id)
+    if funder_category:
+        src_subq = select(Source.id).where(
+            Source.category.ilike(f"%{funder_category}%")
+        ).scalar_subquery()
+        filters.append(Opportunity.source_id.in_(src_subq))
+    if award_min_filter is not None:
+        filters.append(
+            or_(Opportunity.award_max >= award_min_filter, Opportunity.award_min >= award_min_filter)
+        )
+    if award_max_filter is not None:
+        filters.append(
+            or_(Opportunity.award_min <= award_max_filter, Opportunity.award_max <= award_max_filter)
+        )
+    return filters
+
+
+def _sort_opportunity_list_by_summary(items: list[dict], sort_by: str) -> list[dict]:
+    """Sort a list of `_opp_summary` dicts in-memory (used by the shortlist/
+    org-shortlist endpoints, which don't paginate at the SQL level)."""
+    if sort_by == "deadline":
+        return sorted(items, key=lambda d: (d.get("deadline") is None, d.get("deadline") or ""))
+    if sort_by in ("award", "award_max"):
+        return sorted(items, key=lambda d: (d.get("award_max") or d.get("award_min") or 0), reverse=True)
+    if sort_by == "relevance":
+        return sorted(items, key=lambda d: d.get("fit_score") or 0, reverse=True)
+    return items
+
+
 # ── Schemas ───────────────────────────────────────────────────────────────────
 class OpportunityCreate(BaseModel):
     title: str
@@ -128,6 +215,9 @@ class OpportunityCreate(BaseModel):
 
 class OpportunityUpdate(BaseModel):
     title: Optional[str] = None
+    funder: Optional[str] = None
+    deadline: Optional[date] = None
+    funder_org_id: Optional[str] = None
     status: Optional[str] = None
     priority: Optional[str] = None
     assigned_reviewer_id: Optional[str] = None
@@ -231,6 +321,13 @@ async def get_filter_options(
     ]
     source_categories = sorted({row.category for row in source_rows if row.category})
 
+    # Funder orgs (the funding body, distinct from Source/portal above)
+    from app.models.funder_org import FunderOrg
+    funder_org_rows = (await db.execute(
+        select(FunderOrg.id, FunderOrg.name).order_by(FunderOrg.name)
+    )).all()
+    funder_orgs = [{"id": row.id, "name": row.name} for row in funder_org_rows]
+
     result = {
         "funders": funders,
         "opportunity_types": opportunity_types,
@@ -238,6 +335,7 @@ async def get_filter_options(
         "thematic_areas": thematic_areas,
         "sources": sources,
         "source_categories": source_categories,
+        "funder_orgs": funder_orgs,
     }
 
     if redis:
@@ -256,6 +354,7 @@ async def list_opportunities(
     opportunity_type: Optional[str] = None,
     geography: Optional[str] = None,
     source_id: Optional[str] = None,
+    funder_org_id: Optional[str] = None,
     funder_category: Optional[str] = None,
     award_min_filter: Optional[float] = None,
     award_max_filter: Optional[float] = None,
@@ -263,8 +362,10 @@ async def list_opportunities(
     min_fit_score: Optional[float] = None,
     deadline_before: Optional[date] = None,
     deadline_after: Optional[date] = None,
+    has_deadline: bool = False,
     theme: Optional[str] = None,
     search: Optional[str] = None,
+    priority_funder_group: Optional[str] = None,
     unread_only: bool = False,
     page: int = Query(1, ge=1),
     page_size: int = Query(25, ge=1, le=200),
@@ -289,53 +390,34 @@ async def list_opportunities(
 
     if status:
         filters.append(Opportunity.status == status)
-    if funder:
-        filters.append(Opportunity.funder.ilike(f"%{funder}%"))
-    if priority:
-        priority_values = PRIORITY_GROUPS.get(priority, [priority])
-        if inst_id:
-            filters.append(
-                or_(
-                    InstitutionOpportunity.priority.in_(priority_values),
-                    and_(InstitutionOpportunity.priority.is_(None), Opportunity.priority.in_(priority_values)),
-                )
-            )
+    if priority_funder_group and inst_id:
+        inst = await db.get(Institution, inst_id)
+        group_funders: list[str] = []
+        for g in (inst.grant_profile or {}).get("priority_funders") or [] if inst else []:
+            if g.get("name") == priority_funder_group:
+                group_funders = g.get("funders") or []
+                break
+        if group_funders:
+            filters.append(or_(*[Opportunity.funder.ilike(f"%{f}%") for f in group_funders]))
         else:
-            filters.append(Opportunity.priority.in_(priority_values))
-    if min_fit_score is not None:
-        if inst_id:
-            relevance_score = func.coalesce(InstitutionOpportunity.fit_score, Opportunity.fit_score, 0)
-        else:
-            relevance_score = func.coalesce(Opportunity.fit_score, 0)
-        filters.append(relevance_score >= min_fit_score)
-    if deadline_before:
-        filters.append(Opportunity.deadline <= deadline_before)
-    if deadline_after:
-        filters.append(Opportunity.deadline >= deadline_after)
-    if theme:
-        filters.append(func.cast(Opportunity.thematic_areas, JSONB).contains([theme]))
-    if opportunity_type:
-        filters.append(Opportunity.opportunity_type == opportunity_type)
-    if geography:
-        filters.append(func.cast(Opportunity.geography, JSONB).contains([geography]))
-    if source_id:
-        filters.append(Opportunity.source_id == source_id)
-    if funder_category:
-        # Join through Source to filter by source category
-        src_subq = select(Source.id).where(
-            Source.category.ilike(f"%{funder_category}%")
-        ).scalar_subquery()
-        filters.append(Opportunity.source_id.in_(src_subq))
-    if award_min_filter is not None:
-        # award_max must be at least as large as the minimum requested
-        filters.append(
-            or_(Opportunity.award_max >= award_min_filter, Opportunity.award_min >= award_min_filter)
-        )
-    if award_max_filter is not None:
-        # award_min must be at most as large as the maximum requested
-        filters.append(
-            or_(Opportunity.award_min <= award_max_filter, Opportunity.award_max <= award_max_filter)
-        )
+            filters.append(sa_text("false"))  # unknown/empty group — no matches
+    filters.extend(_build_opportunity_filters(
+        funder=funder,
+        opportunity_type=opportunity_type,
+        geography=geography,
+        source_id=source_id,
+        funder_org_id=funder_org_id,
+        funder_category=funder_category,
+        award_min_filter=award_min_filter,
+        award_max_filter=award_max_filter,
+        priority=priority,
+        min_fit_score=min_fit_score,
+        deadline_before=deadline_before,
+        deadline_after=deadline_after,
+        has_deadline=has_deadline,
+        theme=theme,
+        inst_id=inst_id,
+    ))
 
     # Semantic candidate IDs (populated below when search is present)
     semantic_ids: list[str] = []
@@ -601,6 +683,20 @@ async def get_graph_data(
     min_score: Optional[float] = None,
     geography: Optional[str] = None,
     deadline_days: Optional[int] = None,
+    # Full sidebar filter set, matching list_opportunities/shortlist/org-shortlist
+    # so the graph view can use the same OpportunityFilters sidebar as the table
+    # instead of its own narrower funder/theme/deadline_days-only filter bar.
+    opportunity_type: Optional[str] = None,
+    source_id: Optional[str] = None,
+    funder_org_id: Optional[str] = None,
+    funder_category: Optional[str] = None,
+    award_min_filter: Optional[float] = None,
+    award_max_filter: Optional[float] = None,
+    priority: Optional[str] = None,
+    deadline_before: Optional[date] = None,
+    deadline_after: Optional[date] = None,
+    has_deadline: bool = False,
+    search: Optional[str] = None,
 ):
     """Return nodes, weighted edges, and cluster metadata for the graph view.
 
@@ -612,23 +708,33 @@ async def get_graph_data(
     from app.models.opportunity_cluster import OpportunityCluster
     from app.models.opportunity_edge import OpportunityEdge
 
-    q = select(Opportunity).where(
-        Opportunity.status.notin_(["archived", "duplicate"])
-    )
-    if funder:
-        q = q.where(Opportunity.funder.ilike(f"%{funder}%"))
-    if theme:
-        q = q.where(func.cast(Opportunity.thematic_areas, JSONB).contains([theme]))
-    if min_score is not None:
-        q = q.where(Opportunity.fit_score >= min_score)
-    if geography:
-        q = q.where(func.cast(Opportunity.geography, JSONB).contains([geography]))
+    filters = [Opportunity.status.notin_(["archived", "duplicate"])]
+    filters.extend(_build_opportunity_filters(
+        funder=funder,
+        opportunity_type=opportunity_type,
+        geography=geography,
+        source_id=source_id,
+        funder_org_id=funder_org_id,
+        funder_category=funder_category,
+        award_min_filter=award_min_filter,
+        award_max_filter=award_max_filter,
+        priority=priority,
+        min_fit_score=min_score,
+        deadline_before=deadline_before,
+        deadline_after=deadline_after,
+        has_deadline=has_deadline,
+        theme=theme,
+        inst_id=None,  # graph view is not institution-scoped
+    ))
     if deadline_days is not None:
-        from datetime import date, timedelta
-        cutoff = date.today() + timedelta(days=deadline_days)
-        q = q.where(Opportunity.deadline <= cutoff)
+        from datetime import date as _date, timedelta
+        cutoff = _date.today() + timedelta(days=deadline_days)
+        filters.append(Opportunity.deadline <= cutoff)
+    if search:
+        term = f"%{search}%"
+        filters.append(or_(Opportunity.title.ilike(term), Opportunity.funder.ilike(term)))
 
-    q = q.limit(500)
+    q = select(Opportunity).where(and_(*filters)).limit(500)
     result = await db.execute(q)
     opps = result.scalars().all()
 
@@ -680,10 +786,26 @@ async def get_graph_data(
 
 @router.get("/shortlist")
 async def personal_shortlist(
+    funder: Optional[str] = None,
+    opportunity_type: Optional[str] = None,
+    geography: Optional[str] = None,
+    source_id: Optional[str] = None,
+    funder_org_id: Optional[str] = None,
+    funder_category: Optional[str] = None,
+    award_min_filter: Optional[float] = None,
+    award_max_filter: Optional[float] = None,
+    priority: Optional[str] = None,
+    deadline_before: Optional[date] = None,
+    deadline_after: Optional[date] = None,
+    has_deadline: bool = False,
+    theme: Optional[str] = None,
+    search: Optional[str] = None,
+    sort_by: str = "relevance",
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ):
-    """Returns the current user's personal shortlist (saved opportunities)."""
+    """Returns the current user's personal shortlist (saved opportunities), filterable
+    by the same sidebar filters as the main opportunity list."""
     sl_result = await db.execute(
         select(UserOpportunityState.opportunity_id)
         .where(
@@ -696,8 +818,31 @@ async def personal_shortlist(
     if not opp_ids:
         return []
 
+    extra_filters = _build_opportunity_filters(
+        funder=funder,
+        opportunity_type=opportunity_type,
+        geography=geography,
+        source_id=source_id,
+        funder_org_id=funder_org_id,
+        funder_category=funder_category,
+        award_min_filter=award_min_filter,
+        award_max_filter=award_max_filter,
+        priority=priority,
+        deadline_before=deadline_before,
+        deadline_after=deadline_after,
+        has_deadline=has_deadline,
+        theme=theme,
+        inst_id=current_user.institution_id,
+    )
+    if search:
+        term = f"%{search}%"
+        extra_filters.append(or_(
+            Opportunity.title.ilike(term),
+            Opportunity.funder.ilike(term),
+        ))
+
     opps_result = await db.execute(
-        select(Opportunity).where(Opportunity.id.in_(opp_ids))
+        select(Opportunity).where(Opportunity.id.in_(opp_ids), *extra_filters)
     )
     opps = {o.id: o for o in opps_result.scalars().all()}
 
@@ -711,7 +856,7 @@ async def personal_shortlist(
         )
         io_map = {io.opportunity_id: io for io in ios_result.scalars().all()}
 
-    read_map = await _load_read_map(db, current_user.id, opp_ids)
+    read_map = await _load_read_map(db, current_user.id, list(opps.keys()))
 
     result = []
     for opp_id in opp_ids:
@@ -724,20 +869,59 @@ async def personal_shortlist(
                 io=io,
                 is_personal_shortlisted=True,
             ))
-    return result
+    return _sort_opportunity_list_by_summary(result, sort_by)
 
 
 @router.get("/org-shortlist")
 async def org_shortlist(
+    funder: Optional[str] = None,
+    opportunity_type: Optional[str] = None,
+    geography: Optional[str] = None,
+    source_id: Optional[str] = None,
+    funder_org_id: Optional[str] = None,
+    funder_category: Optional[str] = None,
+    award_min_filter: Optional[float] = None,
+    award_max_filter: Optional[float] = None,
+    priority: Optional[str] = None,
+    deadline_before: Optional[date] = None,
+    deadline_after: Optional[date] = None,
+    has_deadline: bool = False,
+    theme: Optional[str] = None,
+    search: Optional[str] = None,
+    sort_by: str = "relevance",
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ):
-    """Returns the organization-level shortlist (potential_fit) for the user's institution."""
+    """Returns the organization-level shortlist (potential_fit) for the user's
+    institution, filterable by the same sidebar filters as the main list."""
+    extra_filters = _build_opportunity_filters(
+        funder=funder,
+        opportunity_type=opportunity_type,
+        geography=geography,
+        source_id=source_id,
+        funder_org_id=funder_org_id,
+        funder_category=funder_category,
+        award_min_filter=award_min_filter,
+        award_max_filter=award_max_filter,
+        priority=priority,
+        deadline_before=deadline_before,
+        deadline_after=deadline_after,
+        has_deadline=has_deadline,
+        theme=theme,
+        inst_id=current_user.institution_id,
+    )
+    if search:
+        term = f"%{search}%"
+        extra_filters.append(or_(
+            Opportunity.title.ilike(term),
+            Opportunity.funder.ilike(term),
+        ))
+
     items, read_map, io_map = await _fetch_institution_feed(
-        db, current_user, statuses=SHORTLIST_STATUSES
+        db, current_user, statuses=SHORTLIST_STATUSES, extra_filters=extra_filters
     )
     personal_map = await _load_personal_shortlist_map(db, current_user.id, [o.id for o in items])
-    return [
+    result = [
         _opp_summary(
             o,
             is_read=read_map.get(o.id, False),
@@ -745,6 +929,101 @@ async def org_shortlist(
             is_personal_shortlisted=personal_map.get(o.id, False),
         )
         for o in items
+    ]
+    return _sort_opportunity_list_by_summary(result, sort_by)
+
+
+@router.get("/awarded")
+async def awarded_opportunities(
+    funder: Optional[str] = None,
+    opportunity_type: Optional[str] = None,
+    geography: Optional[str] = None,
+    source_id: Optional[str] = None,
+    funder_org_id: Optional[str] = None,
+    funder_category: Optional[str] = None,
+    award_min_filter: Optional[float] = None,
+    award_max_filter: Optional[float] = None,
+    priority: Optional[str] = None,
+    deadline_before: Optional[date] = None,
+    deadline_after: Optional[date] = None,
+    has_deadline: bool = False,
+    theme: Optional[str] = None,
+    search: Optional[str] = None,
+    sort_by: str = "relevance",
+    outcome: str = "awarded",
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    """Returns opportunities with a recorded outcome (default: awarded) for the
+    user's institution — distinct from the deadline-based "past" split, since an
+    expired opportunity may or may not have actually been pursued/won."""
+    extra_filters = _build_opportunity_filters(
+        funder=funder,
+        opportunity_type=opportunity_type,
+        geography=geography,
+        source_id=source_id,
+        funder_org_id=funder_org_id,
+        funder_category=funder_category,
+        award_min_filter=award_min_filter,
+        award_max_filter=award_max_filter,
+        priority=priority,
+        deadline_before=deadline_before,
+        deadline_after=deadline_after,
+        has_deadline=has_deadline,
+        theme=theme,
+        inst_id=current_user.institution_id,
+    )
+    if search:
+        term = f"%{search}%"
+        extra_filters.append(or_(
+            Opportunity.title.ilike(term),
+            Opportunity.funder.ilike(term),
+        ))
+
+    items, read_map, io_map = await _fetch_institution_feed(
+        db, current_user, statuses=None, extra_filters=extra_filters, outcome=outcome
+    )
+    personal_map = await _load_personal_shortlist_map(db, current_user.id, [o.id for o in items])
+    result = [
+        _opp_summary(
+            o,
+            is_read=read_map.get(o.id, False),
+            io=io_map.get(o.id),
+            is_personal_shortlisted=personal_map.get(o.id, False),
+        )
+        for o in items
+    ]
+    return _sort_opportunity_list_by_summary(result, sort_by)
+
+
+@router.get("/{opp_id}/partners")
+async def list_linked_partners(
+    opp_id: str,
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    """Partners/contacts linked to this opportunity (reuses the generic
+    partner_grant_links table already used for grant<->partner links, with
+    entity_type='opportunity')."""
+    from app.models.partner import Partner, PartnerGrantLink
+
+    rows = (await db.execute(
+        select(PartnerGrantLink, Partner)
+        .join(Partner, Partner.id == PartnerGrantLink.partner_id)
+        .where(PartnerGrantLink.entity_type == "opportunity", PartnerGrantLink.entity_id == opp_id)
+        .order_by(desc(PartnerGrantLink.created_at))
+    )).all()
+    return [
+        {
+            "link_id": lnk.id,
+            "partner_id": p.id,
+            "partner_name": p.name,
+            "partner_organization": p.organization,
+            "relationship": lnk.relationship,
+            "notes": lnk.notes,
+            "created_at": str(lnk.created_at) if lnk.created_at else None,
+        }
+        for lnk, p in rows
     ]
 
 
@@ -1038,6 +1317,7 @@ async def add_to_shortlist(
             saved_at=now,
         ))
     await db.commit()
+    _queue_taste_profile_recompute(current_user.institution_id)
     return {"id": opp_id, "shortlisted": True}
 
 
@@ -1058,6 +1338,7 @@ async def remove_from_shortlist(
     if state:
         state.saved_at = None
         await db.commit()
+        _queue_taste_profile_recompute(current_user.institution_id)
     return {"id": opp_id, "shortlisted": False}
 
 
@@ -1076,6 +1357,7 @@ async def promote_to_org_shortlist(
         raise HTTPException(404, "Opportunity is not in your organization's feed")
     io.status = "potential_fit"
     await db.commit()
+    _queue_taste_profile_recompute(current_user.institution_id)
     return {"id": opp_id, "is_on_org_shortlist": True}
 
 
@@ -1092,7 +1374,56 @@ async def remove_from_org_shortlist(
         raise HTTPException(400, "Opportunity is not on the org shortlist")
     io.status = "in_review"
     await db.commit()
+    _queue_taste_profile_recompute(current_user.institution_id)
     return {"id": opp_id, "is_on_org_shortlist": False}
+
+
+def _queue_taste_profile_recompute(institution_id: str | None) -> None:
+    """Queue a (cheap — vector averaging only, no LLM calls) taste-profile
+    recompute after a shortlist/outcome action changes an institution's
+    positive/negative signal set."""
+    if not institution_id:
+        return
+    from app.workers.celery_app import celery_app
+    celery_app.send_task(
+        "app.workers.taste_profile_tasks.compute_taste_profile", args=[institution_id]
+    )
+
+
+_VALID_OUTCOMES = {"awarded", "declined", "not_pursued"}
+
+
+class SetOutcomeRequest(BaseModel):
+    outcome: Optional[str] = None  # one of _VALID_OUTCOMES, or null to clear
+
+
+@router.post("/{opp_id}/set-outcome")
+async def set_outcome(
+    opp_id: str,
+    data: SetOutcomeRequest,
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    """Record (or clear) an org-specific outcome for an opportunity — whether
+    the org was awarded, declined, or chose not to pursue it. Distinct from
+    workflow `status` and from a past deadline."""
+    if not current_user.institution_id:
+        raise HTTPException(400, "You must belong to an organization to record an outcome")
+    if data.outcome is not None and data.outcome not in _VALID_OUTCOMES:
+        raise HTTPException(400, f"outcome must be one of {sorted(_VALID_OUTCOMES)} or null")
+    await _get_opp_or_404(opp_id, db)
+    io = await _get_institution_opp(db, current_user, opp_id)
+    if not io:
+        raise HTTPException(404, "Opportunity is not in your organization's feed")
+    io.outcome = data.outcome
+    io.outcome_recorded_at = datetime.now(timezone.utc) if data.outcome else None
+    await db.commit()
+    _queue_taste_profile_recompute(current_user.institution_id)
+    return {
+        "id": opp_id,
+        "outcome": io.outcome,
+        "outcome_recorded_at": io.outcome_recorded_at.isoformat() if io.outcome_recorded_at else None,
+    }
 
 
 # ── Helpers ───────────────────────────────────────────────────────────────────
@@ -1128,10 +1459,13 @@ def _opp_summary(
         "funder_logo_url": o.funder_logo_url,
         "opportunity_url": o.opportunity_url,
         "source_id": o.source_id,
+        "funder_org_id": o.funder_org_id,
         "is_read": is_read,
         "fit_rationale": io.fit_rationale if io else o.fit_rationale,
         "is_personal_shortlisted": is_personal_shortlisted,
         "is_on_org_shortlist": bool(io and io.status == "potential_fit"),
+        "outcome": io.outcome if io else None,
+        "outcome_recorded_at": io.outcome_recorded_at.isoformat() if io and io.outcome_recorded_at else None,
     }
 
 
@@ -1147,11 +1481,15 @@ def _document_summary(d: Document) -> dict:
 
 def _opp_full(o: Opportunity, io: InstitutionOpportunity | None = None) -> dict:
     d = {c.name: getattr(o, c.name) for c in o.__table__.columns if c.name != "embedding"}
+    d["outcome"] = None
+    d["outcome_recorded_at"] = None
     if io:
         d["fit_score"] = io.fit_score
         d["priority"] = io.priority
         d["status"] = io.status
         d["fit_rationale"] = io.fit_rationale
+        d["outcome"] = io.outcome
+        d["outcome_recorded_at"] = io.outcome_recorded_at.isoformat() if io.outcome_recorded_at else None
         # Merge global sections + org-specific sections into one markdown document.
         # Global sections (What This Grant Funds, Eligibility, etc.) come first,
         # then org sections (Fit Assessment, Potential Projects) are appended.
@@ -1186,6 +1524,8 @@ async def _fetch_institution_feed(
     db: AsyncSession,
     user: User,
     statuses: list[str] | None,
+    extra_filters: list | None = None,
+    outcome: str | None = None,
 ) -> tuple[list[Opportunity], dict[str, bool], dict[str, InstitutionOpportunity]]:
     if not user.institution_id:
         return [], {}, {}
@@ -1202,11 +1542,13 @@ async def _fetch_institution_feed(
     ]
     if statuses is not None:
         join_conditions.append(InstitutionOpportunity.status.in_(statuses))
+    if outcome is not None:
+        join_conditions.append(InstitutionOpportunity.outcome == outcome)
 
     q = (
         select(Opportunity, InstitutionOpportunity)
         .join(InstitutionOpportunity, and_(*join_conditions))
-        .where(Opportunity.status != "duplicate")
+        .where(Opportunity.status != "duplicate", *(extra_filters or []))
         .order_by(desc(InstitutionOpportunity.fit_score), Opportunity.deadline)
     )
     result = await db.execute(q)

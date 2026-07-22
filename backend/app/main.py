@@ -12,6 +12,7 @@ from app.routers import (
     auth, users, sources, opportunities, grants,
     tasks, documents, archive, ai_assistant,
     notifications, analytics, admin, partners, organizations,
+    funder_orgs,
 )
 from app.routers import grant_workspace
 from app.routers import grant_writing
@@ -92,6 +93,7 @@ API = "/api/v1"
 app.include_router(auth.router,          prefix=f"{API}/auth",          tags=["auth"])
 app.include_router(users.router,         prefix=f"{API}/users",         tags=["users"])
 app.include_router(sources.router,       prefix=f"{API}/sources",       tags=["sources"])
+app.include_router(funder_orgs.router,   prefix=f"{API}/funder-orgs",   tags=["funder-orgs"])
 app.include_router(opportunities.router, prefix=f"{API}/opportunities", tags=["opportunities"])
 app.include_router(grants.router,        prefix=f"{API}/grants",        tags=["grants"])
 app.include_router(tasks.router,         prefix=f"{API}/tasks",         tags=["tasks"])

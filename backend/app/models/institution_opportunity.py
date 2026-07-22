@@ -37,3 +37,8 @@ class InstitutionOpportunity(Base):
     surfaced_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), server_default=func.now()
     )
+    # Outcome tracking — distinct from `status` (workflow stage) and from a
+    # past deadline (which just means the call closed, not that we won it).
+    # One of: "awarded", "declined", "not_pursued", or null (no outcome yet).
+    outcome: Mapped[str | None] = mapped_column(String(50), nullable=True, index=True)
+    outcome_recorded_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)

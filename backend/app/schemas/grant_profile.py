@@ -9,6 +9,23 @@ DEFAULT_AUTO_QUEUE_THRESHOLD = 40
 
 
 @dataclass
+class PriorityFunderGroup:
+    """A named group of funders an org wants to prioritize/filter by."""
+    name: str = ""
+    funders: list[str] = field(default_factory=list)
+
+    @classmethod
+    def from_dict(cls, data: dict[str, Any]) -> PriorityFunderGroup:
+        return cls(
+            name=str(data.get("name") or ""),
+            funders=[str(f) for f in (data.get("funders") or []) if f],
+        )
+
+    def to_dict(self) -> dict[str, Any]:
+        return {"name": self.name, "funders": self.funders}
+
+
+@dataclass
 class GrantProfile:
     institution_name: str = ""
     keywords: list[str] = field(default_factory=list)
@@ -16,6 +33,7 @@ class GrantProfile:
     projects: str = ""
     excluded_keywords: list[str] = field(default_factory=list)
     auto_queue_threshold: int = DEFAULT_AUTO_QUEUE_THRESHOLD
+    priority_funders: list[PriorityFunderGroup] = field(default_factory=list)
 
     @classmethod
     def from_dict(cls, data: dict[str, Any] | None) -> GrantProfile:
@@ -28,6 +46,9 @@ class GrantProfile:
             projects=str(data.get("projects") or ""),
             excluded_keywords=list(data.get("excluded_keywords") or []),
             auto_queue_threshold=int(data.get("auto_queue_threshold") or DEFAULT_AUTO_QUEUE_THRESHOLD),
+            priority_funders=[
+                PriorityFunderGroup.from_dict(g) for g in (data.get("priority_funders") or []) if isinstance(g, dict)
+            ],
         )
 
     def to_dict(self) -> dict[str, Any]:
@@ -38,6 +59,7 @@ class GrantProfile:
             "projects": self.projects,
             "excluded_keywords": self.excluded_keywords,
             "auto_queue_threshold": self.auto_queue_threshold,
+            "priority_funders": [g.to_dict() for g in self.priority_funders],
         }
 
 

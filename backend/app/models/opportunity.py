@@ -59,6 +59,9 @@ class Opportunity(Base):
     source_id: Mapped[str | None] = mapped_column(String, ForeignKey("sources.id"))
     source_url: Mapped[str | None] = mapped_column(String(1000))
     opportunity_url: Mapped[str | None] = mapped_column(String(1000))
+    # The funding body itself (e.g. "Fulbright") — distinct from source_id,
+    # which is the scraper portal this opportunity was discovered through.
+    funder_org_id: Mapped[str | None] = mapped_column(String, ForeignKey("funder_orgs.id"))
 
     # Description
     description: Mapped[str | None] = mapped_column(Text)

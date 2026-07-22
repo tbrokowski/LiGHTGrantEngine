@@ -1,6 +1,5 @@
 'use client';
 import Link from 'next/link';
-import ScoreBadge from './ScoreBadge';
 import FunderLogo from './FunderLogo';
 import OpportunityActions, { type OpportunityActionHandlers } from './OpportunityActions';
 import OpportunityTypeBadge from './OpportunityTypeBadge';
@@ -9,9 +8,22 @@ import { formatDate, formatAward, type Opportunity } from './types';
 interface OpportunityRowProps extends OpportunityActionHandlers {
   opp: Opportunity;
   index: number;
-  mode?: 'queue' | 'shortlist' | 'org-shortlist';
+  mode?: 'queue' | 'shortlist' | 'org-shortlist' | 'awarded';
   onNavigate?: (id: string) => void;
 }
+
+// Fit-tier left-border accent — replaces the visible "Score" badge with a
+// subtle color cue so fit doesn't compete visually with the title/summary.
+// Exported so ShortlistCardRows can reuse the same tier→color mapping.
+export const TIER_ACCENT: Record<string, string> = {
+  high: 'var(--state-success)',
+  high_priority: 'var(--state-success)',
+  medium: 'var(--state-warning)',
+  worth_reviewing: 'var(--state-warning)',
+  low: 'var(--rule-strong)',
+  low_fit: 'var(--rule-strong)',
+  watchlist: 'var(--state-info)',
+};
 
 export default function OpportunityRow({
   opp,
@@ -23,6 +35,7 @@ export default function OpportunityRow({
   const unread = !opp.is_read;
   const shortlisted = opp.is_personal_shortlisted || opp.is_on_org_shortlist;
   const prominent = unread || shortlisted;
+  const tierAccent = TIER_ACCENT[opp.priority ?? ''] ?? 'transparent';
 
   return (
     <tr
@@ -31,7 +44,7 @@ export default function OpportunityRow({
       onMouseEnter={e => (e.currentTarget.style.background = 'var(--selection-bg)')}
       onMouseLeave={e => (e.currentTarget.style.background = 'transparent')}
     >
-      <td className="px-5 py-3">
+      <td className="py-3 pr-5" style={{ borderLeft: `3px solid ${tierAccent}`, paddingLeft: '17px' }}>
         <Link href={`/opportunities/${opp.id}`} className="block" onClick={() => onNavigate?.(opp.id)}>
           <div className="flex items-start gap-2">
             {unread && (
@@ -89,10 +102,7 @@ export default function OpportunityRow({
           {formatAward(opp.award_min, opp.award_max, opp.currency) ?? '—'}
         </span>
       </td>
-      <td className="px-4 py-3 text-center">
-        <ScoreBadge priority={opp.priority} fitScore={opp.fit_score} />
-      </td>
-      <td className="px-3 py-3">
+      <td className="px-3 py-3 text-right w-12">
         <OpportunityActions opp={opp} mode={mode} {...handlers} />
       </td>
     </tr>

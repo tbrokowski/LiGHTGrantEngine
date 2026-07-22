@@ -18,10 +18,13 @@ export interface Opportunity {
   funder_logo_url: string | null;
   opportunity_url: string | null;
   source_id: string | null;
+  funder_org_id?: string | null;
   fit_rationale?: string | null;
   is_read?: boolean;
   is_personal_shortlisted?: boolean;
   is_on_org_shortlist?: boolean;
+  outcome?: 'awarded' | 'declined' | 'not_pursued' | null;
+  outcome_recorded_at?: string | null;
 }
 
 export interface OpportunityFilters {
@@ -32,7 +35,9 @@ export interface OpportunityFilters {
   geography: string;
   funder: string;
   funderCategory: string;
+  priorityFunderGroup: string;
   sourceId: string;
+  funderOrgId: string;
   deadlineBefore: string;
   deadlineAfter: string;
   awardMin: string;
@@ -48,6 +53,7 @@ export interface FilterOptions {
   thematic_areas: string[];
   source_categories: string[];
   sources: { id: string; name: string; category: string | null; logo_url: string | null }[];
+  funder_orgs: { id: string; name: string }[];
 }
 
 export const PRIORITY_LABELS: Record<string, string> = {
@@ -115,4 +121,4 @@ export function isExpired(deadline: string | null) {
 }
 
 export type ViewMode = 'table' | 'graph';
-export type TabMode = 'queue' | 'shortlist' | 'org-shortlist';
+export type TabMode = 'queue' | 'shortlist' | 'org-shortlist' | 'awarded';

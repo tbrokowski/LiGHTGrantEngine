@@ -5,7 +5,12 @@ cosine-similarity graph on OpenAI embeddings, then compute UMAP 2D positions.
 Algorithm pipeline (Scanpy-style, validated on high-dimensional embedding data):
   1. Normalise 1536-dim OpenAI embeddings (L2).
   2. Build a k-nearest-neighbour graph (k=15, cosine similarity) via sklearn.
-     Edges are weighted by similarity = 1 - cosine_distance and thresholded at 0.3.
+     Edge weight blends embedding similarity with taxonomy overlap:
+       w = ALPHA * (1 - cosine_distance) + (1 - ALPHA) * jaccard(tags_i, tags_j)
+     where tags = thematic_areas ∪ keywords. Semantic similarity stays dominant
+     (ALPHA=0.7); keyword/taxonomy overlap acts as a tiebreaker so grants that
+     share explicit tags cluster more reliably than embedding distance alone
+     would guarantee. Thresholded at 0.3 on the blended weight.
   3. Run Leiden community detection (leidenalg, RBConfigurationVertexPartition)
      on the igraph representation of the kNN graph.
      → Leiden guarantees well-connected communities, fixing Louvain's
@@ -38,6 +43,24 @@ EDGE_WEIGHT_THRESHOLD = 0.30
 KNN_K = 15
 # Maximum edges written to opportunity_edges (cap for wire-friendly API responses)
 MAX_STORED_EDGES = 5000
+# Weight given to embedding (semantic) similarity vs. keyword/taxonomy overlap
+# in the blended edge weight. Semantic stays dominant; keyword overlap tiebreaks.
+ALPHA = 0.7
+
+
+def jaccard(tags_a: set, tags_b: set) -> float:
+    """Jaccard overlap of two tag sets. Returns 0.0 when either side is empty."""
+    if not tags_a or not tags_b:
+        return 0.0
+    union = tags_a | tags_b
+    if not union:
+        return 0.0
+    return len(tags_a & tags_b) / len(union)
+
+
+def blend_edge_weight(semantic_weight: float, tag_jaccard: float, alpha: float = ALPHA) -> float:
+    """Blend embedding-similarity weight with keyword/taxonomy Jaccard overlap."""
+    return alpha * semantic_weight + (1 - alpha) * tag_jaccard
 
 
 from celery import shared_task
@@ -93,7 +116,10 @@ async def _cluster_opportunities_async():
         try:
             # ── 1. Load opportunities with embeddings ─────────────────────────
             result = await db.execute(
-                select(Opportunity.id, Opportunity.embedding, Opportunity.title, Opportunity.thematic_areas)
+                select(
+                    Opportunity.id, Opportunity.embedding, Opportunity.title,
+                    Opportunity.thematic_areas, Opportunity.keywords,
+                )
                 .where(Opportunity.embedding.isnot(None))
             )
             rows = result.all()
@@ -106,6 +132,10 @@ async def _cluster_opportunities_async():
             embeddings = np.array([r[1] for r in rows], dtype=np.float32)
             titles = [r[2] for r in rows]
             themes_list = [r[3] or [] for r in rows]
+            tags_list = [
+                {t.lower() for t in (r[3] or [])} | {k.lower() for k in (r[4] or [])}
+                for r in rows
+            ]
 
             n = len(ids)
             logger.info("Clustering %d opportunities", n)
@@ -118,7 +148,7 @@ async def _cluster_opportunities_async():
             nn.fit(embeddings)
             distances, indices = nn.kneighbors(embeddings)
 
-            # Build edge list: weight = 1 - cosine_distance
+            # Build edge list: weight blends embedding similarity with tag overlap
             edges = []
             weights = []
             for i in range(n):
@@ -126,7 +156,8 @@ async def _cluster_opportunities_async():
                     j = int(indices[i, j_pos])
                     if j <= i:
                         continue
-                    w = float(1.0 - distances[i, j_pos])
+                    w_semantic = float(1.0 - distances[i, j_pos])
+                    w = blend_edge_weight(w_semantic, jaccard(tags_list[i], tags_list[j]))
                     if w >= EDGE_WEIGHT_THRESHOLD:
                         edges.append((i, j))
                         weights.append(w)

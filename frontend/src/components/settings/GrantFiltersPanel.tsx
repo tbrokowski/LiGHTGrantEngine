@@ -31,12 +31,19 @@ interface ScanSummary {
   recent_errors_24h: number;
 }
 
+interface PriorityFunderGroup {
+  name: string;
+  funders: string[];
+}
+
 interface GrantProfile {
   institution_name?: string;
   keywords?: string[];
   geographies?: string[];
   projects?: string;
   excluded_keywords?: string[];
+  priority_funders?: PriorityFunderGroup[];
+  [key: string]: unknown;
 }
 
 interface GrantFiltersPanelProps {
@@ -114,6 +121,66 @@ function TagInput({
           className="flex-1 border border-gray-300 rounded-md px-3 py-1.5 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
         />
         <button type="button" onClick={addTag} className="text-sm px-3 py-1.5 border border-gray-200 rounded-md hover:bg-gray-50">Add</button>
+      </div>
+    </div>
+  );
+}
+
+function PriorityFunderGroupsEditor({
+  groups,
+  onChange,
+}: {
+  groups: PriorityFunderGroup[];
+  onChange: (groups: PriorityFunderGroup[]) => void;
+}) {
+  const [newGroupName, setNewGroupName] = useState('');
+
+  function addGroup() {
+    const name = newGroupName.trim();
+    if (!name || groups.some(g => g.name === name)) return;
+    onChange([...groups, { name, funders: [] }]);
+    setNewGroupName('');
+  }
+
+  return (
+    <div>
+      <label className="block text-xs font-medium text-gray-600 mb-1">Priority funder groups</label>
+      <p className="text-xs text-gray-400 mb-2">
+        Named groups of funders (e.g. &quot;Tier 1&quot;) to quickly filter the opportunity list by.
+      </p>
+      <div className="space-y-3 mb-3">
+        {groups.map(group => (
+          <div key={group.name} className="border border-gray-200 rounded-md p-3">
+            <div className="flex items-center justify-between mb-2">
+              <span className="text-xs font-semibold text-gray-700">{group.name}</span>
+              <button
+                type="button"
+                onClick={() => onChange(groups.filter(g => g.name !== group.name))}
+                className="text-xs text-gray-400 hover:text-red-600"
+              >
+                Remove group
+              </button>
+            </div>
+            <TagInput
+              label="Funders"
+              tags={group.funders}
+              onChange={funders => onChange(groups.map(g => g.name === group.name ? { ...g, funders } : g))}
+              placeholder="e.g. NIH, Wellcome Trust"
+            />
+          </div>
+        ))}
+      </div>
+      <div className="flex gap-2">
+        <input
+          value={newGroupName}
+          onChange={e => setNewGroupName(e.target.value)}
+          onKeyDown={e => { if (e.key === 'Enter') { e.preventDefault(); addGroup(); } }}
+          placeholder="New group name (e.g. Tier 1 funders)"
+          className="flex-1 border border-gray-300 rounded-md px-3 py-1.5 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
+        />
+        <button type="button" onClick={addGroup} className="text-sm px-3 py-1.5 border border-gray-200 rounded-md hover:bg-gray-50">
+          Add group
+        </button>
       </div>
     </div>
   );
@@ -293,6 +360,10 @@ export function GrantFiltersPanel({ institutionId, isOrgAdmin }: GrantFiltersPan
               onChange={excluded_keywords => setOrgProfile(p => ({ ...p, excluded_keywords }))}
               placeholder="e.g. agriculture"
             />
+            <PriorityFunderGroupsEditor
+              groups={orgProfile.priority_funders ?? []}
+              onChange={priority_funders => setOrgProfile(p => ({ ...p, priority_funders }))}
+            />
             <div>
               <label className="block text-xs font-medium text-gray-600 mb-1">Team / project context</label>
               <textarea
@@ -328,6 +399,18 @@ export function GrantFiltersPanel({ institutionId, isOrgAdmin }: GrantFiltersPan
               tags={orgProfile.excluded_keywords ?? []}
               emptyText="None"
             />
+            {(orgProfile.priority_funders ?? []).length > 0 && (
+              <div>
+                <label className="block text-xs font-medium text-gray-600 mb-1">Priority funder groups</label>
+                <div className="space-y-1.5">
+                  {(orgProfile.priority_funders ?? []).map(group => (
+                    <p key={group.name} className="text-xs text-gray-600">
+                      <span className="font-medium">{group.name}:</span> {group.funders.join(', ') || 'none'}
+                    </p>
+                  ))}
+                </div>
+              </div>
+            )}
             {orgProfile.projects && (
               <div>
                 <label className="block text-xs font-medium text-gray-600 mb-1">Team / project context</label>

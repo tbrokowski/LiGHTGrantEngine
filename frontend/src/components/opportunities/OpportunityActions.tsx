@@ -12,7 +12,7 @@ export interface OpportunityActionHandlers {
 
 interface OpportunityActionsProps extends OpportunityActionHandlers {
   opp: Opportunity;
-  mode?: 'queue' | 'shortlist' | 'org-shortlist' | 'compact' | 'focus';
+  mode?: 'queue' | 'shortlist' | 'org-shortlist' | 'awarded' | 'compact' | 'focus';
   className?: string;
 }
 
@@ -156,13 +156,9 @@ export default function OpportunityActions({
   return (
     <div className={`flex items-center gap-1.5 ${isTable ? 'w-full' : 'flex-wrap'} ${className}`}>
       {mode === 'queue' && (
-        <>
-          {viewLink}
-          <div className="ml-auto flex items-center gap-1 shrink-0">
-            {readToggle}
-            {bookmark}
-          </div>
-        </>
+        <div className="ml-auto flex items-center shrink-0">
+          {readToggle}
+        </div>
       )}
 
       {mode === 'shortlist' && (
@@ -182,6 +178,15 @@ export default function OpportunityActions({
           <div className="ml-auto flex items-center gap-1 shrink-0">
             {removeFromOrgBtn}
             {startGrantBtn}
+          </div>
+        </>
+      )}
+
+      {mode === 'awarded' && (
+        <>
+          {viewLink}
+          <div className="ml-auto flex items-center shrink-0">
+            {readToggle}
           </div>
         </>
       )}

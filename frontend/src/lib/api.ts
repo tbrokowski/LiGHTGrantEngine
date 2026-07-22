@@ -144,8 +144,11 @@ export const opportunities = {
   newOpportunitiesCounts: () => api.get('/opportunities/new-opportunities/counts'),
   queue: (params?: { unread_only?: boolean; limit?: number; offset?: number }) => api.get('/opportunities/queue', { params }),
   queueCounts: () => api.get('/opportunities/queue/counts'),
-  shortlist: () => api.get('/opportunities/shortlist'),
-  orgShortlist: () => api.get('/opportunities/org-shortlist'),
+  shortlist: (params?: Record<string, unknown>) => api.get('/opportunities/shortlist', { params }),
+  orgShortlist: (params?: Record<string, unknown>) => api.get('/opportunities/org-shortlist', { params }),
+  awarded: (params?: Record<string, unknown>) => api.get('/opportunities/awarded', { params }),
+  setOutcome: (id: string, outcome: string | null) => api.post(`/opportunities/${id}/set-outcome`, { outcome }),
+  linkedPartners: (id: string) => api.get(`/opportunities/${id}/partners`),
   graphData: (params?: Record<string, unknown>) => api.get('/opportunities/graph-data', { params }),
   get: (id: string) => api.get(`/opportunities/${id}`),
   create: (data: Record<string, unknown>) => api.post('/opportunities/', data),
@@ -477,6 +480,15 @@ export const sources = {
   recentRuns: (limit = 20) => api.get(`/sources/status/recent-runs?limit=${limit}`),
   summary: () => api.get('/sources/status/summary'),
   workerStatus: () => api.get('/sources/worker-status'),
+};
+
+// ── Funder Orgs (the funding body, distinct from Source/portal) ────────────────
+export const funderOrgs = {
+  list: (q?: string) => api.get('/funder-orgs/', { params: q ? { q } : undefined }),
+  get: (id: string) => api.get(`/funder-orgs/${id}`),
+  create: (data: Record<string, unknown>) => api.post('/funder-orgs/', data),
+  update: (id: string, data: Record<string, unknown>) => api.patch(`/funder-orgs/${id}`, data),
+  delete: (id: string) => api.delete(`/funder-orgs/${id}`),
 };
 
 // ── Admin ─────────────────────────────────────────────────────────────────────

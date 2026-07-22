@@ -272,6 +272,12 @@ notifications:
     - 3
     - 1
     - 0
+    opportunity_deadline:
+    - 30
+    - 14
+    - 7
+    - 3
+    - 1
 rag:
   chunk_size: 800
   chunk_overlap: 100

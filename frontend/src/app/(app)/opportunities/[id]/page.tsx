@@ -2,8 +2,8 @@
 import { useEffect, useState, useCallback } from 'react';
 import { useRouter, useParams } from 'next/navigation';
 import Link from 'next/link';
-import { Sparkles, Check, AlertTriangle, Folder, ChevronLeft, ChevronRight, Loader2 } from 'lucide-react';
-import { opportunities, ai, api } from '@/lib/api';
+import { Sparkles, Check, AlertTriangle, Folder, ChevronLeft, ChevronRight, Loader2, Pencil } from 'lucide-react';
+import { opportunities, ai, api, partners as partnersApi, funderOrgs as funderOrgsApi } from '@/lib/api';
 import { notifyOpportunitiesChanged } from '@/lib/opportunities-events';
 import { usePdfViewer } from '@/contexts/PdfViewerContext';
 import { useAuth } from '@/lib/auth';
@@ -50,6 +50,9 @@ interface OpportunityDetail {
   documents?: OpportunityDocument[];
   is_personal_shortlisted?: boolean;
   is_on_org_shortlist?: boolean;
+  outcome?: 'awarded' | 'declined' | 'not_pursued' | null;
+  outcome_recorded_at?: string | null;
+  funder_org_id?: string | null;
 }
 
 interface OpportunityDocument {
@@ -177,6 +180,152 @@ export default function OpportunityDetailPage() {
   const [enrichMessage, setEnrichMessage] = useState('');
   const [navIds, setNavIds] = useState<string[]>([]);
   const { openPdfViewer } = usePdfViewer();
+
+  interface LinkedPartner {
+    link_id: string;
+    partner_id: string;
+    partner_name: string;
+    partner_organization: string | null;
+    relationship: string;
+  }
+  const [linkedPartners, setLinkedPartners] = useState<LinkedPartner[]>([]);
+  const [showPartnerPicker, setShowPartnerPicker] = useState(false);
+  const [partnerSearch, setPartnerSearch] = useState('');
+  const [partnerResults, setPartnerResults] = useState<{ id: string; name: string; organization: string | null }[]>([]);
+  const [linkingBusy, setLinkingBusy] = useState(false);
+
+  const fetchLinkedPartners = useCallback(() => {
+    if (!id) return;
+    opportunities.linkedPartners(id).then(r => setLinkedPartners(r.data)).catch(() => setLinkedPartners([]));
+  }, [id]);
+
+  useEffect(() => { fetchLinkedPartners(); }, [fetchLinkedPartners]);
+
+  useEffect(() => {
+    if (!showPartnerPicker || !partnerSearch.trim()) { setPartnerResults([]); return; }
+    const t = setTimeout(() => {
+      partnersApi.list({ q: partnerSearch })
+        .then(r => setPartnerResults((r.data ?? []).slice(0, 8)))
+        .catch(() => setPartnerResults([]));
+    }, 250);
+    return () => clearTimeout(t);
+  }, [partnerSearch, showPartnerPicker]);
+
+  async function handleLinkPartner(partnerId: string) {
+    setLinkingBusy(true);
+    try {
+      await partnersApi.addLink(partnerId, { entity_type: 'opportunity', entity_id: id, relationship: 'funder_contact' });
+      setPartnerSearch('');
+      setPartnerResults([]);
+      setShowPartnerPicker(false);
+      fetchLinkedPartners();
+    } finally {
+      setLinkingBusy(false);
+    }
+  }
+
+  async function handleUnlinkPartner(partnerId: string, linkId: string) {
+    await partnersApi.deleteLink(partnerId, linkId);
+    setLinkedPartners(prev => prev.filter(l => l.link_id !== linkId));
+  }
+
+  // ── Inline header editing (title / funder / deadline) ──────────────────────
+  const [editingHeader, setEditingHeader] = useState(false);
+  const [editTitle, setEditTitle] = useState('');
+  const [editFunder, setEditFunder] = useState('');
+  const [editDeadline, setEditDeadline] = useState('');
+  const [savingHeader, setSavingHeader] = useState(false);
+
+  function startEditHeader() {
+    if (!opp) return;
+    setEditTitle(opp.title ?? '');
+    setEditFunder(opp.funder ?? '');
+    setEditDeadline(opp.deadline ? opp.deadline.slice(0, 10) : '');
+    setEditingHeader(true);
+  }
+
+  async function handleSaveHeader() {
+    if (!opp) return;
+    setSavingHeader(true);
+    try {
+      const payload: Record<string, unknown> = {
+        title: editTitle.trim(),
+        funder: editFunder.trim() || null,
+      };
+      if (editDeadline) payload.deadline = editDeadline;
+      const res = await opportunities.update(id, payload);
+      setOpp(prev => prev ? { ...prev, ...res.data } : prev);
+      setEditingHeader(false);
+      notifyOpportunitiesChanged();
+    } finally {
+      setSavingHeader(false);
+    }
+  }
+
+  // ── Funder Org (the funding body — distinct from linked contacts above) ────
+  interface FunderOrgDetail {
+    id: string;
+    name: string;
+    url: string | null;
+    notes: string | null;
+    deadline_info: string | null;
+  }
+  const [funderOrg, setFunderOrg] = useState<FunderOrgDetail | null>(null);
+  const [showFunderOrgPicker, setShowFunderOrgPicker] = useState(false);
+  const [funderOrgSearch, setFunderOrgSearch] = useState('');
+  const [funderOrgResults, setFunderOrgResults] = useState<{ id: string; name: string }[]>([]);
+  const [editingFunderOrg, setEditingFunderOrg] = useState(false);
+  const [funderOrgDraft, setFunderOrgDraft] = useState<Partial<FunderOrgDetail>>({});
+  const [funderOrgBusy, setFunderOrgBusy] = useState(false);
+
+  useEffect(() => {
+    if (opp?.funder_org_id) {
+      funderOrgsApi.get(opp.funder_org_id).then(r => setFunderOrg(r.data)).catch(() => setFunderOrg(null));
+    } else {
+      setFunderOrg(null);
+    }
+  }, [opp?.funder_org_id]);
+
+  useEffect(() => {
+    if (!showFunderOrgPicker || !funderOrgSearch.trim()) { setFunderOrgResults([]); return; }
+    const t = setTimeout(() => {
+      funderOrgsApi.list(funderOrgSearch)
+        .then(r => setFunderOrgResults((r.data ?? []).slice(0, 8)))
+        .catch(() => setFunderOrgResults([]));
+    }, 250);
+    return () => clearTimeout(t);
+  }, [funderOrgSearch, showFunderOrgPicker]);
+
+  async function handleAttachFunderOrg(funderOrgId: string) {
+    setFunderOrgBusy(true);
+    try {
+      await opportunities.update(id, { funder_org_id: funderOrgId });
+      setOpp(prev => prev ? { ...prev, funder_org_id: funderOrgId } : prev);
+      setShowFunderOrgPicker(false);
+      setFunderOrgSearch('');
+      setFunderOrgResults([]);
+    } finally {
+      setFunderOrgBusy(false);
+    }
+  }
+
+  function startEditFunderOrg() {
+    if (!funderOrg) return;
+    setFunderOrgDraft({ name: funderOrg.name, url: funderOrg.url ?? '', deadline_info: funderOrg.deadline_info ?? '' });
+    setEditingFunderOrg(true);
+  }
+
+  async function handleSaveFunderOrg() {
+    if (!funderOrg) return;
+    setFunderOrgBusy(true);
+    try {
+      const res = await funderOrgsApi.update(funderOrg.id, funderOrgDraft);
+      setFunderOrg(res.data);
+      setEditingFunderOrg(false);
+    } finally {
+      setFunderOrgBusy(false);
+    }
+  }
 
   const fetchOpp = useCallback((notify = false) => {
     if (!id) return;
@@ -323,6 +472,19 @@ export default function OpportunityDetailPage() {
     }
   }
 
+  async function handleSetOutcome(outcome: string) {
+    if (!opp) return;
+    const next = outcome === '' ? null : outcome;
+    setActionBusy(true);
+    try {
+      const res = await opportunities.setOutcome(id, next);
+      setOpp(prev => prev ? { ...prev, outcome: res.data.outcome, outcome_recorded_at: res.data.outcome_recorded_at } : prev);
+      notifyOpportunitiesChanged();
+    } finally {
+      setActionBusy(false);
+    }
+  }
+
   const isShortlisted = !!(opp?.is_personal_shortlisted ?? opp?.status === 'potential_fit');
 
   if (loading) {
@@ -399,12 +561,64 @@ export default function OpportunityDetailPage() {
       <div className="bg-white border border-gray-200 rounded-lg p-6 mb-6">
         <div className="flex items-start justify-between gap-6 mb-5">
           <div className="min-w-0 flex-1">
-            <h1 className="text-xl font-semibold text-gray-900 leading-tight">{opp.title}</h1>
-            <div className="text-sm text-gray-500 mt-1.5 flex items-center gap-2 flex-wrap">
-              <FunderLogo url={opp.funder_logo_url} name={opp.funder} size="md" />
-              {opp.funder && <span className="font-medium text-gray-700">{opp.funder}</span>}
-              {opp.program_name && <><span className="text-gray-300">·</span><span>{opp.program_name}</span></>}
-            </div>
+            {editingHeader ? (
+              <div className="space-y-2">
+                <input
+                  value={editTitle}
+                  onChange={e => setEditTitle(e.target.value)}
+                  className="w-full text-xl font-semibold text-gray-900 border border-gray-300 rounded-md px-2 py-1"
+                  placeholder="Title"
+                />
+                <div className="flex gap-2">
+                  <input
+                    value={editFunder}
+                    onChange={e => setEditFunder(e.target.value)}
+                    className="flex-1 text-sm border border-gray-300 rounded-md px-2 py-1"
+                    placeholder="Funder"
+                  />
+                  <input
+                    type="date"
+                    value={editDeadline}
+                    onChange={e => setEditDeadline(e.target.value)}
+                    className="text-sm border border-gray-300 rounded-md px-2 py-1"
+                  />
+                </div>
+                <div className="flex gap-2">
+                  <button
+                    onClick={handleSaveHeader}
+                    disabled={!editTitle.trim() || savingHeader}
+                    className="text-xs px-3 py-1.5 rounded-md text-white bg-blue-600 hover:bg-blue-700 disabled:opacity-50"
+                  >
+                    {savingHeader ? 'Saving…' : 'Save'}
+                  </button>
+                  <button
+                    onClick={() => setEditingHeader(false)}
+                    disabled={savingHeader}
+                    className="text-xs px-3 py-1.5 rounded-md border border-gray-300 text-gray-600"
+                  >
+                    Cancel
+                  </button>
+                </div>
+              </div>
+            ) : (
+              <>
+                <div className="flex items-start gap-2">
+                  <h1 className="text-xl font-semibold text-gray-900 leading-tight">{opp.title}</h1>
+                  <button
+                    onClick={startEditHeader}
+                    title="Edit title, funder, deadline"
+                    className="shrink-0 mt-1 text-gray-300 hover:text-gray-600 transition-colors"
+                  >
+                    <Pencil className="w-3.5 h-3.5" />
+                  </button>
+                </div>
+                <div className="text-sm text-gray-500 mt-1.5 flex items-center gap-2 flex-wrap">
+                  <FunderLogo url={opp.funder_logo_url} name={opp.funder} size="md" />
+                  {opp.funder && <span className="font-medium text-gray-700">{opp.funder}</span>}
+                  {opp.program_name && <><span className="text-gray-300">·</span><span>{opp.program_name}</span></>}
+                </div>
+              </>
+            )}
           </div>
           <div className="shrink-0 flex flex-col items-end gap-2">
             {opp.priority && (
@@ -502,13 +716,160 @@ export default function OpportunityDetailPage() {
               {enriching ? <span className="flex items-center gap-1.5"><Loader2 className="w-3.5 h-3.5 animate-spin" />Re-enriching…</span> : 'Re-enrich'}
             </button>
           )}
+          <select
+            value={opp.outcome ?? ''}
+            onChange={e => handleSetOutcome(e.target.value)}
+            disabled={actionBusy}
+            title="Record whether your organization won, declined, or didn't pursue this grant"
+            className="text-sm border border-gray-300 rounded-md px-2.5 py-1.5 bg-white text-gray-700 disabled:opacity-50 ml-auto"
+          >
+            <option value="">No outcome recorded</option>
+            <option value="awarded">Awarded</option>
+            <option value="declined">Declined</option>
+            <option value="not_pursued">Not pursued</option>
+          </select>
           <button
             onClick={handleConvert}
             disabled={converting}
-            className="text-sm text-white bg-blue-600 hover:bg-blue-700 px-4 py-1.5 rounded-md transition-colors disabled:opacity-50 ml-auto font-medium"
+            className="text-sm text-white bg-blue-600 hover:bg-blue-700 px-4 py-1.5 rounded-md transition-colors disabled:opacity-50 font-medium"
           >
             {converting ? 'Starting…' : '+ Start Grant'}
           </button>
+        </div>
+
+        {/* Funder Org — the funding body itself, distinct from the scraper portal */}
+        <div className="mt-4 pt-4 border-t border-gray-100">
+          <div className="flex items-center justify-between mb-2">
+            <span className="text-xs font-semibold text-gray-500 uppercase tracking-wide">Funder Org</span>
+            <button
+              onClick={() => setShowFunderOrgPicker(v => !v)}
+              className="text-xs text-blue-600 hover:text-blue-800 font-medium"
+            >
+              {showFunderOrgPicker ? 'Cancel' : funderOrg ? 'Change' : '+ Link funder org'}
+            </button>
+          </div>
+
+          {funderOrg && !editingFunderOrg && (
+            <div className="flex items-start justify-between gap-3 mb-2 p-2.5 bg-gray-50 rounded-lg">
+              <div className="min-w-0">
+                <p className="text-sm font-medium text-gray-800">{funderOrg.name}</p>
+                {funderOrg.url && (
+                  <a href={funderOrg.url} target="_blank" rel="noopener noreferrer" className="text-xs text-blue-600 hover:underline truncate block">
+                    {funderOrg.url}
+                  </a>
+                )}
+                {funderOrg.deadline_info && <p className="text-xs text-gray-500 mt-0.5">{funderOrg.deadline_info}</p>}
+              </div>
+              <button onClick={startEditFunderOrg} className="shrink-0 text-gray-400 hover:text-gray-700">
+                <Pencil className="w-3.5 h-3.5" />
+              </button>
+            </div>
+          )}
+
+          {editingFunderOrg && funderOrg && (
+            <div className="mb-2 p-2.5 bg-gray-50 rounded-lg space-y-1.5">
+              <input value={funderOrgDraft.name ?? ''} onChange={e => setFunderOrgDraft(d => ({ ...d, name: e.target.value }))} placeholder="Name" className="w-full text-sm border border-gray-300 rounded-md px-2 py-1" />
+              <input value={funderOrgDraft.url ?? ''} onChange={e => setFunderOrgDraft(d => ({ ...d, url: e.target.value }))} placeholder="URL" className="w-full text-sm border border-gray-300 rounded-md px-2 py-1" />
+              <input value={funderOrgDraft.deadline_info ?? ''} onChange={e => setFunderOrgDraft(d => ({ ...d, deadline_info: e.target.value }))} placeholder="Deadline info" className="w-full text-sm border border-gray-300 rounded-md px-2 py-1" />
+              <div className="flex gap-2">
+                <button onClick={handleSaveFunderOrg} disabled={funderOrgBusy} className="text-xs px-3 py-1.5 rounded-md text-white bg-blue-600 hover:bg-blue-700 disabled:opacity-50">
+                  {funderOrgBusy ? 'Saving…' : 'Save'}
+                </button>
+                <button onClick={() => setEditingFunderOrg(false)} className="text-xs px-3 py-1.5 rounded-md border border-gray-300 text-gray-600">Cancel</button>
+              </div>
+            </div>
+          )}
+
+          {showFunderOrgPicker && (
+            <div className="relative">
+              <input
+                autoFocus
+                type="text"
+                value={funderOrgSearch}
+                onChange={e => setFunderOrgSearch(e.target.value)}
+                placeholder="Search funder orgs by name…"
+                className="w-full max-w-sm text-sm border border-gray-300 rounded-md px-2.5 py-1.5"
+                disabled={funderOrgBusy}
+              />
+              {funderOrgResults.length > 0 && (
+                <div className="absolute z-10 mt-1 w-full max-w-sm bg-white border border-gray-200 rounded-md shadow-sm overflow-hidden">
+                  {funderOrgResults.map(f => (
+                    <button
+                      key={f.id}
+                      onClick={() => handleAttachFunderOrg(f.id)}
+                      disabled={funderOrgBusy}
+                      className="w-full text-left px-3 py-2 text-sm hover:bg-gray-50 disabled:opacity-50"
+                    >
+                      {f.name}
+                    </button>
+                  ))}
+                </div>
+              )}
+            </div>
+          )}
+        </div>
+
+        {/* Linked Contacts */}
+        <div className="mt-4 pt-4 border-t border-gray-100">
+          <div className="flex items-center justify-between mb-2">
+            <span className="text-xs font-semibold text-gray-500 uppercase tracking-wide">Linked Contacts</span>
+            <button
+              onClick={() => setShowPartnerPicker(v => !v)}
+              className="text-xs text-blue-600 hover:text-blue-800 font-medium"
+            >
+              {showPartnerPicker ? 'Cancel' : '+ Link contact'}
+            </button>
+          </div>
+
+          {linkedPartners.length > 0 && (
+            <div className="flex flex-wrap gap-1.5 mb-2">
+              {linkedPartners.map(lnk => (
+                <span
+                  key={lnk.link_id}
+                  className="inline-flex items-center gap-1 text-xs bg-gray-100 text-gray-700 rounded-full pl-2.5 pr-1 py-1"
+                >
+                  <Link href={`/partners/${lnk.partner_id}`} className="hover:underline">
+                    {lnk.partner_name}{lnk.partner_organization ? ` · ${lnk.partner_organization}` : ''}
+                  </Link>
+                  <button
+                    onClick={() => handleUnlinkPartner(lnk.partner_id, lnk.link_id)}
+                    className="w-4 h-4 flex items-center justify-center rounded-full hover:bg-gray-300 text-gray-500"
+                    title="Unlink"
+                  >
+                    ×
+                  </button>
+                </span>
+              ))}
+            </div>
+          )}
+
+          {showPartnerPicker && (
+            <div className="relative">
+              <input
+                autoFocus
+                type="text"
+                value={partnerSearch}
+                onChange={e => setPartnerSearch(e.target.value)}
+                placeholder="Search contacts by name…"
+                className="w-full max-w-sm text-sm border border-gray-300 rounded-md px-2.5 py-1.5"
+                disabled={linkingBusy}
+              />
+              {partnerResults.length > 0 && (
+                <div className="absolute z-10 mt-1 w-full max-w-sm bg-white border border-gray-200 rounded-md shadow-sm overflow-hidden">
+                  {partnerResults.map(p => (
+                    <button
+                      key={p.id}
+                      onClick={() => handleLinkPartner(p.id)}
+                      disabled={linkingBusy}
+                      className="w-full text-left px-3 py-2 text-sm hover:bg-gray-50 disabled:opacity-50"
+                    >
+                      {p.name}{p.organization ? ` · ${p.organization}` : ''}
+                    </button>
+                  ))}
+                </div>
+              )}
+            </div>
+          )}
         </div>
       </div>
 

@@ -23,6 +23,7 @@ celery_app = Celery(
         "app.workers.grant_writing_tasks",
         "app.workers.partner_tasks",
         "app.workers.tagging_tasks",
+        "app.workers.taste_profile_tasks",
     ],
 )
 
@@ -86,6 +87,12 @@ celery_app.conf.beat_schedule = {
         "task": "app.workers.archive_clustering_tasks.cluster_archives",
         # Run every 6 hours, offset by 15 minutes from opportunity clustering
         "schedule": crontab(hour="*/6", minute=45),
+    },
+    "recompute-taste-profiles": {
+        "task": "app.workers.taste_profile_tasks.compute_all_taste_profiles",
+        # Daily — cheap (vector averaging, no LLM calls), also triggered
+        # on-demand from shortlist/outcome actions in routers/opportunities.py
+        "schedule": crontab(hour=5, minute=0),
     },
     "recover-stale-archive-tasks": {
         "task": "app.workers.archive_tasks.recover_stale_archive_tasks",

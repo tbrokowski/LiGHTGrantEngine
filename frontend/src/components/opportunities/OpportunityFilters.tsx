@@ -6,6 +6,7 @@ import { type OpportunityFilters as Filters, type FilterOptions } from './types'
 interface Props {
   filters: Filters;
   filterOptions: FilterOptions | null;
+  priorityFunderGroups?: { name: string; funders: string[] }[];
   onChange: <K extends keyof Filters>(key: K, value: Filters[K]) => void;
   onClear: () => void;
 }
@@ -27,17 +28,19 @@ function Divider() {
   return <div className="border-t border-gray-100 my-3" />;
 }
 
-export default function OpportunityFiltersSidebar({ filters, filterOptions, onChange, onClear }: Props) {
+export default function OpportunityFiltersSidebar({ filters, filterOptions, priorityFunderGroups, onChange, onClear }: Props) {
   const hasFilters = !!(
     filters.search || filters.priority || filters.theme || filters.opportunityType ||
-    filters.geography || filters.funder || filters.funderCategory || filters.sourceId ||
+    filters.geography || filters.funder || filters.funderCategory || filters.priorityFunderGroup || filters.sourceId ||
+    filters.funderOrgId ||
     filters.deadlineBefore || filters.deadlineAfter || filters.awardMin || filters.awardMax ||
     filters.hasDeadline || filters.sortBy !== 'relevance'
   );
 
   const activeCount = [
     filters.search, filters.priority, filters.theme, filters.opportunityType,
-    filters.geography, filters.funder, filters.funderCategory, filters.sourceId,
+    filters.geography, filters.funder, filters.funderCategory, filters.priorityFunderGroup, filters.sourceId,
+    filters.funderOrgId,
     filters.deadlineBefore, filters.deadlineAfter, filters.awardMin, filters.awardMax,
     filters.hasDeadline || undefined,
   ].filter(Boolean).length;
@@ -135,6 +138,57 @@ export default function OpportunityFiltersSidebar({ filters, filterOptions, onCh
             <option value="">All categories</option>
             {filterOptions.source_categories.map(c => (
               <option key={c} value={c}>{c}</option>
+            ))}
+          </select>
+        </div>
+      )}
+
+      {/* Priority funder group */}
+      {priorityFunderGroups && priorityFunderGroups.length > 0 && (
+        <div className="mb-3">
+          <SectionLabel>Priority funder group</SectionLabel>
+          <select
+            value={filters.priorityFunderGroup}
+            onChange={e => onChange('priorityFunderGroup', e.target.value)}
+            className="w-full border border-gray-200 rounded-lg px-2.5 py-1.5 text-sm text-gray-700 bg-white focus:outline-none focus:ring-1 focus:ring-gray-400"
+          >
+            <option value="">All funders</option>
+            {priorityFunderGroups.map(g => (
+              <option key={g.name} value={g.name}>{g.name}</option>
+            ))}
+          </select>
+        </div>
+      )}
+
+      {/* Funder Org — the funding body (e.g. Fulbright), distinct from portal below */}
+      {filterOptions?.funder_orgs && filterOptions.funder_orgs.length > 0 && (
+        <div className="mb-3">
+          <SectionLabel>Funder org</SectionLabel>
+          <select
+            value={filters.funderOrgId}
+            onChange={e => onChange('funderOrgId', e.target.value)}
+            className="w-full border border-gray-200 rounded-lg px-2.5 py-1.5 text-sm text-gray-700 bg-white focus:outline-none focus:ring-1 focus:ring-gray-400"
+          >
+            <option value="">All funder orgs</option>
+            {filterOptions.funder_orgs.map(f => (
+              <option key={f.id} value={f.id}>{f.name}</option>
+            ))}
+          </select>
+        </div>
+      )}
+
+      {/* Funder Portal — the scraper source this opportunity was discovered through */}
+      {filterOptions?.sources && filterOptions.sources.length > 0 && (
+        <div className="mb-3">
+          <SectionLabel>Funder portal</SectionLabel>
+          <select
+            value={filters.sourceId}
+            onChange={e => onChange('sourceId', e.target.value)}
+            className="w-full border border-gray-200 rounded-lg px-2.5 py-1.5 text-sm text-gray-700 bg-white focus:outline-none focus:ring-1 focus:ring-gray-400"
+          >
+            <option value="">All portals</option>
+            {filterOptions.sources.map(s => (
+              <option key={s.id} value={s.id}>{s.name}</option>
             ))}
           </select>
         </div>

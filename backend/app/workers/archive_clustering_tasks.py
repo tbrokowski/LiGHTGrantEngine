@@ -15,8 +15,10 @@ Algorithm pipeline:
      sections are excluded from clustering (insufficient signal) but keep their
      existing coordinates.
   3. Store the normalised centroid in grant_archives.embedding.
-  4. Build a kNN graph (k=10, cosine metric, sklearn NearestNeighbors) and
-     threshold edges at EDGE_WEIGHT_THRESHOLD=0.35.
+  4. Build a kNN graph (k=10, cosine metric, sklearn NearestNeighbors). Edge
+     weight blends centroid-embedding similarity with theme overlap (same
+     ALPHA-weighted blend as app.workers.clustering_tasks) and is thresholded
+     at EDGE_WEIGHT_THRESHOLD=0.35.
   5. Run Leiden community detection (leidenalg RBConfigurationVertexPartition,
      weight="weight", seed=42) on the igraph representation.
      → Guarantees well-connected communities. (Traag et al. Sci Rep 2019)
@@ -107,6 +109,7 @@ async def _cluster_archives_async() -> None:
     from app.models.archive_edge import ArchiveEdge
     from app.models.section import ProposalSection
     from app.ai.client import chat_complete
+    from app.workers.clustering_tasks import jaccard, blend_edge_weight
 
     async with AsyncSessionLocal() as db:
         try:
@@ -196,6 +199,9 @@ async def _cluster_archives_async() -> None:
 
             logger.info("Clustering %d archives with sufficient embeddings", n)
             embeddings = np.array(centroids, dtype=np.float32)
+            tags_list = [
+                {t.lower() for t in (archive_meta[aid]["themes"] or [])} for aid in valid_ids
+            ]
 
             # Store centroid embeddings back to grant_archives (batched)
             for idx, archive_id in enumerate(valid_ids):
@@ -219,7 +225,8 @@ async def _cluster_archives_async() -> None:
                     j = int(indices[i, j_pos])
                     if j <= i:
                         continue
-                    w = float(1.0 - distances[i, j_pos])
+                    w_semantic = float(1.0 - distances[i, j_pos])
+                    w = blend_edge_weight(w_semantic, jaccard(tags_list[i], tags_list[j]))
                     if w >= EDGE_WEIGHT_THRESHOLD:
                         edges.append((i, j))
                         weights.append(w)

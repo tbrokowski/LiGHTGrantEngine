@@ -1,13 +1,14 @@
 'use client';
 import { useEffect, useState, useCallback, useRef } from 'react';
 import { useRouter } from 'next/navigation';
-import { opportunities } from '@/lib/api';
+import { opportunities, organizations } from '@/lib/api';
+import { useAuth } from '@/lib/auth';
 import { notifyOpportunitiesChanged, onOpportunitiesChanged } from '@/lib/opportunities-events';
 import OpportunityRow from '@/components/opportunities/OpportunityRow';
 import OpportunityFiltersSidebar from '@/components/opportunities/OpportunityFilters';
 import OpportunityGraphView, { GraphNode, GraphCluster, GraphEdge } from '@/components/opportunities/OpportunityGraphView';
-import GraphFilters, { GraphFilterState } from '@/components/opportunities/GraphFilters';
 import AddToShortlistModal from '@/components/opportunities/AddToShortlistModal';
+import ShortlistCardRows from '@/components/opportunities/ShortlistCardRows';
 import {
   isExpired,
   type Opportunity,
@@ -25,7 +26,9 @@ const EMPTY_FILTERS: OpportunityFilters = {
   geography: '',
   funder: '',
   funderCategory: '',
+  priorityFunderGroup: '',
   sourceId: '',
+  funderOrgId: '',
   deadlineBefore: '',
   deadlineAfter: '',
   awardMin: '',
@@ -35,51 +38,6 @@ const EMPTY_FILTERS: OpportunityFilters = {
 };
 
 const VIEW_STORAGE_KEY = 'opportunities_view_mode';
-const EMPTY_GRAPH_FILTERS: GraphFilterState = { funder: '', theme: '', deadlineDays: '' };
-
-const PRIORITY_GROUPS: Record<string, string[]> = {
-  high: ['high', 'high_priority'],
-  medium: ['medium', 'worth_reviewing'],
-  low: ['low', 'low_fit', 'watchlist'],
-};
-
-function applyFilters(items: Opportunity[], filters: OpportunityFilters): Opportunity[] {
-  const filtered = items.filter(o => {
-    const s = filters.search.toLowerCase();
-    if (s && !o.title.toLowerCase().includes(s) && !(o.funder ?? '').toLowerCase().includes(s)) return false;
-    if (filters.priority) {
-      const group = PRIORITY_GROUPS[filters.priority];
-      if (group && !group.includes(o.priority ?? '')) return false;
-    }
-    if (filters.theme && !o.thematic_areas?.some(t => t.toLowerCase().includes(filters.theme.toLowerCase()))) return false;
-    if (filters.deadlineAfter && o.deadline && new Date(o.deadline) < new Date(filters.deadlineAfter)) return false;
-    if (filters.deadlineBefore && o.deadline && new Date(o.deadline) > new Date(filters.deadlineBefore)) return false;
-    if (filters.hasDeadline && !o.deadline) return false;
-    if (filters.awardMin) {
-      const min = parseInt(filters.awardMin.replace(/,/g, ''), 10);
-      const award = o.award_max ?? o.award_min ?? 0;
-      if (!isNaN(min) && award < min) return false;
-    }
-    return true;
-  });
-
-  if (filters.sortBy === 'deadline') {
-    return [...filtered].sort((a, b) => {
-      if (!a.deadline && !b.deadline) return 0;
-      if (!a.deadline) return 1;
-      if (!b.deadline) return -1;
-      return new Date(a.deadline).getTime() - new Date(b.deadline).getTime();
-    });
-  }
-  if (filters.sortBy === 'award') {
-    return [...filtered].sort((a, b) => {
-      const aVal = a.award_max ?? a.award_min ?? 0;
-      const bVal = b.award_max ?? b.award_min ?? 0;
-      return bVal - aVal;
-    });
-  }
-  return [...filtered].sort((a, b) => (b.fit_score ?? 0) - (a.fit_score ?? 0));
-}
 
 function ColHead({ children, className = '' }: { children: React.ReactNode; className?: string }) {
   return (
@@ -104,7 +62,9 @@ function _buildApiParams(f: OpportunityFilters, extra: Record<string, unknown> =
   if (f.geography)       params.geography = f.geography;
   if (f.funder)          params.funder = f.funder;
   if (f.funderCategory)  params.funder_category = f.funderCategory;
+  if (f.priorityFunderGroup) params.priority_funder_group = f.priorityFunderGroup;
   if (f.sourceId)        params.source_id = f.sourceId;
+  if (f.funderOrgId)     params.funder_org_id = f.funderOrgId;
   if (f.deadlineBefore)  params.deadline_before = f.deadlineBefore;
   if (f.deadlineAfter)   params.deadline_after = f.deadlineAfter;
   if (f.hasDeadline)     params.has_deadline = true;
@@ -115,11 +75,14 @@ function _buildApiParams(f: OpportunityFilters, extra: Record<string, unknown> =
 
 export default function OpportunitiesPage() {
   const router = useRouter();
+  const { user } = useAuth();
+  const [priorityFunderGroups, setPriorityFunderGroups] = useState<{ name: string; funders: string[] }[]>([]);
   const [activeTab, setActiveTab] = useState<TabMode>('queue');
   const [viewMode, setViewMode] = useState<ViewMode>('table');
   const [queue, setQueue] = useState<Opportunity[]>([]);
   const [shortlist, setShortlist] = useState<Opportunity[]>([]);
   const [orgShortlist, setOrgShortlist] = useState<Opportunity[]>([]);
+  const [awarded, setAwarded] = useState<Opportunity[]>([]);
   const [loading, setLoading] = useState(true);
   const [loadingMore, setLoadingMore] = useState(false);
   const [queueTotal, setQueueTotal] = useState(0);
@@ -136,7 +99,6 @@ export default function OpportunitiesPage() {
   const [graphClusters, setGraphClusters] = useState<GraphCluster[]>([]);
   const [graphEdges, setGraphEdges] = useState<GraphEdge[]>([]);
   const [graphLoading, setGraphLoading] = useState(false);
-  const [graphFilters, setGraphFilters] = useState<GraphFilterState>(EMPTY_GRAPH_FILTERS);
 
   useEffect(() => {
     const saved = localStorage.getItem(VIEW_STORAGE_KEY);
@@ -149,6 +111,15 @@ export default function OpportunitiesPage() {
       .then(r => setFilterOptions(r.data))
       .catch(() => null);
   }, []);
+
+  // Load priority funder groups from the org's grant profile (per-institution,
+  // so fetched directly rather than via the shared filter-options cache).
+  useEffect(() => {
+    if (!user?.institution_id) return;
+    organizations.getGrantProfile(user.institution_id)
+      .then(r => setPriorityFunderGroups(r.data?.priority_funders ?? []))
+      .catch(() => setPriorityFunderGroups([]));
+  }, [user?.institution_id]);
 
   const refreshCounts = useCallback(() => {
     opportunities.newOpportunitiesCounts()
@@ -185,27 +156,42 @@ export default function OpportunitiesPage() {
       .finally(() => setLoadingMore(false));
   }, [unreadOnly, page, filters]);
 
-  const loadShortlist = useCallback(() => {
+  const loadShortlist = useCallback((activeFilters: OpportunityFilters) => {
     setLoading(true);
-    opportunities.shortlist()
+    opportunities.shortlist(_buildApiParams(activeFilters))
       .then(r => setShortlist(r.data))
       .catch(console.error)
       .finally(() => setLoading(false));
   }, []);
 
-  const loadOrgShortlist = useCallback(() => {
+  const loadOrgShortlist = useCallback((activeFilters: OpportunityFilters) => {
     setLoading(true);
-    opportunities.orgShortlist()
+    opportunities.orgShortlist(_buildApiParams(activeFilters))
       .then(r => setOrgShortlist(r.data))
       .catch(console.error)
       .finally(() => setLoading(false));
   }, []);
 
+  const loadAwarded = useCallback((activeFilters: OpportunityFilters) => {
+    setLoading(true);
+    opportunities.awarded(_buildApiParams(activeFilters))
+      .then(r => setAwarded(r.data))
+      .catch(console.error)
+      .finally(() => setLoading(false));
+  }, []);
+
+  // Plain function (not useCallback) so it always closes over the latest
+  // loadQueue/loadShortlist/etc. (which themselves depend on unreadOnly, etc).
+  function loadForActiveTab(tab: TabMode, activeFilters: OpportunityFilters) {
+    if (tab === 'queue') loadQueue(activeFilters);
+    else if (tab === 'shortlist') loadShortlist(activeFilters);
+    else if (tab === 'org-shortlist') loadOrgShortlist(activeFilters);
+    else loadAwarded(activeFilters);
+  }
+
   // Load data when tab changes
   useEffect(() => {
-    if (activeTab === 'queue') loadQueue(filters);
-    else if (activeTab === 'shortlist') loadShortlist();
-    else loadOrgShortlist();
+    loadForActiveTab(activeTab, filters);
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [activeTab]);
 
@@ -215,12 +201,11 @@ export default function OpportunitiesPage() {
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [unreadOnly]);
 
-  // Debounced server-side filter reload for queue tab (skip initial render)
+  // Debounced server-side filter reload — applies to whichever tab is active
   useEffect(() => {
     if (isFirstRender.current) { isFirstRender.current = false; return; }
-    if (activeTab !== 'queue') return;
     if (searchDebounceRef.current) clearTimeout(searchDebounceRef.current);
-    searchDebounceRef.current = setTimeout(() => loadQueue(filters), 300);
+    searchDebounceRef.current = setTimeout(() => loadForActiveTab(activeTab, filters), 300);
     return () => { if (searchDebounceRef.current) clearTimeout(searchDebounceRef.current); };
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [filters]);
@@ -244,16 +229,14 @@ export default function OpportunitiesPage() {
   function setView(mode: ViewMode | 'graph') {
     setViewMode(mode as ViewMode);
     localStorage.setItem(VIEW_STORAGE_KEY, mode);
-    if (mode === 'graph') loadGraphData();
+    if (mode === 'graph') loadGraphData(filters);
   }
 
-  const loadGraphData = useCallback(() => {
+  // Graph view now shares the same sidebar OpportunityFilters as the table,
+  // instead of its own narrower funder/theme/deadline_days-only filter bar.
+  const loadGraphData = useCallback((activeFilters: OpportunityFilters) => {
     setGraphLoading(true);
-    const params: Record<string, unknown> = {};
-    if (graphFilters.funder) params.funder = graphFilters.funder;
-    if (graphFilters.theme) params.theme = graphFilters.theme;
-    if (graphFilters.deadlineDays) params.deadline_days = graphFilters.deadlineDays;
-    opportunities.graphData(params)
+    opportunities.graphData(_buildApiParams(activeFilters))
       .then(r => {
         setGraphNodes(r.data.nodes || []);
         setGraphClusters(r.data.clusters || []);
@@ -261,20 +244,24 @@ export default function OpportunitiesPage() {
       })
       .catch(console.error)
       .finally(() => setGraphLoading(false));
-  }, [graphFilters]);
+  }, []);
 
+  // Reload the graph when filters change while already in graph mode
+  // (switching *into* graph mode is handled by setView() below).
   useEffect(() => {
-    if ((viewMode as string) === 'graph') loadGraphData();
+    if ((viewMode as string) === 'graph') loadGraphData(filters);
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [graphFilters]);
+  }, [filters]);
 
   function setFilter<K extends keyof OpportunityFilters>(key: K, value: OpportunityFilters[K]) {
     setFilters(prev => ({ ...prev, [key]: value }));
   }
 
-  // For queue: API already filters; for shortlist/org-shortlist: filter locally
-  const items = activeTab === 'queue' ? queue : activeTab === 'shortlist' ? shortlist : orgShortlist;
-  const displayItems = activeTab === 'queue' ? queue : applyFilters(items, filters);
+  // All tabs now apply filters server-side.
+  const displayItems = activeTab === 'queue' ? queue
+    : activeTab === 'shortlist' ? shortlist
+    : activeTab === 'org-shortlist' ? orgShortlist
+    : awarded;
   const upcoming = displayItems.filter(o => !isExpired(o.deadline) || !o.deadline);
   const past = displayItems.filter(o => isExpired(o.deadline));
 
@@ -286,7 +273,8 @@ export default function OpportunitiesPage() {
 
   const hasFilters = !!(
     filters.search || filters.priority || filters.theme || filters.opportunityType ||
-    filters.geography || filters.funder || filters.funderCategory || filters.sourceId ||
+    filters.geography || filters.funder || filters.funderCategory || filters.priorityFunderGroup || filters.sourceId ||
+    filters.funderOrgId ||
     filters.deadlineBefore || filters.deadlineAfter || filters.awardMin || filters.awardMax ||
     filters.hasDeadline || filters.sortBy !== 'relevance'
   );
@@ -321,7 +309,8 @@ export default function OpportunitiesPage() {
   function removeFromList(id: string) {
     if (activeTab === 'queue') setQueue(prev => prev.filter(o => o.id !== id));
     else if (activeTab === 'shortlist') setShortlist(prev => prev.filter(o => o.id !== id));
-    else setOrgShortlist(prev => prev.filter(o => o.id !== id));
+    else if (activeTab === 'org-shortlist') setOrgShortlist(prev => prev.filter(o => o.id !== id));
+    else setAwarded(prev => prev.filter(o => o.id !== id));
   }
 
   function markReadLocal(id: string) {
@@ -330,6 +319,7 @@ export default function OpportunitiesPage() {
     setQueue(updater);
     setShortlist(updater);
     setOrgShortlist(updater);
+    setAwarded(updater);
   }
 
   function markUnreadLocal(id: string) {
@@ -338,6 +328,7 @@ export default function OpportunitiesPage() {
     setQueue(updater);
     setShortlist(updater);
     setOrgShortlist(updater);
+    setAwarded(updater);
   }
 
   async function handleMarkRead(id: string) {
@@ -419,19 +410,24 @@ export default function OpportunitiesPage() {
     if (listItems.length === 0) {
       return (
         <tr>
-          <td colSpan={6} className="px-5 py-12 text-center text-sm text-gray-400">
+          <td colSpan={5} className="px-5 py-12 text-center text-sm text-gray-400">
             {hasFilters
             ? 'No matches for current filters.'
             : activeTab === 'queue'
             ? (past.length > 0 ? 'No upcoming opportunities.' : 'Queue is empty.')
             : activeTab === 'shortlist'
             ? 'Your shortlist is empty. Bookmark opportunities from the queue to add them here.'
-            : 'No opportunities on the org shortlist yet. Promote items from your personal shortlist.'}
+            : activeTab === 'org-shortlist'
+            ? 'No opportunities on the org shortlist yet. Promote items from your personal shortlist.'
+            : 'No awarded opportunities recorded yet. Mark an outcome from an opportunity’s detail page.'}
           </td>
         </tr>
       );
     }
-    const rowMode = activeTab === 'org-shortlist' ? 'org-shortlist' : activeTab === 'shortlist' ? 'shortlist' : 'queue';
+    const rowMode = activeTab === 'org-shortlist' ? 'org-shortlist'
+      : activeTab === 'shortlist' ? 'shortlist'
+      : activeTab === 'awarded' ? 'awarded'
+      : 'queue';
     return listItems.map((opp, i) => (
       <OpportunityRow
         key={opp.id}
@@ -453,6 +449,7 @@ export default function OpportunitiesPage() {
       <OpportunityFiltersSidebar
         filters={filters}
         filterOptions={filterOptions}
+        priorityFunderGroups={priorityFunderGroups}
         onChange={setFilter}
         onClear={() => setFilters(EMPTY_FILTERS)}
       />
@@ -465,31 +462,38 @@ export default function OpportunitiesPage() {
           className="px-7 flex items-center justify-between shrink-0"
           style={{ borderBottom: '1px solid var(--rule-subtle)', background: 'var(--surface-raised)' }}
         >
-          <div className="flex items-center gap-0">
+          <div
+            className="flex items-center overflow-hidden my-2.5"
+            style={{ border: '1px solid var(--rule-subtle)', borderRadius: 'var(--radius-sm)' }}
+          >
             {([
-              { id: 'queue' as TabMode, label: 'All Opportunities', badge: unreadCount > 0 ? unreadCount.toLocaleString() : null, badgeStyle: { background: 'var(--state-info-bg)', color: 'var(--state-info)' } },
-              { id: 'shortlist' as TabMode, label: 'My Shortlist', badge: shortlist.length > 0 ? String(shortlist.length) : null, badgeStyle: { background: 'var(--state-warning-bg)', color: 'var(--state-warning)' } },
-              { id: 'org-shortlist' as TabMode, label: 'Org Shortlist', badge: orgShortlistCount > 0 ? String(orgShortlistCount) : null, badgeStyle: { background: 'var(--accent-secondary)', color: 'var(--accent-primary)' } },
-            ] as { id: TabMode; label: string; badge: string | null; badgeStyle: React.CSSProperties }[]).map(t => {
+              { id: 'queue' as TabMode, label: 'All Opportunities', badge: unreadCount > 0 ? unreadCount.toLocaleString() : null },
+              { id: 'shortlist' as TabMode, label: 'My Shortlist', badge: shortlist.length > 0 ? String(shortlist.length) : null },
+              { id: 'org-shortlist' as TabMode, label: 'Org Shortlist', badge: orgShortlistCount > 0 ? String(orgShortlistCount) : null },
+              { id: 'awarded' as TabMode, label: 'Awarded', badge: awarded.length > 0 ? String(awarded.length) : null },
+            ] as { id: TabMode; label: string; badge: string | null }[]).map(t => {
               const active = activeTab === t.id;
               return (
                 <button
                   key={t.id}
                   onClick={() => { setActiveTab(t.id); }}
-                  className="relative flex items-center gap-2 px-4 py-3.5 text-sm font-medium transition-colors"
-                  style={{ color: active ? 'var(--ink-primary)' : 'var(--ink-muted)' }}
+                  className="flex items-center gap-2 px-3.5 py-1.5 text-sm font-medium transition-colors"
+                  style={{
+                    background: active ? 'var(--ink-primary)' : 'transparent',
+                    color: active ? 'var(--ink-inverse)' : 'var(--ink-muted)',
+                  }}
                 >
                   {t.label}
                   {t.badge && (
                     <span
                       className="mono-data text-[10px] px-1.5 py-0.5 rounded-[var(--radius-xs)]"
-                      style={t.badgeStyle}
+                      style={{
+                        background: active ? 'rgba(255,255,255,0.18)' : 'var(--surface-sunken)',
+                        color: active ? 'var(--ink-inverse)' : 'var(--ink-muted)',
+                      }}
                     >
                       {t.badge}
                     </span>
-                  )}
-                  {active && (
-                    <span className="absolute bottom-0 left-0 right-0 h-0.5" style={{ background: 'var(--accent-primary)' }} />
                   )}
                 </button>
               );
@@ -497,7 +501,7 @@ export default function OpportunitiesPage() {
           </div>
 
           <div className="flex items-center gap-2 py-2.5">
-            {activeTab === 'shortlist' && (
+            {(activeTab === 'shortlist' || activeTab === 'queue') && (
               <button
                 onClick={() => setShowAddModal(true)}
                 className="px-3 py-1.5 text-sm font-medium transition-colors"
@@ -510,7 +514,7 @@ export default function OpportunitiesPage() {
                 onMouseEnter={e => (e.currentTarget.style.background = 'var(--state-info-bg)')}
                 onMouseLeave={e => (e.currentTarget.style.background = 'transparent')}
               >
-                + Add
+                {activeTab === 'queue' ? '+ Add Opportunity' : '+ Add'}
               </button>
             )}
 
@@ -569,18 +573,6 @@ export default function OpportunitiesPage() {
         {/* Scrollable content */}
         <div className="flex-1 overflow-y-auto px-7 py-5">
 
-          {/* Graph filter bar */}
-          {(viewMode as string) === 'graph' && (
-            <div className="mb-4">
-              <GraphFilters
-                filters={graphFilters}
-                onChange={setGraphFilters}
-                funders={[...new Set(graphNodes.map(n => n.funder).filter(Boolean) as string[])].slice(0, 20)}
-                themes={[...new Set(graphNodes.flatMap(n => n.thematic_areas))].slice(0, 20)}
-              />
-            </div>
-          )}
-
           {loading ? (
             <div
               style={{
@@ -609,6 +601,18 @@ export default function OpportunitiesPage() {
                 <OpportunityGraphView nodes={graphNodes} clusters={graphClusters} edges={graphEdges} />
               )}
             </div>
+          ) : (activeTab === 'shortlist' || activeTab === 'org-shortlist') ? (
+            <ShortlistCardRows
+              items={displayItems}
+              mode={activeTab}
+              priorityFunderGroups={priorityFunderGroups}
+              funderOrgs={filterOptions?.funder_orgs}
+              onNavigate={id => {
+                const ordered = displayItems.map(o => o.id);
+                sessionStorage.setItem('opp_nav_list', JSON.stringify(ordered));
+              }}
+              {...actionHandlers}
+            />
           ) : (
             <div
               className="overflow-hidden"
@@ -626,8 +630,9 @@ export default function OpportunitiesPage() {
                       <ColHead className="hidden md:table-cell">Funder</ColHead>
                       <ColHead className="hidden lg:table-cell">Deadline</ColHead>
                       <ColHead className="hidden lg:table-cell text-right">Award</ColHead>
-                      <ColHead className="text-center">Score</ColHead>
-                      <ColHead>Actions</ColHead>
+                      <ColHead className="w-12">
+                        <span className="sr-only">Read status</span>
+                      </ColHead>
                     </tr>
                   </thead>
                   <tbody>
@@ -685,9 +690,15 @@ export default function OpportunitiesPage() {
 
       {showAddModal && (
         <AddToShortlistModal
+          addToShortlist={activeTab === 'shortlist'}
           onClose={() => setShowAddModal(false)}
           onAdded={(opp) => {
-            setShortlist(prev => [opp, ...prev]);
+            if (activeTab === 'queue') {
+              setQueue(prev => [opp, ...prev]);
+              setQueueTotal(prev => prev + 1);
+            } else {
+              setShortlist(prev => [opp, ...prev]);
+            }
             setShowAddModal(false);
           }}
         />

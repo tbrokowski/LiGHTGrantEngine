@@ -172,6 +172,71 @@ def send_deadline_reminders():
                         import logging
                         logging.getLogger(__name__).warning("Slack send failed: %s", exc)
 
+        # ── Opportunity deadline reminders (shortlisted / actively-pursuing
+        #    only — scoped this way to avoid notifying on the entire global
+        #    opportunity pool, which every institution shares) ───────────────
+        try:
+            from app.models.institution_opportunity import InstitutionOpportunity
+            from app.models.opportunity import Opportunity
+            from app.models.user_opportunity_state import UserOpportunityState
+            from app.models.user import User
+
+            OPP_TRACKED_STATUSES = ["potential_fit", "actively_pursuing"]
+            for days_ahead in reminders.get("opportunity_deadline", [30, 14, 7, 3, 1]):
+                target_date = today + timedelta(days=days_ahead)
+                rows = db.execute(
+                    select(InstitutionOpportunity, Opportunity)
+                    .join(Opportunity, Opportunity.id == InstitutionOpportunity.opportunity_id)
+                    .where(
+                        Opportunity.deadline == target_date,
+                        InstitutionOpportunity.status.in_(OPP_TRACKED_STATUSES),
+                    )
+                ).all()
+                for io, opp in rows:
+                    msg = (
+                        f"Grant opportunity deadline in {days_ahead} day(s): "
+                        f"{opp.title} ({opp.funder or 'Unknown funder'})"
+                    )
+
+                    recipient_ids: list[str] = []
+                    if io.assigned_reviewer_id:
+                        recipient_ids.append(io.assigned_reviewer_id)
+                    else:
+                        # Fall back to whichever of this institution's users
+                        # personally shortlisted the opportunity.
+                        recipient_ids.extend(db.execute(
+                            select(UserOpportunityState.user_id)
+                            .join(User, User.id == UserOpportunityState.user_id)
+                            .where(
+                                UserOpportunityState.opportunity_id == opp.id,
+                                UserOpportunityState.saved_at.isnot(None),
+                                User.institution_id == io.institution_id,
+                            )
+                        ).scalars().all())
+
+                    for uid in recipient_ids:
+                        notif = Notification(
+                            id=str(__import__("uuid").uuid4()),
+                            user_id=uid,
+                            notification_type=NotificationType.OPPORTUNITY_DEADLINE,
+                            entity_type="opportunity",
+                            entity_id=opp.id,
+                            message=msg,
+                            channel="email",
+                            status=NotificationStatus.PENDING,
+                        )
+                        db.add(notif)
+                        notifications_created += 1
+
+                    if slack_enabled and slack_webhook and recipient_ids:
+                        try:
+                            _send_slack(f":rotating_light: {msg}", slack_webhook)
+                        except Exception as exc:
+                            import logging
+                            logging.getLogger(__name__).warning("Slack send failed: %s", exc)
+        except Exception:
+            pass  # opportunity models may not be available in all environments
+
         # ── Partner material due reminders ────────────────────────────────────
         try:
             from app.models.workspace_partner import PartnerMaterial

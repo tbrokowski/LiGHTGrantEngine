@@ -59,6 +59,11 @@ class OrgInviteRequest(BaseModel):
     module_permissions: dict = {}  # e.g. can_view_grants, can_view_archive, can_view_partners, can_view_finance
 
 
+class PriorityFunderGroupUpdate(BaseModel):
+    name: str
+    funders: list[str] = []
+
+
 class GrantProfileUpdate(BaseModel):
     institution_name: Optional[str] = None
     keywords: Optional[list[str]] = None
@@ -66,6 +71,7 @@ class GrantProfileUpdate(BaseModel):
     projects: Optional[str] = None
     excluded_keywords: Optional[list[str]] = None
     auto_queue_threshold: Optional[int] = None
+    priority_funders: Optional[list[PriorityFunderGroupUpdate]] = None
 
 
 class OrgSourceCreate(BaseModel):

@@ -6,6 +6,9 @@ import type { Opportunity } from './types';
 interface AddToShortlistModalProps {
   onClose: () => void;
   onAdded: (opportunity: Opportunity) => void;
+  /** When false, creates the opportunity only (doesn't also shortlist it) —
+   * used when adding a custom opportunity from the main queue tab. */
+  addToShortlist?: boolean;
 }
 
 const FIELD_CLS =
@@ -13,7 +16,7 @@ const FIELD_CLS =
 
 const LABEL_CLS = 'block text-xs font-medium text-gray-500 mb-1.5';
 
-export default function AddToShortlistModal({ onClose, onAdded }: AddToShortlistModalProps) {
+export default function AddToShortlistModal({ onClose, onAdded, addToShortlist = true }: AddToShortlistModalProps) {
   const [url, setUrl] = useState('');
   const [title, setTitle] = useState('');
   const [funder, setFunder] = useState('');
@@ -72,17 +75,22 @@ export default function AddToShortlistModal({ onClose, onAdded }: AddToShortlist
       const createRes = await opportunities.create(payload);
       const newId: string = createRes.data.id;
 
-      await opportunities.addToShortlist(newId);
+      if (addToShortlist) {
+        await opportunities.addToShortlist(newId);
+      }
 
       const newOpp: Opportunity = {
         id: newId,
         title: title.trim(),
         funder: funder.trim() || null,
+        opportunity_type: null,
         deadline: deadline || null,
         fit_score: null,
         priority: null,
         status: 'new',
         thematic_areas: [],
+        geography: [],
+        source_id: null,
         award_min: awardMin ? parseFloat(awardMin.replace(/,/g, '')) : null,
         award_max: awardMax ? parseFloat(awardMax.replace(/,/g, '')) : null,
         currency: null,
@@ -93,7 +101,7 @@ export default function AddToShortlistModal({ onClose, onAdded }: AddToShortlist
         opportunity_url: url.trim() || null,
         is_read: true,
         fit_rationale: null,
-        is_personal_shortlisted: true,
+        is_personal_shortlisted: addToShortlist,
         is_on_org_shortlist: false,
       };
 
@@ -110,7 +118,7 @@ export default function AddToShortlistModal({ onClose, onAdded }: AddToShortlist
       <div className="bg-white rounded-2xl shadow-2xl w-full max-w-lg mx-4 overflow-hidden max-h-[90vh] flex flex-col">
         {/* Header */}
         <div className="px-6 py-5 border-b border-gray-100 flex items-center justify-between gap-4 shrink-0">
-          <h2 className="text-base font-semibold text-gray-900">Add to Shortlist</h2>
+          <h2 className="text-base font-semibold text-gray-900">{addToShortlist ? 'Add to Shortlist' : 'Add Opportunity'}</h2>
           <button
             onClick={onClose}
             className="text-gray-400 hover:text-gray-600 p-1 rounded-lg hover:bg-gray-100 transition-colors shrink-0"
@@ -249,7 +257,7 @@ export default function AddToShortlistModal({ onClose, onAdded }: AddToShortlist
             onClick={handleSubmit}
             className="px-4 py-2 text-sm font-medium rounded-lg bg-gray-900 text-white hover:bg-gray-700 transition-colors disabled:opacity-40 disabled:cursor-not-allowed"
           >
-            {saving ? 'Adding…' : 'Add to Shortlist'}
+            {saving ? 'Adding…' : addToShortlist ? 'Add to Shortlist' : 'Add Opportunity'}
           </button>
         </div>
       </div>

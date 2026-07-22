@@ -9,6 +9,7 @@ import { JoinRequestsPanel } from '@/components/settings/JoinRequestsPanel';
 import { InvitePanel } from '@/components/settings/InvitePanel';
 import { ProfilePanel } from '@/components/settings/ProfilePanel';
 import { GrantFiltersPanel } from '@/components/settings/GrantFiltersPanel';
+import { FunderOrgsPanel } from '@/components/settings/FunderOrgsPanel';
 import { useAuth } from '@/lib/auth';
 import type { AuthUser } from '@/lib/auth';
 
@@ -496,6 +497,29 @@ function SettingsPageInner() {
   const [scanningAll, setScanningAll] = useState(false);
   const [scanAllResult, setScanAllResult] = useState<string | null>(null);
   const [workerStatus, setWorkerStatus] = useState<{ worker_reachable: boolean; workers: string[]; active_tasks: number } | null>(null);
+  interface ScanSummary {
+    sources_by_status: Record<string, number>;
+    total_opportunities: number;
+    running_scans: number;
+    recent_errors_24h: number;
+    last_run_at: string | null;
+    last_run_status: string | null;
+  }
+  interface RecentRun {
+    id: string;
+    source_id: string;
+    source_name: string;
+    started_at: string | null;
+    ended_at: string | null;
+    status: string;
+    records_found: number;
+    new_opportunities: number;
+    duplicates: number;
+    errors: string[];
+    log_summary: string | null;
+  }
+  const [scanSummary, setScanSummary] = useState<ScanSummary | null>(null);
+  const [recentRuns, setRecentRuns] = useState<RecentRun[]>([]);
   const [deduplicating, setDeduplicating] = useState(false);
   const [dedupResult, setDedupResult] = useState<string | null>(null);
   const [discoveringSource, setDiscoveringSource] = useState(false);
@@ -609,6 +633,12 @@ function SettingsPageInner() {
     sources.workerStatus()
       .then(r => setWorkerStatus(r.data))
       .catch(() => setWorkerStatus({ worker_reachable: false, workers: [], active_tasks: 0 }));
+    sources.summary()
+      .then(r => setScanSummary(r.data))
+      .catch(() => setScanSummary(null));
+    sources.recentRuns(20)
+      .then(r => setRecentRuns(r.data))
+      .catch(() => setRecentRuns([]));
   }
 
   useEffect(() => { fetchSources(); }, []);
@@ -907,25 +937,101 @@ function SettingsPageInner() {
 
       {isPlatformAdmin && (
       <>
+      <FunderOrgsPanel />
+
       {/* Worker health banner */}
       {workerStatus !== null && (
         <div
           className="mb-4 flex items-center gap-2.5 px-4 py-2.5 rounded text-xs"
           style={{
-            background: workerStatus.worker_reachable ? 'var(--state-success-bg)' : 'var(--state-error-bg)',
-            border: `1px solid ${workerStatus.worker_reachable ? 'var(--state-success)' : 'var(--state-error)'}`,
-            color: workerStatus.worker_reachable ? 'var(--state-success)' : 'var(--state-error)',
+            background: workerStatus.worker_reachable ? 'var(--state-success-bg)' : 'var(--state-danger-bg)',
+            border: `1px solid ${workerStatus.worker_reachable ? 'var(--state-success)' : 'var(--state-danger)'}`,
+            color: workerStatus.worker_reachable ? 'var(--state-success)' : 'var(--state-danger)',
           }}
         >
           <span
             className="inline-block w-2 h-2 rounded-full shrink-0"
-            style={{ background: workerStatus.worker_reachable ? 'var(--state-success)' : 'var(--state-error)' }}
+            style={{ background: workerStatus.worker_reachable ? 'var(--state-success)' : 'var(--state-danger)' }}
           />
           {workerStatus.worker_reachable
             ? `Worker online — ${workerStatus.workers.length} worker${workerStatus.workers.length !== 1 ? 's' : ''} active${workerStatus.active_tasks > 0 ? `, ${workerStatus.active_tasks} task${workerStatus.active_tasks !== 1 ? 's' : ''} running` : ''}`
             : 'Worker offline — scheduled scans and manual triggers are queued but not executing. Check that the Celery worker and beat services are running.'}
         </div>
       )}
+
+      {/* Scan health summary */}
+      {scanSummary && (
+        <div className="mb-6 grid grid-cols-2 md:grid-cols-5 gap-3">
+          {[
+            { label: 'Active sources', value: scanSummary.sources_by_status.active ?? 0 },
+            { label: 'Paused', value: scanSummary.sources_by_status.paused ?? 0 },
+            { label: 'Total opportunities', value: scanSummary.total_opportunities },
+            { label: 'Running scans', value: scanSummary.running_scans },
+            { label: 'Errors (24h)', value: scanSummary.recent_errors_24h },
+          ].map(stat => (
+            <div
+              key={stat.label}
+              className="px-3 py-2.5 rounded"
+              style={{ border: '1px solid var(--rule-subtle)', background: 'var(--surface-raised)' }}
+            >
+              <p className="text-[10px] uppercase tracking-wide" style={{ color: 'var(--ink-faint)' }}>{stat.label}</p>
+              <p
+                className="mono-data text-lg font-semibold mt-0.5"
+                style={{ color: stat.label === 'Errors (24h)' && stat.value > 0 ? 'var(--state-danger)' : 'var(--ink-primary)' }}
+              >
+                {stat.value.toLocaleString()}
+              </p>
+            </div>
+          ))}
+        </div>
+      )}
+
+      {/* Recent runs */}
+      {recentRuns.length > 0 && (
+        <details className="mb-6 group">
+          <summary
+            className="cursor-pointer text-xs font-medium select-none px-1 py-1"
+            style={{ color: 'var(--ink-muted)' }}
+          >
+            Recent scan runs ({recentRuns.length})
+          </summary>
+          <div className="mt-2 overflow-x-auto rounded" style={{ border: '1px solid var(--rule-subtle)' }}>
+            <table className="w-full text-xs">
+              <thead>
+                <tr style={{ background: 'var(--surface-sunken)' }}>
+                  {['Source', 'Status', 'Started', 'Found', 'New', 'Dupes', 'Errors'].map(h => (
+                    <th key={h} className="text-left px-3 py-2 ledger-label">{h}</th>
+                  ))}
+                </tr>
+              </thead>
+              <tbody>
+                {recentRuns.map(run => (
+                  <tr key={run.id} style={{ borderTop: '1px solid var(--rule-subtle)' }}>
+                    <td className="px-3 py-1.5">{run.source_name}</td>
+                    <td className="px-3 py-1.5">
+                      <span style={{
+                        color: run.status === 'failed' ? 'var(--state-danger)'
+                          : run.status === 'success' ? 'var(--state-success)'
+                          : 'var(--ink-muted)',
+                      }}>
+                        {run.status}
+                      </span>
+                    </td>
+                    <td className="px-3 py-1.5 mono-data">{run.started_at ? new Date(run.started_at).toLocaleString() : '—'}</td>
+                    <td className="px-3 py-1.5 mono-data">{run.records_found}</td>
+                    <td className="px-3 py-1.5 mono-data">{run.new_opportunities}</td>
+                    <td className="px-3 py-1.5 mono-data">{run.duplicates}</td>
+                    <td className="px-3 py-1.5" style={{ color: 'var(--state-danger)' }}>
+                      {run.errors.length > 0 ? run.errors[0] : (run.log_summary?.includes('WARNINGS') ? '⚠' : '')}
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        </details>
+      )}
+
       <div className="mb-8 flex items-start justify-between gap-4">
         <div>
           <h2 className="text-sm font-semibold" style={{ color: 'var(--ink-primary)' }}>Data Sources</h2>
