@@ -11,6 +11,12 @@ Rules applied:
 Usage:
     cd backend
     python scripts/upgrade_scraper_configs.py [--dry-run]
+
+Note: as of the pagination/detail-crawl overhaul, newly discovered sources get
+paginate/max_pages set automatically at discovery time via
+app.scrapers.ai_scraper.probe_pagination (see discovery_tasks.discover_new_sources),
+so this script's ongoing purpose narrows to one-off legacy cleanup and manual
+link_filter/crawl_depth=2/site_sections tuning.
 """
 from __future__ import annotations
 
@@ -76,7 +82,6 @@ KEEP_DEPTH_0: set[str] = {
     "Bill & Melinda Gates Foundation – Grand Challenges Explorations",
     "Grand Challenges (BMGF / USAID / Grand Challenges Canada)",
     "Innovate UK – Smart Grants & Competitions",           # covered by UKRI scraper
-    "UK Research & Innovation (UKRI) – Active Opportunities",  # duplicate UKRI entry
     "Wellcome Leap (health moonshots)",                    # duplicate Wellcome Leap entry
     "CGIAR Research Programs (agriculture)",               # programme overview, not calls
 }

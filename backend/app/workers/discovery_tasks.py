@@ -703,6 +703,20 @@ def discover_new_sources(self, n_queries: int | None = None):
             source_name = portal.get("source_name") or portal.get("funder_name") or dk
             category = portal.get("category") or "Other"
 
+            # Probe the candidate listing page once for pagination, so newly
+            # discovered multi-page portals don't start out silently truncated
+            # to a single page (previously required a later manual re-tuning
+            # pass via scripts/upgrade_scraper_configs.py). Only meaningful for
+            # the generic AI scraper — dedicated API scrapers page differently.
+            pagination_info: dict = {}
+            if scraper_type in ("ai_scraper", "scraper"):
+                try:
+                    from app.scrapers.ai_scraper import probe_pagination
+                    pagination_info = probe_pagination(url, use_playwright=True)
+                except Exception as e:
+                    log.warning("discover_new_sources: pagination probe failed",
+                                url=url, error=str(e))
+
             source = Source(
                 id=str(uuid.uuid4()),
                 name=source_name,
@@ -713,6 +727,8 @@ def discover_new_sources(self, n_queries: int | None = None):
                 scraper_config={
                     "use_playwright": True,
                     "crawl_depth": 1,
+                    "paginate": pagination_info.get("paginate", False),
+                    "max_pages": pagination_info.get("max_pages", 20),
                     "_discovery_confidence": confidence,
                     "_discovery_notes": portal.get("notes", ""),
                 },

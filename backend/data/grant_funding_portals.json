@@ -2378,7 +2378,7 @@
         "use_playwright": true,
         "crawl_depth": 1,
         "paginate": true,
-        "max_pages": 10
+        "max_pages": 20
       },
       "refresh_frequency": "daily",
       "is_high_priority": true,
@@ -7159,14 +7159,13 @@
     {
       "name": "New England Foundation for the Arts",
       "category": "International Arts & Culture",
-      "url": "https://www.nefa.org/grants_programs/",
+      "url": "https://www.nefa.org/grants-programs/find-grant",
       "source_type": "ai_scraper",
       "api_endpoint": null,
       "scraper_config": {
         "use_playwright": true,
         "crawl_depth": 1,
-        "paginate": true,
-        "max_pages": 3
+        "paginate": false
       },
       "refresh_frequency": "weekly",
       "is_high_priority": false,
@@ -7479,23 +7478,6 @@
         "storytelling"
       ],
       "notes": ""
-    },
-    {
-      "name": "UK Research & Innovation (UKRI) \u2013 Active Opportunities",
-      "category": "International / Regional",
-      "url": "https://www.ukri.org/opportunity/",
-      "source_type": "ai_scraper",
-      "api_endpoint": null,
-      "scraper_config": {
-        "use_playwright": true,
-        "crawl_depth": 0
-      },
-      "refresh_frequency": "weekly",
-      "is_high_priority": false,
-      "logo_url": "/logos/ukri.svg",
-      "status": "active",
-      "relevant_themes": [],
-      "notes": "No API for live calls; awarded project data accessible via GtR API. See 'UKRI Funding Opportunities' under UK Government for the primary entry."
     },
     {
       "name": "Volkswagen Stiftung \u2013 Funding",
