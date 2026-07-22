@@ -314,7 +314,7 @@
         "research",
         "technology"
       ],
-      "notes": "ARPA-E eXCHANGE is the mandatory submission portal. ~$400M annual budget; awards $500K\u2013$10M over 2\u20133 years."
+      "notes": "ARPA-E eXCHANGE is the mandatory submission portal. ~$400M annual budget; awards $500K\u2013$10M over 2\u20133 years. [audit 2026-07-22] timeout during probe"
     },
     {
       "name": "NEH \u2013 National Endowment for the Humanities",
@@ -386,7 +386,7 @@
         "digital access",
         "education"
       ],
-      "notes": "Award abstracts back to 1997 at imls.gov/grants. Free public API for award data: api.imls.gov."
+      "notes": "Award abstracts back to 1997 at imls.gov/grants. Free public API for award data: api.imls.gov. [audit 2026-07-22] timeout during probe"
     },
     {
       "name": "NASA \u2013 NSPIRES (Research Opportunities in Space and Earth Science)",
@@ -403,7 +403,7 @@
       "refresh_frequency": "weekly",
       "is_high_priority": true,
       "logo_url": null,
-      "status": "active",
+      "status": "paused",
       "relevant_themes": [
         "space",
         "earth science",
@@ -412,7 +412,7 @@
         "research",
         "STEM"
       ],
-      "notes": "NASA's official research solicitation system. ROSES-26 releases July 2026."
+      "notes": "NASA's official research solicitation system. ROSES-26 releases July 2026. [audit 2026-07-22] auto-paused: conn_error"
     },
     {
       "name": "DOD \u2013 ONR / ARO / AFOSR (Defense Research BAAs)",
@@ -443,7 +443,7 @@
     {
       "name": "DOD CDMRP \u2013 Congressionally Directed Medical Research Programs",
       "category": "US Federal Government",
-      "url": "https://cdmrp.health.mil/funding/default.shtml",
+      "url": "https://cdmrp.health.mil/",
       "source_type": "ai_scraper",
       "api_endpoint": null,
       "scraper_config": {
@@ -465,7 +465,7 @@
         "infectious disease",
         "clinical research"
       ],
-      "notes": "~$1B+/yr in disease-specific programmes including Breast Cancer, Prostate, Neurofibromatosis, TB, Peer Reviewed Medical Research. Applications via Grants.gov."
+      "notes": "~$1B+/yr in disease-specific programmes including Breast Cancer, Prostate, Neurofibromatosis, TB, Peer Reviewed Medical Research. Applications via Grants.gov. [audit 2026-07-22] listing path http_404; repointed https://cdmrp.health.mil/funding/default.shtml \u2192 site root"
     },
     {
       "name": "AHRQ \u2013 Agency for Healthcare Research and Quality",
@@ -593,14 +593,15 @@
     {
       "name": "NLM \u2013 National Library of Medicine",
       "category": "US Federal Government",
-      "url": "https://www.nlm.nih.gov/ep/Grants.html",
+      "url": "https://www.nlm.nih.gov/",
       "source_type": "ai_scraper",
       "api_endpoint": null,
       "scraper_config": {
         "use_playwright": true,
         "crawl_depth": 1,
         "paginate": true,
-        "max_pages": 5
+        "max_pages": 5,
+        "link_filter": "(grant|fund|scheme|fellowship|award|opportunit|scholarship|apply|call|prize|bursar|residenc|conference|workshop)"
       },
       "refresh_frequency": "weekly",
       "is_high_priority": true,
@@ -613,19 +614,20 @@
         "clinical NLP",
         "research training"
       ],
-      "notes": "Biomedical informatics training and research grants; highly aligned with Computational Biology and Clinical AI. G08, R01, R21 mechanisms."
+      "notes": "Biomedical informatics training and research grants; highly aligned with Computational Biology and Clinical AI. G08, R01, R21 mechanisms. [audit 2026-07-22] listing path http_404; repointed https://www.nlm.nih.gov/ep/Grants.html \u2192 site root"
     },
     {
       "name": "NCATS \u2013 National Center for Advancing Translational Sciences",
       "category": "US Federal Government",
-      "url": "https://ncats.nih.gov/funding/opportunities",
+      "url": "https://ncats.nih.gov/",
       "source_type": "ai_scraper",
       "api_endpoint": null,
       "scraper_config": {
         "use_playwright": true,
         "crawl_depth": 1,
         "paginate": true,
-        "max_pages": 5
+        "max_pages": 5,
+        "link_filter": "(grant|fund|scheme|fellowship|award|opportunit|scholarship|apply|call|prize|bursar|residenc|conference|workshop)"
       },
       "refresh_frequency": "weekly",
       "is_high_priority": true,
@@ -638,7 +640,7 @@
         "drug repurposing",
         "clinical research"
       ],
-      "notes": "NIH translational science centre; CTSA network, TRND, NCATS ASPIRE programmes. AI translation focus for clinical deployment."
+      "notes": "NIH translational science centre; CTSA network, TRND, NCATS ASPIRE programmes. AI translation focus for clinical deployment. [audit 2026-07-22] listing path http_404; repointed https://ncats.nih.gov/funding/opportunities \u2192 site root"
     },
     {
       "name": "NCI \u2013 National Cancer Institute (standalone FOAs)",
@@ -669,14 +671,15 @@
     {
       "name": "NIMH \u2013 National Institute of Mental Health",
       "category": "US Federal Government",
-      "url": "https://www.nimh.nih.gov/funding/grants-and-contracts",
+      "url": "https://www.nimh.nih.gov/",
       "source_type": "ai_scraper",
       "api_endpoint": null,
       "scraper_config": {
         "use_playwright": true,
         "crawl_depth": 1,
         "paginate": true,
-        "max_pages": 5
+        "max_pages": 5,
+        "link_filter": "(grant|fund|scheme|fellowship|award|opportunit|scholarship|apply|call|prize|bursar|residenc|conference|workshop)"
       },
       "refresh_frequency": "weekly",
       "is_high_priority": false,
@@ -689,19 +692,20 @@
         "neuroscience",
         "clinical research"
       ],
-      "notes": "Significant AI in mental health FOAs; separate tracking from general NIH Grants.gov feed recommended."
+      "notes": "Significant AI in mental health FOAs; separate tracking from general NIH Grants.gov feed recommended. [audit 2026-07-22] listing path http_404; repointed https://www.nimh.nih.gov/funding/grants-and-contracts \u2192 site root"
     },
     {
       "name": "ONC \u2013 Office of the National Coordinator for Health IT",
       "category": "US Federal Government",
-      "url": "https://www.healthit.gov/topic/research-evaluation/grant-funding",
+      "url": "https://www.healthit.gov/",
       "source_type": "ai_scraper",
       "api_endpoint": null,
       "scraper_config": {
         "use_playwright": true,
         "crawl_depth": 1,
         "paginate": true,
-        "max_pages": 5
+        "max_pages": 5,
+        "link_filter": "(grant|fund|scheme|fellowship|award|opportunit|scholarship|apply|call|prize|bursar|residenc|conference|workshop)"
       },
       "refresh_frequency": "weekly",
       "is_high_priority": false,
@@ -714,7 +718,7 @@
         "health IT",
         "interoperability"
       ],
-      "notes": "HHS ONC; funds clinical AI interoperability, EHR AI research, and health information exchange."
+      "notes": "HHS ONC; funds clinical AI interoperability, EHR AI research, and health information exchange. [audit 2026-07-22] listing path http_404; repointed https://www.healthit.gov/topic/research-evaluation/grant-funding \u2192 site root"
     },
     {
       "name": "VA \u2013 Veterans Affairs Merit Review Program",
@@ -867,7 +871,7 @@
     {
       "name": "Wellcome Data for Science and Health",
       "category": "Major Private Foundation",
-      "url": "https://wellcome.org/grant-funding/schemes/data-science-and-health-challenge-grant",
+      "url": "https://wellcome.org/",
       "source_type": "ai_scraper",
       "api_endpoint": null,
       "scraper_config": {
@@ -888,12 +892,12 @@
         "biomedical",
         "research infrastructure"
       ],
-      "notes": "Dedicated Wellcome stream for data science + health intersections. Separate call cycle from main Wellcome research schemes."
+      "notes": "Dedicated Wellcome stream for data science + health intersections. Separate call cycle from main Wellcome research schemes. [audit 2026-07-22] listing path http_404; repointed https://wellcome.org/grant-funding/schemes/data-science-and-health-challenge-grant \u2192 site root"
     },
     {
       "name": "Wellcome Africa Research Programmes",
       "category": "Major Private Foundation",
-      "url": "https://wellcome.org/grant-funding/schemes/african-research-development",
+      "url": "https://wellcome.org/",
       "source_type": "ai_scraper",
       "api_endpoint": null,
       "scraper_config": {
@@ -914,7 +918,7 @@
         "global health",
         "capacity building"
       ],
-      "notes": "Direct Wellcome grants for African institutions including WACCBIP, ACEGID, ACACIAS programmes. Separate call cycle from main Wellcome schemes. Highly relevant for Rwanda AI Lab and LiGHT Lab partnerships."
+      "notes": "Direct Wellcome grants for African institutions including WACCBIP, ACEGID, ACACIAS programmes. Separate call cycle from main Wellcome schemes. Highly relevant for Rwanda AI Lab and LiGHT Lab partnerships. [audit 2026-07-22] listing path http_404; repointed https://wellcome.org/grant-funding/schemes/african-research-development \u2192 site root"
     },
     {
       "name": "Wellcome Leap \u2013 Research Challenges",
@@ -1088,21 +1092,22 @@
     {
       "name": "Simons Foundation",
       "category": "Major Private Foundation",
-      "url": "https://www.simonsfoundation.org/grants/",
+      "url": "https://www.simonsfoundation.org/",
       "source_type": "ai_scraper",
       "api_endpoint": null,
       "scraper_config": {
         "use_playwright": true,
         "crawl_depth": 1,
         "paginate": true,
-        "max_pages": 10
+        "max_pages": 10,
+        "link_filter": "(grant|fund|scheme|fellowship|award|opportunit|scholarship|apply|call|prize|bursar|residenc|conference|workshop)"
       },
       "refresh_frequency": "weekly",
       "is_high_priority": false,
       "logo_url": null,
       "status": "active",
       "relevant_themes": [],
-      "notes": "No API; scraping required."
+      "notes": "No API; scraping required. [audit 2026-07-22] listing path http_404; repointed https://www.simonsfoundation.org/grants/ \u2192 site root"
     },
     {
       "name": "Alfred P. Sloan Foundation",
@@ -1149,7 +1154,7 @@
         "AI",
         "digital"
       ],
-      "notes": "No API; structured HTML \u2014 relatively easy to scrape."
+      "notes": "No API; structured HTML \u2014 relatively easy to scrape. [audit 2026-07-22] redirects to https://coefficientgiving.org/funds/ \u2014 verify new URL"
     },
     {
       "name": "Chan Zuckerberg Initiative",
@@ -1202,21 +1207,22 @@
     {
       "name": "Kresge Foundation",
       "category": "Major Private Foundation",
-      "url": "https://kresge.org/grants-and-loans/",
+      "url": "https://kresge.org/",
       "source_type": "ai_scraper",
       "api_endpoint": null,
       "scraper_config": {
         "use_playwright": true,
         "crawl_depth": 1,
         "paginate": true,
-        "max_pages": 10
+        "max_pages": 10,
+        "link_filter": "(grant|fund|scheme|fellowship|award|opportunit|scholarship|apply|call|prize|bursar|residenc|conference|workshop)"
       },
       "refresh_frequency": "weekly",
       "is_high_priority": false,
       "logo_url": null,
       "status": "active",
       "relevant_themes": [],
-      "notes": "No API; scraping required."
+      "notes": "No API; scraping required. [audit 2026-07-22] listing path http_404; repointed https://kresge.org/grants-and-loans/ \u2192 site root"
     },
     {
       "name": "Lumina Foundation",
@@ -1314,14 +1320,15 @@
     {
       "name": "Pew Charitable Trusts",
       "category": "Major Private Foundation",
-      "url": "https://www.pewtrusts.org/en/grants",
+      "url": "https://www.pewtrusts.org/",
       "source_type": "ai_scraper",
       "api_endpoint": null,
       "scraper_config": {
         "use_playwright": true,
         "crawl_depth": 1,
         "paginate": true,
-        "max_pages": 10
+        "max_pages": 10,
+        "link_filter": "(grant|fund|scheme|fellowship|award|opportunit|scholarship|apply|call|prize|bursar|residenc|conference|workshop)"
       },
       "refresh_frequency": "weekly",
       "is_high_priority": false,
@@ -1335,7 +1342,7 @@
         "research",
         "arts"
       ],
-      "notes": "No public API; scraping required. Does not typically accept unsolicited applications; proactive grantmaking model. Also in Candid FDO."
+      "notes": "No public API; scraping required. Does not typically accept unsolicited applications; proactive grantmaking model. Also in Candid FDO. [audit 2026-07-22] listing path http_404; repointed https://www.pewtrusts.org/en/grants \u2192 site root"
     },
     {
       "name": "Carnegie Corporation of New York",
@@ -1442,7 +1449,7 @@
     {
       "name": "Mastercard Foundation",
       "category": "Major Private Foundation",
-      "url": "https://mastercardfdn.org/all-programs/",
+      "url": "https://mastercardfdn.org/",
       "source_type": "ai_scraper",
       "api_endpoint": null,
       "scraper_config": {
@@ -1463,7 +1470,7 @@
         "youth",
         "economic development"
       ],
-      "notes": "Headquartered in Toronto. Focuses on young people in Africa and Indigenous youth in Canada. Does not typically accept unsolicited proposals. Also in Candid FDO."
+      "notes": "Headquartered in Toronto. Focuses on young people in Africa and Indigenous youth in Canada. Does not typically accept unsolicited proposals. Also in Candid FDO. [audit 2026-07-22] listing path http_404; repointed https://mastercardfdn.org/all-programs/ \u2192 site root"
     },
     {
       "name": "David and Lucile Packard Foundation",
@@ -1521,14 +1528,15 @@
     {
       "name": "John S. and James L. Knight Foundation",
       "category": "Major Private Foundation",
-      "url": "https://knightfoundation.org/grants/",
+      "url": "https://knightfoundation.org/",
       "source_type": "ai_scraper",
       "api_endpoint": null,
       "scraper_config": {
         "use_playwright": true,
         "crawl_depth": 1,
         "paginate": true,
-        "max_pages": 10
+        "max_pages": 10,
+        "link_filter": "(grant|fund|scheme|fellowship|award|opportunit|scholarship|apply|call|prize|bursar|residenc|conference|workshop)"
       },
       "refresh_frequency": "weekly",
       "is_high_priority": false,
@@ -1543,7 +1551,7 @@
         "technology",
         "AI"
       ],
-      "notes": "Invitation-only model for most programs; some open challenge competitions. Also accessible via Candid FDO."
+      "notes": "Invitation-only model for most programs; some open challenge competitions. Also accessible via Candid FDO. [audit 2026-07-22] listing path http_404; repointed https://knightfoundation.org/grants/ \u2192 site root"
     },
     {
       "name": "Spencer Foundation",
@@ -1710,7 +1718,7 @@
       "refresh_frequency": "weekly",
       "is_high_priority": true,
       "logo_url": null,
-      "status": "active",
+      "status": "paused",
       "relevant_themes": [
         "health",
         "health systems",
@@ -1718,7 +1726,7 @@
         "research transparency",
         "criminal justice"
       ],
-      "notes": "$2B+ foundation actively funding health systems reform, clinical AI, and research transparency. No unsolicited applications but actively announces open calls. Monitor closely."
+      "notes": "$2B+ foundation actively funding health systems reform, clinical AI, and research transparency. No unsolicited applications but actively announces open calls. Monitor closely. [audit 2026-07-22] auto-paused: conn_error"
     },
     {
       "name": "EU Funding & Tenders Portal (Horizon, LIFE, etc.)",
@@ -1743,21 +1751,22 @@
     {
       "name": "European Research Council (ERC)",
       "category": "EU / European",
-      "url": "https://erc.europa.eu/funding/calls-for-proposals",
+      "url": "https://erc.europa.eu/",
       "source_type": "ai_scraper",
       "api_endpoint": null,
       "scraper_config": {
         "use_playwright": true,
         "crawl_depth": 1,
         "paginate": true,
-        "max_pages": 5
+        "max_pages": 5,
+        "link_filter": "(grant|fund|scheme|fellowship|award|opportunit|scholarship|apply|call|prize|bursar|residenc|conference|workshop)"
       },
       "refresh_frequency": "weekly",
       "is_high_priority": false,
       "logo_url": "/logos/horizon-europe.svg",
       "status": "active",
       "relevant_themes": [],
-      "notes": "ERC calls also accessible through the main EU Funding & Tenders Portal API."
+      "notes": "ERC calls also accessible through the main EU Funding & Tenders Portal API. [audit 2026-07-22] listing path http_404; repointed https://erc.europa.eu/funding/calls-for-proposals \u2192 site root"
     },
     {
       "name": "Horizon Europe Cluster 1: Health (dedicated call tracking)",
@@ -1834,7 +1843,7 @@
     {
       "name": "Swiss National Science Foundation (SNSF)",
       "category": "EU / European",
-      "url": "https://www.snf.ch/en/funding/",
+      "url": "https://www.snf.ch/",
       "source_type": "ai_scraper",
       "api_endpoint": null,
       "scraper_config": {
@@ -1855,7 +1864,7 @@
         "AI",
         "humanities"
       ],
-      "notes": "Applications via the SNSF Portal (portal.snf.ch). P3 database for funded projects. Active 2026 joint call with NHMRC Australia for AI in healthcare research. Also partners with Tri-Agency Canada and DFG Germany."
+      "notes": "Applications via the SNSF Portal (portal.snf.ch). P3 database for funded projects. Active 2026 joint call with NHMRC Australia for AI in healthcare research. Also partners with Tri-Agency Canada and DFG Germany. [audit 2026-07-22] listing path http_404; repointed https://www.snf.ch/en/funding/ \u2192 site root"
     },
     {
       "name": "ANR \u2013 Agence Nationale de la Recherche (France)",
@@ -1882,19 +1891,20 @@
         "innovation",
         "humanities"
       ],
-      "notes": "France's national research funding agency. Active bilateral programs with NSERC, DFG, NWO and others. Part of FLAG-ERA consortium."
+      "notes": "France's national research funding agency. Active bilateral programs with NSERC, DFG, NWO and others. Part of FLAG-ERA consortium. [audit 2026-07-22] redirects to https://anr.fr/en/ \u2014 verify new URL"
     },
     {
       "name": "ANRS \u2013 Maladies infectieuses \u00e9mergentes (France)",
       "category": "EU / European",
-      "url": "https://www.anrs.fr/en/calls-for-projects",
+      "url": "https://www.anrs.fr/",
       "source_type": "ai_scraper",
       "api_endpoint": null,
       "scraper_config": {
         "use_playwright": true,
         "crawl_depth": 1,
         "paginate": true,
-        "max_pages": 5
+        "max_pages": 5,
+        "link_filter": "(grant|fund|scheme|fellowship|award|opportunit|scholarship|apply|call|prize|bursar|residenc|conference|workshop)"
       },
       "refresh_frequency": "weekly",
       "is_high_priority": true,
@@ -1908,7 +1918,7 @@
         "hepatitis",
         "emerging infections"
       ],
-      "notes": "French infectious disease and global health research agency (merger of ANRS and REACTing). Active calls for global health and Africa-focused research. Highly relevant for ULTR-AI TB work."
+      "notes": "French infectious disease and global health research agency (merger of ANRS and REACTing). Active calls for global health and Africa-focused research. Highly relevant for ULTR-AI TB work. [audit 2026-07-22] listing path http_404; repointed https://www.anrs.fr/en/calls-for-projects \u2192 site root"
     },
     {
       "name": "NWO \u2013 Dutch Research Council (Netherlands)",
@@ -2021,14 +2031,15 @@
     {
       "name": "FWF \u2013 Austrian Science Fund",
       "category": "EU / European",
-      "url": "https://www.fwf.ac.at/en/research-funding/funding-opportunities",
+      "url": "https://www.fwf.ac.at/",
       "source_type": "ai_scraper",
       "api_endpoint": null,
       "scraper_config": {
         "use_playwright": true,
         "crawl_depth": 1,
         "paginate": true,
-        "max_pages": 5
+        "max_pages": 5,
+        "link_filter": "(grant|fund|scheme|fellowship|award|opportunit|scholarship|apply|call|prize|bursar|residenc|conference|workshop)"
       },
       "refresh_frequency": "weekly",
       "is_high_priority": false,
@@ -2042,19 +2053,20 @@
         "humanities",
         "social sciences"
       ],
-      "notes": "Austria's primary research funding agency; DFG partner. Part of Open Research Europe consortium."
+      "notes": "Austria's primary research funding agency; DFG partner. Part of Open Research Europe consortium. [audit 2026-07-22] listing path http_404; repointed https://www.fwf.ac.at/en/research-funding/funding-opportunities \u2192 site root"
     },
     {
       "name": "FCT \u2013 Funda\u00e7\u00e3o para a Ci\u00eancia e a Tecnologia (Portugal)",
       "category": "EU / European",
-      "url": "https://www.fct.pt/en/financing/",
+      "url": "https://www.fct.pt/",
       "source_type": "ai_scraper",
       "api_endpoint": null,
       "scraper_config": {
         "use_playwright": true,
         "crawl_depth": 1,
         "paginate": true,
-        "max_pages": 5
+        "max_pages": 5,
+        "link_filter": "(grant|fund|scheme|fellowship|award|opportunit|scholarship|apply|call|prize|bursar|residenc|conference|workshop)"
       },
       "refresh_frequency": "weekly",
       "is_high_priority": false,
@@ -2067,7 +2079,7 @@
         "AI",
         "innovation"
       ],
-      "notes": "Portugal's main funding agency. Part of Open Research Europe consortium. No public REST API."
+      "notes": "Portugal's main funding agency. Part of Open Research Europe consortium. No public REST API. [audit 2026-07-22] listing path http_404; repointed https://www.fct.pt/en/financing/ \u2192 site root"
     },
     {
       "name": "Academy of Finland / Research Council of Finland",
@@ -2125,14 +2137,15 @@
     {
       "name": "Lundbeck Foundation (Denmark)",
       "category": "EU / European",
-      "url": "https://lundbeckfonden.com/en/grants",
+      "url": "https://lundbeckfonden.com/",
       "source_type": "ai_scraper",
       "api_endpoint": null,
       "scraper_config": {
         "use_playwright": true,
         "crawl_depth": 1,
         "paginate": true,
-        "max_pages": 5
+        "max_pages": 5,
+        "link_filter": "(grant|fund|scheme|fellowship|award|opportunit|scholarship|apply|call|prize|bursar|residenc|conference|workshop)"
       },
       "refresh_frequency": "weekly",
       "is_high_priority": true,
@@ -2145,7 +2158,7 @@
         "health",
         "Denmark"
       ],
-      "notes": "Major Danish biomedical funder with focus on brain research and AI. Often co-funds with Novo Nordisk Foundation. Accessible also via Research Portal Denmark (Forskningsportal.dk)."
+      "notes": "Major Danish biomedical funder with focus on brain research and AI. Often co-funds with Novo Nordisk Foundation. Accessible also via Research Portal Denmark (Forskningsportal.dk). [audit 2026-07-22] listing path http_404; repointed https://lundbeckfonden.com/en/grants \u2192 site root"
     },
     {
       "name": "Research Portal Denmark (Forskningsportal.dk)",
@@ -2262,14 +2275,14 @@
       "refresh_frequency": "weekly",
       "is_high_priority": true,
       "logo_url": "https://www.google.com/s2/favicons?domain=culturemoveseurope.eu&sz=64",
-      "status": "active",
+      "status": "paused",
       "relevant_themes": [
         "arts",
         "culture",
         "mobility",
         "Europe"
       ],
-      "notes": "EU mobility grants for artists and culture professionals."
+      "notes": "EU mobility grants for artists and culture professionals. [audit 2026-07-22] auto-paused: dns_fail"
     },
     {
       "name": "Erasmus+ \u2013 EU Education & Youth Grants",
@@ -2322,14 +2335,15 @@
     {
       "name": "Italian National Recovery Plan (PNRR) \u2013 Health Extended Partnerships",
       "category": "EU / European",
-      "url": "https://www.governo.it/it/pnrr/",
+      "url": "https://www.governo.it/",
       "source_type": "ai_scraper",
       "api_endpoint": null,
       "scraper_config": {
         "use_playwright": true,
         "crawl_depth": 1,
         "paginate": true,
-        "max_pages": 5
+        "max_pages": 5,
+        "link_filter": "(grant|fund|scheme|fellowship|award|opportunit|scholarship|apply|call|prize|bursar|residenc|conference|workshop)"
       },
       "refresh_frequency": "weekly",
       "is_high_priority": false,
@@ -2342,7 +2356,7 @@
         "Italy",
         "innovation"
       ],
-      "notes": "\u20ac20B+ Italian NRRP; health AI innovation funded under Extended Partnership calls (PE8, PE9). Relevant for LiGHT Lab EPFL collaborations."
+      "notes": "\u20ac20B+ Italian NRRP; health AI innovation funded under Extended Partnership calls (PE8, PE9). Relevant for LiGHT Lab EPFL collaborations. [audit 2026-07-22] listing path http_404; repointed https://www.governo.it/it/pnrr/ \u2192 site root"
     },
     {
       "name": "UKRI Gateway to Research (GtR)",
@@ -2390,7 +2404,7 @@
     {
       "name": "NIHR \u2013 National Institute for Health & Care Research",
       "category": "UK Government / Research Councils",
-      "url": "https://www.nihr.ac.uk/funding-and-support/funding-for-research-studies/",
+      "url": "https://www.nihr.ac.uk/",
       "source_type": "ai_scraper",
       "api_endpoint": null,
       "scraper_config": {
@@ -2412,12 +2426,12 @@
         "global health",
         "patient outcomes"
       ],
-      "notes": "Largest funder of clinical and applied health research in the UK; annual budget >\u00a31B. Major programmes: Research for Patient Benefit (RfPB), Health Technology Assessment (HTA), Efficacy & Mechanism Evaluation (EME), Programme Grants for Applied Research. Applications via NIHR Research Management System."
+      "notes": "Largest funder of clinical and applied health research in the UK; annual budget >\u00a31B. Major programmes: Research for Patient Benefit (RfPB), Health Technology Assessment (HTA), Efficacy & Mechanism Evaluation (EME), Programme Grants for Applied Research. Applications via NIHR Research Management System. [audit 2026-07-22] listing path http_404; repointed https://www.nihr.ac.uk/funding-and-support/funding-for-research-studies/ \u2192 site root"
     },
     {
       "name": "NIHR Global Health Research",
       "category": "UK Government / Research Councils",
-      "url": "https://www.nihr.ac.uk/explore-nihr/programmes/global-health-research.htm",
+      "url": "https://www.nihr.ac.uk/",
       "source_type": "ai_scraper",
       "api_endpoint": null,
       "scraper_config": {
@@ -2440,7 +2454,7 @@
         "TB",
         "diagnostics"
       ],
-      "notes": "Dedicated NIHR arm for LMIC health research. Funds Global Health Research Groups and Units. Highly relevant for LiGHT Lab / Rwanda AI Lab / ULTR-AI TB diagnostic work."
+      "notes": "Dedicated NIHR arm for LMIC health research. Funds Global Health Research Groups and Units. Highly relevant for LiGHT Lab / Rwanda AI Lab / ULTR-AI TB diagnostic work. [audit 2026-07-22] listing path http_404; repointed https://www.nihr.ac.uk/explore-nihr/programmes/global-health-research.htm \u2192 site root"
     },
     {
       "name": "NHS AI Lab (NHS England)",
@@ -2569,7 +2583,7 @@
     {
       "name": "Nuffield Foundation",
       "category": "UK Private Foundation",
-      "url": "https://www.nuffieldfoundation.org/funding/",
+      "url": "https://www.nuffieldfoundation.org/",
       "source_type": "ai_scraper",
       "api_endpoint": null,
       "scraper_config": {
@@ -2591,7 +2605,7 @@
         "social science",
         "UK"
       ],
-      "notes": "UK foundation funding research and student programmes to advance educational opportunity and social well-being."
+      "notes": "UK foundation funding research and student programmes to advance educational opportunity and social well-being. [audit 2026-07-22] listing path http_404; repointed https://www.nuffieldfoundation.org/funding/ \u2192 site root"
     },
     {
       "name": "Joseph Rowntree Foundation",
@@ -2674,14 +2688,15 @@
     {
       "name": "Paul Hamlyn Foundation",
       "category": "UK Private Foundation",
-      "url": "https://phf.org.uk/funds/",
+      "url": "https://phf.org.uk/",
       "source_type": "ai_scraper",
       "api_endpoint": null,
       "scraper_config": {
         "use_playwright": true,
         "crawl_depth": 1,
         "paginate": true,
-        "max_pages": 5
+        "max_pages": 5,
+        "link_filter": "(grant|fund|scheme|fellowship|award|opportunit|scholarship|apply|call|prize|bursar|residenc|conference|workshop)"
       },
       "refresh_frequency": "weekly",
       "is_high_priority": false,
@@ -2692,7 +2707,7 @@
         "education",
         "India"
       ],
-      "notes": ""
+      "notes": "[audit 2026-07-22] listing path http_404; repointed https://phf.org.uk/funds/ \u2192 site root"
     },
     {
       "name": "IATI Datastore / D-Portal",
@@ -2704,14 +2719,14 @@
       "refresh_frequency": "daily",
       "is_high_priority": true,
       "logo_url": null,
-      "status": "active",
+      "status": "paused",
       "relevant_themes": [
         "health",
         "AI",
         "digital",
         "global health"
       ],
-      "notes": "REST API returning XML/JSON/CSV; d-portal.org is the browser-based explorer."
+      "notes": "REST API returning XML/JSON/CSV; d-portal.org is the browser-based explorer. [audit 2026-07-22] IATI Datastore now requires free subscription key \u2014 set IATI_API_KEY then unpause."
     },
     {
       "name": "AidData (College of William & Mary)",
@@ -2888,9 +2903,9 @@
       "refresh_frequency": "weekly",
       "is_high_priority": false,
       "logo_url": "/logos/unicef.svg",
-      "status": "active",
+      "status": "paused",
       "relevant_themes": [],
-      "notes": "No API; scraping required."
+      "notes": "No API; scraping required. [audit 2026-07-22] auto-paused: http_404 and site root dead"
     },
     {
       "name": "WHO Procurement / Calls",
@@ -2951,12 +2966,12 @@
       "logo_url": "/logos/global-fund.svg",
       "status": "active",
       "relevant_themes": [],
-      "notes": "No API; limited structured data; scraping required."
+      "notes": "No API; limited structured data; scraping required. [audit 2026-07-22] redirects to https://resources.theglobalfund.org/en/ \u2014 verify new URL"
     },
     {
       "name": "Gavi, the Vaccine Alliance",
       "category": "UN / Multilateral Agency",
-      "url": "https://www.gavi.org/programmes-impact/programmatic-policies/funding-opportunities",
+      "url": "https://www.gavi.org/",
       "source_type": "ai_scraper",
       "api_endpoint": null,
       "scraper_config": {
@@ -2971,19 +2986,20 @@
       "logo_url": null,
       "status": "active",
       "relevant_themes": [],
-      "notes": "No API; scraping required."
+      "notes": "No API; scraping required. [audit 2026-07-22] listing path http_404; repointed https://www.gavi.org/programmes-impact/programmatic-policies/funding-opportunities \u2192 site root"
     },
     {
       "name": "UNESCO \u2013 Grants & Prizes",
       "category": "UN / Multilateral Agency",
-      "url": "https://www.unesco.org/en/prizes-grants",
+      "url": "https://www.unesco.org/",
       "source_type": "ai_scraper",
       "api_endpoint": null,
       "scraper_config": {
         "use_playwright": true,
         "crawl_depth": 1,
         "paginate": true,
-        "max_pages": 5
+        "max_pages": 5,
+        "link_filter": "(grant|fund|scheme|fellowship|award|opportunit|scholarship|apply|call|prize|bursar|residenc|conference|workshop)"
       },
       "refresh_frequency": "weekly",
       "is_high_priority": true,
@@ -2995,7 +3011,7 @@
         "culture",
         "communication"
       ],
-      "notes": "UNESCO prizes, fellowships, and grants across all mandate areas."
+      "notes": "UNESCO prizes, fellowships, and grants across all mandate areas. [audit 2026-07-22] listing path http_404; repointed https://www.unesco.org/en/prizes-grants \u2192 site root"
     },
     {
       "name": "UNHCR \u2013 Innovation Fund",
@@ -3135,26 +3151,27 @@
       "refresh_frequency": "weekly",
       "is_high_priority": false,
       "logo_url": null,
-      "status": "active",
+      "status": "paused",
       "relevant_themes": [
         "AI",
         "social good",
         "health",
         "climate"
       ],
-      "notes": "Meta's research grants programme \u2014 fellowship and grant tracks for AI research."
+      "notes": "Meta's research grants programme \u2014 fellowship and grant tracks for AI research. [audit 2026-07-22] auto-paused: http_other and site root dead"
     },
     {
       "name": "AWS Diagnostic Development Initiative",
       "category": "Tech / Corporate Foundation",
-      "url": "https://aws.amazon.com/health/diagnostic-development-initiative/",
+      "url": "https://aws.amazon.com/",
       "source_type": "ai_scraper",
       "api_endpoint": null,
       "scraper_config": {
         "use_playwright": true,
         "crawl_depth": 1,
         "paginate": true,
-        "max_pages": 5
+        "max_pages": 5,
+        "link_filter": "(grant|fund|scheme|fellowship|award|opportunit|scholarship|apply|call|prize|bursar|residenc|conference|workshop)"
       },
       "refresh_frequency": "weekly",
       "is_high_priority": true,
@@ -3167,19 +3184,20 @@
         "cloud",
         "LMICs"
       ],
-      "notes": "AWS credits + cash grants for health AI diagnostics startups and researchers. Highly relevant for ULTR-AI TB POCUS AI work."
+      "notes": "AWS credits + cash grants for health AI diagnostics startups and researchers. Highly relevant for ULTR-AI TB POCUS AI work. [audit 2026-07-22] listing path http_404; repointed https://aws.amazon.com/health/diagnostic-development-initiative/ \u2192 site root"
     },
     {
       "name": "Bezos Earth Fund",
       "category": "Tech / Corporate Foundation",
-      "url": "https://www.bezosearthfund.org/funding-opportunities",
+      "url": "https://www.bezosearthfund.org/",
       "source_type": "ai_scraper",
       "api_endpoint": null,
       "scraper_config": {
         "use_playwright": true,
         "crawl_depth": 1,
         "paginate": true,
-        "max_pages": 5
+        "max_pages": 5,
+        "link_filter": "(grant|fund|scheme|fellowship|award|opportunit|scholarship|apply|call|prize|bursar|residenc|conference|workshop)"
       },
       "refresh_frequency": "weekly",
       "is_high_priority": true,
@@ -3192,7 +3210,7 @@
         "biodiversity",
         "food security"
       ],
-      "notes": "$10B committed to climate and nature. AI for Climate and Nature Grand Challenge: up to $100M total; Phase II awardees receive up to $2M each."
+      "notes": "$10B committed to climate and nature. AI for Climate and Nature Grand Challenge: up to $100M total; Phase II awardees receive up to $2M each. [audit 2026-07-22] listing path http_404; repointed https://www.bezosearthfund.org/funding-opportunities \u2192 site root"
     },
     {
       "name": "Schmidt Sciences (formerly Schmidt Futures)",
@@ -3296,7 +3314,7 @@
         "technology",
         "digital rights"
       ],
-      "notes": "Funds trustworthy AI, internet health, privacy, open technology. Founding funder of Humanity AI initiative. Active: Mozilla Technology Fund and Awards."
+      "notes": "Funds trustworthy AI, internet health, privacy, open technology. Founding funder of Humanity AI initiative. Active: Mozilla Technology Fund and Awards. [audit 2026-07-22] redirects to https://www.mozillafoundation.org/en/what-we-do/grantmaking/ \u2014 verify new URL"
     },
     {
       "name": "Omidyar Network",
@@ -3378,14 +3396,15 @@
     {
       "name": "Digital Square (PATH)",
       "category": "Tech / Corporate Foundation",
-      "url": "https://digitalsquare.org/funding",
+      "url": "https://digitalsquare.org/",
       "source_type": "ai_scraper",
       "api_endpoint": null,
       "scraper_config": {
         "use_playwright": true,
         "crawl_depth": 1,
         "paginate": true,
-        "max_pages": 5
+        "max_pages": 5,
+        "link_filter": "(grant|fund|scheme|fellowship|award|opportunit|scholarship|apply|call|prize|bursar|residenc|conference|workshop)"
       },
       "refresh_frequency": "weekly",
       "is_high_priority": true,
@@ -3398,7 +3417,7 @@
         "global health",
         "health systems"
       ],
-      "notes": "Exclusively funds digital health implementation in LMICs; funded by USAID, Gates, and others. Active open calls for digital health goods. Highly relevant for MAM*AI and ULTR-AI deployment work."
+      "notes": "Exclusively funds digital health implementation in LMICs; funded by USAID, Gates, and others. Active open calls for digital health goods. Highly relevant for MAM*AI and ULTR-AI deployment work. [audit 2026-07-22] listing path http_404; repointed https://digitalsquare.org/funding \u2192 site root"
     },
     {
       "name": "EDCTP \u2013 European and Developing Countries Clinical Trials Partnership",
@@ -3431,14 +3450,15 @@
     {
       "name": "AUDA-NEPAD \u2013 African Union Development Agency",
       "category": "International / Regional",
-      "url": "https://www.nepad.org/funding-opportunities",
+      "url": "https://www.nepad.org/",
       "source_type": "ai_scraper",
       "api_endpoint": null,
       "scraper_config": {
         "use_playwright": true,
         "crawl_depth": 1,
         "paginate": true,
-        "max_pages": 5
+        "max_pages": 5,
+        "link_filter": "(grant|fund|scheme|fellowship|award|opportunit|scholarship|apply|call|prize|bursar|residenc|conference|workshop)"
       },
       "refresh_frequency": "weekly",
       "is_high_priority": true,
@@ -3452,7 +3472,7 @@
         "capacity building",
         "innovation"
       ],
-      "notes": "Implements AU flagship projects; direct Africa-led AI and health funding. Highly relevant for Rwanda National Health AI Laboratory."
+      "notes": "Implements AU flagship projects; direct Africa-led AI and health funding. Highly relevant for Rwanda National Health AI Laboratory. [audit 2026-07-22] listing path http_404; repointed https://www.nepad.org/funding-opportunities \u2192 site root"
     },
     {
       "name": "Africa CDC Innovation Fund",
@@ -3495,7 +3515,7 @@
       "refresh_frequency": "weekly",
       "is_high_priority": true,
       "logo_url": null,
-      "status": "active",
+      "status": "paused",
       "relevant_themes": [
         "Rwanda",
         "AI",
@@ -3503,7 +3523,7 @@
         "ICT",
         "innovation"
       ],
-      "notes": "Rwanda Information Society Authority; direct government partner for Rwanda National Health AI Laboratory. Government grants and co-investment for AI deployment in Rwanda."
+      "notes": "Rwanda Information Society Authority; direct government partner for Rwanda National Health AI Laboratory. Government grants and co-investment for AI deployment in Rwanda. [audit 2026-07-22] auto-paused: http_404 and site root dead"
     },
     {
       "name": "Tony Elumelu Foundation",
@@ -3532,14 +3552,15 @@
     {
       "name": "GIZ \u2013 Deutsche Gesellschaft f\u00fcr Internationale Zusammenarbeit",
       "category": "International / Regional",
-      "url": "https://www.giz.de/en/html/financing_opportunities.html",
+      "url": "https://www.giz.de/",
       "source_type": "ai_scraper",
       "api_endpoint": null,
       "scraper_config": {
         "use_playwright": true,
         "crawl_depth": 1,
         "paginate": true,
-        "max_pages": 5
+        "max_pages": 5,
+        "link_filter": "(grant|fund|scheme|fellowship|award|opportunit|scholarship|apply|call|prize|bursar|residenc|conference|workshop)"
       },
       "refresh_frequency": "weekly",
       "is_high_priority": true,
@@ -3553,19 +3574,20 @@
         "LMICs",
         "global development"
       ],
-      "notes": "German federal development agency; significant AI/health project funding for LMICs. Active digital health and AI calls for sub-Saharan Africa."
+      "notes": "German federal development agency; significant AI/health project funding for LMICs. Active digital health and AI calls for sub-Saharan Africa. [audit 2026-07-22] listing path http_404; repointed https://www.giz.de/en/html/financing_opportunities.html \u2192 site root"
     },
     {
       "name": "AFD \u2013 French Development Agency (Agence fran\u00e7aise de d\u00e9veloppement)",
       "category": "International / Regional",
-      "url": "https://www.afd.fr/en/calls-for-proposals",
+      "url": "https://www.afd.fr/",
       "source_type": "ai_scraper",
       "api_endpoint": null,
       "scraper_config": {
         "use_playwright": true,
         "crawl_depth": 1,
         "paginate": true,
-        "max_pages": 5
+        "max_pages": 5,
+        "link_filter": "(grant|fund|scheme|fellowship|award|opportunit|scholarship|apply|call|prize|bursar|residenc|conference|workshop)"
       },
       "refresh_frequency": "weekly",
       "is_high_priority": false,
@@ -3578,7 +3600,7 @@
         "Africa",
         "francophone"
       ],
-      "notes": "Funds health, climate, digital infrastructure in francophone Africa and globally. FSP (Solidarity Fund for Priority Projects) open calls."
+      "notes": "Funds health, climate, digital infrastructure in francophone Africa and globally. FSP (Solidarity Fund for Priority Projects) open calls. [audit 2026-07-22] listing path http_404; repointed https://www.afd.fr/en/calls-for-proposals \u2192 site root"
     },
     {
       "name": "Co-IMPACT",
@@ -3608,14 +3630,15 @@
     {
       "name": "FIND \u2013 Foundation for Innovative New Diagnostics",
       "category": "International / Regional",
-      "url": "https://www.finddx.org/funding/",
+      "url": "https://www.finddx.org/",
       "source_type": "ai_scraper",
       "api_endpoint": null,
       "scraper_config": {
         "use_playwright": true,
         "crawl_depth": 1,
         "paginate": true,
-        "max_pages": 5
+        "max_pages": 5,
+        "link_filter": "(grant|fund|scheme|fellowship|award|opportunit|scholarship|apply|call|prize|bursar|residenc|conference|workshop)"
       },
       "refresh_frequency": "weekly",
       "is_high_priority": true,
@@ -3630,7 +3653,7 @@
         "LMICs",
         "global health"
       ],
-      "notes": "Global diagnostics nonprofit; TB/HIV/malaria AI diagnostic development calls highly relevant for ULTR-AI POCUS AI work. Co-funded by Gates, Wellcome, USAID."
+      "notes": "Global diagnostics nonprofit; TB/HIV/malaria AI diagnostic development calls highly relevant for ULTR-AI POCUS AI work. Co-funded by Gates, Wellcome, USAID. [audit 2026-07-22] listing path http_404; repointed https://www.finddx.org/funding/ \u2192 site root"
     },
     {
       "name": "Laerdal Foundation for Acute Medicine",
@@ -3661,14 +3684,15 @@
     {
       "name": "Wellcome\u2013DBT India Alliance",
       "category": "International / Regional",
-      "url": "https://wellcomedbt.org/fellowships/",
+      "url": "https://wellcomedbt.org/",
       "source_type": "ai_scraper",
       "api_endpoint": null,
       "scraper_config": {
         "use_playwright": true,
         "crawl_depth": 1,
         "paginate": true,
-        "max_pages": 5
+        "max_pages": 5,
+        "link_filter": "(grant|fund|scheme|fellowship|award|opportunit|scholarship|apply|call|prize|bursar|residenc|conference|workshop)"
       },
       "refresh_frequency": "weekly",
       "is_high_priority": true,
@@ -3681,19 +3705,20 @@
         "India",
         "clinical research"
       ],
-      "notes": "India's major biomedical funder joint Wellcome + DBT. Open calls for Intermediate and Senior Fellowships for researchers in India. Highly relevant for Ashoka University partnership."
+      "notes": "India's major biomedical funder joint Wellcome + DBT. Open calls for Intermediate and Senior Fellowships for researchers in India. Highly relevant for Ashoka University partnership. [audit 2026-07-22] listing path http_404; repointed https://wellcomedbt.org/fellowships/ \u2192 site root"
     },
     {
       "name": "ICRC Technology for Humanity",
       "category": "International / Regional",
-      "url": "https://www.icrc.org/en/digital-transformation/humanitarian-technology",
+      "url": "https://www.icrc.org/",
       "source_type": "ai_scraper",
       "api_endpoint": null,
       "scraper_config": {
         "use_playwright": true,
         "crawl_depth": 1,
         "paginate": true,
-        "max_pages": 5
+        "max_pages": 5,
+        "link_filter": "(grant|fund|scheme|fellowship|award|opportunit|scholarship|apply|call|prize|bursar|residenc|conference|workshop)"
       },
       "refresh_frequency": "weekly",
       "is_high_priority": true,
@@ -3706,7 +3731,7 @@
         "conflict",
         "displacement"
       ],
-      "notes": "Direct funder of humanitarian AI projects; ASPECT collaboration with ICRC already in place. Monitor for open calls on humanitarian diffusion model and HARMONY-adjacent projects."
+      "notes": "Direct funder of humanitarian AI projects; ASPECT collaboration with ICRC already in place. Monitor for open calls on humanitarian diffusion model and HARMONY-adjacent projects. [audit 2026-07-22] listing path http_404; repointed https://www.icrc.org/en/digital-transformation/humanitarian-technology \u2192 site root"
     },
     {
       "name": "Ashoka Foundation \u2013 Fellowship & Grants",
@@ -3808,7 +3833,7 @@
         "research",
         "innovation"
       ],
-      "notes": "Canada's federal funding agency for natural sciences and engineering. Part of Tri-Agency with CIHR and SSHRC."
+      "notes": "Canada's federal funding agency for natural sciences and engineering. Part of Tri-Agency with CIHR and SSHRC. [audit 2026-07-22] redirects to https://nserc-crsng.canada.ca/en \u2014 verify new URL"
     },
     {
       "name": "IDRC \u2013 International Development Research Centre (Canada)",
@@ -3912,7 +3937,7 @@
         "AI",
         "innovation"
       ],
-      "notes": "Australia's primary competitive research funder (excluding health/medical). Uses RMS for grant submission."
+      "notes": "Australia's primary competitive research funder (excluding health/medical). Uses RMS for grant submission. [audit 2026-07-22] timeout during probe"
     },
     {
       "name": "NHMRC \u2013 National Health and Medical Research Council (Australia)",
@@ -3937,19 +3962,20 @@
         "clinical research",
         "public health"
       ],
-      "notes": "Australia's primary health and medical research funder. Applications via Sapphire portal. Active 2026 joint call with SNSF for AI in healthcare research (deadline May 28, 2026)."
+      "notes": "Australia's primary health and medical research funder. Applications via Sapphire portal. Active 2026 joint call with SNSF for AI in healthcare research (deadline May 28, 2026). [audit 2026-07-22] timeout during probe"
     },
     {
       "name": "CSIRO \u2013 Commonwealth Scientific and Industrial Research Organisation",
       "category": "International / Regional",
-      "url": "https://www.csiro.au/en/work-with-us/funding-and-grants",
+      "url": "https://www.csiro.au/",
       "source_type": "ai_scraper",
       "api_endpoint": null,
       "scraper_config": {
         "use_playwright": true,
         "crawl_depth": 1,
         "paginate": true,
-        "max_pages": 5
+        "max_pages": 5,
+        "link_filter": "(grant|fund|scheme|fellowship|award|opportunit|scholarship|apply|call|prize|bursar|residenc|conference|workshop)"
       },
       "refresh_frequency": "weekly",
       "is_high_priority": false,
@@ -3962,19 +3988,20 @@
         "data science",
         "Australia"
       ],
-      "notes": "Australia's national science agency; AI in health and data science calls. Relevant for potential EPFL/CSIRO collaborations."
+      "notes": "Australia's national science agency; AI in health and data science calls. Relevant for potential EPFL/CSIRO collaborations. [audit 2026-07-22] listing path http_404; repointed https://www.csiro.au/en/work-with-us/funding-and-grants \u2192 site root"
     },
     {
       "name": "NRF \u2013 National Research Foundation (South Africa)",
       "category": "International / Regional",
-      "url": "https://www.nrf.ac.za/funding-opportunities/",
+      "url": "https://www.nrf.ac.za/",
       "source_type": "ai_scraper",
       "api_endpoint": null,
       "scraper_config": {
         "use_playwright": true,
         "crawl_depth": 1,
         "paginate": true,
-        "max_pages": 5
+        "max_pages": 5,
+        "link_filter": "(grant|fund|scheme|fellowship|award|opportunit|scholarship|apply|call|prize|bursar|residenc|conference|workshop)"
       },
       "refresh_frequency": "weekly",
       "is_high_priority": false,
@@ -3987,7 +4014,7 @@
         "Africa",
         "innovation"
       ],
-      "notes": "South Africa's primary research funding agency. Partners with IDRC Canada, African Academy of Sciences through Science Granting Councils Initiative (SGCI)."
+      "notes": "South Africa's primary research funding agency. Partners with IDRC Canada, African Academy of Sciences through Science Granting Councils Initiative (SGCI). [audit 2026-07-22] listing path http_404; repointed https://www.nrf.ac.za/funding-opportunities/ \u2192 site root"
     },
     {
       "name": "Wellcome\u2013DBT India Alliance (Intermediate/Senior)",
@@ -4119,14 +4146,15 @@
     {
       "name": "NRF \u2013 National Research Foundation of Korea",
       "category": "International / Regional",
-      "url": "https://www.nrf.re.kr/eng/main",
+      "url": "https://www.nrf.re.kr/",
       "source_type": "ai_scraper",
       "api_endpoint": null,
       "scraper_config": {
         "use_playwright": true,
         "crawl_depth": 1,
         "paginate": true,
-        "max_pages": 3
+        "max_pages": 3,
+        "link_filter": "(grant|fund|scheme|fellowship|award|opportunit|scholarship|apply|call|prize|bursar|residenc|conference|workshop)"
       },
       "refresh_frequency": "weekly",
       "is_high_priority": false,
@@ -4140,7 +4168,7 @@
         "innovation",
         "Korea"
       ],
-      "notes": "South Korea's primary research funding body. Active bilateral with JSPS Japan (2026 call active), NRF South Africa."
+      "notes": "South Korea's primary research funding body. Active bilateral with JSPS Japan (2026 call active), NRF South Africa. [audit 2026-07-22] listing path http_404; repointed https://www.nrf.re.kr/eng/main \u2192 site root"
     },
     {
       "name": "Singapore National Research Foundation (NRF-SG)",
@@ -4182,14 +4210,14 @@
       "refresh_frequency": "weekly",
       "is_high_priority": false,
       "logo_url": null,
-      "status": "active",
+      "status": "paused",
       "relevant_themes": [
         "health",
         "AI",
         "clinical research",
         "Singapore"
       ],
-      "notes": "Singapore health AI and clinical research funder."
+      "notes": "Singapore health AI and clinical research funder. [audit 2026-07-22] auto-paused: dns_fail"
     },
     {
       "name": "DBT \u2013 Department of Biotechnology (India)",
@@ -4215,7 +4243,7 @@
         "India",
         "research"
       ],
-      "notes": "India's federal biotechnology research funder. Also see BIRAC for industry grants and DST (dstindia.gov.in) for broader science grants."
+      "notes": "India's federal biotechnology research funder. Also see BIRAC for industry grants and DST (dstindia.gov.in) for broader science grants. [audit 2026-07-22] timeout during probe"
     },
     {
       "name": "Mo Ibrahim Foundation",
@@ -4270,14 +4298,15 @@
     {
       "name": "JICA \u2013 Japan International Cooperation Agency",
       "category": "International / Regional",
-      "url": "https://www.jica.go.jp/english/our_work/types_of_assistance/grant/",
+      "url": "https://www.jica.go.jp/",
       "source_type": "ai_scraper",
       "api_endpoint": null,
       "scraper_config": {
         "use_playwright": true,
         "crawl_depth": 1,
         "paginate": true,
-        "max_pages": 3
+        "max_pages": 3,
+        "link_filter": "(grant|fund|scheme|fellowship|award|opportunit|scholarship|apply|call|prize|bursar|residenc|conference|workshop)"
       },
       "refresh_frequency": "weekly",
       "is_high_priority": false,
@@ -4290,7 +4319,7 @@
         "global development",
         "Japan"
       ],
-      "notes": "Japanese ODA; digital health technology grants for LMICs including Africa."
+      "notes": "Japanese ODA; digital health technology grants for LMICs including Africa. [audit 2026-07-22] listing path http_404; repointed https://www.jica.go.jp/english/our_work/types_of_assistance/grant/ \u2192 site root"
     },
     {
       "name": "KOICA \u2013 Korea International Cooperation Agency",
@@ -4319,14 +4348,15 @@
     {
       "name": "CIFAR \u2013 Canadian Institute for Advanced Research",
       "category": "International / Regional",
-      "url": "https://cifar.ca/research/apply-for-funding/",
+      "url": "https://cifar.ca/",
       "source_type": "ai_scraper",
       "api_endpoint": null,
       "scraper_config": {
         "use_playwright": true,
         "crawl_depth": 1,
         "paginate": true,
-        "max_pages": 3
+        "max_pages": 3,
+        "link_filter": "(grant|fund|scheme|fellowship|award|opportunit|scholarship|apply|call|prize|bursar|residenc|conference|workshop)"
       },
       "refresh_frequency": "weekly",
       "is_high_priority": true,
@@ -4339,7 +4369,7 @@
         "research",
         "interdisciplinary"
       ],
-      "notes": "Global research network; AI + Health Fellows programme. Pan-Canadian AI Strategy funder. Supports researchers at institutions worldwide."
+      "notes": "Global research network; AI + Health Fellows programme. Pan-Canadian AI Strategy funder. Supports researchers at institutions worldwide. [audit 2026-07-22] listing path http_404; repointed https://cifar.ca/research/apply-for-funding/ \u2192 site root"
     },
     {
       "name": "Horizon Europe NCP Portal",
@@ -4423,7 +4453,7 @@
       "relevant_themes": [
         "global health"
       ],
-      "notes": "No API; scraping required."
+      "notes": "No API; scraping required. [audit 2026-07-22] timeout during probe"
     },
     {
       "name": "GEF (Global Environment Facility) Projects",
@@ -4593,7 +4623,7 @@
     {
       "name": "Guggenheim Fellowship",
       "category": "Fellowships & Scholarships",
-      "url": "https://www.gf.org/applicants/",
+      "url": "https://www.gf.org/",
       "source_type": "ai_scraper",
       "api_endpoint": null,
       "scraper_config": {
@@ -4613,7 +4643,7 @@
         "research",
         "fellowship"
       ],
-      "notes": "Prestigious annual fellowships for scholars, artists, scientists."
+      "notes": "Prestigious annual fellowships for scholars, artists, scientists. [audit 2026-07-22] listing path http_404; repointed https://www.gf.org/applicants/ \u2192 site root"
     },
     {
       "name": "ACLS \u2013 Fellowships & Grants",
@@ -4661,7 +4691,7 @@
         "international exchange",
         "research"
       ],
-      "notes": "US government flagship international exchange program."
+      "notes": "US government flagship international exchange program. [audit 2026-07-22] redirects to https://fulbrightscholars.org/what-fulbright/opportunities \u2014 verify new URL"
     },
     {
       "name": "DAAD \u2013 German Academic Exchange Scholarships",
@@ -4709,7 +4739,7 @@
         "UK",
         "postgraduate"
       ],
-      "notes": "UK government scholarships for future leaders."
+      "notes": "UK government scholarships for future leaders. [audit 2026-07-22] timeout during probe"
     },
     {
       "name": "NWO Veni/Vidi/Vici Talent Programme (Netherlands)",
@@ -4857,14 +4887,15 @@
     {
       "name": "Whiting Foundation \u2013 Grants & Fellowships",
       "category": "Fellowships & Scholarships",
-      "url": "https://www.whiting.org/writers/whiting-award",
+      "url": "https://www.whiting.org/",
       "source_type": "ai_scraper",
       "api_endpoint": null,
       "scraper_config": {
         "use_playwright": true,
         "crawl_depth": 1,
         "paginate": true,
-        "max_pages": 3
+        "max_pages": 3,
+        "link_filter": "(grant|fund|scheme|fellowship|award|opportunit|scholarship|apply|call|prize|bursar|residenc|conference|workshop)"
       },
       "refresh_frequency": "weekly",
       "is_high_priority": false,
@@ -4875,12 +4906,12 @@
         "literature",
         "nonfiction"
       ],
-      "notes": ""
+      "notes": "[audit 2026-07-22] listing path http_404; repointed https://www.whiting.org/writers/whiting-award \u2192 site root"
     },
     {
       "name": "Pulitzer Center \u2013 Grants",
       "category": "Fellowships & Scholarships",
-      "url": "https://pulitzercenter.org/grants-and-fellowships",
+      "url": "https://pulitzercenter.org/",
       "source_type": "ai_scraper",
       "api_endpoint": null,
       "scraper_config": {
@@ -4899,7 +4930,7 @@
         "documentary",
         "international reporting"
       ],
-      "notes": ""
+      "notes": "[audit 2026-07-22] listing path http_404; repointed https://pulitzercenter.org/grants-and-fellowships \u2192 site root"
     },
     {
       "name": "Thomas J. Watson Fellowship",
@@ -4983,14 +5014,14 @@
       "refresh_frequency": "weekly",
       "is_high_priority": false,
       "logo_url": "https://www.google.com/s2/favicons?domain=boell.de&sz=64",
-      "status": "active",
+      "status": "paused",
       "relevant_themes": [
         "ecology",
         "democracy",
         "feminism",
         "international"
       ],
-      "notes": "German Green foundation \u2014 international scholarships and grants."
+      "notes": "German Green foundation \u2014 international scholarships and grants. [audit 2026-07-22] auto-paused: http_other and site root dead"
     },
     {
       "name": "Friedrich Ebert Stiftung \u2013 Scholarships",
@@ -5116,7 +5147,7 @@
         "biomedical",
         "clinical research"
       ],
-      "notes": "International nonprofit for T1D research. Also accessible via Candid FDO."
+      "notes": "International nonprofit for T1D research. Also accessible via Candid FDO. [audit 2026-07-22] redirects to https://www.breakthrought1d.org/explore-research/ \u2014 verify new URL"
     },
     {
       "name": "Cystic Fibrosis Foundation \u2013 Research Grants",
@@ -5147,7 +5178,7 @@
     {
       "name": "British Heart Foundation",
       "category": "Health / Disease Foundation",
-      "url": "https://www.bhf.org.uk/for-professionals/information-for-researchers/apply-for-a-grant",
+      "url": "https://www.bhf.org.uk/",
       "source_type": "ai_scraper",
       "api_endpoint": null,
       "scraper_config": {
@@ -5167,7 +5198,7 @@
         "biomedical",
         "UK"
       ],
-      "notes": "Major UK funder for cardiovascular science. Applications via BHF portal and ProposalCentral for some grants."
+      "notes": "Major UK funder for cardiovascular science. Applications via BHF portal and ProposalCentral for some grants. [audit 2026-07-22] listing path http_404; repointed https://www.bhf.org.uk/for-professionals/information-for-researchers/apply-for-a-grant \u2192 site root"
     },
     {
       "name": "Novartis Foundation",
@@ -5197,14 +5228,15 @@
     {
       "name": "Johnson & Johnson Foundation \u2013 Global Health",
       "category": "Health / Disease Foundation",
-      "url": "https://www.jnjmedtech.com/en-US/our-commitment/global-health",
+      "url": "https://www.jnjmedtech.com/",
       "source_type": "ai_scraper",
       "api_endpoint": null,
       "scraper_config": {
         "use_playwright": true,
         "crawl_depth": 1,
         "paginate": true,
-        "max_pages": 3
+        "max_pages": 3,
+        "link_filter": "(grant|fund|scheme|fellowship|award|opportunit|scholarship|apply|call|prize|bursar|residenc|conference|workshop)"
       },
       "refresh_frequency": "weekly",
       "is_high_priority": false,
@@ -5217,19 +5249,20 @@
         "AI",
         "health worker training"
       ],
-      "notes": "Global health access + health worker AI training. Relevant for MAM*AI health worker capacity building angle."
+      "notes": "Global health access + health worker AI training. Relevant for MAM*AI health worker capacity building angle. [audit 2026-07-22] listing path http_404; repointed https://www.jnjmedtech.com/en-US/our-commitment/global-health \u2192 site root"
     },
     {
       "name": "Roche Foundation",
       "category": "Health / Disease Foundation",
-      "url": "https://www.roche.com/sustainability/philanthropy/roche-foundation",
+      "url": "https://www.roche.com/",
       "source_type": "ai_scraper",
       "api_endpoint": null,
       "scraper_config": {
         "use_playwright": true,
         "crawl_depth": 1,
         "paginate": true,
-        "max_pages": 3
+        "max_pages": 3,
+        "link_filter": "(grant|fund|scheme|fellowship|award|opportunit|scholarship|apply|call|prize|bursar|residenc|conference|workshop)"
       },
       "refresh_frequency": "weekly",
       "is_high_priority": false,
@@ -5242,19 +5275,20 @@
         "LMICs",
         "access"
       ],
-      "notes": "Diagnostics + access to healthcare; AI-based diagnostic calls relevant for ULTR-AI."
+      "notes": "Diagnostics + access to healthcare; AI-based diagnostic calls relevant for ULTR-AI. [audit 2026-07-22] listing path http_404; repointed https://www.roche.com/sustainability/philanthropy/roche-foundation \u2192 site root"
     },
     {
       "name": "Sanofi Espoir Foundation",
       "category": "Health / Disease Foundation",
-      "url": "https://www.sanofi.com/en/our-responsibility/communities/the-sanofi-espoir-foundation",
+      "url": "https://www.sanofi.com/",
       "source_type": "ai_scraper",
       "api_endpoint": null,
       "scraper_config": {
         "use_playwright": true,
         "crawl_depth": 1,
         "paginate": true,
-        "max_pages": 3
+        "max_pages": 3,
+        "link_filter": "(grant|fund|scheme|fellowship|award|opportunit|scholarship|apply|call|prize|bursar|residenc|conference|workshop)"
       },
       "refresh_frequency": "weekly",
       "is_high_priority": false,
@@ -5267,7 +5301,7 @@
         "Africa",
         "LMICs"
       ],
-      "notes": "Sub-Saharan Africa health + malnutrition access; MAM*AI angle for acute malnutrition and maternal care."
+      "notes": "Sub-Saharan Africa health + malnutrition access; MAM*AI angle for acute malnutrition and maternal care. [audit 2026-07-22] listing path http_404; repointed https://www.sanofi.com/en/our-responsibility/communities/the-sanofi-espoir-foundation \u2192 site root"
     },
     {
       "name": "Philips Foundation \u2013 Health Access",
@@ -5512,9 +5546,9 @@
       "refresh_frequency": "weekly",
       "is_high_priority": false,
       "logo_url": null,
-      "status": "active",
+      "status": "paused",
       "relevant_themes": [],
-      "notes": "Free HTTP/JSON API; bulk CSV/JSON download of full dataset; Datastore access for complex queries."
+      "notes": "Free HTTP/JSON API; bulk CSV/JSON download of full dataset; Datastore access for complex queries. [audit 2026-07-22] GrantNav API discontinued (404 on /api/*) \u2014 needs new integration via 360Giving data downloads."
     },
     {
       "name": "OpenAlex (research funding metadata)",
@@ -5644,19 +5678,20 @@
     {
       "name": "Dimensions (Digital Science) \u2013 Grants",
       "category": "Science & Research Specific",
-      "url": "https://www.dimensions.ai/products/grants/",
+      "url": "https://www.dimensions.ai/",
       "source_type": "ai_scraper",
       "api_endpoint": null,
       "scraper_config": {
         "use_playwright": true,
-        "crawl_depth": 0
+        "crawl_depth": 0,
+        "link_filter": "(grant|fund|scheme|fellowship|award|opportunit|scholarship|apply|call|prize|bursar|residenc|conference|workshop)"
       },
       "refresh_frequency": "weekly",
       "is_high_priority": false,
       "logo_url": null,
       "status": "active",
       "relevant_themes": [],
-      "notes": "DSL query language API; free tier for non-commercial; institutional subscription for full access."
+      "notes": "DSL query language API; free tier for non-commercial; institutional subscription for full access. [audit 2026-07-22] listing path http_404; repointed https://www.dimensions.ai/products/grants/ \u2192 site root"
     },
     {
       "name": "CrossRef Grant Metadata",
@@ -5811,14 +5846,15 @@
     {
       "name": "Prince Claus Fund",
       "category": "International Arts & Culture",
-      "url": "https://www.princeclausfund.org/programmes",
+      "url": "https://www.princeclausfund.org/",
       "source_type": "ai_scraper",
       "api_endpoint": null,
       "scraper_config": {
         "use_playwright": true,
         "crawl_depth": 1,
         "paginate": true,
-        "max_pages": 3
+        "max_pages": 3,
+        "link_filter": "(grant|fund|scheme|fellowship|award|opportunit|scholarship|apply|call|prize|bursar|residenc|conference|workshop)"
       },
       "refresh_frequency": "weekly",
       "is_high_priority": true,
@@ -5829,7 +5865,7 @@
         "culture",
         "international"
       ],
-      "notes": "Supports artists in contexts where cultural freedom is restricted."
+      "notes": "Supports artists in contexts where cultural freedom is restricted. [audit 2026-07-22] listing path http_404; repointed https://www.princeclausfund.org/programmes \u2192 site root"
     },
     {
       "name": "Arts Council England \u2013 Grants",
@@ -5859,14 +5895,15 @@
     {
       "name": "Ars Electronica \u2013 Open Calls",
       "category": "International Arts & Culture",
-      "url": "https://www.ars.electronica.art/news/calls/",
+      "url": "https://www.ars.electronica.art/",
       "source_type": "ai_scraper",
       "api_endpoint": null,
       "scraper_config": {
         "use_playwright": true,
         "crawl_depth": 1,
         "paginate": true,
-        "max_pages": 3
+        "max_pages": 3,
+        "link_filter": "(grant|fund|scheme|fellowship|award|opportunit|scholarship|apply|call|prize|bursar|residenc|conference|workshop)"
       },
       "refresh_frequency": "weekly",
       "is_high_priority": false,
@@ -5877,7 +5914,7 @@
         "media art",
         "technology"
       ],
-      "notes": "Relevant for Ephemorphic and ICRC humanitarian diffusion model art projects."
+      "notes": "Relevant for Ephemorphic and ICRC humanitarian diffusion model art projects. [audit 2026-07-22] listing path http_404; repointed https://www.ars.electronica.art/news/calls/ \u2192 site root"
     },
     {
       "name": "e-flux \u2013 Open Calls",
@@ -5927,14 +5964,15 @@
     {
       "name": "Eyebeam \u2013 Residency & Grants",
       "category": "International Arts & Culture",
-      "url": "https://www.eyebeam.org/residency/",
+      "url": "https://www.eyebeam.org/",
       "source_type": "ai_scraper",
       "api_endpoint": null,
       "scraper_config": {
         "use_playwright": true,
         "crawl_depth": 1,
         "paginate": true,
-        "max_pages": 3
+        "max_pages": 3,
+        "link_filter": "(grant|fund|scheme|fellowship|award|opportunit|scholarship|apply|call|prize|bursar|residenc|conference|workshop)"
       },
       "refresh_frequency": "weekly",
       "is_high_priority": false,
@@ -5945,7 +5983,7 @@
         "technology",
         "social practice"
       ],
-      "notes": ""
+      "notes": "[audit 2026-07-22] listing path http_404; repointed https://www.eyebeam.org/residency/ \u2192 site root"
     },
     {
       "name": "Creative Capital",
@@ -5973,14 +6011,15 @@
     {
       "name": "United States Artists \u2013 Fellowships",
       "category": "International Arts & Culture",
-      "url": "https://www.unitedstatesartists.org/usa-fellows/",
+      "url": "https://www.unitedstatesartists.org/",
       "source_type": "ai_scraper",
       "api_endpoint": null,
       "scraper_config": {
         "use_playwright": true,
         "crawl_depth": 1,
         "paginate": true,
-        "max_pages": 3
+        "max_pages": 3,
+        "link_filter": "(grant|fund|scheme|fellowship|award|opportunit|scholarship|apply|call|prize|bursar|residenc|conference|workshop)"
       },
       "refresh_frequency": "weekly",
       "is_high_priority": true,
@@ -5993,19 +6032,20 @@
         "film",
         "craft"
       ],
-      "notes": "$50K unrestricted fellowships for US artists."
+      "notes": "$50K unrestricted fellowships for US artists. [audit 2026-07-22] listing path http_404; repointed https://www.unitedstatesartists.org/usa-fellows/ \u2192 site root"
     },
     {
       "name": "Sundance Institute \u2013 Grants",
       "category": "International Arts & Culture",
-      "url": "https://www.sundance.org/programs/artist-programs",
+      "url": "https://www.sundance.org/",
       "source_type": "ai_scraper",
       "api_endpoint": null,
       "scraper_config": {
         "use_playwright": true,
         "crawl_depth": 1,
         "paginate": true,
-        "max_pages": 3
+        "max_pages": 3,
+        "link_filter": "(grant|fund|scheme|fellowship|award|opportunit|scholarship|apply|call|prize|bursar|residenc|conference|workshop)"
       },
       "refresh_frequency": "weekly",
       "is_high_priority": true,
@@ -6017,19 +6057,20 @@
         "screenwriting",
         "theatre"
       ],
-      "notes": "Supports independent storytellers in film, theatre, digital."
+      "notes": "Supports independent storytellers in film, theatre, digital. [audit 2026-07-22] listing path http_404; repointed https://www.sundance.org/programs/artist-programs \u2192 site root"
     },
     {
       "name": "Res Artis \u2013 Worldwide Residency Network",
       "category": "International Arts & Culture",
-      "url": "https://www.resartis.org/opportunities/",
+      "url": "https://www.resartis.org/",
       "source_type": "ai_scraper",
       "api_endpoint": null,
       "scraper_config": {
         "use_playwright": true,
         "crawl_depth": 1,
         "paginate": true,
-        "max_pages": 3
+        "max_pages": 3,
+        "link_filter": "(grant|fund|scheme|fellowship|award|opportunit|scholarship|apply|call|prize|bursar|residenc|conference|workshop)"
       },
       "refresh_frequency": "weekly",
       "is_high_priority": true,
@@ -6040,12 +6081,12 @@
         "visual art",
         "international"
       ],
-      "notes": "Global network of 700+ artist residencies \u2014 listing open calls."
+      "notes": "Global network of 700+ artist residencies \u2014 listing open calls. [audit 2026-07-22] listing path http_404; repointed https://www.resartis.org/opportunities/ \u2192 site root"
     },
     {
       "name": "European Cultural Foundation \u2013 Grants",
       "category": "International Arts & Culture",
-      "url": "https://www.culturalfoundation.eu/grants",
+      "url": "https://www.culturalfoundation.eu/",
       "source_type": "ai_scraper",
       "api_endpoint": null,
       "scraper_config": {
@@ -6065,7 +6106,7 @@
         "Europe",
         "democracy"
       ],
-      "notes": ""
+      "notes": "[audit 2026-07-22] listing path http_404; repointed https://www.culturalfoundation.eu/grants \u2192 site root"
     },
     {
       "name": "Alfred P. Sloan Foundation \u2013 Grants",
@@ -6139,12 +6180,13 @@
     {
       "name": "Artforum \u2013 Opportunities Listings",
       "category": "International Arts & Culture",
-      "url": "https://www.artforum.com/announcements",
+      "url": "https://www.artforum.com/",
       "source_type": "ai_scraper",
       "api_endpoint": null,
       "scraper_config": {
         "use_playwright": true,
-        "crawl_depth": 0
+        "crawl_depth": 0,
+        "link_filter": "(grant|fund|scheme|fellowship|award|opportunit|scholarship|apply|call|prize|bursar|residenc|conference|workshop)"
       },
       "refresh_frequency": "weekly",
       "is_high_priority": false,
@@ -6154,12 +6196,12 @@
         "contemporary art",
         "open call"
       ],
-      "notes": ""
+      "notes": "[audit 2026-07-22] listing path http_404; repointed https://www.artforum.com/announcements \u2192 site root"
     },
     {
       "name": "Arts Council of Ireland \u2013 Funding",
       "category": "International Arts & Culture",
-      "url": "https://www.artscouncil.ie/Funds/",
+      "url": "https://www.artscouncil.ie/",
       "source_type": "ai_scraper",
       "api_endpoint": null,
       "scraper_config": {
@@ -6178,7 +6220,7 @@
         "culture",
         "Ireland"
       ],
-      "notes": ""
+      "notes": "[audit 2026-07-22] listing path http_404; repointed https://www.artscouncil.ie/Funds/ \u2192 site root"
     },
     {
       "name": "Bill & Melinda Gates Foundation \u2013 Grand Challenges Explorations",
@@ -6223,7 +6265,7 @@
         "international",
         "UK"
       ],
-      "notes": ""
+      "notes": "[audit 2026-07-22] timeout during probe"
     },
     {
       "name": "CGIAR Research Programs (agriculture)",
@@ -6270,14 +6312,15 @@
     {
       "name": "Climate & Clean Air Coalition (CCAC) Grants",
       "category": "International / Regional",
-      "url": "https://www.ccacoalition.org/funding-opportunities",
+      "url": "https://www.ccacoalition.org/",
       "source_type": "ai_scraper",
       "api_endpoint": null,
       "scraper_config": {
         "use_playwright": true,
         "crawl_depth": 1,
         "paginate": true,
-        "max_pages": 5
+        "max_pages": 5,
+        "link_filter": "(grant|fund|scheme|fellowship|award|opportunit|scholarship|apply|call|prize|bursar|residenc|conference|workshop)"
       },
       "refresh_frequency": "weekly",
       "is_high_priority": false,
@@ -6288,19 +6331,20 @@
         "AI",
         "digital"
       ],
-      "notes": "No API; small volume of calls; monitor directly."
+      "notes": "No API; small volume of calls; monitor directly. [audit 2026-07-22] listing path http_404; repointed https://www.ccacoalition.org/funding-opportunities \u2192 site root"
     },
     {
       "name": "Comic Relief \u2013 Grants",
       "category": "International / Regional",
-      "url": "https://www.comicrelief.com/our-grants",
+      "url": "https://www.comicrelief.com/",
       "source_type": "ai_scraper",
       "api_endpoint": null,
       "scraper_config": {
         "use_playwright": true,
         "crawl_depth": 1,
         "paginate": true,
-        "max_pages": 5
+        "max_pages": 5,
+        "link_filter": "(grant|fund|scheme|fellowship|award|opportunit|scholarship|apply|call|prize|bursar|residenc|conference|workshop)"
       },
       "refresh_frequency": "weekly",
       "is_high_priority": false,
@@ -6311,7 +6355,7 @@
         "UK",
         "international development"
       ],
-      "notes": ""
+      "notes": "[audit 2026-07-22] listing path http_404; repointed https://www.comicrelief.com/our-grants \u2192 site root"
     },
     {
       "name": "Creative Scotland \u2013 Funding",
@@ -6416,14 +6460,15 @@
     {
       "name": "Esm\u00e9e Fairbairn Foundation \u2013 Grants",
       "category": "UK Private Foundation",
-      "url": "https://esmeefairbairn.org.uk/our-grants/",
+      "url": "https://esmeefairbairn.org.uk/",
       "source_type": "ai_scraper",
       "api_endpoint": null,
       "scraper_config": {
         "use_playwright": true,
         "crawl_depth": 1,
         "paginate": true,
-        "max_pages": 5
+        "max_pages": 5,
+        "link_filter": "(grant|fund|scheme|fellowship|award|opportunit|scholarship|apply|call|prize|bursar|residenc|conference|workshop)"
       },
       "refresh_frequency": "weekly",
       "is_high_priority": false,
@@ -6435,7 +6480,7 @@
         "food",
         "social"
       ],
-      "notes": "Secondary URL entry for Esm\u00e9e Fairbairn. See primary entry under UK Private Foundation."
+      "notes": "Secondary URL entry for Esm\u00e9e Fairbairn. See primary entry under UK Private Foundation. [audit 2026-07-22] listing path http_404; repointed https://esmeefairbairn.org.uk/our-grants/ \u2192 site root"
     },
     {
       "name": "Eurimages \u2013 Film Grants",
@@ -6507,14 +6552,15 @@
     {
       "name": "FACE Foundation \u2013 French-American Cultural",
       "category": "International Arts & Culture",
-      "url": "https://www.facefoundation.org/programs/",
+      "url": "https://www.facefoundation.org/",
       "source_type": "ai_scraper",
       "api_endpoint": null,
       "scraper_config": {
         "use_playwright": true,
         "crawl_depth": 1,
         "paginate": true,
-        "max_pages": 3
+        "max_pages": 3,
+        "link_filter": "(grant|fund|scheme|fellowship|award|opportunit|scholarship|apply|call|prize|bursar|residenc|conference|workshop)"
       },
       "refresh_frequency": "weekly",
       "is_high_priority": false,
@@ -6525,19 +6571,20 @@
         "arts",
         "education"
       ],
-      "notes": ""
+      "notes": "[audit 2026-07-22] listing path http_404; repointed https://www.facefoundation.org/programs/ \u2192 site root"
     },
     {
       "name": "Fondazione Cariplo \u2013 Grants",
       "category": "International Arts & Culture",
-      "url": "https://www.fondazionecariplo.it/en/grants/index.html",
+      "url": "https://www.fondazionecariplo.it/",
       "source_type": "ai_scraper",
       "api_endpoint": null,
       "scraper_config": {
         "use_playwright": true,
         "crawl_depth": 1,
         "paginate": true,
-        "max_pages": 3
+        "max_pages": 3,
+        "link_filter": "(grant|fund|scheme|fellowship|award|opportunit|scholarship|apply|call|prize|bursar|residenc|conference|workshop)"
       },
       "refresh_frequency": "weekly",
       "is_high_priority": false,
@@ -6549,19 +6596,20 @@
         "social",
         "Italy"
       ],
-      "notes": "Milan-based foundation supporting arts, environment, social welfare."
+      "notes": "Milan-based foundation supporting arts, environment, social welfare. [audit 2026-07-22] listing path http_404; repointed https://www.fondazionecariplo.it/en/grants/index.html \u2192 site root"
     },
     {
       "name": "Fondazione Compagnia di San Paolo",
       "category": "International Arts & Culture",
-      "url": "https://www.compagniadisanpaolo.it/eng/Grant-making",
+      "url": "https://www.compagniadisanpaolo.it/",
       "source_type": "ai_scraper",
       "api_endpoint": null,
       "scraper_config": {
         "use_playwright": true,
         "crawl_depth": 1,
         "paginate": true,
-        "max_pages": 3
+        "max_pages": 3,
+        "link_filter": "(grant|fund|scheme|fellowship|award|opportunit|scholarship|apply|call|prize|bursar|residenc|conference|workshop)"
       },
       "refresh_frequency": "weekly",
       "is_high_priority": false,
@@ -6572,7 +6620,7 @@
         "culture",
         "Italy"
       ],
-      "notes": "Major Italian foundation \u2014 arts, culture, welfare."
+      "notes": "Major Italian foundation \u2014 arts, culture, welfare. [audit 2026-07-22] listing path http_404; repointed https://www.compagniadisanpaolo.it/eng/Grant-making \u2192 site root"
     },
     {
       "name": "Foundation for Contemporary Arts",
@@ -6600,14 +6648,15 @@
     {
       "name": "Franklin Furnace Archive",
       "category": "International Arts & Culture",
-      "url": "https://www.franklinfurnace.org/research/",
+      "url": "https://www.franklinfurnace.org/",
       "source_type": "ai_scraper",
       "api_endpoint": null,
       "scraper_config": {
         "use_playwright": true,
         "crawl_depth": 1,
         "paginate": true,
-        "max_pages": 3
+        "max_pages": 3,
+        "link_filter": "(grant|fund|scheme|fellowship|award|opportunit|scholarship|apply|call|prize|bursar|residenc|conference|workshop)"
       },
       "refresh_frequency": "weekly",
       "is_high_priority": false,
@@ -6617,7 +6666,7 @@
         "performance",
         "experimental art"
       ],
-      "notes": ""
+      "notes": "[audit 2026-07-22] listing path http_404; repointed https://www.franklinfurnace.org/research/ \u2192 site root"
     },
     {
       "name": "FundsforNGOs Premium / Grants Alert",
@@ -6724,14 +6773,15 @@
     {
       "name": "Institut fran\u00e7ais \u2013 Cultural Grants (AFAA)",
       "category": "International Arts & Culture",
-      "url": "https://www.institutfrancais.com/en/resources/grants",
+      "url": "https://www.institutfrancais.com/",
       "source_type": "ai_scraper",
       "api_endpoint": null,
       "scraper_config": {
         "use_playwright": true,
         "crawl_depth": 1,
         "paginate": true,
-        "max_pages": 3
+        "max_pages": 3,
+        "link_filter": "(grant|fund|scheme|fellowship|award|opportunit|scholarship|apply|call|prize|bursar|residenc|conference|workshop)"
       },
       "refresh_frequency": "weekly",
       "is_high_priority": false,
@@ -6741,19 +6791,20 @@
         "French culture",
         "international exchange"
       ],
-      "notes": "French cultural institute \u2014 international cooperation grants."
+      "notes": "French cultural institute \u2014 international cooperation grants. [audit 2026-07-22] listing path http_404; repointed https://www.institutfrancais.com/en/resources/grants \u2192 site root"
     },
     {
       "name": "International Documentary Association \u2013 IDA Grants",
       "category": "International Arts & Culture",
-      "url": "https://www.documentary.org/funding-opportunities",
+      "url": "https://www.documentary.org/",
       "source_type": "ai_scraper",
       "api_endpoint": null,
       "scraper_config": {
         "use_playwright": true,
         "crawl_depth": 1,
         "paginate": true,
-        "max_pages": 3
+        "max_pages": 3,
+        "link_filter": "(grant|fund|scheme|fellowship|award|opportunit|scholarship|apply|call|prize|bursar|residenc|conference|workshop)"
       },
       "refresh_frequency": "weekly",
       "is_high_priority": false,
@@ -6763,7 +6814,7 @@
         "documentary",
         "film"
       ],
-      "notes": ""
+      "notes": "[audit 2026-07-22] listing path http_404; repointed https://www.documentary.org/funding-opportunities \u2192 site root"
     },
     {
       "name": "Jan Michalski Foundation \u2013 Fellowships",
@@ -6930,14 +6981,15 @@
     {
       "name": "Lower Manhattan Cultural Council \u2013 Grants",
       "category": "International Arts & Culture",
-      "url": "https://lmcc.net/resources/grants/",
+      "url": "https://lmcc.net/",
       "source_type": "ai_scraper",
       "api_endpoint": null,
       "scraper_config": {
         "use_playwright": true,
         "crawl_depth": 1,
         "paginate": true,
-        "max_pages": 3
+        "max_pages": 3,
+        "link_filter": "(grant|fund|scheme|fellowship|award|opportunit|scholarship|apply|call|prize|bursar|residenc|conference|workshop)"
       },
       "refresh_frequency": "weekly",
       "is_high_priority": false,
@@ -6947,7 +6999,7 @@
         "arts",
         "New York"
       ],
-      "notes": ""
+      "notes": "[audit 2026-07-22] listing path http_404; repointed https://lmcc.net/resources/grants/ \u2192 site root"
     },
     {
       "name": "Luminos Fund \u2013 Grants",
@@ -6974,14 +7026,15 @@
     {
       "name": "MAP Fund \u2013 Performing Arts",
       "category": "International Arts & Culture",
-      "url": "https://mapfund.org/grants/",
+      "url": "https://mapfund.org/",
       "source_type": "ai_scraper",
       "api_endpoint": null,
       "scraper_config": {
         "use_playwright": true,
         "crawl_depth": 1,
         "paginate": true,
-        "max_pages": 3
+        "max_pages": 3,
+        "link_filter": "(grant|fund|scheme|fellowship|award|opportunit|scholarship|apply|call|prize|bursar|residenc|conference|workshop)"
       },
       "refresh_frequency": "weekly",
       "is_high_priority": false,
@@ -6993,7 +7046,7 @@
         "dance",
         "music"
       ],
-      "notes": ""
+      "notes": "[audit 2026-07-22] listing path http_404; repointed https://mapfund.org/grants/ \u2192 site root"
     },
     {
       "name": "MacArthur Foundation \u2013 Fellowships",
@@ -7091,14 +7144,15 @@
     {
       "name": "Mozilla Foundation \u2013 Awards",
       "category": "Tech / Corporate Foundation",
-      "url": "https://foundation.mozilla.org/en/fellowships/",
+      "url": "https://foundation.mozilla.org/",
       "source_type": "ai_scraper",
       "api_endpoint": null,
       "scraper_config": {
         "use_playwright": true,
         "crawl_depth": 1,
         "paginate": true,
-        "max_pages": 3
+        "max_pages": 3,
+        "link_filter": "(grant|fund|scheme|fellowship|award|opportunit|scholarship|apply|call|prize|bursar|residenc|conference|workshop)"
       },
       "refresh_frequency": "weekly",
       "is_high_priority": false,
@@ -7109,7 +7163,7 @@
         "open internet",
         "technology"
       ],
-      "notes": "Mozilla fellowships for tech policy, open source, privacy. See also 'Mozilla Foundation \u2013 Grants & Fellowships'."
+      "notes": "Mozilla fellowships for tech policy, open source, privacy. See also 'Mozilla Foundation \u2013 Grants & Fellowships'. [audit 2026-07-22] listing path http_404; repointed https://foundation.mozilla.org/en/fellowships/ \u2192 site root"
     },
     {
       "name": "NIH RePORTER",
@@ -7246,7 +7300,7 @@
         "AI",
         "digital"
       ],
-      "notes": "No API; structured HTML \u2014 relatively easy to scrape. Note: canonical entry is 'Open Philanthropy' \u2014 this entry retained for legacy name compatibility."
+      "notes": "No API; structured HTML \u2014 relatively easy to scrape. Note: canonical entry is 'Open Philanthropy' \u2014 this entry retained for legacy name compatibility. [audit 2026-07-22] redirects to https://coefficientgiving.org/funds/ \u2014 verify new URL"
     },
     {
       "name": "Open Society Foundations \u2013 Fellowships",
@@ -7275,14 +7329,15 @@
     {
       "name": "Paul Hamlyn Foundation \u2013 Grants",
       "category": "UK Private Foundation",
-      "url": "https://phf.org.uk/funds/",
+      "url": "https://phf.org.uk/",
       "source_type": "ai_scraper",
       "api_endpoint": null,
       "scraper_config": {
         "use_playwright": true,
         "crawl_depth": 1,
         "paginate": true,
-        "max_pages": 3
+        "max_pages": 3,
+        "link_filter": "(grant|fund|scheme|fellowship|award|opportunit|scholarship|apply|call|prize|bursar|residenc|conference|workshop)"
       },
       "refresh_frequency": "weekly",
       "is_high_priority": false,
@@ -7293,19 +7348,20 @@
         "education",
         "India"
       ],
-      "notes": "See also 'Paul Hamlyn Foundation' under UK Private Foundation."
+      "notes": "See also 'Paul Hamlyn Foundation' under UK Private Foundation. [audit 2026-07-22] listing path http_404; repointed https://phf.org.uk/funds/ \u2192 site root"
     },
     {
       "name": "Pew Charitable Trusts \u2013 Grants",
       "category": "Major Private Foundation",
-      "url": "https://www.pewtrusts.org/en/grants",
+      "url": "https://www.pewtrusts.org/",
       "source_type": "ai_scraper",
       "api_endpoint": null,
       "scraper_config": {
         "use_playwright": true,
         "crawl_depth": 1,
         "paginate": true,
-        "max_pages": 5
+        "max_pages": 5,
+        "link_filter": "(grant|fund|scheme|fellowship|award|opportunit|scholarship|apply|call|prize|bursar|residenc|conference|workshop)"
       },
       "refresh_frequency": "weekly",
       "is_high_priority": false,
@@ -7317,7 +7373,7 @@
         "arts",
         "civic"
       ],
-      "notes": "Secondary URL entry. See 'Pew Charitable Trusts' under Major Private Foundation."
+      "notes": "Secondary URL entry. See 'Pew Charitable Trusts' under Major Private Foundation. [audit 2026-07-22] listing path http_404; repointed https://www.pewtrusts.org/en/grants \u2192 site root"
     },
     {
       "name": "Porticus Foundation \u2013 Grants",
@@ -7345,14 +7401,15 @@
     {
       "name": "Robert Bosch Stiftung \u2013 Grants",
       "category": "International Arts & Culture",
-      "url": "https://www.bosch-stiftung.de/en/projects-and-programmes",
+      "url": "https://www.bosch-stiftung.de/",
       "source_type": "ai_scraper",
       "api_endpoint": null,
       "scraper_config": {
         "use_playwright": true,
         "crawl_depth": 1,
         "paginate": true,
-        "max_pages": 3
+        "max_pages": 3,
+        "link_filter": "(grant|fund|scheme|fellowship|award|opportunit|scholarship|apply|call|prize|bursar|residenc|conference|workshop)"
       },
       "refresh_frequency": "weekly",
       "is_high_priority": false,
@@ -7363,19 +7420,20 @@
         "civic society",
         "international"
       ],
-      "notes": "Arts/culture programmes entry. See also 'Robert Bosch Stiftung (Robert Bosch Foundation)' under EU / European for full entry."
+      "notes": "Arts/culture programmes entry. See also 'Robert Bosch Stiftung (Robert Bosch Foundation)' under EU / European for full entry. [audit 2026-07-22] listing path http_404; repointed https://www.bosch-stiftung.de/en/projects-and-programmes \u2192 site root"
     },
     {
       "name": "Rosa Luxemburg Stiftung \u2013 Scholarships",
       "category": "International / Regional",
-      "url": "https://www.rosalux.de/en/scholarships",
+      "url": "https://www.rosalux.de/",
       "source_type": "ai_scraper",
       "api_endpoint": null,
       "scraper_config": {
         "use_playwright": true,
         "crawl_depth": 1,
         "paginate": true,
-        "max_pages": 3
+        "max_pages": 3,
+        "link_filter": "(grant|fund|scheme|fellowship|award|opportunit|scholarship|apply|call|prize|bursar|residenc|conference|workshop)"
       },
       "refresh_frequency": "weekly",
       "is_high_priority": false,
@@ -7386,7 +7444,7 @@
         "left politics",
         "international"
       ],
-      "notes": ""
+      "notes": "[audit 2026-07-22] listing path http_404; repointed https://www.rosalux.de/en/scholarships \u2192 site root"
     },
     {
       "name": "Schmidt Futures \u2013 Grants",
@@ -7409,7 +7467,7 @@
         "science",
         "talent"
       ],
-      "notes": "Legacy URL (schmidtfutures.com). Organisation rebranded to Schmidt Sciences in 2024. See 'Schmidt Sciences (formerly Schmidt Futures)' for current entry."
+      "notes": "Legacy URL (schmidtfutures.com). Organisation rebranded to Schmidt Sciences in 2024. See 'Schmidt Sciences (formerly Schmidt Futures)' for current entry. [audit 2026-07-22] redirects to https://www.schmidtsciences.org/ \u2014 verify new URL"
     },
     {
       "name": "Serpentine Galleries \u2013 Open Calls",
@@ -7459,14 +7517,15 @@
     {
       "name": "Tribeca Foundation \u2013 Grants",
       "category": "International Arts & Culture",
-      "url": "https://www.tribecafilm.com/foundation",
+      "url": "https://www.tribecafilm.com/",
       "source_type": "ai_scraper",
       "api_endpoint": null,
       "scraper_config": {
         "use_playwright": true,
         "crawl_depth": 1,
         "paginate": true,
-        "max_pages": 3
+        "max_pages": 3,
+        "link_filter": "(grant|fund|scheme|fellowship|award|opportunit|scholarship|apply|call|prize|bursar|residenc|conference|workshop)"
       },
       "refresh_frequency": "weekly",
       "is_high_priority": false,
@@ -7477,7 +7536,7 @@
         "documentary",
         "storytelling"
       ],
-      "notes": ""
+      "notes": "[audit 2026-07-22] listing path http_404; repointed https://www.tribecafilm.com/foundation \u2192 site root"
     },
     {
       "name": "Volkswagen Stiftung \u2013 Funding",
@@ -7574,11 +7633,11 @@
       "refresh_frequency": "weekly",
       "is_high_priority": false,
       "logo_url": null,
-      "status": "active",
+      "status": "paused",
       "relevant_themes": [
         "global health"
       ],
-      "notes": "No separate API; access data via IATI Datastore API."
+      "notes": "No separate API; access data via IATI Datastore API. [audit 2026-07-22] IATI Datastore now requires free subscription key \u2014 set IATI_API_KEY then unpause."
     },
     {
       "name": "eCivis (Government Grant Management)",
@@ -7595,7 +7654,840 @@
       "logo_url": null,
       "status": "active",
       "relevant_themes": [],
-      "notes": "API for enterprise clients; no public documentation."
+      "notes": "API for enterprise clients; no public documentation. [audit 2026-07-22] redirects to https://eunasolutions.com/solutions/grants/?utm_source=redirect&utm_medium=referral&utm_content=ecivis \u2014 verify new URL"
+    },
+    {
+      "name": "OpenReview (AI/ML Conferences & Workshops)",
+      "category": "Conferences & Workshops",
+      "url": "https://openreview.net",
+      "source_type": "openreview",
+      "api_endpoint": "https://api2.openreview.net",
+      "scraper_config": {
+        "year_min": 2026,
+        "max_venues": 150,
+        "require_deadline": true
+      },
+      "refresh_frequency": "weekly",
+      "is_high_priority": false,
+      "logo_url": "https://openreview.net/favicon.ico",
+      "status": "active",
+      "relevant_themes": [
+        "machine learning",
+        "artificial intelligence",
+        "computer science",
+        "conferences"
+      ],
+      "notes": "Conference/workshop calls-for-papers via OpenReview API v2 (active_venues). Deadlines parsed from venue metadata."
+    },
+    {
+      "name": "WikiCFP (cross-discipline call-for-papers)",
+      "category": "Conferences & Workshops",
+      "url": "http://www.wikicfp.com/cfp/",
+      "source_type": "ai_scraper",
+      "api_endpoint": null,
+      "scraper_config": {
+        "use_playwright": false,
+        "crawl_depth": 1,
+        "link_filter": "(cfp|conference|event|call|workshop|symposium|congress|meeting|/e/)",
+        "max_detail_links": 25
+      },
+      "refresh_frequency": "weekly",
+      "is_high_priority": false,
+      "logo_url": "https://www.google.com/s2/favicons?domain=www.wikicfp.com&sz=64",
+      "status": "active",
+      "relevant_themes": [
+        "conferences",
+        "academic events",
+        "workshops"
+      ],
+      "notes": "Curated aggregator added 2026-07-22; audit-verified reachable."
+    },
+    {
+      "name": "Conference Index (all fields)",
+      "category": "Conferences & Workshops",
+      "url": "https://conferenceindex.org/conferences",
+      "source_type": "ai_scraper",
+      "api_endpoint": null,
+      "scraper_config": {
+        "use_playwright": false,
+        "crawl_depth": 1,
+        "link_filter": "(cfp|conference|event|call|workshop|symposium|congress|meeting|/e/)",
+        "max_detail_links": 25
+      },
+      "refresh_frequency": "weekly",
+      "is_high_priority": false,
+      "logo_url": "https://www.google.com/s2/favicons?domain=conferenceindex.org&sz=64",
+      "status": "active",
+      "relevant_themes": [
+        "conferences",
+        "academic events",
+        "workshops"
+      ],
+      "notes": "Curated aggregator added 2026-07-22; audit-verified reachable."
+    },
+    {
+      "name": "10times (global events & conferences)",
+      "category": "Conferences & Workshops",
+      "url": "https://10times.com/conferences",
+      "source_type": "ai_scraper",
+      "api_endpoint": null,
+      "scraper_config": {
+        "use_playwright": false,
+        "crawl_depth": 1,
+        "link_filter": "(cfp|conference|event|call|workshop|symposium|congress|meeting|/e/)",
+        "max_detail_links": 25
+      },
+      "refresh_frequency": "weekly",
+      "is_high_priority": false,
+      "logo_url": "https://www.google.com/s2/favicons?domain=10times.com&sz=64",
+      "status": "active",
+      "relevant_themes": [
+        "conferences",
+        "academic events",
+        "workshops"
+      ],
+      "notes": "Curated aggregator added 2026-07-22; audit-verified reachable."
+    },
+    {
+      "name": "EasyChair Call for Papers",
+      "category": "Conferences & Workshops",
+      "url": "https://easychair.org/cfp/",
+      "source_type": "ai_scraper",
+      "api_endpoint": null,
+      "scraper_config": {
+        "use_playwright": false,
+        "crawl_depth": 1,
+        "link_filter": "(cfp|conference|event|call|workshop|symposium|congress|meeting|/e/)",
+        "max_detail_links": 25
+      },
+      "refresh_frequency": "weekly",
+      "is_high_priority": false,
+      "logo_url": "https://www.google.com/s2/favicons?domain=easychair.org&sz=64",
+      "status": "active",
+      "relevant_themes": [
+        "conferences",
+        "academic events",
+        "workshops"
+      ],
+      "notes": "Curated aggregator added 2026-07-22; audit-verified reachable."
+    },
+    {
+      "name": "AllConferenceAlert",
+      "category": "Conferences & Workshops",
+      "url": "https://www.allconferencealert.com/",
+      "source_type": "ai_scraper",
+      "api_endpoint": null,
+      "scraper_config": {
+        "use_playwright": false,
+        "crawl_depth": 1,
+        "link_filter": "(cfp|conference|event|call|workshop|symposium|congress|meeting|/e/)",
+        "max_detail_links": 25
+      },
+      "refresh_frequency": "weekly",
+      "is_high_priority": false,
+      "logo_url": "https://www.google.com/s2/favicons?domain=www.allconferencealert.com&sz=64",
+      "status": "active",
+      "relevant_themes": [
+        "conferences",
+        "academic events",
+        "workshops"
+      ],
+      "notes": "Curated aggregator added 2026-07-22; audit-verified reachable."
+    },
+    {
+      "name": "Conference Alerts",
+      "category": "Conferences & Workshops",
+      "url": "https://conferencealerts.com/",
+      "source_type": "ai_scraper",
+      "api_endpoint": null,
+      "scraper_config": {
+        "use_playwright": false,
+        "crawl_depth": 1,
+        "link_filter": "(cfp|conference|event|call|workshop|symposium|congress|meeting|/e/)",
+        "max_detail_links": 25
+      },
+      "refresh_frequency": "weekly",
+      "is_high_priority": false,
+      "logo_url": "https://www.google.com/s2/favicons?domain=conferencealerts.com&sz=64",
+      "status": "active",
+      "relevant_themes": [
+        "conferences",
+        "academic events",
+        "workshops"
+      ],
+      "notes": "Curated aggregator added 2026-07-22; audit-verified reachable."
+    },
+    {
+      "name": "Conference Monkey",
+      "category": "Conferences & Workshops",
+      "url": "https://conferencemonkey.org/",
+      "source_type": "ai_scraper",
+      "api_endpoint": null,
+      "scraper_config": {
+        "use_playwright": false,
+        "crawl_depth": 1,
+        "link_filter": "(cfp|conference|event|call|workshop|symposium|congress|meeting|/e/)",
+        "max_detail_links": 25
+      },
+      "refresh_frequency": "weekly",
+      "is_high_priority": false,
+      "logo_url": "https://www.google.com/s2/favicons?domain=conferencemonkey.org&sz=64",
+      "status": "active",
+      "relevant_themes": [
+        "conferences",
+        "academic events",
+        "workshops"
+      ],
+      "notes": "Curated aggregator added 2026-07-22; audit-verified reachable."
+    },
+    {
+      "name": "Clocate (scientific conferences)",
+      "category": "Conferences & Workshops",
+      "url": "https://www.clocate.com/conferences/",
+      "source_type": "ai_scraper",
+      "api_endpoint": null,
+      "scraper_config": {
+        "use_playwright": false,
+        "crawl_depth": 1,
+        "link_filter": "(cfp|conference|event|call|workshop|symposium|congress|meeting|/e/)",
+        "max_detail_links": 25
+      },
+      "refresh_frequency": "weekly",
+      "is_high_priority": false,
+      "logo_url": "https://www.google.com/s2/favicons?domain=www.clocate.com&sz=64",
+      "status": "active",
+      "relevant_themes": [
+        "conferences",
+        "academic events",
+        "workshops"
+      ],
+      "notes": "Curated aggregator added 2026-07-22; audit-verified reachable."
+    },
+    {
+      "name": "Ourglocal (academic events)",
+      "category": "Conferences & Workshops",
+      "url": "https://www.ourglocal.com/",
+      "source_type": "ai_scraper",
+      "api_endpoint": null,
+      "scraper_config": {
+        "use_playwright": false,
+        "crawl_depth": 1,
+        "link_filter": "(cfp|conference|event|call|workshop|symposium|congress|meeting|/e/)",
+        "max_detail_links": 25
+      },
+      "refresh_frequency": "weekly",
+      "is_high_priority": false,
+      "logo_url": "https://www.google.com/s2/favicons?domain=www.ourglocal.com&sz=64",
+      "status": "active",
+      "relevant_themes": [
+        "conferences",
+        "academic events",
+        "workshops"
+      ],
+      "notes": "Curated aggregator added 2026-07-22; audit-verified reachable."
+    },
+    {
+      "name": "Academic Conferences International",
+      "category": "Conferences & Workshops",
+      "url": "https://www.academic-conferences.org/conferences/",
+      "source_type": "ai_scraper",
+      "api_endpoint": null,
+      "scraper_config": {
+        "use_playwright": false,
+        "crawl_depth": 1,
+        "link_filter": "(cfp|conference|event|call|workshop|symposium|congress|meeting|/e/)",
+        "max_detail_links": 25
+      },
+      "refresh_frequency": "weekly",
+      "is_high_priority": false,
+      "logo_url": "https://www.google.com/s2/favicons?domain=www.academic-conferences.org&sz=64",
+      "status": "active",
+      "relevant_themes": [
+        "conferences",
+        "academic events",
+        "workshops"
+      ],
+      "notes": "Curated aggregator added 2026-07-22; audit-verified reachable."
+    },
+    {
+      "name": "Elsevier Events & Conferences",
+      "category": "Conferences & Workshops",
+      "url": "https://www.elsevier.com/events",
+      "source_type": "ai_scraper",
+      "api_endpoint": null,
+      "scraper_config": {
+        "use_playwright": false,
+        "crawl_depth": 1,
+        "link_filter": "(cfp|conference|event|call|workshop|symposium|congress|meeting|/e/)",
+        "max_detail_links": 25
+      },
+      "refresh_frequency": "weekly",
+      "is_high_priority": false,
+      "logo_url": "https://www.google.com/s2/favicons?domain=www.elsevier.com&sz=64",
+      "status": "active",
+      "relevant_themes": [
+        "conferences",
+        "academic events",
+        "workshops"
+      ],
+      "notes": "Curated aggregator added 2026-07-22; audit-verified reachable."
+    },
+    {
+      "name": "AllEvents Education & Conferences",
+      "category": "Conferences & Workshops",
+      "url": "https://allevents.in/education",
+      "source_type": "ai_scraper",
+      "api_endpoint": null,
+      "scraper_config": {
+        "use_playwright": false,
+        "crawl_depth": 1,
+        "link_filter": "(cfp|conference|event|call|workshop|symposium|congress|meeting|/e/)",
+        "max_detail_links": 25
+      },
+      "refresh_frequency": "weekly",
+      "is_high_priority": false,
+      "logo_url": "https://www.google.com/s2/favicons?domain=allevents.in&sz=64",
+      "status": "active",
+      "relevant_themes": [
+        "conferences",
+        "academic events",
+        "workshops"
+      ],
+      "notes": "Curated aggregator added 2026-07-22; audit-verified reachable."
+    },
+    {
+      "name": "Eventbrite Science Conferences",
+      "category": "Conferences & Workshops",
+      "url": "https://www.eventbrite.com/d/online/science-conference/",
+      "source_type": "ai_scraper",
+      "api_endpoint": null,
+      "scraper_config": {
+        "use_playwright": false,
+        "crawl_depth": 1,
+        "link_filter": "(cfp|conference|event|call|workshop|symposium|congress|meeting|/e/)",
+        "max_detail_links": 25
+      },
+      "refresh_frequency": "weekly",
+      "is_high_priority": false,
+      "logo_url": "https://www.google.com/s2/favicons?domain=www.eventbrite.com&sz=64",
+      "status": "active",
+      "relevant_themes": [
+        "conferences",
+        "academic events",
+        "workshops"
+      ],
+      "notes": "Curated aggregator added 2026-07-22; audit-verified reachable."
+    },
+    {
+      "name": "eMedEvents (medical/health conferences)",
+      "category": "Conferences & Workshops",
+      "url": "https://www.emedevents.com/",
+      "source_type": "ai_scraper",
+      "api_endpoint": null,
+      "scraper_config": {
+        "use_playwright": false,
+        "crawl_depth": 1,
+        "link_filter": "(cfp|conference|event|call|workshop|symposium|congress|meeting|/e/)",
+        "max_detail_links": 25
+      },
+      "refresh_frequency": "weekly",
+      "is_high_priority": false,
+      "logo_url": "https://www.google.com/s2/favicons?domain=www.emedevents.com&sz=64",
+      "status": "active",
+      "relevant_themes": [
+        "conferences",
+        "health",
+        "medical"
+      ],
+      "notes": "Curated aggregator added 2026-07-22; audit-verified reachable."
+    },
+    {
+      "name": "Nature Conferences",
+      "category": "Conferences & Workshops",
+      "url": "https://conferences.nature.com/",
+      "source_type": "ai_scraper",
+      "api_endpoint": null,
+      "scraper_config": {
+        "use_playwright": false,
+        "crawl_depth": 1,
+        "link_filter": "(cfp|conference|event|call|workshop|symposium|congress|meeting|/e/)",
+        "max_detail_links": 25
+      },
+      "refresh_frequency": "weekly",
+      "is_high_priority": false,
+      "logo_url": "https://www.google.com/s2/favicons?domain=conferences.nature.com&sz=64",
+      "status": "active",
+      "relevant_themes": [
+        "conferences",
+        "academic events",
+        "workshops"
+      ],
+      "notes": "Curated aggregator added 2026-07-22; audit-verified reachable."
+    },
+    {
+      "name": "Terrapinn Events & Conferences",
+      "category": "Conferences & Workshops",
+      "url": "https://www.terrapinn.com/",
+      "source_type": "ai_scraper",
+      "api_endpoint": null,
+      "scraper_config": {
+        "use_playwright": false,
+        "crawl_depth": 1,
+        "link_filter": "(cfp|conference|event|call|workshop|symposium|congress|meeting|/e/)",
+        "max_detail_links": 25
+      },
+      "refresh_frequency": "weekly",
+      "is_high_priority": false,
+      "logo_url": "https://www.google.com/s2/favicons?domain=www.terrapinn.com&sz=64",
+      "status": "active",
+      "relevant_themes": [
+        "conferences",
+        "academic events",
+        "workshops"
+      ],
+      "notes": "Curated aggregator added 2026-07-22; audit-verified reachable."
+    },
+    {
+      "name": "ACM Conferences",
+      "category": "Conferences & Workshops",
+      "url": "https://www.acm.org/conferences",
+      "source_type": "ai_scraper",
+      "api_endpoint": null,
+      "scraper_config": {
+        "use_playwright": true,
+        "crawl_depth": 1,
+        "link_filter": "(cfp|conference|event|call|workshop|symposium|congress|meeting|/e/)",
+        "max_detail_links": 25
+      },
+      "refresh_frequency": "weekly",
+      "is_high_priority": false,
+      "logo_url": "https://www.google.com/s2/favicons?domain=www.acm.org&sz=64",
+      "status": "active",
+      "relevant_themes": [
+        "conferences",
+        "academic events",
+        "workshops"
+      ],
+      "notes": "403 on plain fetch; use_playwright true. Audit 2026-07-22."
+    },
+    {
+      "name": "Research.com Conference Rankings",
+      "category": "Conferences & Workshops",
+      "url": "https://research.com/conference-rankings",
+      "source_type": "ai_scraper",
+      "api_endpoint": null,
+      "scraper_config": {
+        "use_playwright": true,
+        "crawl_depth": 1,
+        "link_filter": "(cfp|conference|event|call|workshop|symposium|congress|meeting|/e/)",
+        "max_detail_links": 25
+      },
+      "refresh_frequency": "weekly",
+      "is_high_priority": false,
+      "logo_url": "https://www.google.com/s2/favicons?domain=research.com&sz=64",
+      "status": "active",
+      "relevant_themes": [
+        "conferences",
+        "academic events",
+        "workshops"
+      ],
+      "notes": "403 on plain fetch; use_playwright true. Audit 2026-07-22."
+    },
+    {
+      "name": "Sciforum (MDPI conferences)",
+      "category": "Conferences & Workshops",
+      "url": "https://sciforum.net/",
+      "source_type": "ai_scraper",
+      "api_endpoint": null,
+      "scraper_config": {
+        "use_playwright": true,
+        "crawl_depth": 1,
+        "link_filter": "(cfp|conference|event|call|workshop|symposium|congress|meeting|/e/)",
+        "max_detail_links": 25
+      },
+      "refresh_frequency": "weekly",
+      "is_high_priority": false,
+      "logo_url": "https://www.google.com/s2/favicons?domain=sciforum.net&sz=64",
+      "status": "active",
+      "relevant_themes": [
+        "conferences",
+        "academic events",
+        "workshops"
+      ],
+      "notes": "403 on plain fetch; use_playwright true. Audit 2026-07-22."
+    },
+    {
+      "name": "AAAS Meetings",
+      "category": "Conferences & Workshops",
+      "url": "https://meetings.aaas.org/",
+      "source_type": "ai_scraper",
+      "api_endpoint": null,
+      "scraper_config": {
+        "use_playwright": true,
+        "crawl_depth": 1,
+        "link_filter": "(cfp|conference|event|call|workshop|symposium|congress|meeting|/e/)",
+        "max_detail_links": 25
+      },
+      "refresh_frequency": "weekly",
+      "is_high_priority": false,
+      "logo_url": "https://www.google.com/s2/favicons?domain=meetings.aaas.org&sz=64",
+      "status": "active",
+      "relevant_themes": [
+        "conferences",
+        "academic events",
+        "workshops"
+      ],
+      "notes": "JS-rendered; use_playwright true. Audit 2026-07-22."
+    },
+    {
+      "name": "Scholars4Dev (development scholarships)",
+      "category": "Scholarships & Fellowships",
+      "url": "https://www.scholars4dev.com/",
+      "source_type": "ai_scraper",
+      "api_endpoint": null,
+      "scraper_config": {
+        "use_playwright": false,
+        "crawl_depth": 1,
+        "link_filter": "(scholarship|fellowship|grant|award|opportunit|programme|program)",
+        "max_detail_links": 25
+      },
+      "refresh_frequency": "weekly",
+      "is_high_priority": false,
+      "logo_url": "https://www.google.com/s2/favicons?domain=www.scholars4dev.com&sz=64",
+      "status": "active",
+      "relevant_themes": [
+        "scholarships",
+        "fellowships"
+      ],
+      "notes": "Curated aggregator added 2026-07-22; audit-verified reachable."
+    },
+    {
+      "name": "IEFA International Scholarships",
+      "category": "Scholarships & Fellowships",
+      "url": "https://www.iefa.org/scholarships",
+      "source_type": "ai_scraper",
+      "api_endpoint": null,
+      "scraper_config": {
+        "use_playwright": false,
+        "crawl_depth": 1,
+        "link_filter": "(scholarship|fellowship|grant|award|opportunit|programme|program)",
+        "max_detail_links": 25
+      },
+      "refresh_frequency": "weekly",
+      "is_high_priority": false,
+      "logo_url": "https://www.google.com/s2/favicons?domain=www.iefa.org&sz=64",
+      "status": "active",
+      "relevant_themes": [
+        "scholarships",
+        "fellowships"
+      ],
+      "notes": "Curated aggregator added 2026-07-22; audit-verified reachable."
+    },
+    {
+      "name": "InternationalScholarships.com",
+      "category": "Scholarships & Fellowships",
+      "url": "https://www.internationalscholarships.com/scholarships",
+      "source_type": "ai_scraper",
+      "api_endpoint": null,
+      "scraper_config": {
+        "use_playwright": false,
+        "crawl_depth": 1,
+        "link_filter": "(scholarship|fellowship|grant|award|opportunit|programme|program)",
+        "max_detail_links": 25
+      },
+      "refresh_frequency": "weekly",
+      "is_high_priority": false,
+      "logo_url": "https://www.google.com/s2/favicons?domain=www.internationalscholarships.com&sz=64",
+      "status": "active",
+      "relevant_themes": [
+        "scholarships",
+        "fellowships"
+      ],
+      "notes": "Curated aggregator added 2026-07-22; audit-verified reachable."
+    },
+    {
+      "name": "Opportunities For Africans",
+      "category": "Scholarships & Fellowships",
+      "url": "https://www.opportunitiesforafricans.com/",
+      "source_type": "ai_scraper",
+      "api_endpoint": null,
+      "scraper_config": {
+        "use_playwright": false,
+        "crawl_depth": 1,
+        "link_filter": "(scholarship|fellowship|grant|award|opportunit|programme|program)",
+        "max_detail_links": 25
+      },
+      "refresh_frequency": "weekly",
+      "is_high_priority": false,
+      "logo_url": "https://www.google.com/s2/favicons?domain=www.opportunitiesforafricans.com&sz=64",
+      "status": "active",
+      "relevant_themes": [
+        "scholarships",
+        "fellowships"
+      ],
+      "notes": "Curated aggregator added 2026-07-22; audit-verified reachable."
+    },
+    {
+      "name": "ProFellow (fellowships database)",
+      "category": "Scholarships & Fellowships",
+      "url": "https://www.profellow.com/fellowships/",
+      "source_type": "ai_scraper",
+      "api_endpoint": null,
+      "scraper_config": {
+        "use_playwright": false,
+        "crawl_depth": 1,
+        "link_filter": "(scholarship|fellowship|grant|award|opportunit|programme|program)",
+        "max_detail_links": 25
+      },
+      "refresh_frequency": "weekly",
+      "is_high_priority": false,
+      "logo_url": "https://www.google.com/s2/favicons?domain=www.profellow.com&sz=64",
+      "status": "active",
+      "relevant_themes": [
+        "fellowships"
+      ],
+      "notes": "Curated aggregator added 2026-07-22; audit-verified reachable."
+    },
+    {
+      "name": "ScholarshipRoar",
+      "category": "Scholarships & Fellowships",
+      "url": "https://scholarshiproar.com/",
+      "source_type": "ai_scraper",
+      "api_endpoint": null,
+      "scraper_config": {
+        "use_playwright": false,
+        "crawl_depth": 1,
+        "link_filter": "(scholarship|fellowship|grant|award|opportunit|programme|program)",
+        "max_detail_links": 25
+      },
+      "refresh_frequency": "weekly",
+      "is_high_priority": false,
+      "logo_url": "https://www.google.com/s2/favicons?domain=scholarshiproar.com&sz=64",
+      "status": "active",
+      "relevant_themes": [
+        "scholarships",
+        "fellowships"
+      ],
+      "notes": "Curated aggregator added 2026-07-22; audit-verified reachable."
+    },
+    {
+      "name": "Scholarships.com",
+      "category": "Scholarships & Fellowships",
+      "url": "https://www.scholarships.com/",
+      "source_type": "ai_scraper",
+      "api_endpoint": null,
+      "scraper_config": {
+        "use_playwright": false,
+        "crawl_depth": 1,
+        "link_filter": "(scholarship|fellowship|grant|award|opportunit|programme|program)",
+        "max_detail_links": 25
+      },
+      "refresh_frequency": "weekly",
+      "is_high_priority": false,
+      "logo_url": "https://www.google.com/s2/favicons?domain=www.scholarships.com&sz=64",
+      "status": "active",
+      "relevant_themes": [
+        "scholarships",
+        "fellowships"
+      ],
+      "notes": "Curated aggregator added 2026-07-22; audit-verified reachable."
+    },
+    {
+      "name": "Youth Opportunities (scholarships)",
+      "category": "Scholarships & Fellowships",
+      "url": "https://www.youthop.com/scholarships",
+      "source_type": "ai_scraper",
+      "api_endpoint": null,
+      "scraper_config": {
+        "use_playwright": false,
+        "crawl_depth": 1,
+        "link_filter": "(scholarship|fellowship|grant|award|opportunit|programme|program)",
+        "max_detail_links": 25
+      },
+      "refresh_frequency": "weekly",
+      "is_high_priority": false,
+      "logo_url": "https://www.google.com/s2/favicons?domain=www.youthop.com&sz=64",
+      "status": "active",
+      "relevant_themes": [
+        "scholarships",
+        "fellowships"
+      ],
+      "notes": "Curated aggregator added 2026-07-22; audit-verified reachable."
+    },
+    {
+      "name": "Fulbright U.S. Student Program",
+      "category": "Scholarships & Fellowships",
+      "url": "https://us.fulbrightonline.org/",
+      "source_type": "ai_scraper",
+      "api_endpoint": null,
+      "scraper_config": {
+        "use_playwright": false,
+        "crawl_depth": 1,
+        "link_filter": "(scholarship|fellowship|grant|award|opportunit|programme|program)",
+        "max_detail_links": 25
+      },
+      "refresh_frequency": "weekly",
+      "is_high_priority": false,
+      "logo_url": "https://www.google.com/s2/favicons?domain=us.fulbrightonline.org&sz=64",
+      "status": "active",
+      "relevant_themes": [
+        "fellowships",
+        "fulbright"
+      ],
+      "notes": "Curated aggregator added 2026-07-22; audit-verified reachable."
+    },
+    {
+      "name": "Fulbright Scholar Program (CIES)",
+      "category": "Scholarships & Fellowships",
+      "url": "https://fulbrightscholars.org/",
+      "source_type": "ai_scraper",
+      "api_endpoint": null,
+      "scraper_config": {
+        "use_playwright": false,
+        "crawl_depth": 1,
+        "link_filter": "(scholarship|fellowship|grant|award|opportunit|programme|program)",
+        "max_detail_links": 25
+      },
+      "refresh_frequency": "weekly",
+      "is_high_priority": false,
+      "logo_url": "https://www.google.com/s2/favicons?domain=fulbrightscholars.org&sz=64",
+      "status": "active",
+      "relevant_themes": [
+        "fellowships",
+        "fulbright"
+      ],
+      "notes": "Repointed to root; /awards path 404'd. Audit 2026-07-22."
+    },
+    {
+      "name": "Fastweb Scholarships",
+      "category": "Scholarships & Fellowships",
+      "url": "https://www.fastweb.com/college-scholarships",
+      "source_type": "ai_scraper",
+      "api_endpoint": null,
+      "scraper_config": {
+        "use_playwright": false,
+        "crawl_depth": 1,
+        "link_filter": "(scholarship|fellowship|grant|award|opportunit|programme|program)",
+        "max_detail_links": 25
+      },
+      "refresh_frequency": "weekly",
+      "is_high_priority": false,
+      "logo_url": "https://www.google.com/s2/favicons?domain=www.fastweb.com&sz=64",
+      "status": "active",
+      "relevant_themes": [
+        "scholarships",
+        "fellowships"
+      ],
+      "notes": "Curated aggregator added 2026-07-22; audit-verified reachable."
+    },
+    {
+      "name": "GoAbroad Scholarships",
+      "category": "Scholarships & Fellowships",
+      "url": "https://www.goabroad.com/scholarships-abroad",
+      "source_type": "ai_scraper",
+      "api_endpoint": null,
+      "scraper_config": {
+        "use_playwright": false,
+        "crawl_depth": 1,
+        "link_filter": "(scholarship|fellowship|grant|award|opportunit|programme|program)",
+        "max_detail_links": 25
+      },
+      "refresh_frequency": "weekly",
+      "is_high_priority": false,
+      "logo_url": "https://www.google.com/s2/favicons?domain=www.goabroad.com&sz=64",
+      "status": "active",
+      "relevant_themes": [
+        "scholarships",
+        "fellowships"
+      ],
+      "notes": "Curated aggregator added 2026-07-22; audit-verified reachable."
+    },
+    {
+      "name": "Opportunities For Youth",
+      "category": "Scholarships & Fellowships",
+      "url": "https://www.opportunitiesforyouth.org/",
+      "source_type": "ai_scraper",
+      "api_endpoint": null,
+      "scraper_config": {
+        "use_playwright": false,
+        "crawl_depth": 1,
+        "link_filter": "(scholarship|fellowship|grant|award|opportunit|programme|program)",
+        "max_detail_links": 25
+      },
+      "refresh_frequency": "weekly",
+      "is_high_priority": false,
+      "logo_url": "https://www.google.com/s2/favicons?domain=www.opportunitiesforyouth.org&sz=64",
+      "status": "active",
+      "relevant_themes": [
+        "scholarships",
+        "fellowships"
+      ],
+      "notes": "Curated aggregator added 2026-07-22; audit-verified reachable."
+    },
+    {
+      "name": "Council on Foreign Relations Fellowships",
+      "category": "Scholarships & Fellowships",
+      "url": "https://www.cfr.org/fellowships",
+      "source_type": "ai_scraper",
+      "api_endpoint": null,
+      "scraper_config": {
+        "use_playwright": false,
+        "crawl_depth": 1,
+        "link_filter": "(scholarship|fellowship|grant|award|opportunit|programme|program)",
+        "max_detail_links": 25
+      },
+      "refresh_frequency": "weekly",
+      "is_high_priority": false,
+      "logo_url": "https://www.google.com/s2/favicons?domain=www.cfr.org&sz=64",
+      "status": "active",
+      "relevant_themes": [
+        "fellowships"
+      ],
+      "notes": "Curated aggregator added 2026-07-22; audit-verified reachable."
+    },
+    {
+      "name": "OpportunityDesk (scholarships/fellowships/grants)",
+      "category": "Scholarships & Fellowships",
+      "url": "https://opportunitydesk.org/",
+      "source_type": "ai_scraper",
+      "api_endpoint": null,
+      "scraper_config": {
+        "use_playwright": false,
+        "crawl_depth": 1,
+        "link_filter": "(scholarship|fellowship|grant|award|opportunit|programme|program)",
+        "max_detail_links": 25
+      },
+      "refresh_frequency": "weekly",
+      "is_high_priority": false,
+      "logo_url": "https://www.google.com/s2/favicons?domain=opportunitydesk.org&sz=64",
+      "status": "active",
+      "relevant_themes": [
+        "scholarships",
+        "fellowships"
+      ],
+      "notes": "Repointed to root; category path 404'd. Large aggregator. Audit 2026-07-22."
+    },
+    {
+      "name": "After School Africa",
+      "category": "Scholarships & Fellowships",
+      "url": "https://www.afterschoolafrica.com/",
+      "source_type": "ai_scraper",
+      "api_endpoint": null,
+      "scraper_config": {
+        "use_playwright": true,
+        "crawl_depth": 1,
+        "link_filter": "(scholarship|fellowship|grant|award|opportunit|programme|program)",
+        "max_detail_links": 25
+      },
+      "refresh_frequency": "weekly",
+      "is_high_priority": false,
+      "logo_url": "https://www.google.com/s2/favicons?domain=www.afterschoolafrica.com&sz=64",
+      "status": "active",
+      "relevant_themes": [
+        "scholarships",
+        "fellowships"
+      ],
+      "notes": "JS-rendered; use_playwright true. Audit 2026-07-22."
     }
   ]
 }

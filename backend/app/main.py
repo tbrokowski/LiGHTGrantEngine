@@ -2,6 +2,7 @@
 LiGHT Grant System — FastAPI application entry point.
 """
 import structlog
+from app.db_sync import get_sync_engine
 from contextlib import asynccontextmanager
 
 from fastapi import FastAPI
@@ -50,7 +51,7 @@ async def lifespan(app: FastAPI):
     try:
         from sqlalchemy import create_engine
         from app.workers.dedup_tasks import run_dedup
-        engine = create_engine(settings.database_url)
+        engine = get_sync_engine()
         dedup_result = run_dedup(engine)
         logger.info(
             "Startup dedup complete",

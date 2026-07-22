@@ -1,5 +1,6 @@
 """Celery tasks for per-institution grant surfacing and preseed."""
 from __future__ import annotations
+from app.db_sync import get_sync_engine
 
 import asyncio
 import logging
@@ -34,7 +35,7 @@ def preseed_institution_grants(self, institution_id: str) -> dict:
     from app.services.grant_bootstrap import bootstrap_institution_feed, fan_out_sources_to_institutions
 
     settings = get_settings()
-    engine = create_engine(settings.database_url)
+    engine = get_sync_engine()
     run_id = str(uuid.uuid4())
 
     with Session(engine) as db:
@@ -86,7 +87,7 @@ def surface_opportunity_for_institutions(opportunity_id: str) -> dict:
     from app.services.grant_bootstrap import surface_opportunity_for_institution
 
     settings = get_settings()
-    engine = create_engine(settings.database_url)
+    engine = get_sync_engine()
     surfaced = 0
     with Session(engine) as db:
         opp = db.get(Opportunity, opportunity_id)
@@ -142,7 +143,7 @@ def rescore_institution(self, institution_id: str) -> dict:
     from app.services.keyword_scorer import keyword_score_opportunity
 
     settings = get_settings()
-    engine = create_engine(settings.database_url)
+    engine = get_sync_engine()
 
     scored = 0
     with Session(engine) as db:
@@ -202,7 +203,7 @@ def rescore_opportunity_for_institutions(opportunity_id: str) -> dict:
     from app.services.keyword_scorer import keyword_score_opportunity
 
     settings = get_settings()
-    engine = create_engine(settings.database_url)
+    engine = get_sync_engine()
 
     scored = 0
     with Session(engine) as db:
@@ -264,7 +265,7 @@ def llm_rescore_institution(self, institution_id: str) -> dict:
     from app.ai.agents.fit_scorer import score_opportunity
 
     settings = get_settings()
-    engine = create_engine(settings.database_url)
+    engine = get_sync_engine()
 
     scored = 0
     failed = 0
@@ -313,7 +314,7 @@ def surface_missing_institution_links_all() -> dict:
     from app.services.grant_bootstrap import surface_missing_for_all_institutions
 
     settings = get_settings()
-    engine = create_engine(settings.database_url)
+    engine = get_sync_engine()
     with Session(engine) as db:
         surfaced = surface_missing_for_all_institutions(db)
     return {"surfaced": surfaced}
@@ -331,7 +332,7 @@ def fan_out_sources_to_all() -> dict:
     from app.services.grant_bootstrap import fan_out_sources_to_institutions
 
     settings = get_settings()
-    engine = create_engine(settings.database_url)
+    engine = get_sync_engine()
     with Session(engine) as db:
         linked = fan_out_sources_to_institutions(db)
     return {"linked": linked}

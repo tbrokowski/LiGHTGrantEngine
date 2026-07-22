@@ -2,11 +2,17 @@
 IATI Datastore API scraper.
 
 Searches IATI-published international development activities relevant to
-LiGHT research themes. No authentication required.
-API docs: https://developer.iatistandard.org/
+LiGHT research themes.
+
+NOTE: the IATI Datastore now requires a (free) subscription key — anonymous
+requests return 401 (audit 2026-07-22). Register at
+https://developer.iatistandard.org/ and set IATI_API_KEY in the environment;
+without it this scraper logs a warning and returns [].
 
 Also covers FCDO/USAID activities published under IATI.
 """
+import os
+
 import httpx
 import structlog
 from app.scrapers.base import BaseScraper
@@ -37,10 +43,19 @@ class IATIScraper(BaseScraper):
         results = []
         seen_ids: set[str] = set()
 
+        api_key = os.environ.get("IATI_API_KEY", "")
+        if not api_key:
+            logger.warning(
+                "IATI scraper skipped — IATI_API_KEY not set. The IATI Datastore "
+                "requires a free subscription key (https://developer.iatistandard.org/)."
+            )
+            return results
+
         try:
             headers = {
                 "Accept": "application/json",
                 "User-Agent": "LiGHT Grant System/1.0",
+                "Ocp-Apim-Subscription-Key": api_key,
             }
 
             for query in queries[:3]:

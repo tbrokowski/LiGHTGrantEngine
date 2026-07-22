@@ -1,5 +1,6 @@
 """Organization lifecycle Celery tasks."""
 import asyncio
+from app.db_sync import get_sync_engine
 import logging
 
 from app.workers.celery_app import celery_app
@@ -21,7 +22,7 @@ def scaffold_new_organization(self, institution_id: str, admin_user_id: str) -> 
     from app.services.email import send_email
 
     settings = get_settings()
-    engine = create_engine(settings.database_url)
+    engine = get_sync_engine()
 
     try:
         with Session(engine) as db:

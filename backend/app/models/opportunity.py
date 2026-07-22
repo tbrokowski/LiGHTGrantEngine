@@ -14,10 +14,12 @@ class OpportunityType(str, Enum):
     FELLOWSHIP = "fellowship"
     SCHOLARSHIP = "scholarship"
     RESIDENCY = "residency"
-    OPEN_CALL = "open_call"
+    OPEN_CALL = "open_call"      # includes calls for submissions/papers/abstracts
     PRIZE = "prize"
     BURSARY = "bursary"
     COMMISSION = "commission"
+    CONFERENCE = "conference"    # conference funding/travel support/registration awards
+    WORKSHOP = "workshop"        # workshops, summer schools, training programs
     OTHER = "other"
 
 

@@ -1,18 +1,22 @@
 """
 SBIR.gov solicitations scraper.
 
-Fetches open SBIR/STTR solicitations from the SBIR.gov data API.
-No authentication required.
-API docs: https://www.sbir.gov/data-resources
+Fetches open SBIR/STTR solicitations from the SBIR.gov public data API.
+The legacy www.sbir.gov/api/... endpoints now 404; the current API lives at
+api.www.sbir.gov and rate-limits aggressively (429), so we send browser
+headers and retry with backoff. No authentication required.
+API docs: https://www.sbir.gov/api
 """
+import time
+
 import httpx
 import structlog
 from app.scrapers.base import BaseScraper
+from app.scrapers.fetch import BROWSER_HEADERS
 
 logger = structlog.get_logger()
 
-_SOLICITATIONS_URL = "https://www.sbir.gov/api/solicitations/open.json"
-_TOPICS_URL = "https://www.sbir.gov/api/solicitations.json"
+_SOLICITATIONS_URL = "https://api.www.sbir.gov/public/api/solicitations"
 
 
 class SBIRScraper(BaseScraper):
@@ -21,13 +25,18 @@ class SBIRScraper(BaseScraper):
     def fetch(self) -> list[dict]:
         results = []
         try:
-            # Fetch open solicitations
-            resp = httpx.get(
-                _SOLICITATIONS_URL,
-                timeout=30,
-                headers={"User-Agent": "LiGHT Grant System/1.0"},
-                params={"rows": 200, "start": 0},
-            )
+            # Fetch open solicitations (retry politely on 429 rate limits)
+            resp = None
+            for attempt in range(3):
+                resp = httpx.get(
+                    _SOLICITATIONS_URL,
+                    timeout=30,
+                    headers={**BROWSER_HEADERS, "Accept": "application/json"},
+                    params={"open": 1, "rows": 200, "start": 0},
+                )
+                if resp.status_code != 429:
+                    break
+                time.sleep(5 * (attempt + 1))
             resp.raise_for_status()
             data = resp.json()
 
@@ -41,8 +50,11 @@ class SBIRScraper(BaseScraper):
                 sol_number = item.get("solicitation_number") or item.get("solicitation_id", "")
                 description = item.get("solicitation_agencies") or item.get("abstract", "")
 
-                url = item.get("solicitation_url") or (
-                    f"https://www.sbir.gov/solicitations/{sol_number}" if sol_number else self.source.url
+                url = (
+                    item.get("solicitation_agency_url")
+                    or item.get("sbir_solicitation_link")
+                    or item.get("solicitation_url")
+                    or (f"https://www.sbir.gov/solicitations/{sol_number}" if sol_number else self.source.url)
                 )
 
                 if not title:

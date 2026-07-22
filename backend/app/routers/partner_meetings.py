@@ -1,5 +1,6 @@
 """Partner meetings sub-resource — schedule, prep, complete."""
 import uuid
+from app.db_sync import get_sync_engine
 from typing import Optional
 from datetime import datetime, timezone
 
@@ -244,7 +245,7 @@ async def _generate_prep_background(
             grant_context=grant_context,
         )
         settings = get_settings()
-        engine = create_engine(settings.database_url, pool_pre_ping=True)
+        engine = get_sync_engine()
         with Session(engine) as db:
             meeting = db.get(PartnerMeeting, meeting_id)
             if meeting:

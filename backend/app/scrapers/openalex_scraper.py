@@ -45,10 +45,13 @@ class OpenAlexScraper(BaseScraper):
         try:
             for search in searches[:3]:
                 # Search for relevant funders
+                # NOTE: grants_count was removed from the /funders select fields
+                # (400 Bad Request; audit 2026-07-22) — use grants_count only if
+                # present in the response, never in `select`.
                 params = {
                     "search": search,
                     "per-page": min(per_page, 25),
-                    "select": "id,display_name,description,homepage_url,grants_count,works_count",
+                    "select": "id,display_name,description,homepage_url,works_count",
                 }
                 resp = httpx.get(_FUNDERS_URL, params=params, headers=headers, timeout=30)
                 resp.raise_for_status()
@@ -60,7 +63,9 @@ class OpenAlexScraper(BaseScraper):
                         continue
                     seen_ids.add(funder_id)
 
-                    if not funder.get("grants_count", 0):
+                    # grants_count is no longer selectable — use works_count as
+                    # the "substantial funder" proxy instead.
+                    if not funder.get("works_count", 0):
                         continue
 
                     # Each funder entry is an opportunity to investigate
@@ -70,7 +75,7 @@ class OpenAlexScraper(BaseScraper):
                         "url": funder.get("homepage_url") or f"https://openalex.org/funders/{funder_id}",
                         "funder": funder.get("display_name", self.source.name),
                         "deadline": None,
-                        "program_name": f"{funder.get('grants_count', 0)} grants tracked",
+                        "program_name": f"{funder.get('works_count', 0)} funded works tracked",
                     }))
 
         except httpx.HTTPStatusError as e:

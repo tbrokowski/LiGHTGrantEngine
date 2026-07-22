@@ -3,6 +3,7 @@ Discovery engine Celery tasks.
 These tasks are triggered by the beat scheduler or manually via the API.
 """
 import asyncio
+from app.db_sync import get_sync_engine
 import re
 import uuid
 from datetime import datetime, timezone
@@ -105,7 +106,7 @@ def scan_all_sources(self):
 
     settings = get_settings()
     # Use sync engine for Celery tasks
-    engine = create_engine(settings.database_url)
+    engine = get_sync_engine()
     with Session(engine) as db:
         sources = db.execute(
             select(Source).where(Source.status.in_(["active", "broken", "under_review"]))
@@ -130,7 +131,7 @@ def scan_high_priority_sources():
     from app.models.source import Source
 
     settings = get_settings()
-    engine = create_engine(settings.database_url)
+    engine = get_sync_engine()
     with Session(engine) as db:
         sources = db.execute(
             select(Source).where(Source.status == "active", Source.is_high_priority == True)
@@ -171,7 +172,7 @@ def scan_source(self, source_id: str):
     from app.models.source import Source, SourceRun, SourceRunStatus
 
     settings = get_settings()
-    engine = create_engine(settings.database_url)
+    engine = get_sync_engine()
 
     with Session(engine) as db:
         source = db.get(Source, source_id)
@@ -258,6 +259,11 @@ def scan_source(self, source_id: str):
             source.opportunities_added += new_count
             source.duplicates_detected += dup_count
 
+            # Reset the consecutive-failure counter on any successful run.
+            cfg = dict(source.scraper_config or {})
+            if cfg.pop("_consecutive_failures", None) is not None:
+                source.scraper_config = cfg
+
             db.commit()
             logger.info("Source scan complete", source=source.name, new=new_count, dups=dup_count)
             return {"source": source.name, "new": new_count, "updated": updated_count, "duplicates": dup_count}
@@ -272,8 +278,21 @@ def scan_source(self, source_id: str):
             # Store the full traceback in notes for debugging
             run.notes = tb[-2000:] if len(tb) > 2000 else tb
             source.error_log = (source.error_log or []) + [{"time": str(datetime.now(timezone.utc)), "error": str(e)}]
+
+            # Track consecutive failures; mark broken after 3 so it's surfaced
+            # in the admin health view. Still scanned by scan_all_sources (which
+            # includes broken/under_review), so it self-heals on the next
+            # success, which clears the counter and restores "active".
+            cfg = dict(source.scraper_config or {})
+            fails = int(cfg.get("_consecutive_failures", 0)) + 1
+            cfg["_consecutive_failures"] = fails
+            source.scraper_config = cfg
+            source.last_checked = datetime.now(timezone.utc)
+            if fails >= 3:
+                source.status = "broken"
+
             db.commit()
-            logger.error("Source scan failed", source=source.name, error=str(e))
+            logger.error("Source scan failed", source=source.name, error=str(e), consecutive=fails)
             raise self.retry(exc=e, countdown=300)
 
 
@@ -317,7 +336,7 @@ def _process_listing(
     # Validate opportunity_type against allowed values
     _VALID_OPP_TYPES = frozenset({
         "grant", "fellowship", "scholarship", "residency", "open_call",
-        "prize", "bursary", "commission", "other",
+        "prize", "bursary", "commission", "conference", "workshop", "other",
     })
     raw_opp_type = (listing.get("opportunity_type") or "").strip().lower()
     opp_type = raw_opp_type if raw_opp_type in _VALID_OPP_TYPES else None
@@ -384,7 +403,7 @@ def deduplicate_opportunity_pool(self):
 
     log = structlog.get_logger()
     settings = get_settings()
-    engine = create_engine(settings.database_url)
+    engine = get_sync_engine()
 
     with Session(engine) as db:
         opps = db.execute(
@@ -454,7 +473,7 @@ def score_opportunity(opportunity_id: str):
     from app.services.keyword_scorer import keyword_score_opportunity
 
     settings = get_settings()
-    engine = create_engine(settings.database_url)
+    engine = get_sync_engine()
 
     with Session(engine) as db:
         opp = db.get(Opportunity, opportunity_id)
@@ -511,7 +530,7 @@ def check_source_health():
     from app.models.source import Source
 
     settings = get_settings()
-    engine = create_engine(settings.database_url)
+    engine = get_sync_engine()
     cutoff = datetime.now(timezone.utc) - timedelta(days=10)
 
     with Session(engine) as db:
@@ -549,19 +568,21 @@ def backfill_opportunity_types(self, batch_size: int = 200):
 
     log = structlog.get_logger()
     settings = get_settings()
-    engine = create_engine(settings.database_url)
+    engine = get_sync_engine()
 
     _VALID_TYPES = frozenset({
         "grant", "fellowship", "scholarship", "residency", "open_call",
-        "prize", "bursary", "commission", "other",
+        "prize", "bursary", "commission", "conference", "workshop", "other",
     })
 
     _CLASSIFY_SYSTEM = (
         "Classify the funding opportunity into exactly one type. "
         "Reply with ONLY a JSON object: {\"opportunity_type\": \"<type>\"}. "
         "Choose from: grant, fellowship, scholarship, residency, open_call, "
-        "prize, bursary, commission, other. "
-        "Use 'open_call' for open calls for projects/submissions. "
+        "prize, bursary, commission, conference, workshop, other. "
+        "Use 'open_call' for calls for projects/submissions/papers/abstracts. "
+        "Use 'conference' for conference travel/attendance funding, 'workshop' "
+        "for funded workshops/summer schools/training programs. "
         "Use 'grant' when uncertain."
     )
 
@@ -644,12 +665,18 @@ def discover_new_sources(self, n_queries: int | None = None):
         log.info("discover_new_sources: disabled in config")
         return {"skipped": True}
 
-    if not settings.exa_api_key:
-        log.warning("discover_new_sources: EXA_API_KEY not set — skipping")
-        return {"skipped": True, "reason": "no_exa_key"}
+    from app.scrapers.source_discovery import search_provider
+    provider = search_provider()
+    if not provider:
+        log.error(
+            "discover_new_sources: neither EXA_API_KEY nor TAVILY_API_KEY is set — "
+            "web-based source discovery cannot run. Set at least one key."
+        )
+        return {"skipped": True, "reason": "no_search_provider"}
+    log.info("discover_new_sources: using %s search provider", provider)
 
     n = n_queries or cfg.n_queries_per_run
-    engine = create_engine(settings.database_url)
+    engine = get_sync_engine()
 
     # Redis client for query rotation
     try:

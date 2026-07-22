@@ -1,5 +1,6 @@
 """Embedding and document parsing Celery tasks."""
 import asyncio
+from app.db_sync import get_sync_engine
 from app.workers.celery_app import celery_app
 
 
@@ -21,7 +22,7 @@ def parse_and_embed_document(document_id: str):
     from app.models.document import Document, ProcessingStatus
 
     settings = get_settings()
-    engine = create_engine(settings.database_url)
+    engine = get_sync_engine()
 
     with Session(engine) as db:
         doc = db.get(Document, document_id)
@@ -109,7 +110,7 @@ def embed_language_block(block_id: str):
     from app.models.language import ReusableLanguageBlock
 
     settings = get_settings()
-    engine = create_engine(settings.database_url)
+    engine = get_sync_engine()
 
     with Session(engine) as db:
         block = db.get(ReusableLanguageBlock, block_id)
@@ -132,7 +133,7 @@ def embed_section(section_id: str):
     from app.models.section import ProposalSection
 
     settings = get_settings()
-    engine = create_engine(settings.database_url)
+    engine = get_sync_engine()
 
     with Session(engine) as db:
         section = db.get(ProposalSection, section_id)
@@ -156,7 +157,7 @@ def embed_style_profile(archive_id: str):
     from app.models.section import ProposalSection
 
     settings = get_settings()
-    engine = create_engine(settings.database_url)
+    engine = get_sync_engine()
 
     with Session(engine) as db:
         archive = db.get(GrantArchive, archive_id)
@@ -188,7 +189,7 @@ def reindex_all():
     from app.models.section import ProposalSection
 
     settings = get_settings()
-    engine = create_engine(settings.database_url)
+    engine = get_sync_engine()
 
     with Session(engine) as db:
         sections = db.execute(

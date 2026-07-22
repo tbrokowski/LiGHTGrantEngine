@@ -15,6 +15,7 @@ This task sits between enrichment and scoring in the pipeline:
                                                   → generate_ai_summary (30s)
 """
 import asyncio
+from app.db_sync import get_sync_engine
 from app.workers.celery_app import celery_app
 
 
@@ -65,7 +66,7 @@ def tag_and_embed_opportunity(self, opportunity_id: str):
     from app.models.opportunity import Opportunity
 
     settings = get_settings()
-    engine = create_engine(settings.database_url)
+    engine = get_sync_engine()
 
     with Session(engine) as db:
         opp = db.get(Opportunity, opportunity_id)
@@ -180,7 +181,7 @@ def retag_opportunity(self, opportunity_id: str):
     from app.models.opportunity import Opportunity
 
     settings = get_settings()
-    engine = create_engine(settings.database_url)
+    engine = get_sync_engine()
 
     with Session(engine) as db:
         opp = db.get(Opportunity, opportunity_id)

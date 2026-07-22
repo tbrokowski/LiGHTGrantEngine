@@ -75,7 +75,8 @@ async def resync_feeds(
     settings_obj = gs()
 
     def _run_sync():
-        engine = create_engine(settings_obj.database_url)
+        from app.db_sync import get_sync_engine
+        engine = get_sync_engine()
         with Session(engine) as session:
             fan_out_sources_to_institutions(session)
             if institution_id:
@@ -122,7 +123,8 @@ async def run_dedup(current_user: User = Depends(get_current_user)):
     from app.workers.dedup_tasks import run_dedup as _run_dedup
 
     def _run_sync():
-        engine = create_engine(gs().database_url)
+        from app.db_sync import get_sync_engine
+        engine = get_sync_engine()
         return _run_dedup(engine)
 
     stats = await asyncio.get_event_loop().run_in_executor(None, _run_sync)

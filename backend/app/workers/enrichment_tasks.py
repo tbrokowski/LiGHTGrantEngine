@@ -11,6 +11,7 @@ After enrichment completes, score_opportunity is re-triggered so the AI scorer
 works with the richer content rather than the original snippet.
 """
 import asyncio
+from app.db_sync import get_sync_engine
 from app.workers.celery_app import celery_app
 
 
@@ -114,7 +115,7 @@ def enrich_opportunity(self, opportunity_id: str, skip_pdf: bool = False):
     from app.models.opportunity import Opportunity
 
     settings = get_settings()
-    engine = create_engine(settings.database_url)
+    engine = get_sync_engine()
 
     with Session(engine) as db:
         opp = db.get(Opportunity, opportunity_id)
@@ -229,7 +230,7 @@ def generate_ai_summary(self, opportunity_id: str, force: bool = False):
     from app.schemas.grant_profile import GrantProfile
 
     settings = get_settings()
-    engine = create_engine(settings.database_url)
+    engine = get_sync_engine()
 
     with Session(engine) as db:
         opp = db.get(Opportunity, opportunity_id)
@@ -362,7 +363,7 @@ def enrich_opportunity_force(self, opportunity_id: str, skip_pdf: bool = False):
     from app.models.opportunity import Opportunity
 
     settings = get_settings()
-    engine = create_engine(settings.database_url)
+    engine = get_sync_engine()
 
     with Session(engine) as db:
         opp = db.get(Opportunity, opportunity_id)

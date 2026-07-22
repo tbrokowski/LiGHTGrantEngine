@@ -288,10 +288,9 @@ try:
     )
     def deduplicate_existing_opportunities(self):
         """Celery-wrapped dedup task. Idempotent."""
-        from app.config import get_settings
-        from sqlalchemy import create_engine
+        from app.db_sync import get_sync_engine
 
-        engine = create_engine(get_settings().database_url)
+        engine = get_sync_engine()
         return run_dedup(engine)
 
 except Exception:

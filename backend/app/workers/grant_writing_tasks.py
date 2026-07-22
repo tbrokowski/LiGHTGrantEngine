@@ -1,5 +1,6 @@
 """Background grant writing tasks — long-running call analysis off the API process."""
 import asyncio
+from app.db_sync import get_sync_engine
 import json
 import logging
 from datetime import datetime, timezone, timedelta
@@ -29,7 +30,7 @@ def _set_grant_analysis_state(
     from app.models.active_grant import ActiveGrant
 
     settings = get_settings()
-    engine = create_engine(settings.database_url, pool_pre_ping=True)
+    engine = get_sync_engine()
     try:
         with Session(engine) as db:
             grant = db.get(ActiveGrant, grant_id)
@@ -46,7 +47,7 @@ def _set_grant_analysis_state(
                 grant.call_analysis_steps = steps
             db.commit()
     finally:
-        engine.dispose()
+        pass  # shared, process-cached engine — never dispose
 
 
 def _update_steps(grant_id: str, steps: list) -> None:
@@ -54,7 +55,7 @@ def _update_steps(grant_id: str, steps: list) -> None:
     from app.config import get_settings
 
     settings = get_settings()
-    engine = create_engine(settings.database_url, pool_pre_ping=True)
+    engine = get_sync_engine()
     try:
         with engine.connect() as conn:
             conn.execute(
@@ -67,7 +68,7 @@ def _update_steps(grant_id: str, steps: list) -> None:
     except Exception as e:
         logger.warning("_update_steps failed for grant %s: %s", grant_id, e)
     finally:
-        engine.dispose()
+        pass  # shared, process-cached engine — never dispose
 
 
 def _recover_stale_call_analysis() -> list[str]:
@@ -78,7 +79,7 @@ def _recover_stale_call_analysis() -> list[str]:
     from app.config import get_settings
 
     settings = get_settings()
-    engine = create_engine(settings.database_url, pool_pre_ping=True)
+    engine = get_sync_engine()
     recovered: list[str] = []
     try:
         cutoff = datetime.now(timezone.utc) - timedelta(minutes=STALE_THRESHOLD_MINUTES)
@@ -108,7 +109,7 @@ def _recover_stale_call_analysis() -> list[str]:
     except Exception as e:
         logger.error("_recover_stale_call_analysis error: %s", e)
     finally:
-        engine.dispose()
+        pass  # shared, process-cached engine — never dispose
     return recovered
 
 
@@ -129,7 +130,7 @@ def _log_ai_run_sync(grant_id: str, user_id: str | None, output: dict) -> None:
     from app.models.ai_run import AIRun, AgentType, AIRunStatus
 
     settings = get_settings()
-    engine = create_engine(settings.database_url, pool_pre_ping=True)
+    engine = get_sync_engine()
     try:
         with Session(engine) as db:
             run = AIRun(
@@ -146,7 +147,7 @@ def _log_ai_run_sync(grant_id: str, user_id: str | None, output: dict) -> None:
             db.add(run)
             db.commit()
     finally:
-        engine.dispose()
+        pass  # shared, process-cached engine — never dispose
 
 
 @celery_app.task(
@@ -313,7 +314,7 @@ def _update_ai_generation_steps(
     from app.config import get_settings
 
     settings = get_settings()
-    engine = create_engine(settings.database_url, pool_pre_ping=True)
+    engine = get_sync_engine()
     try:
         with engine.connect() as conn:
             conn.execute(
@@ -333,7 +334,7 @@ def _update_ai_generation_steps(
     except Exception as e:
         logger.warning("_update_ai_generation_steps failed for grant %s: %s", grant_id, e)
     finally:
-        engine.dispose()
+        pass  # shared, process-cached engine — never dispose
 
 
 # Skeleton step mapping -------------------------------------------------------

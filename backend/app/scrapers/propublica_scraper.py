@@ -11,14 +11,16 @@ from app.scrapers.base import BaseScraper
 
 logger = structlog.get_logger()
 
-_SEARCH_URL = "https://projects.propublica.org/nonprofits/api/v2/organizations.json"
+_SEARCH_URL = "https://projects.propublica.org/nonprofits/api/v2/search.json"
 _ORG_URL = "https://projects.propublica.org/nonprofits/api/v2/organizations/{ein}.json"
 
+# Keep queries to 1-2 words: the search API ANDs all terms and returns
+# HTTP 404 (not an empty list) when nothing matches (audit 2026-07-22).
 _DEFAULT_QUERIES = [
-    "artificial intelligence health research",
-    "global health foundation",
-    "digital health innovation",
-    "medical research foundation",
+    "global health",
+    "medical research",
+    "health foundation",
+    "digital health",
 ]
 
 
@@ -37,13 +39,18 @@ class ProPublicaScraper(BaseScraper):
             headers = {"User-Agent": "LiGHT Grant System/1.0"}
 
             for query in queries[:3]:
-                params = {"q": query, "ntee[0]": "H"}  # NTEE H = Health
+                # NTEE filtering moved client-side: the ntee[] query param 404s
+                # on the current v2 search endpoint (audit 2026-07-22).
+                params = {"q": query}
                 resp = httpx.get(
                     _SEARCH_URL,
                     params=params,
                     headers=headers,
                     timeout=30,
                 )
+                if resp.status_code == 404:
+                    # API quirk: 404 means "no organizations matched this query"
+                    continue
                 resp.raise_for_status()
                 data = resp.json()
                 orgs = data.get("organizations", [])
@@ -57,18 +64,21 @@ class ProPublicaScraper(BaseScraper):
                     name = org.get("name", "")
                     city = org.get("city", "")
                     state = org.get("state", "")
-                    income = org.get("income_amount", 0) or 0
-                    ntee = org.get("ntee_code", "")
+                    ntee = org.get("ntee_code", "") or ""
 
-                    # Only include substantial foundations (>$1M income)
-                    if income < 1_000_000:
+                    # The v2 search response no longer includes income_amount
+                    # (audit 2026-07-22), so size-filtering moved out. Keep a
+                    # loose health/science/education relevance gate via NTEE
+                    # major group when a code is present (E=health, G/H=disease
+                    # & medical research, B=education, U=science/tech).
+                    if ntee and ntee[0].upper() not in ("E", "G", "H", "B", "U", "Q", "T"):
                         continue
 
                     results.append(self._normalize({
                         "title": f"Funder Profile: {name}",
                         "description": (
                             f"{name} is a nonprofit organization based in {city}, {state}. "
-                            f"Annual income: ${income:,.0f}. NTEE code: {ntee}. "
+                            f"NTEE code: {ntee or 'unknown'}. "
                             f"This organization may offer grant funding opportunities."
                         ),
                         "url": f"https://projects.propublica.org/nonprofits/organizations/{ein}",

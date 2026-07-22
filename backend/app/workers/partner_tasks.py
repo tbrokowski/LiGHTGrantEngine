@@ -1,5 +1,6 @@
 """Partner CRM background tasks — reminders, meeting prep, enrichment."""
 import asyncio
+from app.db_sync import get_sync_engine
 import logging
 from datetime import datetime, timezone, timedelta
 
@@ -31,7 +32,7 @@ def send_partner_reminders():
     from app.models.notification import Notification, NotificationType, NotificationStatus
 
     settings = get_settings()
-    engine = create_engine(settings.database_url, pool_pre_ping=True)
+    engine = get_sync_engine()
     now = datetime.now(timezone.utc)
 
     with Session(engine) as db:
@@ -124,7 +125,7 @@ def generate_pre_meeting_preps():
     from app.models.partner import Partner, PartnerUpdate
 
     settings = get_settings()
-    engine = create_engine(settings.database_url, pool_pre_ping=True)
+    engine = get_sync_engine()
     now = datetime.now(timezone.utc)
     tomorrow = now + timedelta(hours=24)
 

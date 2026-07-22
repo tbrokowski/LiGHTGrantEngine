@@ -1,7 +1,7 @@
 """HTML page scraper with configurable selectors."""
-import httpx
 from bs4 import BeautifulSoup
 from app.scrapers.base import BaseScraper, resolve_absolute_url
+from app.scrapers.fetch import fetch_page
 
 class HTMLScraper(BaseScraper):
     def _collect_page_links(self, soup) -> None:
@@ -22,9 +22,13 @@ class HTMLScraper(BaseScraper):
             return []
         cfg = self.source.scraper_config or {}
         try:
-            resp = httpx.get(self.source.url, timeout=30, follow_redirects=True,
-                             headers={"User-Agent": "LiGHT Grant System/1.0"})
-            soup = BeautifulSoup(resp.text, "lxml")
+            result = fetch_page(
+                self.source.url,
+                force_playwright=bool(cfg.get("use_playwright", False)),
+            )
+            if not result.html:
+                return []
+            soup = BeautifulSoup(result.html, "lxml")
             self._collect_page_links(soup)
             results = []
 

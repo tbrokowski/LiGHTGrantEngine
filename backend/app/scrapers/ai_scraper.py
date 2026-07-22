@@ -39,7 +39,7 @@ _STRIP_TAGS = [
 
 _OPPORTUNITY_TYPE_VALUES = (
     "grant", "fellowship", "scholarship", "residency", "open_call",
-    "prize", "bursary", "commission", "other"
+    "prize", "bursary", "commission", "conference", "workshop", "other"
 )
 
 _EXTRACTION_SYSTEM = """\
@@ -69,10 +69,16 @@ Rules:
 - If the specific call URL cannot be determined, set url to null.
 - If no grants are found, return {"opportunities": []}.
 - Do not include any prose or markdown outside the JSON.
+- Extract EVERY kind of funding/participation opportunity: grants, fellowships,
+  scholarships, residencies, prizes, bursaries, commissions, open calls,
+  conference funding/travel awards, and workshops/summer schools/training
+  programs with an application process.
 - opportunity_type MUST be exactly one of: grant, fellowship, scholarship,
-  residency, open_call, prize, bursary, commission, other.
-  Use "open_call" for open calls for projects/submissions/entries.
-  Use "grant" when the type is ambiguous.
+  residency, open_call, prize, bursary, commission, conference, workshop, other.
+  Use "open_call" for calls for projects/submissions/papers/abstracts/entries.
+  Use "conference" for conference travel support, registration awards, or
+  funded conference attendance. Use "workshop" for funded workshops, summer
+  schools, and training programs. Use "grant" when the type is ambiguous.
 """
 
 _MAX_PAGE_CHARS = 100_000  # GPT-4o 128k context window handles full grant pages
@@ -194,14 +200,13 @@ def probe_pagination(url: str, use_playwright: bool = True, timeout: int = 20) -
     Returns {"paginate": bool, "max_pages": int}.
     """
     from bs4 import BeautifulSoup
-    import httpx
+    from app.scrapers.fetch import fetch_page
 
     try:
-        resp = httpx.get(
-            url, timeout=timeout, follow_redirects=True,
-            headers={"User-Agent": "LiGHT Grant System/1.0"},
-        )
-        soup = BeautifulSoup(resp.text, "lxml")
+        result = fetch_page(url, force_playwright=use_playwright, timeout=timeout)
+        if not result.html:
+            return {"paginate": False, "max_pages": 20}
+        soup = BeautifulSoup(result.html, "lxml")
     except Exception:
         return {"paginate": False, "max_pages": 20}
 
@@ -237,32 +242,21 @@ def _extract_page_links(soup, base_url: str) -> list[tuple[str, str]]:
 
 
 def _fetch_page_text(url: str, use_playwright: bool) -> tuple[str, list[tuple[str, str]]]:
-    """Fetch a page and return (cleaned_text, list_of_anchor_text_and_hrefs)."""
+    """Fetch a page and return (cleaned_text, list_of_anchor_text_and_hrefs).
+
+    Delegates to the shared robust fetch layer: browser headers, SSL fallback,
+    and automatic Playwright escalation when the plain fetch looks blocked or
+    JS-empty — `use_playwright` merely forces the browser on the first attempt.
+    """
     from bs4 import BeautifulSoup
+    from app.scrapers.fetch import fetch_page
 
-    html = ""
-    if use_playwright:
-        try:
-            from playwright.sync_api import sync_playwright
-            with sync_playwright() as p:
-                browser = p.chromium.launch(headless=True)
-                page = browser.new_page()
-                page.goto(url, timeout=30000, wait_until="domcontentloaded")
-                page.wait_for_timeout(2000)  # allow JS to settle
-                html = page.content()
-                browser.close()
-        except Exception as e:
-            logger.warning("Playwright failed, falling back to httpx", error=str(e))
-            html = ""
-
-    if not html:
-        import httpx
-        resp = httpx.get(
-            url, timeout=30, follow_redirects=True,
-            headers={"User-Agent": "LiGHT Grant System/1.0"},
-        )
-        resp.raise_for_status()
-        html = resp.text
+    result = fetch_page(url, force_playwright=use_playwright)
+    if not result.html:
+        raise RuntimeError(result.error or f"empty page for {url} (status={result.status_code})")
+    if result.status_code is not None and result.status_code >= 400:
+        raise RuntimeError(f"HTTP {result.status_code} for {url}")
+    html = result.html
 
     soup = BeautifulSoup(html, "lxml")
     for tag in soup(_STRIP_TAGS):
@@ -386,17 +380,14 @@ class AIScraper(BaseScraper):
         ]
         if paginate:
             from bs4 import BeautifulSoup
-            import httpx as _httpx
+            from app.scrapers.fetch import fetch_page
             visited_pages = {self.source.url}
             current_url = self.source.url
             for _ in range(max_pages - 1):
                 try:
                     # Fetch the current page's raw HTML to detect next-page link
-                    resp = _httpx.get(
-                        current_url, timeout=30, follow_redirects=True,
-                        headers={"User-Agent": "LiGHT Grant System/1.0"},
-                    )
-                    soup = BeautifulSoup(resp.text, "lxml")
+                    page_result = fetch_page(current_url, force_playwright=use_playwright)
+                    soup = BeautifulSoup(page_result.html, "lxml")
                     next_url = _detect_next_page(soup, current_url)
                     if not next_url or next_url in visited_pages:
                         break
@@ -440,7 +431,28 @@ class AIScraper(BaseScraper):
         # ── depth=1: follow individual grant detail links, across every
         #    listing page (not just the first) ─────────────────────────────
         if crawl_depth >= 1:
+            def _crawl_detail(link: str, fallback_links: list[tuple[str, str]]) -> None:
+                try:
+                    detail_text, detail_links = _fetch_page_text(link, use_playwright)
+                    self._page_links = detail_links or fallback_links
+                    detail_loop = asyncio.new_event_loop()
+                    try:
+                        detail_items = detail_loop.run_until_complete(
+                            _llm_extract(detail_text, self.source.name, self._page_links)
+                        )
+                    finally:
+                        detail_loop.close()
+                    for item in detail_items:
+                        item["url"] = item.get("url") or link
+                        normalized = self._normalize(item)
+                        if normalized.get("url"):
+                            results.append(normalized)
+                except Exception as e:
+                    logger.warning("AIScraper: detail page failed",
+                                   url=link, error=str(e))
+
             remaining_slots = max_detail_links
+            detail_links_followed = 0
             for (page_url, _txt, lnks), resolved in zip(all_pages, resolved_by_page):
                 if remaining_slots <= 0:
                     break
@@ -462,26 +474,25 @@ class AIScraper(BaseScraper):
 
                 candidates = candidates[:remaining_slots]
                 remaining_slots -= len(candidates)
+                detail_links_followed += len(candidates)
 
                 for link in candidates:
-                    try:
-                        detail_text, detail_links = _fetch_page_text(link, use_playwright)
-                        self._page_links = detail_links or lnks
-                        detail_loop = asyncio.new_event_loop()
-                        try:
-                            detail_items = detail_loop.run_until_complete(
-                                _llm_extract(detail_text, self.source.name, self._page_links)
-                            )
-                        finally:
-                            detail_loop.close()
-                        for item in detail_items:
-                            item["url"] = item.get("url") or link
-                            normalized = self._normalize(item)
-                            if normalized.get("url"):
-                                results.append(normalized)
-                    except Exception as e:
-                        logger.warning("AIScraper: detail page failed",
-                                       url=link, error=str(e))
+                    _crawl_detail(link, lnks)
+
+            # Sitemap rescue: listing pages produced nothing to follow AND the
+            # LLM extracted nothing from them — likely a filter-driven/JS
+            # listing whose anchors never render. Mine the sitemap for
+            # opportunity-looking URLs instead.
+            if detail_links_followed == 0 and not results:
+                from app.scrapers.fetch import sitemap_candidate_urls
+                sitemap_urls = sitemap_candidate_urls(
+                    self.source.url, limit=min(max_detail_links, 15)
+                )
+                if sitemap_urls:
+                    logger.info("AIScraper: sitemap fallback engaged",
+                                source=self.source.name, candidates=len(sitemap_urls))
+                for link in sitemap_urls:
+                    _crawl_detail(link, page_links)
 
         # ── depth=2: discover category links, then follow detail links ────
         if crawl_depth >= 2:

@@ -11,6 +11,7 @@ per-institution scoping in this codebase, so mixing it in would leak one
 org's history into another's ranking.
 """
 import logging
+from app.db_sync import get_sync_engine
 from datetime import datetime, timezone
 
 from sqlalchemy import create_engine, select
@@ -52,7 +53,7 @@ def compute_taste_profile(self, institution_id: str) -> dict:
     from app.models.opportunity import Opportunity
 
     settings = get_settings()
-    engine = create_engine(settings.database_url)
+    engine = get_sync_engine()
 
     with Session(engine) as db:
         rows = db.execute(
@@ -99,7 +100,7 @@ def compute_all_taste_profiles() -> dict:
     from app.models.institution_opportunity import InstitutionOpportunity
 
     settings = get_settings()
-    engine = create_engine(settings.database_url)
+    engine = get_sync_engine()
 
     with Session(engine) as db:
         institution_ids = [

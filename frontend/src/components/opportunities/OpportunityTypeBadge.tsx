@@ -7,6 +7,8 @@ const TYPE_STYLES: Record<string, string> = {
   prize:       'bg-yellow-50 text-yellow-700',
   bursary:     'bg-green-50 text-green-700',
   commission:  'bg-rose-50 text-rose-700',
+  conference:  'bg-cyan-50 text-cyan-700',
+  workshop:    'bg-lime-50 text-lime-700',
   other:       'bg-gray-100 text-gray-500',
 };
 
@@ -19,6 +21,8 @@ const TYPE_LABELS: Record<string, string> = {
   prize:       'Prize',
   bursary:     'Bursary',
   commission:  'Commission',
+  conference:  'Conference',
+  workshop:    'Workshop',
   other:       'Other',
 };
 

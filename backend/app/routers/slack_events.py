@@ -1,5 +1,6 @@
 """Slack interactive component callbacks for fund request approvals."""
 import json
+from app.db_sync import get_sync_engine
 import logging
 from datetime import datetime, timezone
 
@@ -19,7 +20,7 @@ router = APIRouter()
 
 def _sync_session():
     settings = get_settings()
-    engine = create_engine(settings.database_url)
+    engine = get_sync_engine()
     return Session(engine)
 
 

@@ -1,5 +1,6 @@
 """Notification Celery tasks — deadline reminders and alerts."""
 from datetime import datetime, timedelta, date, timezone
+from app.db_sync import get_sync_engine
 from app.workers.celery_app import celery_app
 
 
@@ -60,7 +61,7 @@ def send_deadline_reminders():
     from app.models.notification import Notification, NotificationType, NotificationStatus
 
     settings = get_settings()
-    engine = create_engine(settings.database_url)
+    engine = get_sync_engine()
     today = date.today()
     notif_cfg = settings.notifications
 
@@ -287,7 +288,7 @@ def send_pending_emails():
     if not (email_cfg.get("enabled", False) if hasattr(email_cfg, "get") else False):
         return {"skipped": "email disabled"}
 
-    engine = create_engine(settings.database_url)
+    engine = get_sync_engine()
     with Session(engine) as db:
         pending = db.execute(
             select(Notification)
@@ -334,7 +335,7 @@ def send_pending_slack():
     if not (slack_cfg.get("enabled", False) if hasattr(slack_cfg, "get") else False) or not webhook_url:
         return {"skipped": "Slack disabled or webhook not configured"}
 
-    engine = create_engine(settings.database_url)
+    engine = get_sync_engine()
     with Session(engine) as db:
         pending = db.execute(
             select(Notification).where(
@@ -369,7 +370,7 @@ def check_finance_overspend():
     from app.models.grant_member import GrantMember, GrantMemberRole
 
     settings = get_settings()
-    engine = create_engine(settings.database_url)
+    engine = get_sync_engine()
     COMMITTED = (
         FundRequestStatus.PENDING.value,
         FundRequestStatus.UNDER_REVIEW.value,

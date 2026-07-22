@@ -57,12 +57,20 @@ def test_detect_next_page_none_when_no_pagination():
 
 # ── probe_pagination ─────────────────────────────────────────────────────────
 
+def _fake_page(html: str):
+    """Stand-in for app.scrapers.fetch.FetchResult with just what callers read."""
+    return SimpleNamespace(html=html, status_code=200 if html else None,
+                           final_url="", method_used="httpx", escalated=False,
+                           error=None, anchor_count=html.count("<a "), text_chars=len(html),
+                           redirected=False, ok=bool(html))
+
+
 def test_probe_pagination_detects_numbered_pages(monkeypatch):
     html = "<html><body>" + "".join(
         f'<a href="https://example.com/opportunity/?page={n}">Page {n}</a>' for n in range(1, 14)
     ) + "</body></html>"
 
-    monkeypatch.setattr("httpx.get", lambda *a, **kw: SimpleNamespace(text=html))
+    monkeypatch.setattr("app.scrapers.fetch.fetch_page", lambda url, **kw: _fake_page(html))
 
     result = probe_pagination("https://example.com/opportunity/", use_playwright=False)
     assert result["paginate"] is True
@@ -71,17 +79,17 @@ def test_probe_pagination_detects_numbered_pages(monkeypatch):
 
 def test_probe_pagination_single_page(monkeypatch):
     html = "<html><body><a href='/about'>About</a></body></html>"
-    monkeypatch.setattr("httpx.get", lambda *a, **kw: SimpleNamespace(text=html))
+    monkeypatch.setattr("app.scrapers.fetch.fetch_page", lambda url, **kw: _fake_page(html))
 
     result = probe_pagination("https://example.com/grants", use_playwright=False)
     assert result["paginate"] is False
 
 
 def test_probe_pagination_network_failure_falls_back(monkeypatch):
-    def _raise(*a, **kw):
+    def _raise(url, **kw):
         raise ConnectionError("boom")
 
-    monkeypatch.setattr("httpx.get", _raise)
+    monkeypatch.setattr("app.scrapers.fetch.fetch_page", _raise)
     result = probe_pagination("https://example.com/grants")
     assert result == {"paginate": False, "max_pages": 20}
 
@@ -133,8 +141,8 @@ def test_depth1_candidates_span_all_paginated_pages(monkeypatch):
     monkeypatch.setattr(ai_scraper, "_fetch_page_text", fake_fetch_page_text)
     monkeypatch.setattr(ai_scraper, "_llm_extract", fake_llm_extract)
     monkeypatch.setattr(
-        "httpx.get",
-        lambda url, **kw: SimpleNamespace(text=raw_html_for_pagination[url]),
+        "app.scrapers.fetch.fetch_page",
+        lambda url, **kw: _fake_page(raw_html_for_pagination[url]),
     )
 
     source = SimpleNamespace(
@@ -191,8 +199,8 @@ def test_max_detail_links_caps_across_whole_run_not_per_page(monkeypatch):
     monkeypatch.setattr(ai_scraper, "_fetch_page_text", fake_fetch_page_text)
     monkeypatch.setattr(ai_scraper, "_llm_extract", fake_llm_extract)
     monkeypatch.setattr(
-        "httpx.get",
-        lambda url, **kw: SimpleNamespace(text=raw_html_for_pagination[url]),
+        "app.scrapers.fetch.fetch_page",
+        lambda url, **kw: _fake_page(raw_html_for_pagination[url]),
     )
 
     source = SimpleNamespace(

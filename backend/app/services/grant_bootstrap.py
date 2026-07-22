@@ -1,5 +1,6 @@
 """Bootstrap global grant pool from JSON and fan out to institutions."""
 from __future__ import annotations
+from app.db_sync import get_sync_engine
 
 import json
 import logging
@@ -310,7 +311,7 @@ def queue_missing_enrichments(session: Session) -> int:
 
 def run_full_bootstrap(*, force: bool = False) -> dict:
     settings = get_settings()
-    engine = create_engine(settings.database_url)
+    engine = get_sync_engine()
     with Session(engine) as session:
         sources_added = seed_sources_from_json(session)
         opps_added = seed_opportunities_from_json(session)

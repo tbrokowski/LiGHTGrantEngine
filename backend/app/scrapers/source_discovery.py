@@ -49,6 +49,10 @@ _OPP_TYPES = [
     "residency", "artist residency", "commission", "bursary", "stipend",
     "call for proposals", "call for projects", "travel grant", "production grant",
     "postdoctoral fellowship", "doctoral fellowship", "emerging artist award",
+    # Conference / workshop / submission verticals
+    "conference travel grant", "call for papers", "call for abstracts",
+    "workshop funding", "summer school", "conference scholarship",
+    "abstract submission award", "student travel award", "training program funding",
 ]
 
 _GEOGRAPHIES = [
@@ -121,6 +125,20 @@ _NICHE_SEEDS = [
     "Heinrich Böll Stiftung Stipendien",
     "Comic Relief grants",
     "Porticus Foundation grants",
+    # Conference / workshop / scholarship portals
+    "NeurIPS travel grants",
+    "ACM student travel awards",
+    "IEEE conference travel support",
+    "Gordon Research Conferences funding",
+    "Keystone Symposia scholarships",
+    "CSHL courses scholarships",
+    "EMBO workshops courses funding",
+    "Santa Fe Institute summer school",
+    "Fulbright scholarships deadlines",
+    "DAAD scholarships programmes",
+    "Chevening scholarships",
+    "Rhodes Trust scholarships",
+    "Global health conference travel scholarships",
 ]
 
 
@@ -249,6 +267,22 @@ async def evaluate_candidate(
         return {"is_portal": False, "confidence": 0}
 
 
+def search_provider() -> str | None:
+    """Which web-search provider is configured: 'exa', 'tavily', or None.
+
+    Exa is preferred (neural search + find_similar); Tavily is the fallback so
+    discovery still runs when only TAVILY_API_KEY is configured — previously a
+    missing Exa key made every scheduled discovery run a silent no-op.
+    """
+    from app.config import get_settings
+    settings = get_settings()
+    if getattr(settings, "exa_api_key", None):
+        return "exa"
+    if getattr(settings, "tavily_api_key", None):
+        return "tavily"
+    return None
+
+
 async def discover_portal_candidates(
     queries: list[str],
     known_domains: set[str],
@@ -256,12 +290,16 @@ async def discover_portal_candidates(
     min_confidence: int = 70,
 ) -> list[dict]:
     """
-    Run Exa searches for each query, evaluate candidates, and return portals
-    with confidence >= min_confidence.
+    Run web searches (Exa preferred, Tavily fallback) for each query, evaluate
+    candidates, and return portals with confidence >= min_confidence.
 
-    Also runs find_similar on the top-5 newly discovered portals to surface peers.
+    With Exa, also runs find_similar on the top-5 newly discovered portals to
+    surface peers (no Tavily equivalent — skipped on that provider).
     """
     from app.services.exa_search import exa_search, exa_find_similar
+    from app.services.web_search import search_web
+
+    provider = search_provider()
 
     # Collect all search results, dedup by domain
     seen_domains: set[str] = set(known_domains)
@@ -269,8 +307,9 @@ async def discover_portal_candidates(
 
     async def _search_one(query: str) -> list[dict]:
         try:
-            results = await exa_search(query, num_results=10)
-            return results
+            if provider == "tavily":
+                return await search_web(query, max_results=10)
+            return await exa_search(query, num_results=10)
         except Exception:
             return []
 
@@ -307,6 +346,8 @@ async def discover_portal_candidates(
     )[:5]
 
     peer_candidates: list[dict] = []
+    if top_new and provider != "exa":
+        top_new = []  # find_similar is Exa-only
     if top_new:
         peer_batches = await asyncio.gather(
             *[exa_find_similar(p["url"], num_results=8) for p in top_new],

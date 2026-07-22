@@ -1,5 +1,6 @@
 """Background archive indexing tasks."""
 import asyncio
+from app.db_sync import get_sync_engine
 import logging
 
 from celery.exceptions import MaxRetriesExceededError as MaxRetriesExceeded, SoftTimeLimitExceeded
@@ -15,13 +16,11 @@ STALE_THRESHOLD_MINUTES = 20  # archives stuck in processing longer than this ar
 
 def _mark_failed(archive_id: str, error_msg: str) -> None:
     """Set indexing_status=failed using a sync session (safe to call from exception handlers)."""
-    from sqlalchemy import create_engine, text
+    from sqlalchemy import text
 
-    from app.config import get_settings
+    from app.db_sync import get_sync_engine
 
-    settings = get_settings()
-    db_url = settings.database_url
-    engine = create_engine(db_url, pool_pre_ping=True)
+    engine = get_sync_engine()
     try:
         with engine.connect() as conn:
             conn.execute(
@@ -34,8 +33,7 @@ def _mark_failed(archive_id: str, error_msg: str) -> None:
             conn.commit()
     except Exception as e:
         logger.error("_mark_failed could not update archive %s: %s", archive_id, e)
-    finally:
-        engine.dispose()
+    # NB: do NOT dispose — the engine is a shared, process-cached singleton.
 
 
 def _recover_stale_archives() -> list[str]:
@@ -49,7 +47,7 @@ def _recover_stale_archives() -> list[str]:
     from app.config import get_settings
 
     settings = get_settings()
-    engine = create_engine(settings.database_url, pool_pre_ping=True)
+    engine = get_sync_engine()
     recovered: list[str] = []
     try:
         cutoff = datetime.now(timezone.utc) - timedelta(minutes=STALE_THRESHOLD_MINUTES)
@@ -87,7 +85,7 @@ def _recover_stale_archives() -> list[str]:
     except Exception as e:
         logger.error("Error recovering stale archives: %s", e)
     finally:
-        engine.dispose()
+        pass  # shared, process-cached engine — never dispose
     return recovered
 
 
@@ -219,7 +217,7 @@ def index_workspace_document(self, document_id: str, grant_id: str) -> dict:
     from app.services.archive_ingestion import split_text_into_sections, _infer_section_type
 
     settings = get_settings()
-    engine = create_engine(settings.database_url, pool_pre_ping=True)
+    engine = get_sync_engine()
 
     try:
         with engine.connect() as conn:
@@ -317,4 +315,4 @@ def index_workspace_document(self, document_id: str, grant_id: str) -> dict:
         except Exception:
             return {"error": str(exc), "document_id": document_id}
     finally:
-        engine.dispose()
+        pass  # shared, process-cached engine — never dispose

@@ -24,6 +24,7 @@ celery_app = Celery(
         "app.workers.partner_tasks",
         "app.workers.tagging_tasks",
         "app.workers.taste_profile_tasks",
+        "app.workers.web_opportunity_search_tasks",
     ],
 )
 
@@ -61,6 +62,12 @@ celery_app.conf.beat_schedule = {
     "weekly-source-scan": {
         "task": "app.workers.discovery_tasks.scan_all_sources",
         "schedule": crontab(hour=hour, minute=0, day_of_week=day_map.get(day, 1)),
+    },
+    "weekly-web-opportunity-search": {
+        "task": "app.workers.web_opportunity_search_tasks.search_opportunities_all",
+        # Weekly, offset a day after the portal scan so the two discovery paths
+        # don't collide; finds one-off grants/conferences with no scrapeable portal.
+        "schedule": crontab(hour=hour, minute=0, day_of_week=(day_map.get(day, 1) + 2) % 7),
     },
     "daily-high-priority-scan": {
         "task": "app.workers.discovery_tasks.scan_high_priority_sources",

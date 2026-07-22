@@ -14,6 +14,7 @@ interface Props {
 const OPP_TYPES = [
   'grant', 'fellowship', 'scholarship', 'residency',
   'open_call', 'prize', 'bursary', 'commission',
+  'conference', 'workshop',
 ];
 
 function SectionLabel({ children }: { children: React.ReactNode }) {

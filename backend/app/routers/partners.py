@@ -1,5 +1,6 @@
 """CRM Partners endpoints — full contact management, meetings, documents, AI enrichment."""
 import csv
+from app.db_sync import get_sync_engine
 import io
 import uuid
 from typing import Optional
@@ -701,7 +702,7 @@ async def _run_enrichment(partner_id: str) -> None:
         from sqlalchemy.orm import Session
         from app.config import get_settings
         settings = get_settings()
-        engine = create_engine(settings.database_url, pool_pre_ping=True)
+        engine = get_sync_engine()
         with Session(engine) as db:
             partner = db.get(Partner, partner_id)
             if not partner:
