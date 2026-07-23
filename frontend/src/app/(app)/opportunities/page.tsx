@@ -628,8 +628,8 @@ export default function OpportunitiesPage() {
                       <ColHead className="hidden md:table-cell">Funder</ColHead>
                       <ColHead className="hidden lg:table-cell">Deadline</ColHead>
                       <ColHead className="hidden lg:table-cell text-right">Award</ColHead>
-                      <ColHead className="w-12">
-                        <span className="sr-only">Read status</span>
+                      <ColHead className="w-16 text-right">
+                        <span className="sr-only">Match score</span>
                       </ColHead>
                     </tr>
                   </thead>

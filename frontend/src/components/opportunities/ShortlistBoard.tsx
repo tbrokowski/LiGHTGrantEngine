@@ -138,6 +138,8 @@ function ColumnHeader({
 export default function ShortlistBoard({ items, scope, onNavigate, ...handlers }: Props) {
   const [categories, setCategories] = useState<ShortlistCategory[]>([]);
   const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
+  const [reloadKey, setReloadKey] = useState(0);
   // opp id → category id override applied optimistically after a drag, before
   // the server round-trip lands and the parent re-fetches `items`.
   const [overrides, setOverrides] = useState<Record<string, string | null>>({});
@@ -147,11 +149,15 @@ export default function ShortlistBoard({ items, scope, onNavigate, ...handlers }
   useEffect(() => {
     let alive = true;
     setLoading(true);
+    setError(null);
     opportunities.shortlistCategories(scope)
       .then(res => { if (alive) setCategories(res.data); })
+      .catch(() => {
+        if (alive) setError('Could not load your shortlist lanes. The board may not be finished deploying yet — try again in a minute.');
+      })
       .finally(() => { if (alive) setLoading(false); });
     return () => { alive = false; };
-  }, [scope]);
+  }, [scope, reloadKey]);
 
   const sortedCats = useMemo(
     () => [...categories].sort((a, b) => a.position - b.position),
@@ -202,10 +208,14 @@ export default function ShortlistBoard({ items, scope, onNavigate, ...handlers }
   async function addCategory() {
     const name = newName.trim();
     if (!name) { setAdding(false); return; }
-    const res = await opportunities.createShortlistCategory({ scope, name });
-    setCategories(prev => [...prev, res.data]);
-    setNewName('');
-    setAdding(false);
+    try {
+      const res = await opportunities.createShortlistCategory({ scope, name });
+      setCategories(prev => [...prev, res.data]);
+      setNewName('');
+      setAdding(false);
+    } catch {
+      setError('Could not add the category. If this persists, the board backend may not be deployed/migrated yet.');
+    }
   }
 
   async function renameCategory(id: string, name: string) {
@@ -229,9 +239,37 @@ export default function ShortlistBoard({ items, scope, onNavigate, ...handlers }
     return <div className="px-5 py-16 text-center text-sm" style={{ color: 'var(--ink-faint)' }}>Loading board…</div>;
   }
 
+  if (error && categories.length === 0) {
+    return (
+      <div
+        className="px-5 py-12 text-center text-sm mx-auto max-w-md rounded-lg"
+        style={{ color: 'var(--state-danger)', background: 'var(--state-danger-bg)', border: '1px solid var(--state-danger)' }}
+      >
+        <p className="mb-3">{error}</p>
+        <button
+          onClick={() => setReloadKey(k => k + 1)}
+          className="text-xs px-3 py-1.5 rounded font-medium"
+          style={{ background: 'var(--accent-primary)', color: 'var(--ink-inverse)' }}
+        >
+          Retry
+        </button>
+      </div>
+    );
+  }
+
   return (
-    <DragDropContext onDragEnd={onDragEnd}>
-      <div className="flex gap-4 overflow-x-auto pb-3 items-start">
+    <>
+      {error && categories.length > 0 && (
+        <div
+          className="mb-3 flex items-center justify-between px-3 py-2 text-xs rounded"
+          style={{ color: 'var(--state-danger)', background: 'var(--state-danger-bg)', border: '1px solid var(--state-danger)' }}
+        >
+          <span>{error}</span>
+          <button onClick={() => setError(null)} style={{ color: 'var(--state-danger)', opacity: 0.7 }}>×</button>
+        </div>
+      )}
+      <DragDropContext onDragEnd={onDragEnd}>
+        <div className="flex gap-4 overflow-x-auto pb-3 items-start">
         {sortedCats.map(cat => (
           <div key={cat.id} className="flex-shrink-0 w-64 flex flex-col">
             <ColumnHeader
@@ -301,7 +339,8 @@ export default function ShortlistBoard({ items, scope, onNavigate, ...handlers }
             </button>
           )}
         </div>
-      </div>
-    </DragDropContext>
+        </div>
+      </DragDropContext>
+    </>
   );
 }
