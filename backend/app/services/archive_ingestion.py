@@ -80,6 +80,9 @@ def _queue_embedding_jobs(section_ids: list[str], language_block_ids: list[str])
     from app.workers.celery_app import celery_app
     for sid in section_ids:
         celery_app.send_task("app.workers.embedding_tasks.embed_section", args=[sid])
+        # Contextual-retrieval chunks: sub-chunk + context-embed each section so
+        # retrieval can match specific passages, not just whole sections.
+        celery_app.send_task("app.workers.embedding_tasks.embed_section_chunks", args=[sid])
     for bid in language_block_ids:
         celery_app.send_task("app.workers.embedding_tasks.embed_language_block", args=[bid])
 

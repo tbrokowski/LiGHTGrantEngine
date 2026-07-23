@@ -37,9 +37,6 @@ const OUTCOMES = [
   { value: 'rejected', label: 'Rejected' },
   { value: 'pending', label: 'Pending' },
   { value: 'withdrawn', label: 'Withdrawn' },
-  { value: 'deferred', label: 'Deferred' },
-  { value: 'not_submitted', label: 'Not submitted' },
-  { value: 'partially_funded', label: 'Partial' },
 ];
 
 const OUTCOME_TOKENS: Record<string, { bg: string; color: string }> = {
@@ -47,10 +44,7 @@ const OUTCOME_TOKENS: Record<string, { bg: string; color: string }> = {
   rejected:         { bg: 'var(--state-danger-bg)',  color: 'var(--state-danger)' },
   pending:          { bg: 'var(--state-warning-bg)', color: 'var(--state-warning)' },
   withdrawn:        { bg: 'var(--surface-sunken)',   color: 'var(--ink-muted)' },
-  deferred:         { bg: 'var(--surface-sunken)',   color: 'var(--ink-muted)' },
-  not_submitted:    { bg: 'var(--surface-sunken)',   color: 'var(--ink-muted)' },
   resubmitted:      { bg: 'var(--state-info-bg)',    color: 'var(--state-info)' },
-  partially_funded: { bg: 'var(--state-success-bg)', color: 'var(--accent-cool)' },
 };
 
 function formatAmount(amt: number | null, currency: string | null) {
@@ -140,7 +134,7 @@ function NewArchiveModal({ onClose, onCreated }: { onClose: () => void; onCreate
     notes: '',
     lessons_learned: '',
     ai_retrieval_allowed: true,
-    text_reuse_allowed: false,
+    text_reuse_allowed: true,
   });
   const [proposalFile, setProposalFile] = useState<File | null>(null);
   const [callFile, setCallFile] = useState<File | null>(null);
@@ -565,22 +559,34 @@ export default function ArchivePage() {
   const [graphLoading, setGraphLoading] = useState(false);
 
   // ── List load ───────────────────────────────────────────────────────────────
-  const load = useCallback(() => {
-    setLoading(true);
-    archive.list(search ? { search } : {})
+  // `silent` refreshes the data in place without flipping the full-page loading
+  // state — used by the indexing poller so the table doesn't flash to "Loading…"
+  // every few seconds while a background index runs.
+  const load = useCallback((silent = false) => {
+    if (!silent) setLoading(true);
+    return archive.list(search ? { search } : {})
       .then(r => setEntries(r.data))
       .catch(console.error)
-      .finally(() => setLoading(false));
+      .finally(() => { if (!silent) setLoading(false); });
   }, [search]);
 
   useEffect(() => { load(); }, [load]);
 
+  // Poll for indexing progress, but silently (no loading flash) and only for a
+  // bounded window — a single archive stuck in 'processing' shouldn't make the
+  // list re-fetch forever. The backend watchdog re-queues genuinely stale rows.
   useEffect(() => {
     const indexing = entries.some(
       e => e.indexing_status === 'pending' || e.indexing_status === 'processing'
     );
     if (!indexing) return;
-    const timer = setInterval(load, 8000);
+    let polls = 0;
+    const MAX_POLLS = 40; // ~40 × 6s ≈ 4 min, then stop nagging
+    const timer = setInterval(() => {
+      polls += 1;
+      if (polls > MAX_POLLS) { clearInterval(timer); return; }
+      load(true);
+    }, 6000);
     return () => clearInterval(timer);
   }, [entries, load]);
 
@@ -637,7 +643,7 @@ export default function ArchivePage() {
   }, {});
 
   return (
-    <div className="flex flex-col h-full" style={{ background: 'var(--surface-base)' }}>
+    <div className="flex flex-col h-full min-h-0" style={{ background: 'var(--surface-base)' }}>
       {showModal && (
         <NewArchiveModal
           onClose={() => setShowModal(false)}
@@ -669,7 +675,7 @@ export default function ArchivePage() {
       )}
 
       {/* Header */}
-      <div className="px-7 pt-6 pb-3 flex items-center justify-between shrink-0">
+      <div className="px-8 pt-6 pb-3 flex items-center justify-between shrink-0">
         <div>
           <h1 className="text-base font-semibold" style={{ color: 'var(--ink-primary)' }}>Grant Archive</h1>
           <p className="text-xs mt-0.5" style={{ color: 'var(--ink-faint)' }}>Institutional memory — all past submissions</p>
@@ -715,9 +721,9 @@ export default function ArchivePage() {
 
       {/* ── Graph view ───────────────────────────────────────────────────────── */}
       {viewMode === 'graph' && (
-        <div className="flex flex-col flex-1 overflow-hidden">
+        <div className="flex flex-col flex-1 min-h-0 overflow-hidden">
           {/* Graph filter bar */}
-          <div className="px-7 pb-3 shrink-0 flex items-center gap-3 flex-wrap">
+          <div className="px-8 pb-3 shrink-0 flex items-center gap-3 flex-wrap">
             <ArchiveGraphFilters
               filters={graphFilters}
               onChange={handleGraphFiltersChange}
@@ -747,9 +753,9 @@ export default function ArchivePage() {
 
       {/* ── List view ────────────────────────────────────────────────────────── */}
       {viewMode === 'list' && (
-        <div className="flex flex-col flex-1 overflow-hidden">
+        <div className="flex flex-col flex-1 min-h-0 overflow-hidden">
           {/* Outcome filter tabs */}
-          <div className="flex overflow-x-auto shrink-0" style={{ borderBottom: '1px solid var(--rule-subtle)' }}>
+          <div className="flex overflow-x-auto shrink-0 px-4" style={{ borderBottom: '1px solid var(--rule-subtle)' }}>
             {OUTCOMES.map(o => {
               const count = outcomeCounts[o.value] ?? 0;
               if (!o.value && !loading && entries.length === 0) return null;
@@ -781,11 +787,11 @@ export default function ArchivePage() {
           </div>
 
           {/* Table */}
-          <div className="flex-1 overflow-y-auto">
+          <div className="flex-1 min-h-0 overflow-y-auto px-4">
             <table className="w-full text-sm">
               <thead style={{ position: 'sticky', top: 0, zIndex: 1 }}>
                 <tr style={{ borderBottom: '1px solid var(--rule-subtle)', background: 'var(--surface-sunken)' }}>
-                  <th className="text-left px-5 py-3 ledger-label">Title</th>
+                  <th className="text-left px-4 py-3 ledger-label">Title</th>
                   <th className="text-left px-4 py-3 ledger-label hidden md:table-cell">Funder</th>
                   <th className="text-left px-4 py-3 ledger-label hidden lg:table-cell">PI</th>
                   <th className="text-left px-4 py-3 ledger-label hidden lg:table-cell">Year</th>
@@ -829,7 +835,7 @@ export default function ArchivePage() {
                       onMouseEnter={e => (e.currentTarget.style.background = 'var(--selection-bg)')}
                       onMouseLeave={e => (e.currentTarget.style.background = 'transparent')}
                     >
-                      <td className="px-5 py-3.5">
+                      <td className="px-4 py-3.5">
                         <Link
                           href={`/archive/${entry.id}`}
                           className="font-medium block truncate max-w-xs"

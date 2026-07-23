@@ -240,10 +240,19 @@ class GrantContextManager:
                 top_k=3,
             )
             if ctx.rag_sections:
-                blocks = []
+                blocks = [
+                    "These are excerpts from this institution's OWN past proposals. "
+                    "Where an excerpt is marked [VERBATIM REUSE OK] and fits the point "
+                    "you're making, borrow its actual sentences and phrasing — reuse the "
+                    "language directly, adapting only names, numbers, and specifics to this "
+                    "proposal. This is the institution's established voice; match it. "
+                    "Excerpts marked [PARAPHRASE ONLY] must be reworded, not copied."
+                ]
                 for s in ctx.rag_sections:
+                    perm = s.get("reuse_permission")
+                    tag = "[VERBATIM REUSE OK]" if perm == "direct_reuse_allowed" else "[PARAPHRASE ONLY]"
                     blocks.append(
-                        f"[{s.get('section_type', '?')} — {s.get('grant_title', '?')}, "
+                        f"{tag} [{s.get('section_type', '?')} — {s.get('grant_title', '?')}, "
                         f"{s.get('funder', '?')}, {s.get('outcome', '?')}]\n{s.get('full_text', '')[:4000]}"
                     )
                 ctx.layers["archive_sections"] = "\n\n".join(blocks)

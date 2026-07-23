@@ -14,7 +14,7 @@ interface OpportunityRowProps extends OpportunityActionHandlers {
 
 // Fit-tier left-border accent — replaces the visible "Score" badge with a
 // subtle color cue so fit doesn't compete visually with the title/summary.
-// Exported so ShortlistCardRows can reuse the same tier→color mapping.
+// Exported so the shortlist board can reuse the same tier→color mapping.
 export const TIER_ACCENT: Record<string, string> = {
   high: 'var(--state-success)',
   high_priority: 'var(--state-success)',
@@ -24,6 +24,31 @@ export const TIER_ACCENT: Record<string, string> = {
   low_fit: 'var(--rule-strong)',
   watchlist: 'var(--state-info)',
 };
+
+// Compact match-score pill shown to the left of the title.
+const TIER_PILL: Record<string, { bg: string; fg: string }> = {
+  high: { bg: 'var(--state-success-bg)', fg: 'var(--state-success)' },
+  high_priority: { bg: 'var(--state-success-bg)', fg: 'var(--state-success)' },
+  medium: { bg: 'var(--state-warning-bg)', fg: 'var(--state-warning)' },
+  worth_reviewing: { bg: 'var(--state-warning-bg)', fg: 'var(--state-warning)' },
+  watchlist: { bg: 'var(--state-info-bg)', fg: 'var(--state-info)' },
+  low: { bg: 'var(--surface-sunken)', fg: 'var(--ink-muted)' },
+  low_fit: { bg: 'var(--surface-sunken)', fg: 'var(--ink-muted)' },
+};
+
+export function MatchScorePill({ priority, fitScore }: { priority: string | null; fitScore?: number | null }) {
+  if (fitScore == null) return null;
+  const pill = TIER_PILL[priority ?? ''] ?? { bg: 'var(--surface-sunken)', fg: 'var(--ink-muted)' };
+  return (
+    <span
+      className="mono-data shrink-0 inline-flex items-center justify-center rounded text-[10px] font-semibold px-1.5 h-5"
+      style={{ background: pill.bg, color: pill.fg }}
+      title="Match score"
+    >
+      {Math.round(fitScore)}
+    </span>
+  );
+}
 
 export default function OpportunityRow({
   opp,
@@ -47,13 +72,9 @@ export default function OpportunityRow({
       <td className="py-3 pr-5" style={{ borderLeft: `3px solid ${tierAccent}`, paddingLeft: '17px' }}>
         <Link href={`/opportunities/${opp.id}`} className="block" onClick={() => onNavigate?.(opp.id)}>
           <div className="flex items-start gap-2">
-            {unread && (
-              <span
-                className="mt-1.5 w-1.5 h-1.5 rounded-full shrink-0"
-                style={{ background: 'var(--accent-primary)' }}
-                title="Unread"
-              />
-            )}
+            <span className="mt-0.5 shrink-0">
+              <MatchScorePill priority={opp.priority} fitScore={opp.fit_score} />
+            </span>
             <div className="min-w-0">
               <span
                 className="text-sm block leading-snug"

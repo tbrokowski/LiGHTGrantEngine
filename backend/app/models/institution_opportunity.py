@@ -42,3 +42,9 @@ class InstitutionOpportunity(Base):
     # One of: "awarded", "declined", "not_pursued", or null (no outcome yet).
     outcome: Mapped[str | None] = mapped_column(String(50), nullable=True, index=True)
     outcome_recorded_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+
+    # Which shortlist-board lane this opportunity sits in on the Org Shortlist.
+    # Null → rendered in the fit-score-derived default lane.
+    shortlist_category_id: Mapped[str | None] = mapped_column(
+        String, ForeignKey("shortlist_categories.id", ondelete="SET NULL"), nullable=True
+    )

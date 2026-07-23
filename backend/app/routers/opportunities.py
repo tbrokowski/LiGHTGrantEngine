@@ -857,6 +857,7 @@ async def personal_shortlist(
         io_map = {io.opportunity_id: io for io in ios_result.scalars().all()}
 
     read_map = await _load_read_map(db, current_user.id, list(opps.keys()))
+    category_map = await _load_personal_category_map(db, current_user.id, list(opps.keys()))
 
     result = []
     for opp_id in opp_ids:
@@ -868,6 +869,8 @@ async def personal_shortlist(
                 is_read=read_map.get(opp_id, False),
                 io=io,
                 is_personal_shortlisted=True,
+                # My Shortlist board uses the user-scope lane.
+                shortlist_category_id=category_map.get(opp_id),
             ))
     return _sort_opportunity_list_by_summary(result, sort_by)
 
@@ -927,6 +930,8 @@ async def org_shortlist(
             is_read=read_map.get(o.id, False),
             io=io_map.get(o.id),
             is_personal_shortlisted=personal_map.get(o.id, False),
+            # Org shortlist board uses the org-scope lane stored on the io row.
+            shortlist_category_id=(io_map.get(o.id).shortlist_category_id if io_map.get(o.id) else None),
         )
         for o in items
     ]
@@ -1025,6 +1030,186 @@ async def list_linked_partners(
         }
         for lnk, p in rows
     ]
+
+
+# ── Shortlist board categories (Kanban lanes) ─────────────────────────────────
+
+# Default lanes seeded the first time a user/org opens their board. The three
+# priority lanes double as the fit-score auto-placement targets (see the
+# frontend), so their names are matched there — keep them stable.
+_DEFAULT_SHORTLIST_LANES = [
+    ("High priority", "var(--state-success)"),
+    ("Medium priority", "var(--state-warning)"),
+    ("Low priority", "var(--rule-strong)"),
+    ("Special funder", "var(--state-info)"),
+    ("Other", "var(--ink-faint)"),
+]
+
+
+class ShortlistCategoryCreate(BaseModel):
+    scope: str  # 'user' | 'org'
+    name: str
+    color: Optional[str] = None
+
+
+class ShortlistCategoryUpdate(BaseModel):
+    name: Optional[str] = None
+    color: Optional[str] = None
+    position: Optional[int] = None
+
+
+class SetShortlistCategoryRequest(BaseModel):
+    scope: str                       # 'user' | 'org'
+    category_id: Optional[str] = None  # null clears (back to fit-derived default lane)
+
+
+def _scope_owner_id(scope: str, current_user: User) -> str:
+    if scope == "user":
+        return current_user.id
+    if scope == "org":
+        if not current_user.institution_id:
+            raise HTTPException(400, "You must belong to an organization for org-scope categories")
+        return current_user.institution_id
+    raise HTTPException(400, "scope must be 'user' or 'org'")
+
+
+def _category_dict(c) -> dict:
+    return {
+        "id": c.id, "scope": c.scope, "name": c.name,
+        "color": c.color, "position": c.position,
+    }
+
+
+@router.get("/shortlist-categories")
+async def list_shortlist_categories(
+    scope: str = "user",
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    """List the caller's shortlist-board lanes for the scope, seeding the five
+    defaults the first time (High/Medium/Low priority, Special funder, Other)."""
+    from app.models.shortlist_category import ShortlistCategory
+    import uuid as _uuid
+
+    owner_id = _scope_owner_id(scope, current_user)
+    rows = (await db.execute(
+        select(ShortlistCategory)
+        .where(ShortlistCategory.scope == scope, ShortlistCategory.owner_id == owner_id)
+        .order_by(ShortlistCategory.position)
+    )).scalars().all()
+
+    if not rows:
+        for i, (name, color) in enumerate(_DEFAULT_SHORTLIST_LANES):
+            db.add(ShortlistCategory(
+                id=str(_uuid.uuid4()), scope=scope, owner_id=owner_id,
+                name=name, color=color, position=i,
+            ))
+        await db.commit()
+        rows = (await db.execute(
+            select(ShortlistCategory)
+            .where(ShortlistCategory.scope == scope, ShortlistCategory.owner_id == owner_id)
+            .order_by(ShortlistCategory.position)
+        )).scalars().all()
+
+    return [_category_dict(c) for c in rows]
+
+
+@router.post("/shortlist-categories", status_code=201)
+async def create_shortlist_category(
+    data: ShortlistCategoryCreate,
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    from app.models.shortlist_category import ShortlistCategory
+    import uuid as _uuid
+
+    owner_id = _scope_owner_id(data.scope, current_user)
+    if not data.name.strip():
+        raise HTTPException(400, "name is required")
+    max_pos = (await db.execute(
+        select(func.coalesce(func.max(ShortlistCategory.position), -1))
+        .where(ShortlistCategory.scope == data.scope, ShortlistCategory.owner_id == owner_id)
+    )).scalar()
+    cat = ShortlistCategory(
+        id=str(_uuid.uuid4()), scope=data.scope, owner_id=owner_id,
+        name=data.name.strip(), color=data.color, position=int(max_pos) + 1,
+    )
+    db.add(cat)
+    await db.commit()
+    return _category_dict(cat)
+
+
+async def _get_owned_category(db: AsyncSession, cat_id: str, current_user: User):
+    from app.models.shortlist_category import ShortlistCategory
+    cat = await db.get(ShortlistCategory, cat_id)
+    if not cat:
+        raise HTTPException(404, "Category not found")
+    owner_id = _scope_owner_id(cat.scope, current_user)
+    if cat.owner_id != owner_id:
+        raise HTTPException(403, "Not your category")
+    return cat
+
+
+@router.patch("/shortlist-categories/{category_id}")
+async def update_shortlist_category(
+    category_id: str,
+    data: ShortlistCategoryUpdate,
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    cat = await _get_owned_category(db, category_id, current_user)
+    for k, v in data.model_dump(exclude_none=True).items():
+        setattr(cat, k, v)
+    await db.commit()
+    return _category_dict(cat)
+
+
+@router.delete("/shortlist-categories/{category_id}", status_code=204)
+async def delete_shortlist_category(
+    category_id: str,
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    cat = await _get_owned_category(db, category_id, current_user)
+    # Cards referencing it fall back to their fit-derived default lane via the
+    # FK's ON DELETE SET NULL.
+    await db.delete(cat)
+    await db.commit()
+
+
+@router.patch("/{opp_id}/shortlist-category")
+async def set_shortlist_category(
+    opp_id: str,
+    data: SetShortlistCategoryRequest,
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    """Persist which lane a shortlisted opportunity sits in (the drag-drop write).
+    scope='user' writes the per-user lane; scope='org' the per-institution lane."""
+    if data.category_id is not None:
+        # Validate ownership of the target lane.
+        await _get_owned_category(db, data.category_id, current_user)
+
+    if data.scope == "user":
+        state = (await db.execute(
+            select(UserOpportunityState).where(
+                UserOpportunityState.user_id == current_user.id,
+                UserOpportunityState.opportunity_id == opp_id,
+            )
+        )).scalar_one_or_none()
+        if not state:
+            raise HTTPException(404, "Opportunity is not on your shortlist")
+        state.shortlist_category_id = data.category_id
+    elif data.scope == "org":
+        io = await _get_institution_opp(db, current_user, opp_id)
+        if not io:
+            raise HTTPException(404, "Opportunity is not in your organization's feed")
+        io.shortlist_category_id = data.category_id
+    else:
+        raise HTTPException(400, "scope must be 'user' or 'org'")
+
+    await db.commit()
+    return {"id": opp_id, "scope": data.scope, "shortlist_category_id": data.category_id}
 
 
 @router.get("/{opp_id}")
@@ -1440,11 +1625,13 @@ def _opp_summary(
     is_read: bool = False,
     io: InstitutionOpportunity | None = None,
     is_personal_shortlisted: bool = False,
+    shortlist_category_id: str | None = None,
 ) -> dict:
     fit_score = io.fit_score if io else o.fit_score
     priority = io.priority if io else o.priority
     status = io.status if io else o.status
     return {
+        "shortlist_category_id": shortlist_category_id,
         "id": o.id, "title": o.title, "funder": o.funder,
         "opportunity_type": o.opportunity_type,
         "deadline": str(o.deadline) if o.deadline else None,
@@ -1698,6 +1885,21 @@ async def _load_personal_shortlist_map(
         )
     )
     return {row[0]: True for row in result.all()}
+
+
+async def _load_personal_category_map(
+    db: AsyncSession, user_id: str, opp_ids: list[str]
+) -> dict[str, str | None]:
+    """Map opportunity_id → the user's shortlist_category_id for their board lane."""
+    if not opp_ids:
+        return {}
+    result = await db.execute(
+        select(UserOpportunityState.opportunity_id, UserOpportunityState.shortlist_category_id).where(
+            UserOpportunityState.user_id == user_id,
+            UserOpportunityState.opportunity_id.in_(opp_ids),
+        )
+    )
+    return {row[0]: row[1] for row in result.all()}
 
 
 async def _mark_read(db: AsyncSession, user_id: str, opp_id: str) -> None:

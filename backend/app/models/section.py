@@ -74,7 +74,10 @@ class ProposalSection(Base):
     quality_rating: Mapped[int | None] = mapped_column(Integer)  # 1-5
     reusable_status: Mapped[bool] = mapped_column(Boolean, default=False)
     ai_retrieval_allowed: Mapped[bool] = mapped_column(Boolean, default=True)
-    text_reuse_allowed: Mapped[bool] = mapped_column(Boolean, default=False)
+    # Verbatim reuse of the institution's own past-proposal text is on by default:
+    # the writer borrows real sentences/phrasing from prior grants, adapting only
+    # names/numbers to the new context. Flip per-section to restrict.
+    text_reuse_allowed: Mapped[bool] = mapped_column(Boolean, default=True)
     paraphrase_allowed: Mapped[bool] = mapped_column(Boolean, default=True)
     contains_confidential: Mapped[bool] = mapped_column(Boolean, default=False)
     contains_pii: Mapped[bool] = mapped_column(Boolean, default=False)

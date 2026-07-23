@@ -67,6 +67,18 @@ Rules:
   funder homepage, domain root, or generic grants/funding landing page.
 - Prefer URLs from the "Available links" list when they match an opportunity.
 - If the specific call URL cannot be determined, set url to null.
+- Downloadable documents (PDF/DOCX/DOC) ARE valid opportunities when the link or
+  filename indicates a funding CALL, application guide, funding guide, call FAQ,
+  or a scheme/framework tied to a specific current call. Set url to the document's
+  direct link and derive a clear title from the document name (e.g. the file
+  "Application-and-Funding-Guide-for-DSTI-NRF-Masters-and-Doctoral-Scholarships-2027.pdf"
+  → title "DSTI-NRF Masters and Doctoral Scholarships 2027"). See "Downloadable
+  documents" below — treat each genuine call document as its own opportunity.
+- Do NOT create opportunities for institutional or reference documents that are
+  not a specific call: annual reports, strategic plans, vision/impact documents,
+  acts/legislation, corporate identity manuals, B-BBEE/verification certificates,
+  standing "general application guides" not tied to a current call, and
+  privacy/policy/terms documents.
 - If no grants are found, return {"opportunities": []}.
 - Do not include any prose or markdown outside the JSON.
 - Extract EVERY kind of funding/participation opportunity: grants, fellowships,
@@ -83,6 +95,26 @@ Rules:
 
 _MAX_PAGE_CHARS = 100_000  # GPT-4o 128k context window handles full grant pages
 _MAX_DETAIL_LINKS = 40   # default run-wide cap on detail pages per crawl_depth>=1 run
+
+_DOCUMENT_EXTENSIONS = (".pdf", ".docx", ".doc", ".rtf")
+
+
+def _is_document_url(url: str) -> bool:
+    """True when a URL points at a downloadable document (call PDFs, guides)."""
+    if not url:
+        return False
+    path = url.split("?", 1)[0].split("#", 1)[0].lower()
+    return path.endswith(_DOCUMENT_EXTENSIONS)
+
+
+def _set_query_param(url: str, key: str, value) -> str:
+    """Return `url` with query param `key` set to `value` (added or replaced)."""
+    from urllib.parse import urlparse, parse_qsl, urlencode, urlunparse
+
+    parts = urlparse(url)
+    q = dict(parse_qsl(parts.query))
+    q[key] = str(value)
+    return urlunparse(parts._replace(query=urlencode(q)))
 
 _SECTION_LINK_SYSTEM = """\
 You are a funding portal navigator. Given the text and links from a grant-funder homepage or \
@@ -291,6 +323,22 @@ async def _llm_extract(
             f"- {text}: {href}" for text, href in page_links[:50]
         )
         prompt += f"\n\nAvailable links on page:\n{link_lines}"
+        # Call funders often expose each call as a downloadable PDF/DOCX (e.g.
+        # NRF's "Download" buttons). Surface those separately so they survive the
+        # 50-link cap and the model reliably turns genuine call documents into
+        # opportunities (see the document rules in the system prompt).
+        doc_links = [
+            (text, href) for text, href in page_links if _is_document_url(href)
+        ]
+        if doc_links:
+            doc_lines = "\n".join(
+                f"- {text or 'document'}: {href}" for text, href in doc_links[:40]
+            )
+            prompt += (
+                "\n\nDownloadable documents on page (treat each genuine funding "
+                "call / application guide as its own opportunity; ignore "
+                "institutional/reference documents):\n" + doc_lines
+            )
     raw = await chat_complete(
         messages=[
             {"role": "system", "content": _EXTRACTION_SYSTEM},
@@ -354,6 +402,7 @@ class AIScraper(BaseScraper):
                 self.source.name,
                 use_playwright=use_playwright,
                 link_filter=link_filter,
+                max_detail_links_per_section=int(cfg.get("max_detail_links_per_section", 5)),
             )
             for item in raw_items:
                 normalized = self._normalize(item)
@@ -378,7 +427,27 @@ class AIScraper(BaseScraper):
         all_pages: list[tuple[str, str, list[tuple[str, str]]]] = [
             (self.source.url, page_text, page_links)
         ]
-        if paginate:
+        page_param: str | None = cfg.get("page_param")
+        if paginate and page_param:
+            # Explicit query-param pagination — for JS/AJAX pagers (e.g. Drupal
+            # Views on gov funder sites) that render results server-side per
+            # ?page=N but expose no crawlable next-link, so _detect_next_page
+            # can't advance. Pages are 0-indexed; page 0 is the base URL already
+            # fetched above, so enumerate 1..max_pages-1 and stop on the first
+            # empty or repeated page (past the end).
+            seen_texts = {page_text.strip()}
+            for n in range(1, max_pages):
+                purl = _set_query_param(self.source.url, page_param, n)
+                try:
+                    next_text, next_links = _fetch_page_text(purl, use_playwright)
+                except Exception:
+                    break
+                stripped = next_text.strip()
+                if not stripped or stripped in seen_texts:
+                    break
+                seen_texts.add(stripped)
+                all_pages.append((purl, next_text, next_links))
+        elif paginate:
             from bs4 import BeautifulSoup
             from app.scrapers.fetch import fetch_page
             visited_pages = {self.source.url}

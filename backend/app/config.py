@@ -76,6 +76,21 @@ class RAGConfig(BaseModel):
     vector_weight: float = 0.7
     min_similarity: float = 0.60
     enforce_ai_permissions: bool = True
+    # LLM reranker: after hybrid retrieval pulls a wider candidate pool, an LLM
+    # scores each candidate against the query and reorders by true relevance.
+    # Much higher precision than cosine+keyword alone; falls back to the hybrid
+    # order if the rerank call fails. rerank_candidates is the pool size fed to it.
+    use_reranker: bool = True
+    rerank_candidates: int = 12
+    # Contextual-retrieval chunking: sub-chunk sections and embed each chunk with
+    # a generated context prefix, then retrieve at chunk granularity (mapped back
+    # to the parent section for scoring/reuse). Falls back to whole-section
+    # embeddings when a section has no chunks yet (e.g. pre-backfill).
+    use_contextual_chunks: bool = True
+    contextual_context_enabled: bool = True  # generate the LLM context prefix per chunk
+    chunk_target_words: int = 350
+    chunk_overlap_words: int = 60
+    chunk_max_per_section: int = 15
 
 
 class NotificationConfig(BaseModel):

@@ -149,6 +149,15 @@ export const opportunities = {
   awarded: (params?: Record<string, unknown>) => api.get('/opportunities/awarded', { params }),
   setOutcome: (id: string, outcome: string | null) => api.post(`/opportunities/${id}/set-outcome`, { outcome }),
   linkedPartners: (id: string) => api.get(`/opportunities/${id}/partners`),
+  // Shortlist board (Kanban) categories
+  shortlistCategories: (scope: 'user' | 'org') => api.get('/opportunities/shortlist-categories', { params: { scope } }),
+  createShortlistCategory: (data: { scope: 'user' | 'org'; name: string; color?: string | null }) =>
+    api.post('/opportunities/shortlist-categories', data),
+  updateShortlistCategory: (id: string, data: Record<string, unknown>) =>
+    api.patch(`/opportunities/shortlist-categories/${id}`, data),
+  deleteShortlistCategory: (id: string) => api.delete(`/opportunities/shortlist-categories/${id}`),
+  setShortlistCategory: (id: string, data: { scope: 'user' | 'org'; category_id: string | null }) =>
+    api.patch(`/opportunities/${id}/shortlist-category`, data),
   graphData: (params?: Record<string, unknown>) => api.get('/opportunities/graph-data', { params }),
   get: (id: string) => api.get(`/opportunities/${id}`),
   create: (data: Record<string, unknown>) => api.post('/opportunities/', data),

@@ -30,3 +30,9 @@ class UserOpportunityState(Base):
     dismissed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
     personal_notes: Mapped[str | None] = mapped_column(Text, nullable=True)
     personal_tags: Mapped[list] = mapped_column(JSON, default=list, server_default="[]")
+
+    # Which shortlist-board lane this saved opportunity sits in (My Shortlist).
+    # Null → rendered in the fit-score-derived default lane.
+    shortlist_category_id: Mapped[str | None] = mapped_column(
+        String, ForeignKey("shortlist_categories.id", ondelete="SET NULL"), nullable=True
+    )

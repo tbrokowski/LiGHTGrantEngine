@@ -11,7 +11,13 @@ from app.workers.celery_app import celery_app
 logger = logging.getLogger(__name__)
 
 LOCK_TTL = 600  # seconds — covers the slowest expected indexing run
-STALE_THRESHOLD_MINUTES = 20  # archives stuck in processing longer than this are re-queued
+STALE_THRESHOLD_MINUTES = 20  # archives stuck in 'processing' longer than this are re-queued
+# A 'pending' row should be picked up within seconds. If it's still pending after
+# this long, the task was lost (worker was down, broker hiccup, or a leaked Redis
+# lock) and it will otherwise sit "Indexing…" forever — so re-queue it too. Kept
+# shorter than the processing threshold because pending has no legitimate long-run
+# state to protect (unlike an 8-minute in-flight LLM indexing pass).
+PENDING_STALE_THRESHOLD_MINUTES = 5
 
 
 def _mark_failed(archive_id: str, error_msg: str) -> None:
@@ -38,50 +44,64 @@ def _mark_failed(archive_id: str, error_msg: str) -> None:
 
 def _recover_stale_archives() -> list[str]:
     """
-    Find archives stuck in 'processing' for longer than STALE_THRESHOLD_MINUTES,
-    reset them to 'pending', and re-queue indexing. Returns list of archive IDs recovered.
+    Re-queue archives that are stuck mid-index and would otherwise sit
+    "Indexing…" forever:
+
+      - 'processing' rows whose in-flight task died without marking the row
+        failed (worker OOM/SIGKILL), older than STALE_THRESHOLD_MINUTES; and
+      - 'pending' rows whose task was never picked up (worker was down, broker
+        hiccup, or a leaked Redis lock), older than PENDING_STALE_THRESHOLD_MINUTES.
+
+    Returns the list of archive IDs recovered.
     """
-    from sqlalchemy import create_engine, text
+    from sqlalchemy import text
     from datetime import datetime, timezone, timedelta
 
-    from app.config import get_settings
-
-    settings = get_settings()
     engine = get_sync_engine()
     recovered: list[str] = []
     try:
-        cutoff = datetime.now(timezone.utc) - timedelta(minutes=STALE_THRESHOLD_MINUTES)
+        now = datetime.now(timezone.utc)
+        proc_cutoff = now - timedelta(minutes=STALE_THRESHOLD_MINUTES)
+        pending_cutoff = now - timedelta(minutes=PENDING_STALE_THRESHOLD_MINUTES)
         with engine.connect() as conn:
-            # Find archives stuck in processing longer than the stale threshold.
-            # Use COALESCE so archives without an updated_at timestamp are always caught.
+            # COALESCE so rows without an updated_at timestamp are still caught.
+            # A freshly created/updated row (recent timestamp) is intentionally NOT
+            # caught — that's the grace window that lets the worker do its job.
             rows = conn.execute(
                 text(
-                    "SELECT id FROM grant_archives "
-                    "WHERE indexing_status = 'processing' "
-                    "AND COALESCE(updated_at, created_at, NOW() - INTERVAL '1 hour') < :cutoff"
+                    "SELECT id, indexing_status FROM grant_archives "
+                    "WHERE (indexing_status = 'processing' "
+                    "       AND COALESCE(updated_at, created_at, NOW() - INTERVAL '1 hour') < :proc_cutoff) "
+                    "   OR (indexing_status = 'pending' "
+                    "       AND COALESCE(updated_at, created_at, NOW() - INTERVAL '1 hour') < :pending_cutoff)"
                 ),
-                {"cutoff": cutoff},
+                {"proc_cutoff": proc_cutoff, "pending_cutoff": pending_cutoff},
             ).fetchall()
 
-            stale_ids = [str(row[0]) for row in rows]
-            if stale_ids:
-                for archive_id in stale_ids:
+            stale = [(str(row[0]), row[1]) for row in rows]
+            if stale:
+                for archive_id, prev_status in stale:
+                    # Bump updated_at so a re-lost task gets a fresh grace window
+                    # (rather than being re-queued on every single watchdog tick).
                     conn.execute(
                         text(
                             "UPDATE grant_archives SET indexing_status = 'pending', "
-                            "indexing_error = 'Requeued after worker restart' "
-                            "WHERE id = :id"
+                            "indexing_error = 'Requeued by watchdog (was stuck)', "
+                            "updated_at = NOW() WHERE id = :id"
                         ),
                         {"id": archive_id},
                     )
                 conn.commit()
-                for archive_id in stale_ids:
+                for archive_id, prev_status in stale:
                     celery_app.send_task(
                         "app.workers.archive_tasks.index_archive",
                         args=[archive_id],
                     )
                     recovered.append(archive_id)
-                    logger.info("Recovered stale archive %s — re-queued indexing", archive_id)
+                    logger.info(
+                        "Recovered stuck archive %s (was '%s') — re-queued indexing",
+                        archive_id, prev_status,
+                    )
     except Exception as e:
         logger.error("Error recovering stale archives: %s", e)
     finally:
@@ -288,10 +308,14 @@ def index_workspace_document(self, document_id: str, grant_id: str) -> dict:
                 section_ids.append(sid)
             conn.commit()
 
-            # Queue embeddings for each section
+            # Queue embeddings for each section (whole-section + contextual chunks)
             for sid in section_ids:
                 celery_app.send_task(
                     "app.workers.embedding_tasks.embed_section",
+                    args=[sid],
+                )
+                celery_app.send_task(
+                    "app.workers.embedding_tasks.embed_section_chunks",
                     args=[sid],
                 )
 

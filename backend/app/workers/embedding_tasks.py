@@ -147,6 +147,85 @@ def embed_section(section_id: str):
             db.commit()
 
 
+@celery_app.task(name="app.workers.embedding_tasks.embed_section_chunks")
+def embed_section_chunks(section_id: str):
+    """Build contextual-retrieval chunks for a section and embed each.
+
+    Replaces any existing chunks for the section, so it is safe to re-run. Each
+    chunk is embedded over its context-prefixed text (see contextual_chunker).
+    """
+    from sqlalchemy import delete
+    from sqlalchemy.orm import Session
+    from app.models.section import ProposalSection
+    from app.models.section_chunk import SectionChunk
+
+    engine = get_sync_engine()
+
+    with Session(engine) as db:
+        section = db.get(ProposalSection, section_id)
+        if not section or not section.section_text or not section.ai_retrieval_allowed:
+            return {"section_id": section_id, "chunks": 0, "skipped": True}
+
+        async def _build_and_embed():
+            from app.ai.client import get_embedding
+            from app.ai.rag.contextual_chunker import build_chunks_for_section
+
+            payloads = await build_chunks_for_section(section)
+            out = []
+            for p in payloads:
+                emb = await get_embedding(p.embed_input[:8000])
+                out.append((p.chunk_index, p.chunk_text, p.context, emb))
+            return out
+
+        rows = _run_async(_build_and_embed())
+        if not rows:
+            return {"section_id": section_id, "chunks": 0}
+
+        db.execute(delete(SectionChunk).where(SectionChunk.section_id == section_id))
+        import uuid as _uuid
+        for chunk_index, chunk_text, context, emb in rows:
+            db.add(SectionChunk(
+                id=str(_uuid.uuid4()),
+                section_id=section_id,
+                chunk_index=chunk_index,
+                chunk_text=chunk_text,
+                context=context,
+                embedding=emb,
+            ))
+        db.commit()
+        return {"section_id": section_id, "chunks": len(rows)}
+
+
+@celery_app.task(name="app.workers.embedding_tasks.backfill_contextual_chunks")
+def backfill_contextual_chunks(limit: int = 500):
+    """Queue contextual chunking for archive sections that don't have chunks yet.
+
+    One-time (or periodic) backfill so existing archives gain contextual chunks
+    without re-uploading. Bounded by `limit` per run to spread LLM/embedding cost.
+    """
+    from sqlalchemy import select
+    from sqlalchemy.orm import Session
+    from app.models.section import ProposalSection
+    from app.models.section_chunk import SectionChunk
+
+    engine = get_sync_engine()
+    with Session(engine) as db:
+        existing_subq = select(SectionChunk.section_id).distinct().subquery()
+        rows = db.execute(
+            select(ProposalSection.id)
+            .where(
+                ProposalSection.ai_retrieval_allowed.is_(True),
+                ProposalSection.section_text.isnot(None),
+                ProposalSection.id.notin_(select(existing_subq.c.section_id)),
+            )
+            .limit(limit)
+        ).scalars().all()
+
+    for sid in rows:
+        embed_section_chunks.delay(str(sid))
+    return {"queued": len(rows)}
+
+
 @celery_app.task(name="app.workers.embedding_tasks.embed_style_profile")
 def embed_style_profile(archive_id: str):
     """Generate and persist the style fingerprint for an archive."""

@@ -34,10 +34,12 @@ from .activity_log import GrantActivityLog
 from .grant_writing import GrantWritingConversation, GrantCitation
 from .user_opportunity_state import UserOpportunityState
 from .grant_member import GrantMember
+from .section_chunk import SectionChunk
 from .institution_opportunity import InstitutionOpportunity
 from .institution_taste_profile import InstitutionTasteProfile
 from .institution_source import InstitutionSource
 from .funder_org import FunderOrg
+from .shortlist_category import ShortlistCategory
 from .preseed_run import PreseedRun
 from .email_verification import EmailVerification
 from .org_join_request import OrgJoinRequest
@@ -56,7 +58,8 @@ __all__ = [
     "GrantLedger", "LedgerCategory", "FundRequest", "Expenditure", "FundRequestStatus",
     "SlackGrantConfig",
     "GrantActivityLog", "GrantWritingConversation", "GrantCitation",
-    "UserOpportunityState", "GrantMember",
+    "UserOpportunityState", "GrantMember", "SectionChunk",
     "InstitutionOpportunity", "InstitutionTasteProfile", "InstitutionSource", "PreseedRun", "FunderOrg",
+    "ShortlistCategory",
     "EmailVerification", "OrgJoinRequest", "PasswordResetToken",
 ]

@@ -1843,15 +1843,18 @@
     {
       "name": "Swiss National Science Foundation (SNSF)",
       "category": "EU / European",
-      "url": "https://www.snf.ch/",
+      "url": "https://www.snf.ch",
       "source_type": "ai_scraper",
       "api_endpoint": null,
       "scraper_config": {
         "use_playwright": true,
         "crawl_depth": 1,
-        "paginate": true,
-        "max_pages": 10,
-        "link_filter": "/funding|/grant"
+        "site_sections": [
+          "/en/LlLsqrrZVo4EqWui/page/open-calls",
+          "/en/A7fep1IPxz1XezVS/page/find-funding-scheme"
+        ],
+        "link_filter": "call|funding-scheme|grant|award",
+        "max_detail_links": 25
       },
       "refresh_frequency": "weekly",
       "is_high_priority": false,
@@ -1864,7 +1867,7 @@
         "AI",
         "humanities"
       ],
-      "notes": "Applications via the SNSF Portal (portal.snf.ch). P3 database for funded projects. Active 2026 joint call with NHMRC Australia for AI in healthcare research. Also partners with Tri-Agency Canada and DFG Germany. [audit 2026-07-22] listing path http_404; repointed https://www.snf.ch/en/funding/ \u2192 site root"
+      "notes": "Applications via the SNSF Portal (portal.snf.ch). P3 database for funded projects. Active 2026 joint call with NHMRC Australia for AI in healthcare research. Also partners with Tri-Agency Canada and DFG Germany. [audit 2026-07-22] listing path http_404; repointed https://www.snf.ch/en/funding/ \u2192 site root [2026-07-22] Reconfigured to crawl open-calls + find-funding-scheme pages via site_sections (root link_filter never matched SNSF's opaque call paths)."
     },
     {
       "name": "ANR \u2013 Agence Nationale de la Recherche (France)",
@@ -3813,13 +3816,13 @@
     {
       "name": "NSERC \u2013 Natural Sciences and Engineering Research Council of Canada",
       "category": "International / Regional",
-      "url": "https://www.nserc-crsng.gc.ca/index_eng.asp",
+      "url": "https://nserc-crsng.canada.ca/en/funding/funding-opportunity",
       "source_type": "ai_scraper",
       "api_endpoint": null,
       "scraper_config": {
         "use_playwright": true,
-        "crawl_depth": 1,
         "paginate": true,
+        "page_param": "page",
         "max_pages": 5
       },
       "refresh_frequency": "weekly",
@@ -3833,7 +3836,7 @@
         "research",
         "innovation"
       ],
-      "notes": "Canada's federal funding agency for natural sciences and engineering. Part of Tri-Agency with CIHR and SSHRC. [audit 2026-07-22] redirects to https://nserc-crsng.canada.ca/en \u2014 verify new URL"
+      "notes": "Canada's federal funding agency for natural sciences and engineering. Part of Tri-Agency with CIHR and SSHRC. [audit 2026-07-22] redirects to https://nserc-crsng.canada.ca/en \u2014 verify new URL [2026-07-23] Old index_eng.asp homepage yielded only ~3 grants. Repointed to the funding-opportunity listing (73 results). It's a Drupal Views faceted list \u2014 result cards are text-only (no per-item links) and the pager is JS-only, so added query-param pagination (page_param=page) to walk ?page=0..N server-side and extract all results per page."
     },
     {
       "name": "IDRC \u2013 International Development Research Centre (Canada)",
@@ -3922,9 +3925,11 @@
       "api_endpoint": null,
       "scraper_config": {
         "use_playwright": true,
-        "crawl_depth": 1,
-        "paginate": true,
-        "max_pages": 5
+        "site_sections": [
+          "/funding-research/scheme-calendar"
+        ],
+        "link_filter": "arc-funding-schemes/[a-z]",
+        "max_detail_links_per_section": 12
       },
       "refresh_frequency": "weekly",
       "is_high_priority": false,
@@ -3937,7 +3942,7 @@
         "AI",
         "innovation"
       ],
-      "notes": "Australia's primary competitive research funder (excluding health/medical). Uses RMS for grant submission. [audit 2026-07-22] timeout during probe"
+      "notes": "Australia's primary competitive research funder (excluding health/medical). Uses RMS for grant submission. [audit 2026-07-22] timeout during probe [2026-07-23] Repointed to the NCGP Scheme Calendar via site_sections (keeps root url). That page's table lists every open/upcoming NCGP round with dates (Discovery Projects DP27, Future Fellowships FT27, DECRA, Laureate FL27, Linkage, Discovery Indigenous, Industrial Transformation), and depth follows the arc-funding-schemes detail pages for scheme descriptions."
     },
     {
       "name": "NHMRC \u2013 National Health and Medical Research Council (Australia)",
@@ -3949,7 +3954,9 @@
         "use_playwright": true,
         "crawl_depth": 1,
         "paginate": true,
-        "max_pages": 5
+        "max_pages": 5,
+        "link_filter": "/funding/find-funding/[a-z0-9-]{4,}",
+        "max_detail_links": 40
       },
       "refresh_frequency": "weekly",
       "is_high_priority": false,
@@ -3962,7 +3969,7 @@
         "clinical research",
         "public health"
       ],
-      "notes": "Australia's primary health and medical research funder. Applications via Sapphire portal. Active 2026 joint call with SNSF for AI in healthcare research (deadline May 28, 2026). [audit 2026-07-22] timeout during probe"
+      "notes": "Australia's primary health and medical research funder. Applications via Sapphire portal. Active 2026 joint call with SNSF for AI in healthcare research (deadline May 28, 2026). [audit 2026-07-22] timeout during probe [2026-07-23] find-funding lists grant cards linking to /funding/find-funding/<slug>; added link_filter so depth-1 clicks into each grant detail page (title, description, Key Dates) and scrapes it. Apply/guideline docs live on GrantConnect (external)."
     },
     {
       "name": "CSIRO \u2013 Commonwealth Scientific and Industrial Research Organisation",
@@ -3998,10 +4005,13 @@
       "api_endpoint": null,
       "scraper_config": {
         "use_playwright": true,
-        "crawl_depth": 1,
-        "paginate": true,
-        "max_pages": 5,
-        "link_filter": "(grant|fund|scheme|fellowship|award|opportunit|scholarship|apply|call|prize|bursar|residenc|conference|workshop)"
+        "site_sections": [
+          "/funding/nrf-call-for-proposals-for-funding-in-2026-and-2027/",
+          "/dsti-nrf-postgraduate-student-funding-for-the-2027-academic-year/",
+          "/funding/"
+        ],
+        "link_filter": "(call|fund|scholar|fellow|bursar|proposal|framework|grant|postgrad|dsti|ripp|sarao|award)",
+        "max_detail_links_per_section": 12
       },
       "refresh_frequency": "weekly",
       "is_high_priority": false,
@@ -4014,7 +4024,7 @@
         "Africa",
         "innovation"
       ],
-      "notes": "South Africa's primary research funding agency. Partners with IDRC Canada, African Academy of Sciences through Science Granting Councils Initiative (SGCI). [audit 2026-07-22] listing path http_404; repointed https://www.nrf.ac.za/funding-opportunities/ \u2192 site root"
+      "notes": "South Africa's primary research funding agency. Partners with IDRC Canada, African Academy of Sciences through Science Granting Councils Initiative (SGCI). [audit 2026-07-22] listing path http_404; repointed https://www.nrf.ac.za/funding-opportunities/ \u2192 site root [2026-07-23] Elementor site: calls are direct 'Download' PDFs on the call-for-proposals hub + DSTI postgraduate page. Reconfigured to site_sections over those pages + /funding/ index; extractor now treats genuine call/application-guide PDFs as opportunities (url=PDF) so enrichment downloads them as viewable CALL_DOCUMENTs, while ignoring site-wide chrome PDFs (Act, Vision 2030, Corporate Identity, B-BBEE)."
     },
     {
       "name": "Wellcome\u2013DBT India Alliance (Intermediate/Senior)",
@@ -5740,9 +5750,9 @@
       "refresh_frequency": "weekly",
       "is_high_priority": false,
       "logo_url": null,
-      "status": "active",
+      "status": "paused",
       "relevant_themes": [],
-      "notes": "Free API key; paper funding data extracted by AI; less complete than Dimensions."
+      "notes": "Free API key; paper funding data extracted by AI; less complete than Dimensions. [2026-07-22] Paused: semanticscholar.org is a paper-search engine, not a funding-opportunity portal \u2014 no calls to scrape."
     },
     {
       "name": "UK AI Safety Institute / DSIT",

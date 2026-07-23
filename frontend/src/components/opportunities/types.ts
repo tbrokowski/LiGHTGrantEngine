@@ -25,6 +25,15 @@ export interface Opportunity {
   is_on_org_shortlist?: boolean;
   outcome?: 'awarded' | 'declined' | 'not_pursued' | null;
   outcome_recorded_at?: string | null;
+  shortlist_category_id?: string | null;
+}
+
+export interface ShortlistCategory {
+  id: string;
+  scope: 'user' | 'org';
+  name: string;
+  color: string | null;
+  position: number;
 }
 
 export interface OpportunityFilters {

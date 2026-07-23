@@ -54,18 +54,25 @@ def patch_configs(dry_run: bool = False) -> None:
 
             new_cfg = row.get("scraper_config") or {}
             old_cfg = source.scraper_config or {}
+            new_url = row.get("url")
+            url_changed = bool(new_url) and new_url != source.url
 
-            if new_cfg == old_cfg:
+            if new_cfg == old_cfg and not url_changed:
                 skipped += 1
                 continue
 
             print(f"  UPDATE: {name}")
-            if old_cfg:
-                print(f"    old: {json.dumps(old_cfg)}")
-            print(f"    new: {json.dumps(new_cfg)}")
+            if url_changed:
+                print(f"    url: {source.url}  ->  {new_url}")
+            if new_cfg != old_cfg:
+                if old_cfg:
+                    print(f"    old cfg: {json.dumps(old_cfg)}")
+                print(f"    new cfg: {json.dumps(new_cfg)}")
 
             if not dry_run:
                 source.scraper_config = new_cfg
+                if url_changed:
+                    source.url = new_url
             updated += 1
 
         if not dry_run:

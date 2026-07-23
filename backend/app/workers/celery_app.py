@@ -103,7 +103,13 @@ celery_app.conf.beat_schedule = {
     },
     "recover-stale-archive-tasks": {
         "task": "app.workers.archive_tasks.recover_stale_archive_tasks",
-        "schedule": crontab(minute="*/15"),
+        "schedule": crontab(minute="*/5"),
+    },
+    # Backfill contextual-retrieval chunks for archive sections that predate the
+    # feature. Self-limiting: queues 0 once every section has chunks.
+    "backfill-contextual-chunks": {
+        "task": "app.workers.embedding_tasks.backfill_contextual_chunks",
+        "schedule": crontab(hour=4, minute=15),
     },
     "recover-stale-call-analysis": {
         "task": "app.workers.grant_writing_tasks.recover_stale_call_analysis_tasks",

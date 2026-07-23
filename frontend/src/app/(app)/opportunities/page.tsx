@@ -8,7 +8,7 @@ import OpportunityRow from '@/components/opportunities/OpportunityRow';
 import OpportunityFiltersSidebar from '@/components/opportunities/OpportunityFilters';
 import OpportunityGraphView, { GraphNode, GraphCluster, GraphEdge } from '@/components/opportunities/OpportunityGraphView';
 import AddToShortlistModal from '@/components/opportunities/AddToShortlistModal';
-import ShortlistCardRows from '@/components/opportunities/ShortlistCardRows';
+import ShortlistBoard from '@/components/opportunities/ShortlistBoard';
 import {
   isExpired,
   type Opportunity,
@@ -602,12 +602,10 @@ export default function OpportunitiesPage() {
               )}
             </div>
           ) : (activeTab === 'shortlist' || activeTab === 'org-shortlist') ? (
-            <ShortlistCardRows
+            <ShortlistBoard
               items={displayItems}
-              mode={activeTab}
-              priorityFunderGroups={priorityFunderGroups}
-              funderOrgs={filterOptions?.funder_orgs}
-              onNavigate={id => {
+              scope={activeTab === 'org-shortlist' ? 'org' : 'user'}
+              onNavigate={() => {
                 const ordered = displayItems.map(o => o.id);
                 sessionStorage.setItem('opp_nav_list', JSON.stringify(ordered));
               }}

@@ -241,7 +241,7 @@ async def create_archive_with_document(
     lessons_learned: Optional[str] = Form(None),
     notes: Optional[str] = Form(None),
     ai_retrieval_allowed: bool = Form(True),
-    text_reuse_allowed: bool = Form(False),
+    text_reuse_allowed: bool = Form(True),
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ):

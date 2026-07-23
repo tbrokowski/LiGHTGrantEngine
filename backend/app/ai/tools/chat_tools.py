@@ -6,6 +6,7 @@ arguments parsed from the LLM tool call plus injected dependencies (db, context)
 """
 from __future__ import annotations
 
+import asyncio
 import json
 import re
 import structlog
@@ -14,7 +15,7 @@ from typing import Any
 from sqlalchemy import select, or_, func
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.ai.rag.retriever import retrieve_content_exemplars
+from app.ai.rag.retriever import retrieve_content_exemplars, retrieve_entity_mentions
 from app.services.citation_lookup import search_citations as _search_citations
 
 logger = structlog.get_logger()
@@ -28,9 +29,12 @@ CHAT_TOOLS: list[dict] = [
         "function": {
             "name": "search_archive",
             "description": (
-                "Search the internal grant archive for relevant past proposals, sections, "
-                "or exemplar text. Use when the user asks how something has been written "
-                "before, wants examples from funded grants, or needs inspiration for a section."
+                "Search the internal grant archive of the institution's past proposals. "
+                "Use when the user asks how something has been written before, wants examples "
+                "from funded grants, or needs inspiration for a section — AND to explain a "
+                "named program, acronym, or concept from the institution's work (e.g. \"what "
+                "is MOOVE?\", \"summarize our lung-ultrasound work\"): it matches the literal "
+                "term across the archive and returns full excerpts to synthesize an answer from."
             ),
             "parameters": {
                 "type": "object",
@@ -162,26 +166,53 @@ async def run_search_archive(
     db: AsyncSession | None = None,
     grant_id: str | None = None,
 ) -> dict:
-    """Search pgvector archive for relevant exemplar sections."""
+    """Search the archive for exemplar sections.
+
+    Merges two retrieval modes so questions like "what is MOOVE?" work as well as
+    thematic ones: literal entity-mention matches (essential for acronyms and named
+    programs, which semantic search alone often misses) are surfaced first, then
+    reranked hybrid content exemplars. Returns generous excerpts so the assistant
+    can synthesize a real explanation rather than a one-line snippet.
+    """
     try:
-        results = await retrieve_content_exemplars(
-            query=query,
-            db=db,
-            section_type=section_type,
-            funder=funder,
-            top_k=5,
-            current_grant_id=grant_id,
+        content, entity = await asyncio.gather(
+            retrieve_content_exemplars(
+                query=query,
+                db=db,
+                section_type=section_type,
+                funder=funder,
+                top_k=5,
+                current_grant_id=grant_id,
+            ),
+            retrieve_entity_mentions(
+                entity=query.strip(),
+                db=db,
+                funder=funder,
+                top_k=4,
+                current_grant_id=grant_id,
+            ),
         )
+        # Entity (literal) hits first, then hybrid content hits; dedup by section id.
+        seen: set[str] = set()
+        merged: list[dict] = []
+        for r in entity + content:
+            sid = str(r.get("id", ""))
+            if sid and sid in seen:
+                continue
+            if sid:
+                seen.add(sid)
+            merged.append(r)
+
         items = [
             {
                 "grant_title": r.get("grant_title", "Unknown"),
                 "funder": r.get("funder", ""),
                 "outcome": r.get("outcome", ""),
                 "section_type": r.get("section_type", ""),
-                "excerpt": (r.get("full_text") or "")[:600],
-                "similarity": round(r.get("similarity", 0), 3),
+                "excerpt": (r.get("full_text") or "")[:1200],
+                "similarity": round(r.get("relevance_score", 0), 3),
             }
-            for r in results
+            for r in merged[:6]
         ]
         return {"results": items, "count": len(items)}
     except Exception as exc:

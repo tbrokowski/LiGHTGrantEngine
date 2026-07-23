@@ -54,6 +54,20 @@ STATUS_TO_ARCHIVE_OUTCOME = {
     "deferred": "deferred",
 }
 
+# Keep the coarse pipeline stage (which drives the Proposals / Pending / Active
+# tabs) in sync with the fine-grained status. Setting a grant's status to
+# "submitted"/"under_review" must move it out of the "proposal" stage so it no
+# longer appears under Proposals — regardless of which UI changed the status.
+STATUS_TO_STAGE = {
+    "submitted": "pending",
+    "under_review": "pending",
+    "deferred": "pending",
+    "awarded": "active",
+    "rejected": "archived",
+    "withdrawn": "archived",
+    "closed": "archived",
+}
+
 
 class GrantCreate(BaseModel):
     title: str
@@ -295,10 +309,27 @@ async def update_grant(
     _: None = Depends(grant_access(require_editor=True)),
 ):
     grant = await _get_grant_or_404(grant_id, db)
-    for k, v in data.model_dump(exclude_none=True).items():
+    updates = data.model_dump(exclude_none=True)
+    for k, v in updates.items():
         setattr(grant, k, v)
+
+    # Keep the pipeline stage consistent with the status so a submitted grant
+    # leaves the Proposals tab as soon as its status changes, no matter which
+    # UI made the change (e.g. the workspace status dropdown, which PATCHes
+    # status directly rather than going through /stage).
+    new_status = updates.get("status")
+    if new_status and new_status in STATUS_TO_STAGE:
+        target_stage = STATUS_TO_STAGE[new_status]
+        if grant.grant_stage != target_stage:
+            grant.grant_stage = target_stage
+        now = datetime.now(timezone.utc)
+        if target_stage == "pending" and grant.submitted_at is None:
+            grant.submitted_at = now
+        elif target_stage in ("active", "archived") and grant.decision_at is None:
+            grant.decision_at = now
+
     await db.commit()
-    return {"id": grant.id, "status": grant.status}
+    return {"id": grant.id, "status": grant.status, "grant_stage": grant.grant_stage}
 
 
 @router.patch("/{grant_id}/reporting")

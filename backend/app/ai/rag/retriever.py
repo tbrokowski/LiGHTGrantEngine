@@ -160,6 +160,60 @@ async def _vector_candidates(
     return results
 
 
+async def _chunk_vector_candidates(
+    db: AsyncSession,
+    query_embedding: list[float],
+    filters: list,
+    limit: int,
+) -> tuple[list[tuple[ProposalSection, float]], dict[str, tuple[str, str | None]]]:
+    """Contextual-retrieval candidate generation: match at chunk granularity, then
+    map back to parent sections (best chunk per section wins).
+
+    Returns (candidates, matched) where candidates is [(section, similarity)] just
+    like _vector_candidates, and matched maps section_id -> (chunk_text, context)
+    so callers can surface the exact passage that matched. `filters` are the same
+    ProposalSection clauses used for whole-section retrieval and are applied via a
+    join, so permissions/section_type/funder scoping carry over unchanged.
+    """
+    from app.models.section_chunk import SectionChunk
+
+    embedding_str = f"[{','.join(str(x) for x in query_embedding)}]"
+    q = (
+        select(
+            ProposalSection,
+            SectionChunk.chunk_text,
+            SectionChunk.context,
+            text(f"section_chunks.embedding <=> '{embedding_str}'::vector AS distance"),
+        )
+        .join(SectionChunk, SectionChunk.section_id == ProposalSection.id)
+        .where(SectionChunk.embedding.isnot(None))
+    )
+    if filters:
+        q = q.where(and_(*filters))
+    q = q.order_by(text("distance")).limit(limit * 3)
+
+    rows = await db.execute(q)
+    best_sim: dict[str, float] = {}
+    best_section: dict[str, ProposalSection] = {}
+    matched: dict[str, tuple[str, str | None]] = {}
+    for section, chunk_text, context, distance in rows:
+        sim = 1.0 - float(distance)
+        if section.id not in best_sim or sim > best_sim[section.id]:
+            best_sim[section.id] = sim
+            best_section[section.id] = section
+            matched[section.id] = (chunk_text, context)
+        if len(best_sim) >= limit and section.id in best_sim:
+            # keep collecting only to improve already-seen sections is unnecessary
+            pass
+
+    candidates = sorted(
+        ((best_section[sid], best_sim[sid]) for sid in best_sim),
+        key=lambda x: x[1],
+        reverse=True,
+    )[:limit]
+    return candidates, matched
+
+
 async def retrieve_style_exemplars(
     db: AsyncSession,
     section_type: Optional[str] = None,
@@ -221,6 +275,61 @@ async def retrieve_style_exemplars(
     return [_section_to_dict(s, sc) for s, sc in scored[:k]]
 
 
+async def _llm_rerank(query: str, candidates: list[dict], top_k: int) -> list[dict]:
+    """Reorder candidate sections by true relevance to `query` using an LLM judge.
+
+    Returns the top_k candidates in reranked order. On any failure (or if disabled)
+    the caller keeps the original hybrid ordering — reranking is purely additive.
+    """
+    if not candidates:
+        return []
+    # Compact numbered menu of candidates — title + a text window, enough for the
+    # judge to assess relevance without blowing the context budget.
+    menu = []
+    for i, c in enumerate(candidates):
+        snippet = (c.get("full_text") or c.get("text_snippet") or "")[:700]
+        menu.append(
+            f"[{i}] {c.get('grant_title', '?')} · {c.get('section_type', '?')} · "
+            f"outcome={c.get('outcome', '?')}\n{snippet}"
+        )
+    prompt = (
+        f"Query: {query}\n\n"
+        f"Candidate passages from a grant archive:\n\n" + "\n\n".join(menu) + "\n\n"
+        f"Return ONLY a JSON array of the candidate indices, most relevant first, "
+        f"including at most {top_k}. Judge by how directly each passage helps answer "
+        f"or write about the query — reward specific methods, numbers, and named "
+        f"programs; drop off-topic passages entirely. Example: [3,0,7]"
+    )
+    try:
+        import json as _json
+        raw = await chat_complete(
+            messages=[
+                {"role": "system", "content": "You are a precise retrieval reranker. Output only a JSON array of integers."},
+                {"role": "user", "content": prompt},
+            ],
+            agent_name="rag_reranker",
+        )
+        start, end = raw.find("["), raw.rfind("]")
+        if start == -1 or end == -1:
+            raise ValueError("no JSON array in rerank response")
+        order = _json.loads(raw[start : end + 1])
+        seen: set[int] = set()
+        ranked: list[dict] = []
+        for idx in order:
+            if isinstance(idx, int) and 0 <= idx < len(candidates) and idx not in seen:
+                seen.add(idx)
+                ranked.append(candidates[idx])
+        # Append any candidates the judge omitted, preserving hybrid order, so we
+        # never return fewer than available (rerank refines order, not recall).
+        for i, c in enumerate(candidates):
+            if i not in seen:
+                ranked.append(c)
+        return ranked[:top_k]
+    except Exception as exc:
+        logger.warning("LLM rerank failed, keeping hybrid order", error=str(exc))
+        return candidates[:top_k]
+
+
 async def retrieve_content_exemplars(
     query: str,
     db: AsyncSession,
@@ -232,6 +341,7 @@ async def retrieve_content_exemplars(
     accessible_grant_ids: Optional[list[str]] = None,
     current_grant_id: Optional[str] = None,
     archive_ids: Optional[list[str]] = None,
+    rerank: bool = True,
 ) -> list[dict]:
     """Topic-relevant retrieval for substantive content inspiration.
 
@@ -276,8 +386,32 @@ async def retrieve_content_exemplars(
     query_embedding = await get_embedding(query)
     query_words = query.split()[:8]
 
+    # Pull a wider candidate pool when the reranker is on — it needs headroom to
+    # reorder, and precision comes from the rerank, not from a tight vector cutoff.
+    use_reranker = rerank and rag_cfg.use_reranker
+    pool = max(k * 2, rag_cfg.rerank_candidates) if use_reranker else k * 2
+
+    # Contextual chunks first (precise passage matching); fall back to whole-section
+    # embeddings for sections that haven't been chunked yet (e.g. pre-backfill) or
+    # if the chunk store isn't available (e.g. before migration 050).
+    matched_chunks: dict[str, tuple[str, str | None]] = {}
+    candidates: list[tuple[ProposalSection, float]] = []
+    if rag_cfg.use_contextual_chunks:
+        try:
+            candidates, matched_chunks = await _chunk_vector_candidates(
+                db, query_embedding, filters, pool
+            )
+        except Exception as e:
+            logger.warning("Chunk retrieval unavailable, using whole-section vectors", error=str(e))
+            candidates, matched_chunks = [], {}
+            # Reset the aborted transaction so the whole-section fallback can run.
+            try:
+                await db.rollback()
+            except Exception:
+                pass
     try:
-        candidates = await _vector_candidates(db, query_embedding, filters, k * 2)
+        if not candidates:
+            candidates = await _vector_candidates(db, query_embedding, filters, pool)
     except Exception as e:
         logger.warning("Content vector retrieval failed, using keyword fallback", error=str(e))
         return await _keyword_fallback(query, db, filters, k)
@@ -296,7 +430,20 @@ async def retrieve_content_exemplars(
         scored.append((section, score))
 
     scored.sort(key=lambda x: x[1], reverse=True)
-    return [_section_to_dict(s, sc) for s, sc in scored[:k]]
+
+    def _to_dict(section: ProposalSection, sc: float) -> dict:
+        d = _section_to_dict(section, sc)
+        hit = matched_chunks.get(section.id)
+        if hit:
+            d["matched_chunk"] = hit[0]
+            d["chunk_context"] = hit[1]
+        return d
+
+    if use_reranker and len(scored) > 1:
+        pool_dicts = [_to_dict(s, sc) for s, sc in scored[: rag_cfg.rerank_candidates]]
+        return await _llm_rerank(query, pool_dicts, k)
+
+    return [_to_dict(s, sc) for s, sc in scored[:k]]
 
 
 async def retrieve_from_named_archive(
