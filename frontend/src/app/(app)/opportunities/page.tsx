@@ -3,7 +3,7 @@ import { useEffect, useState, useCallback, useRef } from 'react';
 import { useRouter } from 'next/navigation';
 import { opportunities, organizations } from '@/lib/api';
 import { useAuth } from '@/lib/auth';
-import { notifyOpportunitiesChanged, onOpportunitiesChanged } from '@/lib/opportunities-events';
+import { onOpportunitiesChanged } from '@/lib/opportunities-events';
 import OpportunityRow from '@/components/opportunities/OpportunityRow';
 import OpportunityFiltersSidebar from '@/components/opportunities/OpportunityFilters';
 import OpportunityGraphView, { GraphNode, GraphCluster, GraphEdge } from '@/components/opportunities/OpportunityGraphView';
@@ -280,30 +280,6 @@ export default function OpportunitiesPage() {
   );
   const unreadCount = unreadOnly ? queueTotal : unreadTotal;
 
-  async function backfillAfterRead(removedId: string) {
-    const remaining = queue.filter(o => o.id !== removedId);
-    const offset = remaining.length;
-    const pageSize = 25;
-    const pageNum = Math.floor(offset / pageSize) + 1;
-    const indexInPage = offset % pageSize;
-
-    const r = await opportunities.list({
-      sort_by: 'relevance',
-      unread_only: true,
-      page: pageNum,
-      page_size: pageSize,
-    });
-
-    const loadedIds = new Set(remaining.map(o => o.id));
-    const candidates = (r.data.items ?? []).slice(indexInPage);
-    const next = candidates.find((o: Opportunity) => !loadedIds.has(o.id));
-
-    setQueue(next ? [...remaining, next] : remaining);
-    setQueueTotal(Math.max(0, (r.data.total ?? queueTotal) - 1));
-    refreshCounts();
-    notifyOpportunitiesChanged();
-  }
-
   const orgShortlistCount = orgShortlist.length;
 
   function removeFromList(id: string) {
@@ -333,31 +309,27 @@ export default function OpportunitiesPage() {
 
   async function handleMarkRead(id: string) {
     await opportunities.markRead(id);
-    if (unreadOnly) {
-      await backfillAfterRead(id);
-    } else {
-      markReadLocal(id);
-      refreshCounts();
-      notifyOpportunitiesChanged();
-    }
+    // Mark in place — do not remove/backfill even in unread-only mode. The row
+    // stays visible (styled as read) and only drops out on the next full reload,
+    // so clicking read doesn't disrupt scrolling/reading flow. We deliberately do
+    // NOT call notifyOpportunitiesChanged() here: this page listens to that event
+    // and would reload the queue, immediately dropping the just-read row.
+    markReadLocal(id);
+    refreshCounts();
   }
 
   async function handleToggleRead(id: string, isRead: boolean) {
     if (isRead) {
       await opportunities.markUnread(id);
       markUnreadLocal(id);
-      refreshCounts();
-      notifyOpportunitiesChanged();
     } else {
       await opportunities.markRead(id);
-      if (unreadOnly) {
-        await backfillAfterRead(id);
-      } else {
-        markReadLocal(id);
-        refreshCounts();
-        notifyOpportunitiesChanged();
-      }
+      // Keep the row in place (just flip it to read); it leaves the list on the
+      // next reload, not immediately — see handleMarkRead. No notify() for the
+      // same reason (it would trigger a queue reload and drop the row).
+      markReadLocal(id);
     }
+    refreshCounts();
   }
 
   async function handleToggleBookmark(id: string, isBookmarked: boolean) {
