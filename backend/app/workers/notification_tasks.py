@@ -173,6 +173,60 @@ def send_deadline_reminders():
                         import logging
                         logging.getLogger(__name__).warning("Slack send failed: %s", exc)
 
+        # ── Opportunity workspace task reminders ──────────────────────────────
+        # User-created tasks on an opportunity card, before it becomes a grant.
+        # org-scope tasks -> org Slack channel; user-scope tasks -> in-app to the
+        # owner (a private task must not leak to the shared org channel). Each
+        # task drives its own reminder offsets via remind_days_before.
+        try:
+            from app.models.opportunity_task import OpportunityTask
+            from app.models.opportunity import Opportunity as _Opp
+
+            opp_tasks = db.execute(
+                select(OpportunityTask).where(
+                    OpportunityTask.due_date != None,
+                    OpportunityTask.status != "done",
+                )
+            ).scalars().all()
+            opp_title_cache: dict[str, str] = {}
+            for otask in opp_tasks:
+                offsets = otask.remind_days_before or [7, 3, 1, 0]
+                due = otask.due_date
+                days_ahead = (due - today).days
+                if days_ahead not in offsets:
+                    continue
+                if otask.opportunity_id not in opp_title_cache:
+                    opp_row = db.get(_Opp, otask.opportunity_id)
+                    opp_title_cache[otask.opportunity_id] = opp_row.title if opp_row else "opportunity"
+                opp_title = opp_title_cache.get(otask.opportunity_id, "opportunity")
+                when = "today" if days_ahead == 0 else f"in {days_ahead} day(s)"
+                msg = f"Task '{otask.title}' for {opp_title} is due {when}"
+
+                if otask.scope == "org":
+                    if slack_enabled and slack_webhook:
+                        try:
+                            _send_slack(f":dart: {msg}", slack_webhook)
+                        except Exception as exc:
+                            import logging
+                            logging.getLogger(__name__).warning("Slack send failed: %s", exc)
+                else:  # user-scope -> private in-app notification to the owner
+                    db.add(Notification(
+                        id=str(__import__("uuid").uuid4()),
+                        user_id=otask.owner_id,
+                        notification_type=(
+                            NotificationType.TASK_DUE_SOON if days_ahead > 0 else NotificationType.TASK_ASSIGNED
+                        ),
+                        entity_type="opportunity_task",
+                        entity_id=otask.id,
+                        message=msg,
+                        channel="in_app",
+                        status=NotificationStatus.PENDING,
+                    ))
+                    notifications_created += 1
+        except Exception as exc:
+            import logging
+            logging.getLogger(__name__).warning("Opportunity task reminders failed: %s", exc)
+
         # ── Opportunity deadline reminders (shortlisted / actively-pursuing
         #    only — scoped this way to avoid notifying on the entire global
         #    opportunity pool, which every institution shares) ───────────────

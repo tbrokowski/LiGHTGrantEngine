@@ -8,6 +8,7 @@ import { notifyOpportunitiesChanged } from '@/lib/opportunities-events';
 import { usePdfViewer } from '@/contexts/PdfViewerContext';
 import { useAuth } from '@/lib/auth';
 import FunderLogo from '@/components/opportunities/FunderLogo';
+import OpportunityPlan from '@/components/opportunities/OpportunityPlan';
 import BookmarkButton from '@/components/opportunities/BookmarkButton';
 import ProseContent from '@/components/ui/ProseContent';
 
@@ -872,6 +873,14 @@ export default function OpportunityDetailPage() {
           )}
         </div>
       </div>
+
+      {/* ── Plan: tasks, dates, reminders, notes, links ── */}
+      <OpportunityPlan
+        opportunityId={id}
+        canUseOrg={!user?.institution_is_personal}
+        defaultScope={opp.is_on_org_shortlist ? 'org' : 'user'}
+        institutionId={user?.institution_id}
+      />
 
       {/* ── Card 1: Call Overview ── */}
       {(() => {

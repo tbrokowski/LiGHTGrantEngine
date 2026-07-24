@@ -158,6 +158,19 @@ export const opportunities = {
   deleteShortlistCategory: (id: string) => api.delete(`/opportunities/shortlist-categories/${id}`),
   setShortlistCategory: (id: string, data: { scope: 'user' | 'org'; category_id: string | null }) =>
     api.patch(`/opportunities/${id}/shortlist-category`, data),
+  // Opportunity card workspace (tasks / notes / links), scoped user|org
+  workspace: (id: string, scope: 'user' | 'org') => api.get(`/opportunities/${id}/workspace`, { params: { scope } }),
+  createOppTask: (id: string, data: Record<string, unknown>) => api.post(`/opportunities/${id}/tasks`, data),
+  updateOppTask: (id: string, taskId: string, data: Record<string, unknown>) =>
+    api.patch(`/opportunities/${id}/tasks/${taskId}`, data),
+  deleteOppTask: (id: string, taskId: string) => api.delete(`/opportunities/${id}/tasks/${taskId}`),
+  createOppNote: (id: string, data: { scope: 'user' | 'org'; body: string }) => api.post(`/opportunities/${id}/notes`, data),
+  updateOppNote: (id: string, noteId: string, data: { body: string }) =>
+    api.patch(`/opportunities/${id}/notes/${noteId}`, data),
+  deleteOppNote: (id: string, noteId: string) => api.delete(`/opportunities/${id}/notes/${noteId}`),
+  createOppLink: (id: string, data: { scope: 'user' | 'org'; label: string; url: string }) =>
+    api.post(`/opportunities/${id}/links`, data),
+  deleteOppLink: (id: string, linkId: string) => api.delete(`/opportunities/${id}/links/${linkId}`),
   graphData: (params?: Record<string, unknown>) => api.get('/opportunities/graph-data', { params }),
   get: (id: string) => api.get(`/opportunities/${id}`),
   create: (data: Record<string, unknown>) => api.post('/opportunities/', data),

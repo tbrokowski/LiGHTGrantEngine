@@ -1212,6 +1212,270 @@ async def set_shortlist_category(
     return {"id": opp_id, "scope": data.scope, "shortlist_category_id": data.category_id}
 
 
+# ── Opportunity card workspace (tasks / notes / links) ────────────────────────
+# Scoped exactly like the shortlist board: scope='org' is shared across the
+# institution (owner_id = institution_id); scope='user' is private to the user
+# (owner_id = user_id). Reuses _scope_owner_id from the shortlist section above.
+
+class OppTaskCreate(BaseModel):
+    scope: str                                   # 'user' | 'org'
+    title: str
+    description: Optional[str] = None
+    due_date: Optional[date] = None
+    assignee_ids: Optional[list[str]] = None
+    remind_days_before: Optional[list[int]] = None
+
+
+class OppTaskUpdate(BaseModel):
+    title: Optional[str] = None
+    description: Optional[str] = None
+    due_date: Optional[date] = None
+    status: Optional[str] = None                  # open | in_progress | done
+    assignee_ids: Optional[list[str]] = None
+    remind_days_before: Optional[list[int]] = None
+
+
+class OppNoteCreate(BaseModel):
+    scope: str
+    body: str
+
+
+class OppNoteUpdate(BaseModel):
+    body: str
+
+
+class OppLinkCreate(BaseModel):
+    scope: str
+    label: str
+    url: str
+
+
+def _opp_task_dict(t) -> dict:
+    return {
+        "id": t.id, "scope": t.scope, "title": t.title, "description": t.description,
+        "due_date": str(t.due_date) if t.due_date else None, "status": t.status,
+        "assignee_ids": t.assignee_ids or [], "remind_days_before": t.remind_days_before or [],
+        "created_by_id": t.created_by_id,
+        "completed_at": str(t.completed_at) if t.completed_at else None,
+        "created_at": str(t.created_at) if t.created_at else None,
+    }
+
+
+def _opp_note_dict(n) -> dict:
+    return {
+        "id": n.id, "scope": n.scope, "body": n.body, "created_by_id": n.created_by_id,
+        "created_at": str(n.created_at) if n.created_at else None,
+        "updated_at": str(n.updated_at) if n.updated_at else None,
+    }
+
+
+def _opp_link_dict(link) -> dict:
+    return {
+        "id": link.id, "scope": link.scope, "label": link.label, "url": link.url,
+        "created_by_id": link.created_by_id,
+    }
+
+
+async def _get_owned_ws_row(db: AsyncSession, model, row_id: str, current_user: User):
+    """Fetch a workspace row and verify the caller owns it (own user row, or a row
+    belonging to the caller's institution for org scope). 404/403 otherwise."""
+    row = await db.get(model, row_id)
+    if not row:
+        raise HTTPException(404, "Not found")
+    owner_id = _scope_owner_id(row.scope, current_user)
+    if row.owner_id != owner_id:
+        raise HTTPException(403, "Not yours")
+    return row
+
+
+@router.get("/{opp_id}/workspace")
+async def get_opportunity_workspace(
+    opp_id: str,
+    scope: str = "org",
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    """Tasks / notes / links for this opportunity in the given scope, plus the
+    read-only call deadlines so the UI can render a combined 'key dates' list."""
+    from app.models.opportunity_task import OpportunityTask, OpportunityNote, OpportunityLink
+
+    owner_id = _scope_owner_id(scope, current_user)
+    opp = await _get_opp_or_404(opp_id, db)
+
+    async def _rows(model, order):
+        return (await db.execute(
+            select(model)
+            .where(model.opportunity_id == opp_id, model.scope == scope, model.owner_id == owner_id)
+            .order_by(order)
+        )).scalars().all()
+
+    tasks = await _rows(OpportunityTask, OpportunityTask.created_at)
+    notes = await _rows(OpportunityNote, OpportunityNote.created_at.desc())
+    links = await _rows(OpportunityLink, OpportunityLink.created_at)
+
+    return {
+        "scope": scope,
+        "tasks": [_opp_task_dict(t) for t in tasks],
+        "notes": [_opp_note_dict(n) for n in notes],
+        "links": [_opp_link_dict(link) for link in links],
+        "call_dates": {
+            "deadline": str(opp.deadline) if opp.deadline else None,
+            "loi_deadline": str(opp.loi_deadline) if opp.loi_deadline else None,
+            "concept_note_deadline": str(opp.concept_note_deadline) if opp.concept_note_deadline else None,
+            "full_proposal_deadline": str(opp.full_proposal_deadline) if opp.full_proposal_deadline else None,
+        },
+    }
+
+
+@router.post("/{opp_id}/tasks", status_code=201)
+async def create_opp_task(
+    opp_id: str,
+    data: OppTaskCreate,
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    from app.models.opportunity_task import OpportunityTask
+
+    owner_id = _scope_owner_id(data.scope, current_user)
+    if not data.title.strip():
+        raise HTTPException(400, "title is required")
+    await _get_opp_or_404(opp_id, db)
+    task = OpportunityTask(
+        opportunity_id=opp_id, scope=data.scope, owner_id=owner_id,
+        title=data.title.strip(), description=data.description, due_date=data.due_date,
+        assignee_ids=data.assignee_ids or [],
+        remind_days_before=data.remind_days_before if data.remind_days_before is not None else [7, 3, 1, 0],
+        created_by_id=current_user.id,
+    )
+    db.add(task)
+    await db.commit()
+    return _opp_task_dict(task)
+
+
+@router.patch("/{opp_id}/tasks/{task_id}")
+async def update_opp_task(
+    opp_id: str,
+    task_id: str,
+    data: OppTaskUpdate,
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    from app.models.opportunity_task import OpportunityTask
+
+    task = await _get_owned_ws_row(db, OpportunityTask, task_id, current_user)
+    fields = data.model_dump(exclude_unset=True)
+    if "status" in fields:
+        task.completed_at = datetime.now(timezone.utc) if fields["status"] == "done" else None
+    for k, v in fields.items():
+        setattr(task, k, v)
+    await db.commit()
+    return _opp_task_dict(task)
+
+
+@router.delete("/{opp_id}/tasks/{task_id}", status_code=204)
+async def delete_opp_task(
+    opp_id: str,
+    task_id: str,
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    from app.models.opportunity_task import OpportunityTask
+
+    task = await _get_owned_ws_row(db, OpportunityTask, task_id, current_user)
+    await db.delete(task)
+    await db.commit()
+
+
+@router.post("/{opp_id}/notes", status_code=201)
+async def create_opp_note(
+    opp_id: str,
+    data: OppNoteCreate,
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    from app.models.opportunity_task import OpportunityNote
+
+    owner_id = _scope_owner_id(data.scope, current_user)
+    if not data.body.strip():
+        raise HTTPException(400, "body is required")
+    await _get_opp_or_404(opp_id, db)
+    note = OpportunityNote(
+        opportunity_id=opp_id, scope=data.scope, owner_id=owner_id,
+        body=data.body.strip(), created_by_id=current_user.id,
+    )
+    db.add(note)
+    await db.commit()
+    return _opp_note_dict(note)
+
+
+@router.patch("/{opp_id}/notes/{note_id}")
+async def update_opp_note(
+    opp_id: str,
+    note_id: str,
+    data: OppNoteUpdate,
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    from app.models.opportunity_task import OpportunityNote
+
+    note = await _get_owned_ws_row(db, OpportunityNote, note_id, current_user)
+    if not data.body.strip():
+        raise HTTPException(400, "body is required")
+    note.body = data.body.strip()
+    await db.commit()
+    return _opp_note_dict(note)
+
+
+@router.delete("/{opp_id}/notes/{note_id}", status_code=204)
+async def delete_opp_note(
+    opp_id: str,
+    note_id: str,
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    from app.models.opportunity_task import OpportunityNote
+
+    note = await _get_owned_ws_row(db, OpportunityNote, note_id, current_user)
+    await db.delete(note)
+    await db.commit()
+
+
+@router.post("/{opp_id}/links", status_code=201)
+async def create_opp_link(
+    opp_id: str,
+    data: OppLinkCreate,
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    from app.models.opportunity_task import OpportunityLink
+
+    owner_id = _scope_owner_id(data.scope, current_user)
+    if not data.label.strip() or not data.url.strip():
+        raise HTTPException(400, "label and url are required")
+    await _get_opp_or_404(opp_id, db)
+    link = OpportunityLink(
+        opportunity_id=opp_id, scope=data.scope, owner_id=owner_id,
+        label=data.label.strip(), url=data.url.strip(), created_by_id=current_user.id,
+    )
+    db.add(link)
+    await db.commit()
+    return _opp_link_dict(link)
+
+
+@router.delete("/{opp_id}/links/{link_id}", status_code=204)
+async def delete_opp_link(
+    opp_id: str,
+    link_id: str,
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    from app.models.opportunity_task import OpportunityLink
+
+    link = await _get_owned_ws_row(db, OpportunityLink, link_id, current_user)
+    await db.delete(link)
+    await db.commit()
+
+
 @router.get("/{opp_id}")
 async def get_opportunity(
     opp_id: str,
@@ -1429,6 +1693,47 @@ async def convert_to_grant(
             uploaded_by_id=current_user.id,
         )
         db.add(linked)
+
+    # ── Carry the opportunity workspace into the grant ────────────────────────
+    # Migrate org-scope items (shared) + the converting user's own private items:
+    # tasks -> grant Tasks; notes/links -> appended to the grant's notes so
+    # nothing set up on the card is lost on conversion.
+    from app.models.opportunity_task import OpportunityTask, OpportunityNote, OpportunityLink
+    from app.models.task import Task as GrantTask, TaskStatus as GrantTaskStatus
+
+    def _mine(model):
+        clauses = [and_(model.scope == "user", model.owner_id == current_user.id)]
+        if current_user.institution_id:
+            clauses.append(and_(model.scope == "org", model.owner_id == current_user.institution_id))
+        return and_(model.opportunity_id == opp_id, or_(*clauses))
+
+    _WS_STATUS = {
+        "open": GrantTaskStatus.NOT_STARTED,
+        "in_progress": GrantTaskStatus.IN_PROGRESS,
+        "done": GrantTaskStatus.COMPLETE,
+    }
+    otasks = (await db.execute(select(OpportunityTask).where(_mine(OpportunityTask)))).scalars().all()
+    for ot in otasks:
+        db.add(GrantTask(
+            id=str(uuid.uuid4()),
+            grant_id=grant.id,
+            title=ot.title,
+            description=ot.description,
+            due_date=ot.due_date,
+            status=_WS_STATUS.get(ot.status, GrantTaskStatus.NOT_STARTED),
+            assignee_ids=ot.assignee_ids or [],
+            owner_id=(ot.assignee_ids[0] if ot.assignee_ids else ot.created_by_id),
+            created_by_id=current_user.id,
+        ))
+
+    onotes = (await db.execute(select(OpportunityNote).where(_mine(OpportunityNote)))).scalars().all()
+    olinks = (await db.execute(select(OpportunityLink).where(_mine(OpportunityLink)))).scalars().all()
+    carried: list[str] = [n.body for n in onotes]
+    if olinks:
+        carried.append("Links:\n" + "\n".join(f"- {link.label}: {link.url}" for link in olinks))
+    if carried:
+        block = "\n\n".join(carried)
+        grant.notes = (grant.notes + "\n\n" + block) if grant.notes else block
 
     io = await _get_institution_opp(db, current_user, opp_id)
     if io:

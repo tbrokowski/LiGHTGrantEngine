@@ -36,6 +36,51 @@ export interface ShortlistCategory {
   position: number;
 }
 
+// ── Opportunity card workspace ──────────────────────────────────────────────
+export interface OppTask {
+  id: string;
+  scope: 'user' | 'org';
+  title: string;
+  description: string | null;
+  due_date: string | null;
+  status: 'open' | 'in_progress' | 'done';
+  assignee_ids: string[];
+  remind_days_before: number[];
+  created_by_id: string | null;
+  completed_at: string | null;
+  created_at: string | null;
+}
+
+export interface OppNote {
+  id: string;
+  scope: 'user' | 'org';
+  body: string;
+  created_by_id: string | null;
+  created_at: string | null;
+  updated_at: string | null;
+}
+
+export interface OppLink {
+  id: string;
+  scope: 'user' | 'org';
+  label: string;
+  url: string;
+  created_by_id: string | null;
+}
+
+export interface OppWorkspace {
+  scope: 'user' | 'org';
+  tasks: OppTask[];
+  notes: OppNote[];
+  links: OppLink[];
+  call_dates: {
+    deadline: string | null;
+    loi_deadline: string | null;
+    concept_note_deadline: string | null;
+    full_proposal_deadline: string | null;
+  };
+}
+
 export interface OpportunityFilters {
   search: string;
   priority: string;
