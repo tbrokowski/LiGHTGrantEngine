@@ -247,9 +247,6 @@ interface GrantTimelineProps {
   tasks?: TaskDot[];
 }
 
-const PROPOSAL_STAGES = new Set(['proposal', 'pending']);
-const ACTIVE_STAGES = new Set(['active']);
-
 function sortByDeadline(list: GrantItem[], today: Date): GrantItem[] {
   return [...list].sort((a, b) => {
     const da = daysFrom(today, a.external_deadline);
@@ -377,15 +374,19 @@ export default function GrantTimeline({ grants, loading, starredIds = new Set(),
   const gridW = containerW - LABEL_W;
 
   const proposals = sortByDeadline(
-    grants.filter(g => PROPOSAL_STAGES.has(g.grant_stage)),
+    grants.filter(g => g.grant_stage === 'proposal'),
     today,
   );
   const activeGrants = sortByDeadline(
-    grants.filter(g => ACTIVE_STAGES.has(g.grant_stage)),
+    grants.filter(g => g.grant_stage === 'active'),
+    today,
+  );
+  const pendingGrants = sortByDeadline(
+    grants.filter(g => g.grant_stage === 'pending'),
     today,
   );
   const otherGrants = sortByDeadline(
-    grants.filter(g => !PROPOSAL_STAGES.has(g.grant_stage) && !ACTIVE_STAGES.has(g.grant_stage)),
+    grants.filter(g => !['proposal', 'active', 'pending'].includes(g.grant_stage)),
     today,
   );
 
@@ -554,19 +555,27 @@ export default function GrantTimeline({ grants, loading, starredIds = new Set(),
                 today
               </div>
 
-              {/* ── Active Grants section ── */}
-              {activeGrants.length > 0 && (
-                <>
-                  <SectionHeaderRow label="Active Grants" count={activeGrants.length} labelW={LABEL_W} />
-                  {renderRows(activeGrants, true)}
-                </>
-              )}
-
-              {/* ── Proposals section ── */}
+              {/* ── Proposals section (top) ── */}
               {proposals.length > 0 && (
                 <>
                   <SectionHeaderRow label="Proposals" count={proposals.length} labelW={LABEL_W} />
-                  {renderRows(proposals, activeGrants.length === 0)}
+                  {renderRows(proposals, true)}
+                </>
+              )}
+
+              {/* ── Active Grants section (below proposals) ── */}
+              {activeGrants.length > 0 && (
+                <>
+                  <SectionHeaderRow label="Active Grants" count={activeGrants.length} labelW={LABEL_W} />
+                  {renderRows(activeGrants, proposals.length === 0)}
+                </>
+              )}
+
+              {/* ── Pending Grants section (below active) ── */}
+              {pendingGrants.length > 0 && (
+                <>
+                  <SectionHeaderRow label="Pending Grants" count={pendingGrants.length} labelW={LABEL_W} />
+                  {renderRows(pendingGrants, proposals.length === 0 && activeGrants.length === 0)}
                 </>
               )}
 
@@ -574,7 +583,7 @@ export default function GrantTimeline({ grants, loading, starredIds = new Set(),
               {otherGrants.length > 0 && (
                 <>
                   <SectionHeaderRow label="Other" count={otherGrants.length} labelW={LABEL_W} />
-                  {renderRows(otherGrants, activeGrants.length === 0 && proposals.length === 0)}
+                  {renderRows(otherGrants, proposals.length === 0 && activeGrants.length === 0 && pendingGrants.length === 0)}
                 </>
               )}
             </div>
