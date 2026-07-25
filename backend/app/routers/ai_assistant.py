@@ -742,7 +742,10 @@ async def editor_chat_stream(
     if grant.call_requirements:
         system_parts.append(f"\nCALL REQUIREMENTS:\n{grant.call_requirements[:2000]}")
     if req.document_context:
-        system_parts.append(f"\n\nCURRENT DOCUMENT DRAFT:\n{req.document_context[:6000]}")
+        system_parts.append(
+            "\n\nFULL CURRENT DRAFT (the whole proposal you are helping write — use it to stay "
+            f"consistent with what this grant/project is about):\n{req.document_context[:24000]}"
+        )
     if req.selected_text:
         system_parts.append(f"\n\nSELECTED TEXT (user is highlighting this):\n{req.selected_text}")
     if req.active_section:

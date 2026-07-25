@@ -42,15 +42,49 @@ export default function Sidebar() {
 
   const isSettings = path.startsWith('/settings');
 
+  // On every page except the dashboard, collapse the nav rail into a thin blue
+  // strip; hovering the strip slides the full panel back out as an overlay (so
+  // the page content keeps the reclaimed width instead of reflowing).
+  const collapsible = !path.startsWith('/dashboard');
+  const [hovered, setHovered] = useState(false);
+  const expanded = !collapsible || hovered;
+  const STRIP_W = 16;
+
   return (
-    <aside
-      style={{
-        width: 'var(--space-rail)',
-        background: 'var(--sidebar-bg)',
-        borderRight: '1px solid rgba(0,0,0,0.18)',
-      }}
-      className="shrink-0 flex flex-col h-full"
-    >
+    <div className="relative shrink-0 h-full" style={{ width: collapsible ? STRIP_W : 'var(--space-rail)' }}>
+      {/* Collapsed-state hint chevron */}
+      {collapsible && (
+        <div
+          className="absolute top-1/2 -translate-y-1/2 pointer-events-none transition-opacity duration-200"
+          style={{ left: 4, zIndex: 51, opacity: expanded ? 0 : 0.65 }}
+        >
+          <svg width="9" height="9" viewBox="0 0 24 24" fill="none" stroke="white" strokeWidth="3" strokeLinecap="round" strokeLinejoin="round">
+            <path d="M9 6l6 6-6 6" />
+          </svg>
+        </div>
+      )}
+      <aside
+        onMouseEnter={collapsible ? () => setHovered(true) : undefined}
+        onMouseLeave={collapsible ? () => setHovered(false) : undefined}
+        style={{
+          width: 'var(--space-rail)',
+          background: 'var(--sidebar-bg)',
+          borderRight: '1px solid rgba(0,0,0,0.18)',
+          ...(collapsible
+            ? {
+                position: 'absolute',
+                top: 0,
+                bottom: 0,
+                left: 0,
+                transform: expanded ? 'translateX(0)' : `translateX(calc(-1 * (var(--space-rail) - ${STRIP_W}px)))`,
+                transition: 'transform 0.22s ease',
+                zIndex: 50,
+                boxShadow: expanded ? '6px 0 24px rgba(0,0,0,0.28)' : 'none',
+              }
+            : {}),
+        }}
+        className="flex flex-col h-full"
+      >
       {/* Logo block */}
       <div
         className="px-5 pt-6 pb-5"
@@ -273,6 +307,7 @@ export default function Sidebar() {
           <span>Settings</span>
         </Link>
       </div>
-    </aside>
+      </aside>
+    </div>
   );
 }

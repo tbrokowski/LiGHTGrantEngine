@@ -245,9 +245,25 @@ class GrantContextManager:
         if grant.call_requirements:
             ctx.layers["call_requirements"] = grant.call_requirements[:8000]
 
+        # Full current draft — so the assistant always knows the whole proposal it
+        # is helping write (not just the section under the cursor), and keeps its
+        # additions consistent with the rest of the document.
+        if ctx.document_sections and "google_doc" not in ctx.layers:
+            doc_parts = []
+            for s in ctx.document_sections:
+                body = (s.plain_text or "").strip()
+                if body:
+                    doc_parts.append(f"## {s.title}\n{body}")
+            if doc_parts:
+                ctx.layers["full_document"] = (
+                    "FULL CURRENT DRAFT — every section of the proposal you are helping write. "
+                    "Use it to understand what this grant/project is about and to keep new text "
+                    "consistent with what's already written:\n\n" + "\n\n".join(doc_parts)
+                )[:32000]
+
         if ctx.active_section:
             ctx.layers["active_section"] = (
-                f"SECTION: {ctx.active_section.title}\n"
+                f"SECTION CURRENTLY IN FOCUS (where the user is working): {ctx.active_section.title}\n"
                 f"TYPE: {ctx.active_section.section_type}\n"
                 f"CONTENT:\n{ctx.active_section.plain_text[:24000]}"
             )
@@ -309,7 +325,8 @@ class GrantContextManager:
     def to_system_prompt(self, ctx: GrantContext) -> str:
         order = [
             "persona", "call_analysis", "call_requirements", "grant_idea",
-            "skeleton", "style_profile", "google_doc", "active_section", "adjacent_sections",
+            "skeleton", "style_profile", "google_doc", "full_document",
+            "active_section", "adjacent_sections",
             "archive_sections", "reusable_language", "citations", "conversation_summary",
         ]
         parts = []
