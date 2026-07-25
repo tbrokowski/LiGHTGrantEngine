@@ -287,12 +287,8 @@ function renderLineWithCitations(text: string, sources?: ChatSource[]): React.Re
     if (part.startsWith('[VERIFY:')) return (
       <span key={i} className="bg-red-100 text-red-700 px-1 rounded text-xs">{part}</span>
     );
-    // Citation reference like [1], [2], etc.
-    const citMatch = part.match(/^\[(\d+)\]$/);
-    if (citMatch && sources) {
-      const idx = parseInt(citMatch[1], 10);
-      return <CitationBadge key={i} index={idx} source={sources[idx - 1]} />;
-    }
+    // Citation reference like [1], [2] — drop it entirely (clean prose only).
+    if (/^\[\d+\]$/.test(part)) return null;
     return part;
   });
 }
@@ -600,14 +596,8 @@ export default function AIChatPanel({
       <div className="flex-1 overflow-y-auto p-3 space-y-3">
         {messages.map(msg => (
           <div key={msg.id} className={`flex flex-col ${msg.role === 'user' ? 'items-end' : 'items-start'}`}>
-            {/* Tool activity rows (above streaming message) */}
-            {msg.role === 'assistant' && msg.toolActivity && msg.toolActivity.length > 0 && (
-              <div className="w-full max-w-[92%]">
-                <ToolActivityRow activities={msg.toolActivity} />
-              </div>
-            )}
-
-            {/* Message bubble */}
+            {/* Message bubble — assistant output is clean prose only (no tools, no
+                sources panel, no citation markers). */}
             <div className={`max-w-[92%] rounded-xl px-3 py-2 ${
               msg.role === 'user'
                 ? 'bg-blue-600 text-white'
@@ -617,20 +607,13 @@ export default function AIChatPanel({
                 <p className="text-xs whitespace-pre-wrap">{msg.content}</p>
               ) : (
                 <div className="text-xs text-gray-800">
-                  <MarkdownText text={msg.content} sources={msg.sources} />
+                  <MarkdownText text={msg.content} />
                   {msg.isStreaming && (
                     <span className="inline-block w-1.5 h-3.5 bg-purple-500 ml-0.5 animate-pulse rounded-sm" />
                   )}
                 </div>
               )}
             </div>
-
-            {/* Sources panel */}
-            {msg.role === 'assistant' && !msg.isStreaming && msg.sources && msg.sources.length > 0 && (
-              <div className="w-full max-w-[92%]">
-                <SourcesPanel sources={msg.sources} />
-              </div>
-            )}
 
             {/* Message actions */}
             {msg.role === 'assistant' && !msg.isStreaming && msg.content && msg.id !== 'welcome' && (

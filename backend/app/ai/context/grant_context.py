@@ -9,7 +9,11 @@ from typing import Any
 
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.ai.rag.retriever import retrieve_content_exemplars, retrieve_reusable_language
+from app.ai.rag.retriever import (
+    retrieve_content_exemplars,
+    retrieve_reusable_language,
+    retrieve_archive_style_fingerprints,
+)
 from app.models.active_grant import ActiveGrant
 from app.models.grant_writing import GrantWritingConversation
 
@@ -141,9 +145,27 @@ class GrantContextManager:
     """Assemble token-budgeted context for grant writing agents."""
 
     PERSONA = (
-        "You are an expert scientific grant writer for the LiGHT group at EPFL (Global Health AI research). "
-        "Write in a clear, compelling academic style matching institutional archive exemplars. "
-        "Use [CUSTOMIZE: reason] for text needing tailoring and [VERIFY: item] for uncertain claims."
+        "You are a world-class scientific grant writer for the LiGHT group at EPFL (Global Health AI "
+        "research). Your job is to draft and refine proposal prose that reads as if written by this "
+        "group's most senior PI — publishable quality, funder-ready.\n\n"
+        "HOW TO WRITE:\n"
+        "1. VOICE — Match this institution's established voice. The context includes STYLE PROFILE and "
+        "ARCHIVE EXCERPTS from our own past proposals; study their cadence, vocabulary, sentence rhythm, "
+        "and rhetorical moves, and write in that same voice. Where an excerpt is marked "
+        "[VERBATIM REUSE OK] and fits, reuse its actual sentences and phrasing, adapting only "
+        "names/numbers/specifics — this is our house language, not plagiarism.\n"
+        "2. GROUND — Never write generic filler. Every claim should be concrete: real methods, numbers, "
+        "named programs, populations, and outcomes. Pull specifics from the archive and the grant's own "
+        "context; if you lack a specific, search the archive rather than inventing vague prose.\n"
+        "3. CRAFT — Open sections with a strong, specific topic sentence that states the point, then "
+        "support it. Build a persuasive arc (problem → significance → our unique approach → impact). "
+        "Vary sentence length; prefer active voice and precise verbs; cut hedging and throat-clearing. "
+        "Be intellectually creative — frame the work compellingly and make the reviewer care.\n"
+        "4. FIT — Honor the funder's priorities and the call requirements in the context; mirror their "
+        "language and evaluation criteria.\n\n"
+        "OUTPUT — Return ONLY the requested prose. No preamble, no meta-commentary, no bullet-point "
+        "explanations of what you did, no citation markers like [1], and no [CUSTOMIZE]/[VERIFY] tags "
+        "unless the user explicitly asks for them. Just the finished writing."
     )
 
     def __init__(self, max_chars: int = 96000):
@@ -201,6 +223,25 @@ class GrantContextManager:
             ctx.layers["skeleton"] = json.dumps(grant.proposal_skeleton, indent=2)[:12000]
         if grant.style_profile:
             ctx.layers["style_profile"] = json.dumps(grant.style_profile, indent=2)[:6000]
+        else:
+            # No per-grant style profile yet — fall back to the institution's own
+            # archive style fingerprints so the writer still matches our house voice.
+            try:
+                fps = await retrieve_archive_style_fingerprints(db, funder=grant.funder, top_k=2)
+                if fps:
+                    blocks = [
+                        "Write in THIS institution's established voice, distilled from our own funded "
+                        "proposals below. Match the tone, cadence, sentence structure, and rhetorical moves."
+                    ]
+                    for fp in fps:
+                        blocks.append(
+                            f"[{fp.get('grant_title', 'Prior proposal')} — {fp.get('funder', '')}, "
+                            f"outcome: {fp.get('outcome', '?')}]\n"
+                            f"{json.dumps(fp.get('style_fingerprint') or {}, indent=2)[:2500]}"
+                        )
+                    ctx.layers["style_profile"] = "\n\n".join(blocks)[:6000]
+            except Exception:
+                pass  # style guidance is best-effort
         if grant.call_requirements:
             ctx.layers["call_requirements"] = grant.call_requirements[:8000]
 

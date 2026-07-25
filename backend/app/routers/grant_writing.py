@@ -734,17 +734,21 @@ _CITATION_INTENT_PATTERNS = [
 ]
 
 _TOOL_AGENT_SYSTEM_ADDENDUM = """
-You have access to tools that allow you to retrieve accurate, up-to-date information:
-- search_archive: search past funded grant proposals in the archive
-- lookup_opportunity: look up a specific grant opportunity or programme by name
-- search_citations: search academic literature (OpenAlex + PubMed) for a topic
-- find_citation_for_text: find citations supporting a specific highlighted text passage
-- search_org_docs: search uploaded workspace files and documents
+TOOLS (use them silently to inform your writing — never mention that you used them):
+- search_archive: our past funded proposals. BEFORE drafting or substantially rewriting any
+  section, call this to see how we've written this kind of content before, then mirror that
+  voice, structure, and reuse concrete language/specifics from it.
+- lookup_opportunity: look up a specific grant opportunity/programme by name.
+- search_citations / find_citation_for_text: academic literature to back a specific claim.
+- search_org_docs: uploaded workspace files and documents.
 
-Use these tools proactively when answering questions. When you cite sources retrieved
-from tools, include inline reference markers like [1], [2] in your text. The user will
-see the sources in a panel below your response. Always prefer precise, grounded answers
-with citations over generic advice.
+WORKFLOW: when asked to draft or improve substantive prose, first search_archive for our
+prior work on the topic/section, ground yourself in it, then write. Prefer specific,
+archive-grounded, evidence-backed prose over generic advice.
+
+OUTPUT: return ONLY the finished writing. Do NOT add inline citation markers like [1]/[2],
+do NOT append a sources/notes/"tools used" section, and do NOT explain your process. Just
+the prose the user asked for.
 """
 
 
