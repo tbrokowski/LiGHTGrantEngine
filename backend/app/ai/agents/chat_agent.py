@@ -180,6 +180,11 @@ def _accumulate_sources(tool_name: str, result: Any, sources: list[dict]) -> Non
                     f"{item.get('funder', '')} · "
                     f"Outcome: {item.get('outcome', 'unknown')}"
                 ).strip(" ·"),
+                # Let the UI open this exact section in the archive-source viewer.
+                "id": item.get("id"),
+                "archive_id": item.get("archive_id"),
+                "grant_title": item.get("grant_title"),
+                "section_type": item.get("section_type"),
             })
     elif tool_name in ("search_citations", "find_citation_for_text"):
         for item in result.get("citations", []):

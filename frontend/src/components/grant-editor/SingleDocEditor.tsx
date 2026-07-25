@@ -23,13 +23,14 @@ import { Table, TableRow, TableHeader, TableCell } from '@tiptap/extension-table
 import Link from '@tiptap/extension-link';
 import { TextStyle } from '@tiptap/extension-text-style';
 import { Color } from '@tiptap/extension-color';
-import { Extension } from '@tiptap/core';
 import {
-  Bold, Italic, UnderlineIcon, Highlighter, List, ListOrdered,
-  AlignLeft, AlignCenter, Heading1, Heading2, Heading3, Quote, Scissors,
-  TableIcon, ImageIcon, Link2,
+  Bold, Italic, UnderlineIcon, List, ListOrdered,
+  AlignLeft, AlignCenter, AlignRight, AlignJustify, Heading1, Heading2, Heading3, Quote, Scissors,
+  TableIcon, ImageIcon, Link2, Download,
 } from 'lucide-react';
-import { api } from '@/lib/api';
+import { api, grants } from '@/lib/api';
+import { InlineFontStyles } from './editor-extensions';
+import { FontFamilySelect, FontSizeSelect, ColorButton, HighlightButton } from './EditorFormatControls';
 
 // ── Page Break node ────────────────────────────────────────────────────────────
 // Renders as a dashed divider with a label. atom:true means it is selected and
@@ -78,34 +79,6 @@ const PageBreak = Node.create({
         ({ commands }: CommandProps) =>
           commands.insertContent({ type: this.name }),
     } as unknown as Partial<RawCommands>;
-  },
-});
-
-// ── Inline font style extension ────────────────────────────────────────────────
-// Adds fontSize and fontFamily attributes to the textStyle mark so Google Docs
-// exported HTML (which carries these as inline CSS) is faithfully round-tripped.
-const InlineFontStyles = Extension.create({
-  name: 'inlineFontStyles',
-  addGlobalAttributes() {
-    return [
-      {
-        types: ['textStyle'],
-        attributes: {
-          fontSize: {
-            default: null,
-            parseHTML: (el: Element) => (el as HTMLElement).style.fontSize || null,
-            renderHTML: (attrs: Record<string, unknown>) =>
-              attrs.fontSize ? { style: `font-size: ${attrs.fontSize}` } : {},
-          },
-          fontFamily: {
-            default: null,
-            parseHTML: (el: Element) => (el as HTMLElement).style.fontFamily || null,
-            renderHTML: (attrs: Record<string, unknown>) =>
-              attrs.fontFamily ? { style: `font-family: ${attrs.fontFamily}` } : {},
-          },
-        },
-      },
-    ];
   },
 });
 
@@ -159,14 +132,37 @@ export default function SingleDocEditor({
   const changeTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const lastHtml = useRef(documentHtml);
   const [selectionStats, setSelectionStats] = useState<{ words: number; chars: number } | null>(null);
+  const [downloadOpen, setDownloadOpen] = useState(false);
+  const [downloading, setDownloading] = useState(false);
   const grantIdRef = useRef(grantId);
   useEffect(() => { grantIdRef.current = grantId; }, [grantId]);
+
+  const downloadDoc = useCallback(async (format: 'pdf' | 'docx') => {
+    if (!grantId) return;
+    setDownloadOpen(false);
+    setDownloading(true);
+    try {
+      const res = await grants.exportDocument(grantId, format);
+      const url = URL.createObjectURL(res.data as Blob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = `grant.${format}`;  // server sets the real filename via Content-Disposition
+      document.body.appendChild(a);
+      a.click();
+      a.remove();
+      URL.revokeObjectURL(url);
+    } catch {
+      alert('Export failed. Please try again.');
+    } finally {
+      setDownloading(false);
+    }
+  }, [grantId]);
 
   const editor = useEditor({
     extensions: [
       StarterKit.configure({ heading: { levels: [1, 2, 3, 4] } }),
       PageBreak,
-      Highlight.configure({ multicolor: false }),
+      Highlight.configure({ multicolor: true }),
       Placeholder.configure({
         placeholder: ({ node }) => {
           if (node.type.name === 'heading') return 'Section title…';
@@ -377,13 +373,11 @@ export default function SingleDocEditor({
         >
           <UnderlineIcon className="w-3.5 h-3.5" />
         </ToolbarButton>
-        <ToolbarButton
-          onClick={() => editor.chain().focus().toggleHighlight().run()}
-          active={editor.isActive('highlight')}
-          title="Highlight"
-        >
-          <Highlighter className="w-3.5 h-3.5" />
-        </ToolbarButton>
+        <ColorButton editor={editor} />
+        <HighlightButton editor={editor} />
+        <div className="w-px h-4 bg-gray-200 mx-0.5" />
+        <FontFamilySelect editor={editor} />
+        <FontSizeSelect editor={editor} />
         <div className="w-px h-4 bg-gray-200 mx-0.5" />
         <ToolbarButton
           onClick={() => editor.chain().focus().toggleBulletList().run()}
@@ -420,6 +414,20 @@ export default function SingleDocEditor({
           title="Align center"
         >
           <AlignCenter className="w-3.5 h-3.5" />
+        </ToolbarButton>
+        <ToolbarButton
+          onClick={() => editor.chain().focus().setTextAlign('right').run()}
+          active={editor.isActive({ textAlign: 'right' })}
+          title="Align right"
+        >
+          <AlignRight className="w-3.5 h-3.5" />
+        </ToolbarButton>
+        <ToolbarButton
+          onClick={() => editor.chain().focus().setTextAlign('justify').run()}
+          active={editor.isActive({ textAlign: 'justify' })}
+          title="Justify"
+        >
+          <AlignJustify className="w-3.5 h-3.5" />
         </ToolbarButton>
         <div className="w-px h-4 bg-gray-200 mx-0.5" />
         <ToolbarButton
@@ -462,6 +470,30 @@ export default function SingleDocEditor({
           <Link2 className="w-3.5 h-3.5" />
         </ToolbarButton>
         <div className="flex-1" />
+        {/* Download as PDF / DOCX */}
+        {grantId && (
+          <div className="relative mr-1">
+            <button
+              type="button"
+              onMouseDown={e => { e.preventDefault(); setDownloadOpen(o => !o); }}
+              disabled={downloading}
+              title="Download"
+              className="p-1.5 rounded text-xs text-gray-500 hover:bg-gray-100 hover:text-gray-800 flex items-center gap-1 disabled:opacity-50"
+            >
+              <Download className="w-3.5 h-3.5" />
+              {downloading ? 'Exporting…' : 'Download'}
+            </button>
+            {downloadOpen && (
+              <>
+                <div className="fixed inset-0 z-40" onMouseDown={() => setDownloadOpen(false)} />
+                <div className="absolute right-0 top-8 z-50 w-32 bg-white border border-gray-200 rounded-lg shadow-lg overflow-hidden text-xs">
+                  <button onMouseDown={e => { e.preventDefault(); downloadDoc('pdf'); }} className="w-full text-left px-3 py-2 text-gray-700 hover:bg-gray-50">PDF (.pdf)</button>
+                  <button onMouseDown={e => { e.preventDefault(); downloadDoc('docx'); }} className="w-full text-left px-3 py-2 text-gray-700 hover:bg-gray-50 border-t border-gray-100">Word (.docx)</button>
+                </div>
+              </>
+            )}
+          </div>
+        )}
         {/* Stats: show selection counts when text is highlighted, doc totals otherwise */}
         <div className="flex items-center gap-1.5 text-xs pr-1">
           {selectionStats ? (

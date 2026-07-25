@@ -8,11 +8,15 @@ import CharacterCount from '@tiptap/extension-character-count';
 import Typography from '@tiptap/extension-typography';
 import Underline from '@tiptap/extension-underline';
 import TextAlign from '@tiptap/extension-text-align';
+import { TextStyle } from '@tiptap/extension-text-style';
+import { Color } from '@tiptap/extension-color';
 import type { EditorSection } from '@/lib/types';
 import {
-  Bold, Italic, UnderlineIcon, Highlighter, List, ListOrdered,
-  AlignLeft, AlignCenter, Heading2, Heading3, Quote,
+  Bold, Italic, UnderlineIcon, List, ListOrdered,
+  AlignLeft, AlignCenter, AlignRight, AlignJustify, Heading2, Heading3, Quote,
 } from 'lucide-react';
+import { InlineFontStyles } from './editor-extensions';
+import { FontFamilySelect, FontSizeSelect, ColorButton, HighlightButton } from './EditorFormatControls';
 
 interface SectionEditorProps {
   section: EditorSection;
@@ -39,7 +43,7 @@ export default function SectionEditor({
       StarterKit.configure({
         heading: { levels: [2, 3, 4] },
       }),
-      Highlight.configure({ multicolor: false }),
+      Highlight.configure({ multicolor: true }),
       Placeholder.configure({
         placeholder: 'Start writing this section… or use the AI assistant on the right to draft it.',
         emptyNodeClass: 'is-empty',
@@ -48,6 +52,9 @@ export default function SectionEditor({
       Typography,
       Underline,
       TextAlign.configure({ types: ['heading', 'paragraph'] }),
+      TextStyle,
+      Color,
+      InlineFontStyles,
     ],
     content: section.content_html || '',
     editorProps: {
@@ -141,10 +148,11 @@ export default function SectionEditor({
             active={editor.isActive('underline')} title="Underline">
             <UnderlineIcon className="w-3.5 h-3.5" />
           </ToolbarButton>
-          <ToolbarButton onClick={() => editor.chain().focus().toggleHighlight().run()}
-            active={editor.isActive('highlight')} title="Highlight">
-            <Highlighter className="w-3.5 h-3.5" />
-          </ToolbarButton>
+          <ColorButton editor={editor} />
+          <HighlightButton editor={editor} />
+          <div className="w-px h-4 bg-gray-200 mx-0.5" />
+          <FontFamilySelect editor={editor} />
+          <FontSizeSelect editor={editor} />
           <div className="w-px h-4 bg-gray-200 mx-0.5" />
           <ToolbarButton onClick={() => editor.chain().focus().toggleBulletList().run()}
             active={editor.isActive('bulletList')} title="Bullet list">
@@ -166,6 +174,14 @@ export default function SectionEditor({
           <ToolbarButton onClick={() => editor.chain().focus().setTextAlign('center').run()}
             active={editor.isActive({ textAlign: 'center' })} title="Align center">
             <AlignCenter className="w-3.5 h-3.5" />
+          </ToolbarButton>
+          <ToolbarButton onClick={() => editor.chain().focus().setTextAlign('right').run()}
+            active={editor.isActive({ textAlign: 'right' })} title="Align right">
+            <AlignRight className="w-3.5 h-3.5" />
+          </ToolbarButton>
+          <ToolbarButton onClick={() => editor.chain().focus().setTextAlign('justify').run()}
+            active={editor.isActive({ textAlign: 'justify' })} title="Justify">
+            <AlignJustify className="w-3.5 h-3.5" />
           </ToolbarButton>
           <div className="flex-1" />
           <span className="text-xs text-gray-300 pr-1">{wordCount.toLocaleString()} words</span>

@@ -294,6 +294,8 @@ export const grants = {
   // Unified editor document
   saveDocument: (grantId: string, contentHtml: string, syncSections = true) =>
     api.patch(`/grants/${grantId}/editor-document`, { content_html: contentHtml, sync_sections: syncSections }),
+  exportDocument: (grantId: string, format: 'pdf' | 'docx') =>
+    api.get(`/grants/${grantId}/editor-document/export`, { params: { format }, responseType: 'blob' }),
   // Google Docs sync
   getDocsStatus: (grantId: string) =>
     api.get(`/grants/${grantId}/docs/status`),
@@ -772,6 +774,11 @@ export interface ChatSource {
   url: string;
   meta: string;
   formatted_citation?: string;
+  // archive sources only — used to open the section in the archive-source viewer
+  id?: string | null;
+  archive_id?: string | null;
+  grant_title?: string | null;
+  section_type?: string | null;
 }
 
 export function streamWritingChat(

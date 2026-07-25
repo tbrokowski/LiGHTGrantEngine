@@ -700,6 +700,7 @@ export default function GrantEditor({ grant, onGrantUpdate, onHeadingsChange }: 
                     useWritingStudio
                     googleDocUrl={docLinked ? docUrl : null}
                     activeDocLabel={activeDocLabel}
+                    onOpenArchiveSection={(meta) => openPanelRef.current?.('archive-section', meta)}
                   />
                 )}
               </div>

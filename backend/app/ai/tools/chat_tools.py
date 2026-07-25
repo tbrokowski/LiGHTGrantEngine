@@ -205,6 +205,10 @@ async def run_search_archive(
 
         items = [
             {
+                # id/archive_id let the UI open the exact archive section and scroll
+                # its full text (ArchiveSourcePane) from a chat source.
+                "id": r.get("id"),
+                "archive_id": r.get("archive_id"),
                 "grant_title": r.get("grant_title", "Unknown"),
                 "funder": r.get("funder", ""),
                 "outcome": r.get("outcome", ""),

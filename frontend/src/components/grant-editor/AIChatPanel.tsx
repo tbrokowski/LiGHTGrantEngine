@@ -1,5 +1,5 @@
 'use client';
-import { useState, useRef, useEffect, useCallback } from 'react';
+import { useState, useRef, useEffect, useCallback, createContext, useContext } from 'react';
 import { streamEditorChat, streamWritingChat, ai } from '@/lib/api';
 import type { WritingChatEvent, ChatSource } from '@/lib/api';
 import {
@@ -37,6 +37,34 @@ interface AIChatPanelProps {
   useWritingStudio?: boolean;
   googleDocUrl?: string | null;
   activeDocLabel?: string;
+  /** Open an archive section in the split-view source viewer (scrollable full text). */
+  onOpenArchiveSection?: (meta: { sectionId: string; archiveId?: string; grantTitle?: string; sectionType?: string }) => void;
+}
+
+type OpenArchiveSection = (meta: { sectionId: string; archiveId?: string; grantTitle?: string; sectionType?: string }) => void;
+
+// Lets the deeply-nested CitationBadge / SourcesPanel open an archive source
+// without prop-drilling through MarkdownText → renderLineWithCitations.
+const ArchiveSourceContext = createContext<OpenArchiveSection | undefined>(undefined);
+
+/** Renders a "View source" action for an archive ChatSource that has a section id. */
+function ViewSourceButton({ source, className = '' }: { source: ChatSource; className?: string }) {
+  const openArchive = useContext(ArchiveSourceContext);
+  if (source.type !== 'archive' || !source.id || !openArchive) return null;
+  return (
+    <button
+      type="button"
+      onClick={() => openArchive({
+        sectionId: source.id!,
+        archiveId: source.archive_id ?? undefined,
+        grantTitle: source.grant_title ?? undefined,
+        sectionType: source.section_type ?? undefined,
+      })}
+      className={`inline-flex items-center gap-0.5 text-purple-600 hover:text-purple-800 hover:underline ${className}`}
+    >
+      <FileText className="w-2.5 h-2.5" /> View source
+    </button>
+  );
 }
 
 // ── Quick prompts ─────────────────────────────────────────────────────────────
@@ -137,6 +165,7 @@ function CitationBadge({ index, source }: { index: number; source: ChatSource | 
               {source.formatted_citation}
             </p>
           )}
+          <ViewSourceButton source={source} className="text-[10px] mt-1.5" />
         </div>
       )}
     </span>
@@ -198,6 +227,7 @@ function SourcesPanel({ sources }: { sources: ChatSource[] }) {
                       Open
                     </a>
                   )}
+                  <ViewSourceButton source={s} className="text-[10px]" />
                 </div>
               </div>
             );
@@ -280,6 +310,7 @@ export default function AIChatPanel({
   useWritingStudio = false,
   googleDocUrl,
   activeDocLabel = 'Draft',
+  onOpenArchiveSection,
 }: AIChatPanelProps) {
   const [messages, setMessages] = useState<ChatMessage[]>([
     {
@@ -489,6 +520,7 @@ export default function AIChatPanel({
   const clearChat = () => setMessages([]);
 
   return (
+    <ArchiveSourceContext.Provider value={onOpenArchiveSection}>
     <div className="flex flex-col h-full bg-white border-l border-gray-200">
       {/* Header */}
       <div className="flex-shrink-0 px-3 py-2.5 border-b border-gray-100 bg-gradient-to-r from-purple-50 to-blue-50">
@@ -744,5 +776,6 @@ export default function AIChatPanel({
         </div>
       </div>
     </div>
+    </ArchiveSourceContext.Provider>
   );
 }

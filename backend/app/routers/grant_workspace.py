@@ -1442,6 +1442,48 @@ async def save_editor_document(
     return {"ok": True}
 
 
+@router.get("/{grant_id}/editor-document/export")
+async def export_editor_document(
+    grant_id: str,
+    format: str = "pdf",
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    """Download the grant document as PDF or DOCX, preserving the editor's
+    formatting (fonts, colours, tables). PDF is rendered in headless Chromium;
+    DOCX is rebuilt with python-docx."""
+    import asyncio
+    import re as _re
+    from fastapi import HTTPException
+    from fastapi.responses import Response
+    from app.services.doc_export import html_to_pdf, html_to_docx
+
+    if format not in ("pdf", "docx"):
+        raise HTTPException(400, "format must be 'pdf' or 'docx'")
+
+    grant = await _get_grant_or_404(grant_id, db)
+    html = grant.editor_document or ""
+    safe = _re.sub(r"[^A-Za-z0-9]+", "_", (grant.title or "grant")).strip("_") or "grant"
+
+    try:
+        if format == "pdf":
+            data = await asyncio.to_thread(html_to_pdf, html)
+            media = "application/pdf"
+        else:
+            data = await asyncio.to_thread(html_to_docx, html)
+            media = "application/vnd.openxmlformats-officedocument.wordprocessingml.document"
+    except Exception as exc:  # noqa: BLE001
+        import structlog
+        structlog.get_logger().error("doc export failed", grant_id=grant_id, format=format, error=str(exc))
+        raise HTTPException(500, f"Export failed: {exc}")
+
+    return Response(
+        content=data,
+        media_type=media,
+        headers={"Content-Disposition": f'attachment; filename="{safe}.{format}"'},
+    )
+
+
 def _extract_headings_from_html(html: str) -> list[str]:
     """Return ordered list of H2 heading text values from HTML."""
     from html.parser import HTMLParser
