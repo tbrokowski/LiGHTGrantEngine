@@ -217,6 +217,14 @@ class OpportunityUpdate(BaseModel):
     title: Optional[str] = None
     funder: Optional[str] = None
     deadline: Optional[date] = None
+    loi_deadline: Optional[date] = None
+    concept_note_deadline: Optional[date] = None
+    full_proposal_deadline: Optional[date] = None
+    award_min: Optional[float] = None
+    award_max: Optional[float] = None
+    currency: Optional[str] = None
+    opportunity_url: Optional[str] = None
+    program_name: Optional[str] = None
     funder_org_id: Optional[str] = None
     status: Optional[str] = None
     priority: Optional[str] = None

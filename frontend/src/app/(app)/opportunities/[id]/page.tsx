@@ -230,11 +230,15 @@ export default function OpportunityDetailPage() {
     setLinkedPartners(prev => prev.filter(l => l.link_id !== linkId));
   }
 
-  // ── Inline header editing (title / funder / deadline) ──────────────────────
+  // ── Inline header editing (title / funder / deadline / amount) ─────────────
   const [editingHeader, setEditingHeader] = useState(false);
   const [editTitle, setEditTitle] = useState('');
   const [editFunder, setEditFunder] = useState('');
   const [editDeadline, setEditDeadline] = useState('');
+  const [editLoi, setEditLoi] = useState('');
+  const [editAwardMin, setEditAwardMin] = useState('');
+  const [editAwardMax, setEditAwardMax] = useState('');
+  const [editCurrency, setEditCurrency] = useState('');
   const [savingHeader, setSavingHeader] = useState(false);
 
   function startEditHeader() {
@@ -242,6 +246,10 @@ export default function OpportunityDetailPage() {
     setEditTitle(opp.title ?? '');
     setEditFunder(opp.funder ?? '');
     setEditDeadline(opp.deadline ? opp.deadline.slice(0, 10) : '');
+    setEditLoi(opp.loi_deadline ? opp.loi_deadline.slice(0, 10) : '');
+    setEditAwardMin(opp.award_min != null ? String(opp.award_min) : '');
+    setEditAwardMax(opp.award_max != null ? String(opp.award_max) : '');
+    setEditCurrency(opp.currency ?? 'USD');
     setEditingHeader(true);
   }
 
@@ -249,11 +257,19 @@ export default function OpportunityDetailPage() {
     if (!opp) return;
     setSavingHeader(true);
     try {
+      const num = (s: string) => {
+        const n = parseFloat(s.replace(/[,\s]/g, ''));
+        return Number.isFinite(n) ? n : undefined;
+      };
       const payload: Record<string, unknown> = {
         title: editTitle.trim(),
         funder: editFunder.trim() || null,
       };
       if (editDeadline) payload.deadline = editDeadline;
+      if (editLoi) payload.loi_deadline = editLoi;
+      if (num(editAwardMin) !== undefined) payload.award_min = num(editAwardMin);
+      if (num(editAwardMax) !== undefined) payload.award_max = num(editAwardMax);
+      if (editCurrency.trim()) payload.currency = editCurrency.trim();
       const res = await opportunities.update(id, payload);
       setOpp(prev => prev ? { ...prev, ...res.data } : prev);
       setEditingHeader(false);
@@ -570,19 +586,40 @@ export default function OpportunityDetailPage() {
                   className="w-full text-xl font-semibold text-gray-900 border border-gray-300 rounded-md px-2 py-1"
                   placeholder="Title"
                 />
-                <div className="flex gap-2">
-                  <input
-                    value={editFunder}
-                    onChange={e => setEditFunder(e.target.value)}
-                    className="flex-1 text-sm border border-gray-300 rounded-md px-2 py-1"
-                    placeholder="Funder"
-                  />
-                  <input
-                    type="date"
-                    value={editDeadline}
-                    onChange={e => setEditDeadline(e.target.value)}
-                    className="text-sm border border-gray-300 rounded-md px-2 py-1"
-                  />
+                <input
+                  value={editFunder}
+                  onChange={e => setEditFunder(e.target.value)}
+                  className="w-full text-sm border border-gray-300 rounded-md px-2 py-1"
+                  placeholder="Funder"
+                />
+                <div className="grid grid-cols-2 gap-2">
+                  <label className="text-[11px] text-gray-500">
+                    Deadline
+                    <input type="date" value={editDeadline} onChange={e => setEditDeadline(e.target.value)}
+                      className="mt-0.5 w-full text-sm border border-gray-300 rounded-md px-2 py-1" />
+                  </label>
+                  <label className="text-[11px] text-gray-500">
+                    LOI deadline
+                    <input type="date" value={editLoi} onChange={e => setEditLoi(e.target.value)}
+                      className="mt-0.5 w-full text-sm border border-gray-300 rounded-md px-2 py-1" />
+                  </label>
+                </div>
+                <div className="grid grid-cols-3 gap-2">
+                  <label className="text-[11px] text-gray-500">
+                    Award min
+                    <input inputMode="numeric" value={editAwardMin} onChange={e => setEditAwardMin(e.target.value)} placeholder="0"
+                      className="mt-0.5 w-full text-sm border border-gray-300 rounded-md px-2 py-1" />
+                  </label>
+                  <label className="text-[11px] text-gray-500">
+                    Award max
+                    <input inputMode="numeric" value={editAwardMax} onChange={e => setEditAwardMax(e.target.value)} placeholder="0"
+                      className="mt-0.5 w-full text-sm border border-gray-300 rounded-md px-2 py-1" />
+                  </label>
+                  <label className="text-[11px] text-gray-500">
+                    Currency
+                    <input value={editCurrency} onChange={e => setEditCurrency(e.target.value)} placeholder="USD"
+                      className="mt-0.5 w-full text-sm border border-gray-300 rounded-md px-2 py-1" />
+                  </label>
                 </div>
                 <div className="flex gap-2">
                   <button
@@ -607,7 +644,7 @@ export default function OpportunityDetailPage() {
                   <h1 className="text-xl font-semibold text-gray-900 leading-tight">{opp.title}</h1>
                   <button
                     onClick={startEditHeader}
-                    title="Edit title, funder, deadline"
+                    title="Edit title, funder, deadlines, amount"
                     className="shrink-0 mt-1 text-gray-300 hover:text-gray-600 transition-colors"
                   >
                     <Pencil className="w-3.5 h-3.5" />
