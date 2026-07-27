@@ -473,7 +473,10 @@ async def list_opportunities(
     else:
         relevance = func.coalesce(Opportunity.fit_score, 0)
 
-    if sort_by == "relevance":
+    # "relevance" (default) diversifies by source/funder so one source can't
+    # dominate the feed; "fit" is the same score order but strict (no diversity).
+    diversified = sort_by == "relevance"
+    if sort_by in ("relevance", "fit"):
         # Put upcoming (no deadline or deadline >= today) before past-deadline items
         # so the first page always surfaces actionable opportunities.
         upcoming_first = case(
@@ -493,16 +496,41 @@ async def list_opportunities(
     else:
         sort_col = getattr(Opportunity, sort_by, Opportunity.date_discovered)
         order_cols = [desc(sort_col) if sort_dir == "desc" else sort_col]
+        diversified = False
 
-    q = q.order_by(*order_cols).offset((page - 1) * page_size).limit(page_size)
-    result = await db.execute(q)
+    if diversified:
+        # Pull a bounded candidate pool (in strict score order), reorder it for
+        # source/funder diversity, then slice the requested page. Deterministic →
+        # stable pagination. Pool covers the requested page.
+        from app.services.relevance_ranker import diversify_order
 
-    if inst_id:
-        rows = result.all()
-        opp_ids = [opp.id for opp, _ in rows]
+        pool_size = min(max(page * page_size + page_size, 300), 1000)
+        pool_result = await db.execute(q.order_by(*order_cols).limit(pool_size))
+        if inst_id:
+            pool_rows = pool_result.all()  # (opp, io)
+        else:
+            pool_rows = [(o, None) for o in pool_result.scalars().all()]
+
+        order = diversify_order(pool_rows, key_fn=lambda r: (r[0].source_id or r[0].funder or "?"))
+        reordered = [pool_rows[i] for i in order]
+        offset = (page - 1) * page_size
+        page_rows = reordered[offset: offset + page_size]
+
+        if inst_id:
+            rows = page_rows
+            opp_ids = [opp.id for opp, _ in rows]
+        else:
+            opps = [opp for opp, _ in page_rows]
+            opp_ids = [opp.id for opp in opps]
     else:
-        opps = result.scalars().all()
-        opp_ids = [opp.id for opp in opps]
+        q = q.order_by(*order_cols).offset((page - 1) * page_size).limit(page_size)
+        result = await db.execute(q)
+        if inst_id:
+            rows = result.all()
+            opp_ids = [opp.id for opp, _ in rows]
+        else:
+            opps = result.scalars().all()
+            opp_ids = [opp.id for opp in opps]
 
     read_map = await _load_read_map(db, current_user.id, opp_ids)
     personal_map = await _load_personal_shortlist_map(db, current_user.id, opp_ids)
