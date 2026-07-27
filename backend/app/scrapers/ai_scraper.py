@@ -613,6 +613,32 @@ class AIScraper(BaseScraper):
                 if normalized.get("url"):
                     results.append(normalized)
 
+        # ── Tier-2 escalation: nothing found → agentic web-search + navigation ──
+        if not results and cfg.get("agentic_fallback", True) and self.source.url:
+            try:
+                from app.scrapers.agentic_scraper import agentic_discover
+                loop = asyncio.new_event_loop()
+                try:
+                    raw = loop.run_until_complete(
+                        agentic_discover(
+                            self.source.name,
+                            self.source.url,
+                            use_playwright=use_playwright,
+                            max_pages=int(cfg.get("agentic_max_pages", 8)),
+                        )
+                    )
+                finally:
+                    loop.close()
+                for item in raw:
+                    normalized = self._normalize(item)
+                    if normalized.get("url") or normalized.get("title"):
+                        results.append(normalized)
+                logger.info("AIScraper agentic fallback",
+                            source=self.source.name, found=len(results))
+            except Exception as e:
+                logger.warning("AIScraper agentic fallback failed",
+                               source=self.source.name, error=str(e))
+
         logger.info("AIScraper complete",
                     source=self.source.name, depth=crawl_depth, found=len(results))
         return results
