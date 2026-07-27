@@ -511,6 +511,23 @@ async def list_opportunities(
         else:
             pool_rows = [(o, None) for o in pool_result.scalars().all()]
 
+        # Personal blend — reshuffle the org-ranked pool toward this user's taste
+        # (behavioral centroid + explicit prefs) before diversifying, so the feed
+        # reflects both the individual and the org. No-op for cold-start users.
+        from app.models.user_taste_profile import UserTasteProfile
+        from app.services.taste_profile_scorer import cosine_similarity
+
+        utp = await db.get(UserTasteProfile, current_user.id)
+        user_emb = (utp.positive_embedding or utp.profile_embedding) if utp else None
+        if user_emb and not semantic_ids:
+            scored = []
+            for opp, io in pool_rows:
+                org_fit = (io.fit_score if (io and io.fit_score is not None) else (opp.fit_score or 0)) / 100.0
+                psim = cosine_similarity(opp.embedding, user_emb) if opp.embedding is not None else 0.0
+                scored.append((0.7 * org_fit + 0.3 * max(0.0, psim), opp, io))
+            scored.sort(key=lambda x: x[0], reverse=True)
+            pool_rows = [(opp, io) for _, opp, io in scored]
+
         order = diversify_order(pool_rows, key_fn=lambda r: (r[0].source_id or r[0].funder or "?"))
         reordered = [pool_rows[i] for i in order]
         offset = (page - 1) * page_size

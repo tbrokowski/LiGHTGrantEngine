@@ -38,6 +38,7 @@ from .section_chunk import SectionChunk
 from .opportunity_task import OpportunityTask, OpportunityNote, OpportunityLink
 from .institution_opportunity import InstitutionOpportunity
 from .institution_taste_profile import InstitutionTasteProfile
+from .user_taste_profile import UserTasteProfile
 from .institution_source import InstitutionSource
 from .funder_org import FunderOrg
 from .shortlist_category import ShortlistCategory
@@ -61,7 +62,7 @@ __all__ = [
     "GrantActivityLog", "GrantWritingConversation", "GrantCitation",
     "UserOpportunityState", "GrantMember", "SectionChunk",
     "OpportunityTask", "OpportunityNote", "OpportunityLink",
-    "InstitutionOpportunity", "InstitutionTasteProfile", "InstitutionSource", "PreseedRun", "FunderOrg",
+    "InstitutionOpportunity", "InstitutionTasteProfile", "UserTasteProfile", "InstitutionSource", "PreseedRun", "FunderOrg",
     "ShortlistCategory",
     "EmailVerification", "OrgJoinRequest", "PasswordResetToken",
 ]

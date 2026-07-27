@@ -105,30 +105,30 @@ _LLM_TIERS = {"high_priority", "worth_reviewing", "watchlist", "low_fit"}
 
 
 def _apply_taste_adjustment(result: dict, opp, profile_row) -> dict:
-    """Blend a taste-profile adjustment into a keyword_score_opportunity() result.
-    No-op (returns result unchanged) when there's no profile row or embedding."""
+    """Replace the coarse keyword bucket with the continuous semantic blend
+    (embedding similarity to the org profile/taste + keyword coverage), which is
+    far better differentiated so the feed can actually rank the best. Falls back
+    to the keyword result unchanged when the opportunity has no embedding."""
     from app.services.keyword_scorer import tier_from_score
-    from app.services.taste_profile_scorer import taste_adjustment
+    from app.services.relevance_ranker import semantic_fit
 
-    if not profile_row or opp.embedding is None:
+    if opp.embedding is None:
         return result
-    adjustment = taste_adjustment(
+
+    # Recover the org's keyword-coverage ratio from the keyword score (25 + ratio*72).
+    kw_ratio = max(0.0, min(1.0, (result.get("fit_score", 25) - 25) / 72.0))
+    has_taste = bool(profile_row and (profile_row.positive_count >= 3 or profile_row.negative_count >= 3))
+    new_score = semantic_fit(
         opp_embedding=opp.embedding,
-        positive_embedding=profile_row.positive_embedding,
-        negative_embedding=profile_row.negative_embedding,
-        positive_count=profile_row.positive_count,
-        negative_count=profile_row.negative_count,
+        profile_embedding=getattr(profile_row, "profile_embedding", None) if profile_row else None,
+        positive_embedding=profile_row.positive_embedding if profile_row else None,
+        negative_embedding=profile_row.negative_embedding if profile_row else None,
+        keyword_ratio=kw_ratio,
+        has_taste_signal=has_taste,
     )
-    if abs(adjustment) < 0.5:
-        return result
     result = dict(result)
-    result["fit_score"] = max(0, min(100, round(result["fit_score"] + adjustment)))
-    result["priority"] = tier_from_score(result["fit_score"])
-    sign = "+" if adjustment >= 0 else ""
-    result["fit_rationale"] = (
-        f"{result.get('fit_rationale', '')} ({sign}{adjustment:.0f} based on your "
-        f"org's shortlist/award history)"
-    ).strip()
+    result["fit_score"] = new_score
+    result["priority"] = tier_from_score(new_score)
     return result
 
 

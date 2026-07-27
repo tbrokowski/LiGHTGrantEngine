@@ -24,6 +24,10 @@ class InstitutionTasteProfile(Base):
     )
     positive_embedding: Mapped[list | None] = mapped_column(Vector(1536), nullable=True)
     negative_embedding: Mapped[list | None] = mapped_column(Vector(1536), nullable=True)
+    # Embedding of the org's *declared* profile (keywords/geographies/mission) —
+    # the primary semantic anchor for fit scoring, and a graceful fallback when
+    # the org has too little pursued/rejected history for the centroids above.
+    profile_embedding: Mapped[list | None] = mapped_column(Vector(1536), nullable=True)
     positive_count: Mapped[int] = mapped_column(Integer, default=0)
     negative_count: Mapped[int] = mapped_column(Integer, default=0)
     computed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))

@@ -25,6 +25,7 @@ celery_app = Celery(
         "app.workers.tagging_tasks",
         "app.workers.taste_profile_tasks",
         "app.workers.web_opportunity_search_tasks",
+        "app.workers.pipeline_tasks",
     ],
 )
 
@@ -100,6 +101,16 @@ celery_app.conf.beat_schedule = {
         # Daily — cheap (vector averaging, no LLM calls), also triggered
         # on-demand from shortlist/outcome actions in routers/opportunities.py
         "schedule": crontab(hour=5, minute=0),
+    },
+    "recompute-user-taste-profiles": {
+        # Per-user personal taste (behavioral centroid + explicit prefs).
+        "task": "app.workers.taste_profile_tasks.compute_all_user_taste_profiles",
+        "schedule": crontab(hour=5, minute=20),
+    },
+    "reconcile-opportunity-pipeline": {
+        # Re-queue opps stuck without embedding / score / surfacing.
+        "task": "app.workers.pipeline_tasks.reconcile_pipeline",
+        "schedule": crontab(minute="*/30"),
     },
     "recover-stale-archive-tasks": {
         "task": "app.workers.archive_tasks.recover_stale_archive_tasks",

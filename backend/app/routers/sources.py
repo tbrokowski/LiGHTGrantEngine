@@ -160,6 +160,42 @@ async def get_scan_summary(
     }
 
 
+@router.get("/health")
+async def pipeline_health_report(
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    """Is the pipeline working end to end? Per-source last-run stats plus corpus
+    counters for opps stuck without embedding / score / surfacing (which the
+    reconcile_pipeline watchdog re-queues)."""
+    import asyncio
+    from app.db_sync import get_sync_engine
+    from app.workers.pipeline_tasks import pipeline_health
+    from sqlalchemy.orm import Session
+
+    sources = (await db.execute(
+        select(Source).order_by(desc(Source.last_checked.nullslast()))
+    )).scalars().all()
+    src_rows = [
+        {
+            "id": s.id, "name": s.name, "status": s.status,
+            "last_checked": s.last_checked.isoformat() if s.last_checked else None,
+            "last_successful_run": s.last_successful_run.isoformat() if s.last_successful_run else None,
+            "consecutive_failures": getattr(s, "consecutive_failures", None),
+            "opportunities_discovered": getattr(s, "opportunities_discovered", None),
+        }
+        for s in sources
+    ]
+
+    def _corpus():
+        with Session(get_sync_engine()) as sdb:
+            return pipeline_health(sdb)
+
+    corpus = await asyncio.to_thread(_corpus)
+    broken = [r for r in src_rows if r["status"] in ("broken", "under_review")]
+    return {"corpus": corpus, "broken_sources": broken, "sources": src_rows}
+
+
 @router.get("/{source_id}")
 async def get_source(
     source_id: str,
