@@ -96,10 +96,7 @@ async def run_draft_pipeline_stream(
     sections = skeleton.get("sections") or []
     if not sections and skeleton.get("raw_text"):
         sections = parse_raw_sections(skeleton["raw_text"])
-    if not sections:
-        yield sse({"error": "No skeleton sections found. Generate skeleton first."})
-        return
-    if not grant.call_analysis:
+    if not grant.call_analysis and not grant.call_requirements:
         yield sse({"error": "Call analysis required before draft. Run call analysis first."})
         return
 
@@ -112,17 +109,14 @@ async def run_draft_pipeline_stream(
     funder = grant.funder or ""
     grant_idea = grant.grant_idea or ""
 
-    html = skeleton_to_html(skeleton)
-    grant.editor_document = html
-    grant.writing_phase = "draft"
-    await db.commit()
-
     # ── PLAN (LEAD ARCHITECT) ─────────────────────────────────────────────────
-    # If the skeleton doesn't already carry per-section briefs + a coordination map
-    # (older skeletons won't), the lead architect produces them now — one grounded
-    # reasoning call — so the parallel writers have specific, non-overlapping briefs.
+    # The lead architect runs when the structure is missing or under-specified: it
+    # builds the FULL structure from the idea when there's no skeleton (idea->draft
+    # all in one), or just adds per-section briefs + a coordination map when the
+    # skeleton exists but lacks them. One grounded reasoning call.
     yield sse({"event": "planning_start", "total": len(sections)})
-    if not any(s.get("brief") for s in sections) or "coordination" not in skeleton:
+    needs_full_plan = not sections
+    if needs_full_plan or not any(s.get("brief") for s in sections) or "coordination" not in skeleton:
         try:
             from app.ai.agents.lead_architect import build_proposal_plan
             from app.ai.rag.retriever import retrieve_document_structure
@@ -141,17 +135,39 @@ async def run_draft_pipeline_stream(
                 archive_exemplars=exemplars0,
                 total_word_limit=skeleton.get("total_word_limit"),
             )
-            briefs_by_name = {s.get("name"): s.get("brief") for s in (plan.get("sections") or []) if s.get("name")}
-            for s in sections:
-                nm = s.get("name") or s.get("title")
-                if nm in briefs_by_name and briefs_by_name[nm] and not s.get("brief"):
-                    s["brief"] = briefs_by_name[nm]
-            if plan.get("coordination") and "coordination" not in skeleton:
-                skeleton["coordination"] = plan["coordination"]
+            plan_sections = plan.get("sections") or []
+            if needs_full_plan and plan_sections:
+                # Idea -> full structure. Adopt the architect's sections wholesale.
+                sections = plan_sections
+                skeleton = {
+                    "sections": sections,
+                    "total_word_limit": plan.get("total_word_limit") or skeleton.get("total_word_limit"),
+                    "document_checklist": plan.get("document_checklist") or [],
+                    "coordination": plan.get("coordination") or {},
+                }
                 grant.proposal_skeleton = skeleton
                 await db.commit()
+            else:
+                briefs_by_name = {s.get("name"): s.get("brief") for s in plan_sections if s.get("name")}
+                for s in sections:
+                    nm = s.get("name") or s.get("title")
+                    if nm in briefs_by_name and briefs_by_name[nm] and not s.get("brief"):
+                        s["brief"] = briefs_by_name[nm]
+                if plan.get("coordination") and "coordination" not in skeleton:
+                    skeleton["coordination"] = plan["coordination"]
+                    grant.proposal_skeleton = skeleton
+                    await db.commit()
         except Exception as exc:
             logger.warning("lead_architect planning skipped", error=str(exc))
+
+    if not sections:
+        yield sse({"error": "Could not plan the proposal structure — add a grant idea / call analysis first."})
+        return
+
+    html = skeleton_to_html(skeleton)
+    grant.editor_document = html
+    grant.writing_phase = "draft"
+    await db.commit()
 
     deps = ((skeleton.get("coordination") or {}).get("dependencies")) or []
     waves = _dependency_waves(sections, deps)

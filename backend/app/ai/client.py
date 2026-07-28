@@ -248,11 +248,13 @@ async def chat_complete_with_tools(
     temp = agent_overrides.get("temperature", gen.temperature)
     tokens = agent_overrides.get("max_tokens", gen.max_tokens)
     model = agent_overrides.get("model", ai_cfg.model)
+    effort = agent_overrides.get("reasoning_effort")
 
     tool_call_log: list[dict] = []
     current_messages = list(messages)
     final_text: Optional[str] = None
 
+    _extra = {"reasoning_effort": effort} if effort else {}
     for _ in range(max_rounds):
         async with _get_client() as client:
             response = await client.chat.completions.create(
@@ -263,6 +265,7 @@ async def chat_complete_with_tools(
                 temperature=temp,
                 max_tokens=tokens,
                 top_p=gen.top_p,
+                **_extra,
             )
         _record_call(agent_name)
 

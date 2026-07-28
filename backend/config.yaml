@@ -72,10 +72,20 @@ ai:
       model: gpt-4o
       temperature: 0.4
       max_tokens: 300
-    # ── Drafting ───────────────────────────────────────────────────────────────
+    # ── Orchestrator / planner (reasoning ON — the "thinking" agents) ───────────
+    # Capable reasoning model for planning + critique. reasoning_effort is only
+    # honored by reasoning-capable models — swap `model` to whatever your account
+    # has (e.g. gpt-5 / o3). If the model id is wrong the pipeline degrades
+    # gracefully (architect/critic no-op), it won't crash.
+    lead_architect:
+      model: gpt-5
+      reasoning_effort: high
+      temperature: 0.3
+      max_tokens: 12000
+    # ── Drafting (writer — reasoning OFF, strong prose model) ────────────────────
     section_drafter:
       model: gpt-4o
-      temperature: 0.4
+      temperature: 0.5
       max_tokens: 16000      # upgraded from 12000
     intro_architect:
       model: gpt-4o
@@ -126,8 +136,9 @@ ai:
       model: gpt-4o          # upgraded from mini — domain accuracy check matters
       temperature: 0.1
       max_tokens: 2000
-    meta_agent:
-      model: gpt-4o
+    meta_agent:                # CRITIC — reasoning ON (see lead_architect note)
+      model: gpt-5
+      reasoning_effort: medium
       temperature: 0.3
       max_tokens: 8000       # upgraded from 4096
     compliance_checker:
