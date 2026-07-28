@@ -205,6 +205,23 @@ def scan_source(self, source_id: str):
             raw_listings = dedup_listings(raw_listings)
             intra_run_dups = pre_dedup_count - len(raw_listings)
 
+            # Main-call fallback: nothing found (even after the Tier-2 agentic pass)
+            # → surface the funder's own landing page as a single "main call" so the
+            # source isn't empty. Enrichment fills its description from that page.
+            used_main_call_fallback = False
+            if not raw_listings and source.url:
+                raw_listings = [{
+                    "title": source.name,
+                    "url": source.url,
+                    "funder": source.name,
+                    "opportunity_type": "open_call",
+                    "description": (
+                        f"Open calls and funding opportunities from {source.name}. "
+                        f"No individual calls were auto-extracted — open the funder's page for current calls."
+                    ),
+                }]
+                used_main_call_fallback = True
+
             new_count = 0
             updated_count = 0
             dup_count = 0
@@ -224,7 +241,9 @@ def scan_source(self, source_id: str):
                 elif result == "skipped":
                     skipped_count += 1
 
-            if len(raw_listings) == 0:
+            if used_main_call_fallback:
+                warnings.append("No individual calls auto-extracted — surfaced the funder's main call page as a fallback.")
+            elif len(raw_listings) == 0:
                 warnings.append("Scraper returned 0 listings — page may have changed structure, be rate-limited, or require JS rendering.")
             elif new_count == 0 and dup_count == len(raw_listings):
                 warnings.append(f"All {dup_count} listings were duplicates of existing opportunities.")
