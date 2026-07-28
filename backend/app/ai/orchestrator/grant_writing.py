@@ -573,17 +573,25 @@ class GrantWritingOrchestrator:
         flagged_sections: list[str] | None = None,
     ) -> AsyncIterator[str]:
         """
-        Adaptive Draft Orchestration (ADO) pipeline.
-        Delegates to run_adaptive_draft_stream for meta-orchestrated, routed drafting.
+        Orchestrator-worker draft pipeline: a lead-planned, archive-grounded,
+        parallel-writer + integrated-critic loop (draft_pipeline). Same SSE events
+        and persistence as before. The legacy fan-out (run_adaptive_draft_stream)
+        is kept as a fallback if the new pipeline raises before emitting anything.
         """
-        async for chunk in run_adaptive_draft_stream(
-            grant,
-            db,
-            flagged_sections,
-            sse=_sse,
-            parse_raw_sections=_parse_raw_text_sections,
-        ):
-            yield chunk
+        from app.ai.orchestrator.draft_pipeline import run_draft_pipeline_stream
+
+        try:
+            async for chunk in run_draft_pipeline_stream(
+                grant, db, flagged_sections, sse=_sse, parse_raw_sections=_parse_raw_text_sections,
+            ):
+                yield chunk
+        except Exception as exc:
+            import structlog
+            structlog.get_logger().error("draft_pipeline failed, falling back to legacy", error=str(exc))
+            async for chunk in run_adaptive_draft_stream(
+                grant, db, flagged_sections, sse=_sse, parse_raw_sections=_parse_raw_text_sections,
+            ):
+                yield chunk
 
 
     async def run_review(self, grant: ActiveGrant, db: AsyncSession) -> dict:

@@ -35,8 +35,14 @@ _COMBINED_FOCUS = """Your mission, covering all of the following together:
 • COHERENCE & VOICE — Check that this section connects to the proposal's theory of change and
   cross-section themes without repeating prior sections, and that voice/tone matches the style
   profile.
+• STRUCTURE, FLOW & CONSISTENCY — Check the section against the RUNNING DOCUMENT and the section
+  ledger in the context: it must not contradict or duplicate what other sections already say,
+  its length must fit the word limit, it must cover the required elements for its type, and it
+  must read with clean, logical flow (strong topic sentence, ordered points, smooth transitions).
+  Prefer the MOST SPECIFIC, least generic content — cut filler; ground in our archive and the
+  newest relevant sources.
 Be decisive: only rewrite where there's a substantive gap in one of these dimensions, not for
-cosmetic reasons. Call accept_section once the section is solid across all three."""
+cosmetic reasons. Call accept_section once the section is solid across all of them."""
 
 # ── System prompt ─────────────────────────────────────────────────────────────
 
