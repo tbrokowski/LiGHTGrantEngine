@@ -64,6 +64,7 @@ async def chat_complete(
     max_tokens: Optional[int] = None,
     agent_name: Optional[str] = None,
     json_mode: bool = False,
+    reasoning_effort: Optional[str] = None,
 ) -> str:
     """
     Call the chat completions endpoint.
@@ -74,6 +75,9 @@ async def chat_complete(
         max_tokens: Override config default
         agent_name: Used to apply per-agent config overrides from config.yaml
         json_mode: If True, request JSON output format
+        reasoning_effort: Extended-thinking effort ("low"|"medium"|"high") for
+            reasoning-capable models. Opt-in per call or via agent_overrides;
+            only sent when set, so it's a no-op for providers that don't support it.
 
     Returns:
         The assistant message content as a string.
@@ -85,6 +89,7 @@ async def chat_complete(
     temp = temperature if temperature is not None else agent_overrides.get("temperature", gen.temperature)
     tokens = max_tokens if max_tokens is not None else agent_overrides.get("max_tokens", gen.max_tokens)
     model = agent_overrides.get("model", ai_cfg.model)
+    effort = reasoning_effort or agent_overrides.get("reasoning_effort")
 
     kwargs: dict[str, Any] = {
         "model": model,
@@ -95,6 +100,8 @@ async def chat_complete(
     }
     if json_mode:
         kwargs["response_format"] = {"type": "json_object"}
+    if effort:
+        kwargs["reasoning_effort"] = effort
 
     logger.debug("AI chat call", agent=agent_name, model=model, messages=len(messages))
 
