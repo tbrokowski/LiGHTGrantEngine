@@ -499,46 +499,97 @@ async def list_opportunities(
         diversified = False
 
     if diversified:
-        # Pull a bounded candidate pool (in strict score order), reorder it for
-        # source/funder diversity, then slice the requested page. Deterministic →
-        # stable pagination. Pool covers the requested page.
+        # Produce a diversified, personalized order as a list of opportunity IDs,
+        # then fetch only the requested page's full rows. The heavy vector math is
+        # done in Postgres (pgvector) — the ranking query returns ids + a couple of
+        # floats, never the 1536-d embeddings — and the ranked id-list is cached in
+        # Redis so pagination is a cheap slice instead of a full recompute.
+        import hashlib
+        import asyncio
         from app.services.relevance_ranker import diversify_order
-
-        pool_size = min(max(page * page_size + page_size, 300), 1000)
-        pool_result = await db.execute(q.order_by(*order_cols).limit(pool_size))
-        if inst_id:
-            pool_rows = pool_result.all()  # (opp, io)
-        else:
-            pool_rows = [(o, None) for o in pool_result.scalars().all()]
-
-        # Personal blend — reshuffle the org-ranked pool toward this user's taste
-        # (behavioral centroid + explicit prefs) before diversifying, so the feed
-        # reflects both the individual and the org. No-op for cold-start users.
         from app.models.user_taste_profile import UserTasteProfile
-        from app.services.taste_profile_scorer import cosine_similarity
 
         utp = await db.get(UserTasteProfile, current_user.id)
         user_emb = (utp.positive_embedding or utp.profile_embedding) if utp else None
-        if user_emb and not semantic_ids:
-            scored = []
-            for opp, io in pool_rows:
-                org_fit = (io.fit_score if (io and io.fit_score is not None) else (opp.fit_score or 0)) / 100.0
-                psim = cosine_similarity(opp.embedding, user_emb) if opp.embedding is not None else 0.0
-                scored.append((0.7 * org_fit + 0.3 * max(0.0, psim), opp, io))
-            scored.sort(key=lambda x: x[0], reverse=True)
-            pool_rows = [(opp, io) for _, opp, io in scored]
+        personalize = bool(user_emb) and not semantic_ids
 
-        order = diversify_order(pool_rows, key_fn=lambda r: (r[0].source_id or r[0].funder or "?"))
-        reordered = [pool_rows[i] for i in order]
+        cache_sig = _json.dumps({
+            "u": current_user.id, "inst": inst_id, "sort": sort_by, "unread": unread_only,
+            "sem": bool(semantic_ids), "personal": bool(user_emb),
+            "f": [funder, opportunity_type, geography, source_id, funder_org_id, funder_category,
+                  award_min_filter, award_max_filter, priority, min_fit_score,
+                  str(deadline_before), str(deadline_after), has_deadline, theme, search,
+                  priority_funder_group, status],
+        }, sort_keys=True, default=str)
+        cache_key = "feed_rank:" + hashlib.sha256(cache_sig.encode()).hexdigest()
+
+        ranked_ids: list[str] | None = None
+        try:
+            cached = await redis.get(cache_key)
+            if cached:
+                ranked_ids = _json.loads(cached)
+        except Exception:
+            ranked_ids = None
+
+        if ranked_ids is None:
+            # Fixed, page-independent pool so one cached order covers all pages
+            # (500 = 20 pages of 25; keeps the once-per-cache-window MMR cheap).
+            POOL = 500
+            skey_col = func.coalesce(Opportunity.source_id, Opportunity.funder).label("skey")
+            cols = [Opportunity.id.label("oid"), relevance.label("org_fit"), skey_col]
+            if personalize:
+                cols.append(Opportunity.embedding.cosine_distance(user_emb).label("pdist"))
+            pool_q = q.with_only_columns(*cols).order_by(*order_cols).limit(POOL)
+            pool = (await db.execute(pool_q)).all()
+            # Plain tuples so the CPU-bound rank/diversify can run off the event loop.
+            pool_data = [
+                (r.oid, float(r.org_fit or 0), r.skey or "?", float(r.pdist) if personalize else 0.0)
+                for r in pool
+            ]
+
+            def _rank(data: list[tuple]) -> list[str]:
+                if personalize:
+                    data = sorted(
+                        data,
+                        key=lambda t: 0.7 * (t[1] / 100.0) + 0.3 * max(0.0, 1.0 - t[3]),
+                        reverse=True,
+                    )
+                order = diversify_order(data, key_fn=lambda t: t[2])
+                return [data[i][0] for i in order]
+
+            ranked_ids = await asyncio.to_thread(_rank, pool_data)
+            try:
+                await redis.set(cache_key, _json.dumps(ranked_ids), ex=120)
+            except Exception:
+                pass
+
         offset = (page - 1) * page_size
-        page_rows = reordered[offset: offset + page_size]
+        page_ids = ranked_ids[offset: offset + page_size]
 
-        if inst_id:
-            rows = page_rows
-            opp_ids = [opp.id for opp, _ in rows]
+        # Fetch full rows for just this page, preserving the ranked order.
+        if page_ids:
+            if inst_id:
+                io_join2 = and_(
+                    InstitutionOpportunity.opportunity_id == Opportunity.id,
+                    InstitutionOpportunity.institution_id == inst_id,
+                )
+                fetched = (await db.execute(
+                    select(Opportunity, InstitutionOpportunity)
+                    .outerjoin(InstitutionOpportunity, io_join2)
+                    .where(Opportunity.id.in_(page_ids))
+                )).all()
+                by_id = {opp.id: (opp, io) for opp, io in fetched}
+                rows = [by_id[i] for i in page_ids if i in by_id]
+                opp_ids = [opp.id for opp, _ in rows]
+            else:
+                fetched = (await db.execute(
+                    select(Opportunity).where(Opportunity.id.in_(page_ids))
+                )).scalars().all()
+                by_id = {o.id: o for o in fetched}
+                opps = [by_id[i] for i in page_ids if i in by_id]
+                opp_ids = [o.id for o in opps]
         else:
-            opps = [opp for opp, _ in page_rows]
-            opp_ids = [opp.id for opp in opps]
+            rows, opps, opp_ids = [], [], []
     else:
         q = q.order_by(*order_cols).offset((page - 1) * page_size).limit(page_size)
         result = await db.execute(q)
