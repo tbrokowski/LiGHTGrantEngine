@@ -16,7 +16,7 @@ import CollaboratorsPanel from '@/components/grant-workspace/CollaboratorsPanel'
 import StatusDropdown from '@/components/grant-workspace/StatusDropdown';
 import type {
   WorkspaceSummary,
-  GanttItem,
+  Task,
   BudgetTracker,
 } from '@/components/grant-workspace/types';
 
@@ -25,8 +25,8 @@ const GrantEditor = dynamic(() => import('@/components/grant-editor/GrantEditor'
   ssr: false,
 });
 
-const GanttView = dynamic(() => import('@/components/grant-workspace/GanttView'), {
-  loading: () => <div className="flex justify-center py-12 text-sm text-gray-400">Loading gantt…</div>,
+const KanbanBoard = dynamic(() => import('@/components/grant-workspace/KanbanBoard'), {
+  loading: () => <div className="flex justify-center py-12 text-sm text-gray-400">Loading board…</div>,
   ssr: false,
 });
 
@@ -145,9 +145,8 @@ function GrantDetailContent() {
 
   // Workspace data
   const [summary, setSummary] = useState<WorkspaceSummary | null>(null);
-  const [gantt, setGantt] = useState<GanttItem[]>([]);
+  const [taskList, setTaskList] = useState<Task[]>([]);
   const [budget, setBudget] = useState<BudgetTracker | null>(null);
-  const [generatingGantt, setGeneratingGantt] = useState(false);
 
   // Editable header drafts (name / deadline / notes) — save on blur
   const [titleDraft, setTitleDraft] = useState('');
@@ -197,9 +196,9 @@ function GrantDetailContent() {
     grants.workspaceSummary(id).then((r) => setSummary(r.data)).catch(console.error);
   }, [id]);
 
-  const fetchGantt = useCallback(() => {
+  const fetchTasks = useCallback(() => {
     if (!id) return;
-    grants.listGantt(id).then((r) => setGantt(r.data)).catch(console.error);
+    grants.listTasks(id).then((r) => setTaskList(r.data)).catch(console.error);
   }, [id]);
 
   const fetchBudget = useCallback(() => {
@@ -218,12 +217,12 @@ function GrantDetailContent() {
       .catch(() => {});
   }, [id, user]);
 
-  // Load grant, summary, and the gantt on mount (all shown in the overview scroll)
+  // Load grant, summary, and tasks on mount (all shown in the overview scroll)
   useEffect(() => {
     fetchGrant();
     fetchSummary();
-    fetchGantt();
-  }, [fetchGrant, fetchSummary, fetchGantt]);
+    fetchTasks();
+  }, [fetchGrant, fetchSummary, fetchTasks]);
 
   // Sync the editable header drafts whenever a different grant loads
   useEffect(() => {
@@ -252,18 +251,10 @@ function GrantDetailContent() {
     }
   }, [id, fetchGrant, fetchSummary]);
 
-  async function handleGenerateGantt() {
-    if (!id) return;
-    setGeneratingGantt(true);
-    try {
-      await grants.generateGantt(id);
-      fetchGantt();
-    } catch {
-      alert('Could not generate a project plan. Add tasks first, or try again.');
-    } finally {
-      setGeneratingGantt(false);
-    }
-  }
+  const refreshTasks = useCallback(() => {
+    fetchTasks();
+    fetchSummary();
+  }, [fetchTasks, fetchSummary]);
 
   const handleStatusChange = useCallback((newStatus: string) => {
     setGrant((g) => g ? { ...g, status: newStatus } : g);
@@ -312,7 +303,7 @@ function GrantDetailContent() {
   const isGrantEditor = isOrgAdmin || user?.role === 'grant_lead' || myGrantRole === 'editor' || myGrantRole === 'owner';
 
   return (
-    <div className={isEditorTab ? 'h-full flex flex-col' : 'flex flex-col min-h-0'}>
+    <div className={isEditorTab ? 'h-full flex flex-col' : 'h-full flex flex-col min-h-0'}>
       {/* ── Personal draft banner ───────────────────────────────────────────── */}
       {grant.is_personal && (
         <div className="shrink-0 flex items-center justify-between gap-4 px-6 py-2.5 bg-amber-50 border-b border-amber-100 text-sm">
@@ -431,7 +422,7 @@ function GrantDetailContent() {
         <div className="flex-1 overflow-y-auto">
           <div className="max-w-7xl mx-auto">
 
-            {/* Overview — one scroll: editable header → overview → gantt → files → team */}
+            {/* Overview — one scroll: editable header → overview → tasks board → files → team */}
             {activeTab === 'overview' && (
               <div className="p-4 space-y-6">
 
@@ -451,6 +442,11 @@ function GrantDetailContent() {
                         className="w-full mt-1 text-lg font-semibold text-gray-900 bg-transparent border-0 border-b border-transparent hover:border-gray-200 focus:border-indigo-400 focus:outline-none transition-colors px-0 py-1"
                         placeholder="Grant name"
                       />
+                      {grant.external_deadline && (
+                        <div className="mt-1 px-0.5">
+                          <DeadlineChip label="Deadline" date={grant.external_deadline} />
+                        </div>
+                      )}
                     </div>
                     <div className="shrink-0">
                       <label className="text-[10px] font-semibold text-gray-400 uppercase tracking-widest">Deadline</label>
@@ -494,32 +490,9 @@ function GrantDetailContent() {
                   </div>
                 )}
 
-                {/* Tasks — gantt chart */}
-                <div className="bg-white border border-gray-200 rounded-xl p-4">
-                  <div className="flex items-center justify-between mb-3">
-                    <h3 className="text-sm font-semibold text-gray-800">Tasks &amp; Timeline</h3>
-                    {gantt.length === 0 && (
-                      <button
-                        onClick={handleGenerateGantt}
-                        disabled={generatingGantt}
-                        className="text-xs px-3 py-1.5 bg-indigo-600 text-white rounded-lg hover:bg-indigo-700 disabled:opacity-50"
-                      >
-                        {generatingGantt ? 'Generating…' : 'Generate plan'}
-                      </button>
-                    )}
-                  </div>
-                  {gantt.length === 0 ? (
-                    <div className="text-center py-10 text-gray-400 text-sm">
-                      No tasks yet. Generate a project plan to see the gantt chart here.
-                    </div>
-                  ) : (
-                    <GanttView
-                      grantId={id}
-                      items={gantt}
-                      onRefresh={fetchGantt}
-                      grantColor={grant.color ?? undefined}
-                    />
-                  )}
+                {/* Tasks — Kanban board (drag & drop, subtasks, assignees, due dates, hours) */}
+                <div className="bg-white border border-gray-200 rounded-xl overflow-hidden">
+                  <KanbanBoard grantId={id} tasks={taskList} onRefresh={refreshTasks} />
                 </div>
 
                 {/* Saved files — sliding panel with folders + tags */}
