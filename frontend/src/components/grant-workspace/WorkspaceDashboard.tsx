@@ -6,6 +6,12 @@ import { WorkspaceSummary } from './types';
 interface Props {
   summary: WorkspaceSummary;
   onTabChange: (tab: string) => void;
+  /**
+   * Lean overview: hide the Tasks/Sections/Checklist stat grid and the
+   * quick-action strip. Used by the single-scroll workspace, where tasks live
+   * in the gantt below and files/team in their own sections.
+   */
+  lean?: boolean;
 }
 
 function formatDeadlineDate(dateStr: string | null) {
@@ -92,7 +98,7 @@ function StatCard({
   );
 }
 
-export default function WorkspaceDashboard({ summary, onTabChange }: Props) {
+export default function WorkspaceDashboard({ summary, onTabChange, lean = false }: Props) {
   const hasInternalDeadline = summary.days_to_internal_deadline !== null || summary.internal_deadline !== null;
   const hasExternalDeadline = summary.days_to_external_deadline !== null || summary.external_deadline !== null;
   const hasAlerts = summary.overdue_tasks > 0 || summary.blocked_tasks > 0 || summary.due_this_week_tasks > 0;
@@ -136,43 +142,47 @@ export default function WorkspaceDashboard({ summary, onTabChange }: Props) {
       )}
 
       {/* Progress stat grid */}
-      <div className="flex gap-3">
-        <StatCard
-          label="Tasks"
-          complete={summary.complete_tasks}
-          total={summary.total_tasks}
-          barColor="bg-blue-400"
-          onClick={() => onTabChange('tasks')}
-        />
-        <StatCard
-          label="Sections"
-          complete={summary.complete_sections}
-          total={summary.total_sections}
-          barColor="bg-indigo-400"
-          onClick={() => onTabChange('more')}
-        />
-        <StatCard
-          label="Checklist"
-          complete={summary.complete_checklist_items}
-          total={summary.total_checklist_items}
-          barColor="bg-teal-400"
-          onClick={() => onTabChange('tasks')}
-        />
-      </div>
+      {!lean && (
+        <div className="flex gap-3">
+          <StatCard
+            label="Tasks"
+            complete={summary.complete_tasks}
+            total={summary.total_tasks}
+            barColor="bg-blue-400"
+            onClick={() => onTabChange('tasks')}
+          />
+          <StatCard
+            label="Sections"
+            complete={summary.complete_sections}
+            total={summary.total_sections}
+            barColor="bg-indigo-400"
+            onClick={() => onTabChange('more')}
+          />
+          <StatCard
+            label="Checklist"
+            complete={summary.complete_checklist_items}
+            total={summary.total_checklist_items}
+            barColor="bg-teal-400"
+            onClick={() => onTabChange('tasks')}
+          />
+        </div>
+      )}
 
       {/* Quick-action strip */}
-      <div className="flex flex-wrap gap-2">
-        {quickActions.map(({ label, icon: Icon, tab }) => (
-          <button
-            key={tab}
-            onClick={() => onTabChange(tab)}
-            className="flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium text-gray-600 bg-white border border-gray-200 rounded-lg hover:border-gray-300 hover:text-gray-900 hover:shadow-sm transition-all"
-          >
-            <Icon className="w-3.5 h-3.5 opacity-60" />
-            {label}
-          </button>
-        ))}
-      </div>
+      {!lean && (
+        <div className="flex flex-wrap gap-2">
+          {quickActions.map(({ label, icon: Icon, tab }) => (
+            <button
+              key={tab}
+              onClick={() => onTabChange(tab)}
+              className="flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium text-gray-600 bg-white border border-gray-200 rounded-lg hover:border-gray-300 hover:text-gray-900 hover:shadow-sm transition-all"
+            >
+              <Icon className="w-3.5 h-3.5 opacity-60" />
+              {label}
+            </button>
+          ))}
+        </div>
+      )}
 
       {/* Alert banners */}
       {hasAlerts && (

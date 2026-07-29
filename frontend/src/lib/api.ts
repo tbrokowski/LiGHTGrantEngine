@@ -261,6 +261,14 @@ export const grants = {
     api.patch(`/grants/${grantId}/files/${fileId}`, data),
   deleteFile: (grantId: string, fileId: string) =>
     api.delete(`/grants/${grantId}/files/${fileId}`),
+  // Folders (one level, group files in the files panel)
+  listFolders: (grantId: string) => api.get(`/grants/${grantId}/folders`),
+  addFolder: (grantId: string, data: { name: string }) =>
+    api.post(`/grants/${grantId}/folders`, data),
+  updateFolder: (grantId: string, folderId: string, data: { name: string }) =>
+    api.patch(`/grants/${grantId}/folders/${folderId}`, data),
+  deleteFolder: (grantId: string, folderId: string) =>
+    api.delete(`/grants/${grantId}/folders/${folderId}`),
   // Workspace partners
   listWorkspacePartners: (grantId: string) => api.get(`/grants/${grantId}/workspace-partners`),
   createWorkspacePartner: (grantId: string, data: Record<string, unknown>) =>

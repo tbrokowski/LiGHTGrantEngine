@@ -11,14 +11,12 @@ export type WorkspaceTab =
   | 'planning'
   | 'more';
 
+// Tasks, Files, Team and Planning now live inline in the single-scroll Overview,
+// so they are no longer separate tabs. Editor + Budget stay full-screen.
 const PROPOSAL_TABS: { id: WorkspaceTab; label: string }[] = [
   { id: 'overview', label: 'Overview' },
-  { id: 'tasks', label: 'Tasks' },
   { id: 'editor', label: 'Editor' },
-  { id: 'files', label: 'Files' },
   { id: 'budget', label: 'Budget' },
-  { id: 'team', label: 'Team' },
-  { id: 'planning', label: 'Planning' },
   { id: 'more', label: 'More' },
 ];
 

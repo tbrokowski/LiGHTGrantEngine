@@ -9,17 +9,14 @@ import type { EditorSection } from '@/lib/types';
 import WorkspaceNav, { WorkspaceTab } from '@/components/grant-workspace/WorkspaceNav';
 import WorkspaceDashboard from '@/components/grant-workspace/WorkspaceDashboard';
 import GrantColorPicker from '@/components/grants/GrantColorPicker';
-import FileLibrary from '@/components/grant-workspace/FileLibrary';
+import FilesPanel from '@/components/grant-workspace/FilesPanel';
 import BudgetPanel from '@/components/grant-workspace/BudgetPanel';
 import MoreTab from '@/components/grant-workspace/MoreTab';
 import CollaboratorsPanel from '@/components/grant-workspace/CollaboratorsPanel';
 import StatusDropdown from '@/components/grant-workspace/StatusDropdown';
-import WorkPackagePanel from '@/components/workspace/WorkPackagePanel';
-import ReportingSchedule from '@/components/workspace/ReportingSchedule';
 import type {
   WorkspaceSummary,
-  Task,
-  WorkspaceFile,
+  GanttItem,
   BudgetTracker,
 } from '@/components/grant-workspace/types';
 
@@ -28,13 +25,8 @@ const GrantEditor = dynamic(() => import('@/components/grant-editor/GrantEditor'
   ssr: false,
 });
 
-const TasksHub = dynamic(() => import('@/components/grant-workspace/TasksHub'), {
-  loading: () => <div className="flex justify-center py-24 text-sm text-gray-400">Loading tasks…</div>,
-  ssr: false,
-});
-
-const TaskTimeline = dynamic(() => import('@/components/grant-workspace/TaskTimeline'), {
-  loading: () => <div className="flex justify-center py-8 text-sm text-gray-400">Loading timeline…</div>,
+const GanttView = dynamic(() => import('@/components/grant-workspace/GanttView'), {
+  loading: () => <div className="flex justify-center py-12 text-sm text-gray-400">Loading gantt…</div>,
   ssr: false,
 });
 
@@ -134,7 +126,14 @@ function GrantDetailContent() {
   const searchParams = useSearchParams();
   const pathname = usePathname();
   const router = useRouter();
-  const initialTab = (searchParams.get('tab') as WorkspaceTab) ?? 'overview';
+  // Tasks/Files/Team/Planning are no longer tabs — fold any such deep-link into
+  // the single-scroll Overview.
+  const VALID_PROPOSAL_TABS: WorkspaceTab[] = ['overview', 'editor', 'budget', 'more'];
+  const rawTab = searchParams.get('tab');
+  const initialTab: WorkspaceTab =
+    rawTab && VALID_PROPOSAL_TABS.includes(rawTab as WorkspaceTab)
+      ? (rawTab as WorkspaceTab)
+      : 'overview';
   const { user } = useAuth();
 
   const [grant, setGrant] = useState<GrantDetail | null>(null);
@@ -146,13 +145,17 @@ function GrantDetailContent() {
 
   // Workspace data
   const [summary, setSummary] = useState<WorkspaceSummary | null>(null);
-  const [taskList, setTaskList] = useState<Task[]>([]);
-  const [files, setFiles] = useState<WorkspaceFile[]>([]);
+  const [gantt, setGantt] = useState<GanttItem[]>([]);
   const [budget, setBudget] = useState<BudgetTracker | null>(null);
+  const [generatingGantt, setGeneratingGantt] = useState(false);
+
+  // Editable header drafts (name / deadline / notes) — save on blur
+  const [titleDraft, setTitleDraft] = useState('');
+  const [deadlineDraft, setDeadlineDraft] = useState('');
+  const [notesDraft, setNotesDraft] = useState('');
 
   // Track which lazy tabs have been loaded
-  const [loadedTabs, setLoadedTabs] = useState<Set<WorkspaceTab>>(new Set(['overview', 'tasks']));
-  const [documentHeadings, setDocumentHeadings] = useState<string[]>([]);
+  const [loadedTabs, setLoadedTabs] = useState<Set<WorkspaceTab>>(new Set(['overview']));
 
   const fetchGrant = useCallback(() => {
     if (!id) return;
@@ -194,14 +197,9 @@ function GrantDetailContent() {
     grants.workspaceSummary(id).then((r) => setSummary(r.data)).catch(console.error);
   }, [id]);
 
-  const fetchTasks = useCallback(() => {
+  const fetchGantt = useCallback(() => {
     if (!id) return;
-    grants.listTasks(id).then((r) => setTaskList(r.data)).catch(console.error);
-  }, [id]);
-
-  const fetchFiles = useCallback(() => {
-    if (!id) return;
-    grants.listFiles(id).then((r) => setFiles(r.data)).catch(console.error);
+    grants.listGantt(id).then((r) => setGantt(r.data)).catch(console.error);
   }, [id]);
 
   const fetchBudget = useCallback(() => {
@@ -220,25 +218,52 @@ function GrantDetailContent() {
       .catch(() => {});
   }, [id, user]);
 
-  // Load grant, summary, and tasks on mount
+  // Load grant, summary, and the gantt on mount (all shown in the overview scroll)
   useEffect(() => {
     fetchGrant();
     fetchSummary();
-    fetchTasks();
-  }, [fetchGrant, fetchSummary, fetchTasks]);
+    fetchGantt();
+  }, [fetchGrant, fetchSummary, fetchGantt]);
+
+  // Sync the editable header drafts whenever a different grant loads
+  useEffect(() => {
+    if (!grant) return;
+    setTitleDraft(grant.title ?? '');
+    setDeadlineDraft((grant.external_deadline ?? '').slice(0, 10));
+    setNotesDraft(grant.notes ?? '');
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [grant?.id]);
 
   const handleTabChange = (tab: WorkspaceTab) => {
     setActiveTab(tab);
     if (loadedTabs.has(tab)) return;
     setLoadedTabs((prev) => new Set([...prev, tab]));
-    if (tab === 'files') fetchFiles();
     if (tab === 'budget') fetchBudget();
   };
 
-  const refreshTasks = useCallback(() => {
-    fetchTasks();
-    fetchSummary();
-  }, [fetchTasks, fetchSummary]);
+  const savePatch = useCallback(async (patch: Record<string, unknown>) => {
+    if (!id) return;
+    setGrant((g) => (g ? ({ ...g, ...patch } as GrantDetail) : g));
+    try {
+      await grants.update(id, patch);
+      fetchSummary();
+    } catch {
+      fetchGrant();
+    }
+  }, [id, fetchGrant, fetchSummary]);
+
+  async function handleGenerateGantt() {
+    if (!id) return;
+    setGeneratingGantt(true);
+    try {
+      await grants.generateGantt(id);
+      fetchGantt();
+    } catch {
+      alert('Could not generate a project plan. Add tasks first, or try again.');
+    } finally {
+      setGeneratingGantt(false);
+    }
+  }
 
   const handleStatusChange = useCallback((newStatus: string) => {
     setGrant((g) => g ? { ...g, status: newStatus } : g);
@@ -399,72 +424,113 @@ function GrantDetailContent() {
               last_review: grant.last_review ?? null,
             }}
             onGrantUpdate={fetchGrant}
-            onHeadingsChange={setDocumentHeadings}
+            onHeadingsChange={() => {}}
           />
         </div>
       ) : (
         <div className="flex-1 overflow-y-auto">
           <div className="max-w-7xl mx-auto">
 
-            {/* Overview */}
+            {/* Overview — one scroll: editable header → overview → gantt → files → team */}
             {activeTab === 'overview' && (
               <div className="p-4 space-y-6">
-                {summary ? (
-                  <WorkspaceDashboard
-                    summary={summary}
-                    onTabChange={(tab) => handleTabChange(tab as WorkspaceTab)}
-                  />
-                ) : (
-                  <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                    {grant.themes && grant.themes.length > 0 && (
-                      <div className="bg-white border border-gray-200 rounded-xl p-5">
-                        <h3 className="text-xs font-semibold text-gray-500 uppercase tracking-wide mb-3">Themes</h3>
-                        <div className="flex flex-wrap gap-1.5">
-                          {grant.themes.map((t) => (
-                            <span key={t} className="text-xs px-2.5 py-1 rounded-full bg-blue-50 text-blue-700 border border-blue-100">{t}</span>
-                          ))}
-                        </div>
-                      </div>
-                    )}
-                    {grant.notes && (
-                      <div className="bg-white border border-gray-200 rounded-xl p-5 md:col-span-2">
-                        <h3 className="text-xs font-semibold text-gray-500 uppercase tracking-wide mb-2">Notes</h3>
-                        <p className="text-sm text-gray-700 whitespace-pre-wrap">{grant.notes}</p>
-                      </div>
-                    )}
+
+                {/* Editable header: name, deadline, notes/ideas */}
+                <div className="bg-white border border-gray-200 rounded-xl p-5 space-y-4">
+                  <div className="flex flex-col sm:flex-row sm:items-start gap-4">
+                    <div className="flex-1 min-w-0">
+                      <label className="text-[10px] font-semibold text-gray-400 uppercase tracking-widest">Name</label>
+                      <input
+                        value={titleDraft}
+                        onChange={(e) => setTitleDraft(e.target.value)}
+                        onBlur={() => {
+                          const v = titleDraft.trim();
+                          if (v && v !== grant.title) savePatch({ title: v });
+                          else if (!v) setTitleDraft(grant.title ?? '');
+                        }}
+                        className="w-full mt-1 text-lg font-semibold text-gray-900 bg-transparent border-0 border-b border-transparent hover:border-gray-200 focus:border-indigo-400 focus:outline-none transition-colors px-0 py-1"
+                        placeholder="Grant name"
+                      />
+                    </div>
+                    <div className="shrink-0">
+                      <label className="text-[10px] font-semibold text-gray-400 uppercase tracking-widest">Deadline</label>
+                      <input
+                        type="date"
+                        value={deadlineDraft}
+                        onChange={(e) => setDeadlineDraft(e.target.value)}
+                        onBlur={() => {
+                          const v = deadlineDraft || null;
+                          if ((v ?? '') !== (grant.external_deadline?.slice(0, 10) ?? '')) {
+                            savePatch({ external_deadline: v });
+                          }
+                        }}
+                        className="block mt-1 text-sm text-gray-700 bg-white border border-gray-200 rounded-lg px-2.5 py-1.5 focus:border-indigo-400 focus:outline-none"
+                      />
+                    </div>
+                  </div>
+                  <div>
+                    <label className="text-[10px] font-semibold text-gray-400 uppercase tracking-widest">Notes &amp; ideas</label>
+                    <textarea
+                      value={notesDraft}
+                      onChange={(e) => setNotesDraft(e.target.value)}
+                      onBlur={() => {
+                        if (notesDraft !== (grant.notes ?? '')) savePatch({ notes: notesDraft });
+                      }}
+                      rows={3}
+                      placeholder="Jot down ideas, angles, reminders…"
+                      className="w-full mt-1 text-sm text-gray-700 bg-gray-50/60 border border-gray-200 rounded-lg px-3 py-2 focus:bg-white focus:border-indigo-400 focus:outline-none resize-y"
+                    />
+                  </div>
+                </div>
+
+                {/* Overview summary (deadlines, alerts, milestones) */}
+                {summary && (
+                  <div className="bg-white border border-gray-200 rounded-xl">
+                    <WorkspaceDashboard
+                      summary={summary}
+                      onTabChange={(tab) => handleTabChange(tab as WorkspaceTab)}
+                      lean
+                    />
                   </div>
                 )}
 
-                {/* Task Timeline */}
+                {/* Tasks — gantt chart */}
                 <div className="bg-white border border-gray-200 rounded-xl p-4">
                   <div className="flex items-center justify-between mb-3">
-                    <h3 className="text-sm font-semibold text-gray-800">Project Timeline</h3>
-                    <button
-                      onClick={() => handleTabChange('tasks')}
-                      className="text-xs text-indigo-600 hover:text-indigo-800 transition-colors"
-                    >
-                      Manage tasks →
-                    </button>
+                    <h3 className="text-sm font-semibold text-gray-800">Tasks &amp; Timeline</h3>
+                    {gantt.length === 0 && (
+                      <button
+                        onClick={handleGenerateGantt}
+                        disabled={generatingGantt}
+                        className="text-xs px-3 py-1.5 bg-indigo-600 text-white rounded-lg hover:bg-indigo-700 disabled:opacity-50"
+                      >
+                        {generatingGantt ? 'Generating…' : 'Generate plan'}
+                      </button>
+                    )}
                   </div>
-                  <TaskTimeline tasks={taskList} compact={true} grantColor={grant.color ?? undefined} />
+                  {gantt.length === 0 ? (
+                    <div className="text-center py-10 text-gray-400 text-sm">
+                      No tasks yet. Generate a project plan to see the gantt chart here.
+                    </div>
+                  ) : (
+                    <GanttView
+                      grantId={id}
+                      items={gantt}
+                      onRefresh={fetchGantt}
+                      grantColor={grant.color ?? undefined}
+                    />
+                  )}
+                </div>
+
+                {/* Saved files — sliding panel with folders + tags */}
+                <FilesPanel grantId={id} canEdit={isGrantEditor} />
+
+                {/* Team members */}
+                <div>
+                  <h3 className="text-sm font-semibold text-gray-800 mb-2 px-1">Team</h3>
+                  <CollaboratorsPanel grantId={id} />
                 </div>
               </div>
-            )}
-
-            {/* Tasks */}
-            {activeTab === 'tasks' && (
-              <TasksHub
-                grantId={id}
-                tasks={taskList}
-                onRefresh={refreshTasks}
-                documentHeadings={documentHeadings}
-                grantColor={grant.color ?? undefined}
-              />
-            )}
-
-            {/* Files */}
-            {activeTab === 'files' && (
-              <FileLibrary grantId={id} files={files} onRefresh={fetchFiles} />
             )}
 
             {/* Budget */}
@@ -476,19 +542,6 @@ function GrantDetailContent() {
                   onRefresh={fetchBudget}
                   grantTitle={grant.title}
                 />
-              </div>
-            )}
-
-            {/* Team */}
-            {activeTab === 'team' && (
-              <CollaboratorsPanel grantId={id} />
-            )}
-
-            {/* Planning (Work Packages + Reporting) */}
-            {activeTab === 'planning' && (
-              <div className="p-4 space-y-8">
-                <WorkPackagePanel grantId={id} />
-                <ReportingSchedule grantId={id} />
               </div>
             )}
 

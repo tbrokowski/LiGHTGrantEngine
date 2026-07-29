@@ -186,6 +186,7 @@ export interface ChecklistItem {
 export interface WorkspaceFile {
   id: string;
   grant_id: string;
+  folder_id: string | null;
   file_name: string;
   file_type: string | null;
   file_category: string;

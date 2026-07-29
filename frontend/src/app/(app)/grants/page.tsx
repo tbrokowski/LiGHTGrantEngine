@@ -1,12 +1,21 @@
 'use client';
 import { useEffect, useState, useRef, useMemo } from 'react';
 import { useRouter } from 'next/navigation';
-import { grants } from '@/lib/api';
+import { grants, tasks as tasksApi } from '@/lib/api';
 import ProposalCard, { GrantSummary } from '@/components/grants/ProposalCard';
 import PendingCard from '@/components/grants/PendingCard';
 import ActiveGrantCard from '@/components/grants/ActiveGrantCard';
 import GrantColorPicker from '@/components/grants/GrantColorPicker';
 import EditGrantModal from '@/components/grants/EditGrantModal';
+import GrantTimeline from '@/components/dashboard/GrantTimeline';
+import { type TaskItem } from '@/components/dashboard/FocusPanel';
+
+function loadStarredIds(): Set<string> {
+  try {
+    const raw = localStorage.getItem('dashboard_starred');
+    return raw ? new Set(JSON.parse(raw)) : new Set();
+  } catch { return new Set(); }
+}
 
 type TabId = 'proposals' | 'pending' | 'active';
 
@@ -261,6 +270,8 @@ export default function GrantsPage() {
   const router = useRouter();
   const [tab, setTab] = useState<TabId>('proposals');
   const [allGrants, setAllGrants] = useState<GrantSummary[]>([]);
+  const [allTasks, setAllTasks] = useState<TaskItem[]>([]);
+  const [starredIds, setStarredIds] = useState<Set<string>>(new Set());
   const [loading, setLoading] = useState(true);
   const [search, setSearch] = useState('');
   const [showModal, setShowModal] = useState(false);
@@ -268,13 +279,20 @@ export default function GrantsPage() {
   const [editingGrant, setEditingGrant] = useState<GrantSummary | null>(null);
 
   function loadGrants() {
-    grants.list({})
-      .then(r => setAllGrants(r.data))
+    Promise.all([
+      grants.list({}).catch(() => ({ data: [] })),
+      tasksApi.all().catch(() => ({ data: [] })),
+    ])
+      .then(([grantsRes, tasksRes]) => {
+        setAllGrants(grantsRes.data as GrantSummary[]);
+        setAllTasks(tasksRes.data as TaskItem[]);
+      })
       .catch(console.error)
       .finally(() => setLoading(false));
   }
 
   useEffect(() => {
+    setStarredIds(loadStarredIds());
     setLoading(true);
     loadGrants();
   // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -455,6 +473,11 @@ export default function GrantsPage() {
 
       {/* ── Grant list ──────────────────────────────── */}
       <div className="flex-1 overflow-y-auto">
+        {/* Timeline / calendar of all grants + tasks (from the dashboard) */}
+        <div className="px-5 pt-5">
+          <GrantTimeline grants={allGrants} loading={loading} starredIds={starredIds} tasks={allTasks} />
+        </div>
+
         {/* Section label */}
         {!loading && tabGrants.length > 0 && (
           <div className="px-5 pt-5 pb-1">

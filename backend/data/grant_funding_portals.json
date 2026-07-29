@@ -7674,11 +7674,11 @@
       "api_endpoint": "https://api2.openreview.net",
       "scraper_config": {
         "year_min": 2026,
-        "max_venues": 150,
+        "max_venues": 400,
         "require_deadline": true
       },
       "refresh_frequency": "weekly",
-      "is_high_priority": false,
+      "is_high_priority": true,
       "logo_url": "https://openreview.net/favicon.ico",
       "status": "active",
       "relevant_themes": [

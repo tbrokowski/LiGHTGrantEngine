@@ -17,7 +17,7 @@ from app.models.milestone import Milestone, MilestoneStatus
 from app.models.gantt_item import GanttItem, GanttItemType
 from app.models.workspace_section import WorkspaceSection, WorkspaceSectionStatus
 from app.models.checklist_item import ChecklistItem, ChecklistStatus, ChecklistCategory
-from app.models.workspace_file import WorkspaceFile, FileCategory, FileSourceType
+from app.models.workspace_file import WorkspaceFile, WorkspaceFolder, FileCategory, FileSourceType
 from app.models.workspace_partner import WorkspacePartner, PartnerMaterial, PartnerStatus
 from app.models.budget_tracker import BudgetTracker, BudgetStatus
 from app.models.activity_log import GrantActivityLog
@@ -882,6 +882,7 @@ class WorkspaceFileCreate(BaseModel):
     tags: list[str] = []
     related_task_id: Optional[str] = None
     related_section_id: Optional[str] = None
+    folder_id: Optional[str] = None
 
 
 class WorkspaceFileUpdate(BaseModel):
@@ -898,10 +899,92 @@ class WorkspaceFileUpdate(BaseModel):
     tags: Optional[list[str]] = None
     related_task_id: Optional[str] = None
     related_section_id: Optional[str] = None
+    folder_id: Optional[str] = None
 
 
 def _file_dict(f: WorkspaceFile) -> dict:
     return _serialize(f, dt_fields=["uploaded_at", "updated_at"])
+
+
+# ── Folders ──────────────────────────────────────────────────────────────
+
+class WorkspaceFolderCreate(BaseModel):
+    name: str
+
+
+class WorkspaceFolderUpdate(BaseModel):
+    name: str
+
+
+def _folder_dict(fo: WorkspaceFolder) -> dict:
+    return _serialize(fo, dt_fields=["created_at", "updated_at"])
+
+
+@router.get("/{grant_id}/folders")
+async def list_folders(
+    grant_id: str,
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    await _get_grant_or_404(grant_id, db)
+    result = await db.execute(
+        select(WorkspaceFolder).where(WorkspaceFolder.grant_id == grant_id).order_by(WorkspaceFolder.created_at)
+    )
+    return [_folder_dict(fo) for fo in result.scalars().all()]
+
+
+@router.post("/{grant_id}/folders", status_code=201)
+async def create_folder(
+    grant_id: str,
+    data: WorkspaceFolderCreate,
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+    _edit: None = Depends(grant_access(require_editor=True)),
+):
+    await _get_grant_or_404(grant_id, db)
+    fo = WorkspaceFolder(id=str(uuid.uuid4()), grant_id=grant_id, name=data.name, created_by=current_user.id)
+    db.add(fo)
+    await log_activity(db, grant_id, "folder_added", current_user.id, "workspace_folder", fo.id, f"Folder created: {data.name}")
+    await db.commit()
+    return _folder_dict(fo)
+
+
+@router.patch("/{grant_id}/folders/{folder_id}")
+async def update_folder(
+    grant_id: str,
+    folder_id: str,
+    data: WorkspaceFolderUpdate,
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+    _edit: None = Depends(grant_access(require_editor=True)),
+):
+    result = await db.execute(select(WorkspaceFolder).where(WorkspaceFolder.id == folder_id, WorkspaceFolder.grant_id == grant_id))
+    fo = result.scalar_one_or_none()
+    if not fo:
+        raise HTTPException(404, "Folder not found")
+    fo.name = data.name
+    await db.commit()
+    return _folder_dict(fo)
+
+
+@router.delete("/{grant_id}/folders/{folder_id}", status_code=204)
+async def delete_folder(
+    grant_id: str,
+    folder_id: str,
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+    _edit: None = Depends(grant_access(require_editor=True)),
+):
+    result = await db.execute(select(WorkspaceFolder).where(WorkspaceFolder.id == folder_id, WorkspaceFolder.grant_id == grant_id))
+    fo = result.scalar_one_or_none()
+    if not fo:
+        raise HTTPException(404, "Folder not found")
+    # Detach files back to "loose" so nothing is lost when a folder is removed.
+    files = await db.execute(select(WorkspaceFile).where(WorkspaceFile.folder_id == folder_id))
+    for f in files.scalars().all():
+        f.folder_id = None
+    await db.delete(fo)
+    await db.commit()
 
 
 @router.get("/{grant_id}/files")
@@ -948,6 +1031,10 @@ async def update_file(
         raise HTTPException(404, "File not found")
     for k, v in data.model_dump(exclude_none=True).items():
         setattr(f, k, v)
+    # folder_id must be settable to None (move a file back to "loose"), which
+    # exclude_none drops — apply it explicitly when the client sent the field.
+    if "folder_id" in data.model_fields_set:
+        f.folder_id = data.folder_id
     await db.commit()
     return _file_dict(f)
 
