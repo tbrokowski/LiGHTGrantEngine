@@ -103,9 +103,10 @@ interface Props {
   grant: GrantSummary;
   onStageChange: (id: string, newStage: string) => void;
   onDelete: (id: string) => void;
+  onEdit?: (grant: GrantSummary) => void;
 }
 
-export default function ProposalCard({ grant, onStageChange, onDelete }: Props) {
+export default function ProposalCard({ grant, onStageChange, onDelete, onEdit }: Props) {
   const [priority, setPriority] = useState(grant.priority);
   const [transition, setTransition] = useState<'submit' | null>(null);
   const [menuOpen, setMenuOpen] = useState(false);
@@ -217,6 +218,18 @@ export default function ProposalCard({ grant, onStageChange, onDelete }: Props) 
                 }}
                 onMouseLeave={() => setMenuOpen(false)}
               >
+                {onEdit && (
+                  <button
+                    type="button"
+                    onClick={() => { setMenuOpen(false); onEdit(grant); }}
+                    className="w-full text-left px-3 py-2 text-sm transition-colors"
+                    style={{ color: 'var(--ink-secondary)' }}
+                    onMouseEnter={e => (e.currentTarget.style.background = 'var(--surface-sunken)')}
+                    onMouseLeave={e => (e.currentTarget.style.background = 'transparent')}
+                  >
+                    Edit details
+                  </button>
+                )}
                 <button
                   type="button"
                   onClick={() => { setMenuOpen(false); setTransition('submit'); }}

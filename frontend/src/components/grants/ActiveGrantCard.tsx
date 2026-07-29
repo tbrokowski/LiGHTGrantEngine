@@ -48,9 +48,10 @@ interface Props {
   onStageChange: (id: string, newStage: string) => void;
   onDelete: (id: string) => void;
   onDeadlineChange?: (id: string, deadline: string | null) => void;
+  onEdit?: (grant: GrantSummary) => void;
 }
 
-export default function ActiveGrantCard({ grant, onStageChange, onDelete, onDeadlineChange }: Props) {
+export default function ActiveGrantCard({ grant, onStageChange, onDelete, onDeadlineChange, onEdit }: Props) {
   const [menuOpen, setMenuOpen] = useState(false);
   const [archiving, setArchiving] = useState(false);
   const [editingDeadline, setEditingDeadline] = useState(false);
@@ -258,6 +259,18 @@ export default function ActiveGrantCard({ grant, onStageChange, onDelete, onDead
                 >
                   Edit End Date
                 </button>
+                {onEdit && (
+                  <button
+                    type="button"
+                    onClick={() => { setMenuOpen(false); onEdit(grant); }}
+                    className="w-full text-left px-3 py-2 text-sm transition-colors"
+                    style={{ color: 'var(--ink-secondary)' }}
+                    onMouseEnter={e => (e.currentTarget.style.background = 'var(--surface-sunken)')}
+                    onMouseLeave={e => (e.currentTarget.style.background = 'transparent')}
+                  >
+                    Edit details
+                  </button>
+                )}
                 <button
                   type="button"
                   onClick={() => { setMenuOpen(false); setArchiving(true); }}

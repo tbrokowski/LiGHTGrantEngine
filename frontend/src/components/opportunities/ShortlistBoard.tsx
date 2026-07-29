@@ -1,6 +1,6 @@
 'use client';
 import { useEffect, useMemo, useRef, useState } from 'react';
-import Link from 'next/link';
+import { useRouter } from 'next/navigation';
 import { DragDropContext, Droppable, Draggable, DropResult } from '@hello-pangea/dnd';
 import FunderLogo from './FunderLogo';
 import OpportunityActions, { type OpportunityActionHandlers } from './OpportunityActions';
@@ -35,9 +35,23 @@ function Card({
   ...handlers
 }: { opp: Opportunity; scope: 'user' | 'org' } & OpportunityActionHandlers & { onNavigate?: (id: string) => void }) {
   const mode = scope === 'org' ? 'org-shortlist' : 'shortlist';
+  const router = useRouter();
+  const downPos = useRef<{ x: number; y: number } | null>(null);
+  // Open on click, but ignore the click if the pointer moved (that was a drag),
+  // so the whole card can be a drag handle without an anchor fighting the DnD.
+  function open(e: React.MouseEvent) {
+    const d = downPos.current;
+    if (d && (Math.abs(e.clientX - d.x) > 6 || Math.abs(e.clientY - d.y) > 6)) return;
+    onNavigate?.(opp.id);
+    router.push(`/opportunities/${opp.id}`);
+  }
   return (
     <div className="rounded-lg overflow-hidden flex flex-col" style={{ border: '1px solid var(--rule-subtle)', background: 'var(--surface-raised)' }}>
-      <Link href={`/opportunities/${opp.id}`} className="block p-3 flex-1 min-w-0" onClick={() => onNavigate?.(opp.id)}>
+      <div
+        className="block p-3 flex-1 min-w-0 cursor-pointer"
+        onPointerDown={e => { downPos.current = { x: e.clientX, y: e.clientY }; }}
+        onClick={open}
+      >
         <div className="flex items-start gap-1.5 mb-1">
           <span className="mt-0.5 shrink-0"><MatchScorePill priority={opp.priority} fitScore={opp.fit_score} /></span>
           <span className="text-sm leading-snug line-clamp-2" style={{ color: 'var(--ink-primary)', fontWeight: 500 }}>
@@ -52,7 +66,7 @@ function Card({
         <p className="mono-data text-[11px] mt-1.5" style={{ color: 'var(--ink-faint)' }}>
           {formatDate(opp.deadline) ?? 'No deadline listed'}
         </p>
-      </Link>
+      </div>
       <div className="px-3 pb-2.5 flex items-center justify-end" style={{ borderTop: '1px solid var(--rule-subtle)' }}>
         <OpportunityActions opp={opp} mode={mode} className="pt-2" {...handlers} />
       </div>
@@ -297,7 +311,12 @@ export default function ShortlistBoard({ items, scope, onNavigate, ...handlers }
                           ref={prov.innerRef}
                           {...prov.draggableProps}
                           {...prov.dragHandleProps}
-                          style={{ ...prov.draggableProps.style, opacity: snap.isDragging ? 0.9 : 1 }}
+                          className={`select-none ${snap.isDragging ? 'cursor-grabbing' : 'cursor-grab'}`}
+                          style={{
+                            ...prov.draggableProps.style,
+                            opacity: snap.isDragging ? 0.95 : 1,
+                            boxShadow: snap.isDragging ? '0 8px 24px rgba(0,0,0,0.18)' : 'none',
+                          }}
                         >
                           <Card opp={opp} scope={scope} onNavigate={onNavigate} {...handlers} />
                         </div>

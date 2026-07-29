@@ -89,6 +89,8 @@ class GrantCreate(BaseModel):
 
 
 class GrantUpdate(BaseModel):
+    title: Optional[str] = None
+    funder: Optional[str] = None
     status: Optional[str] = None
     priority: Optional[str] = None
     pi_name: Optional[str] = None

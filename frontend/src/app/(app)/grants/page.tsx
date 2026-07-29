@@ -6,6 +6,7 @@ import ProposalCard, { GrantSummary } from '@/components/grants/ProposalCard';
 import PendingCard from '@/components/grants/PendingCard';
 import ActiveGrantCard from '@/components/grants/ActiveGrantCard';
 import GrantColorPicker from '@/components/grants/GrantColorPicker';
+import EditGrantModal from '@/components/grants/EditGrantModal';
 
 type TabId = 'proposals' | 'pending' | 'active';
 
@@ -264,6 +265,7 @@ export default function GrantsPage() {
   const [search, setSearch] = useState('');
   const [showModal, setShowModal] = useState(false);
   const [showActiveModal, setShowActiveModal] = useState(false);
+  const [editingGrant, setEditingGrant] = useState<GrantSummary | null>(null);
 
   function loadGrants() {
     grants.list({})
@@ -294,6 +296,10 @@ export default function GrantsPage() {
 
   function handleDeadlineChange(id: string, deadline: string | null) {
     setAllGrants(prev => prev.map(g => g.id === id ? { ...g, external_deadline: deadline } : g));
+  }
+
+  function handleEdited(id: string, patch: Partial<GrantSummary>) {
+    setAllGrants(prev => prev.map(g => g.id === id ? { ...g, ...patch } : g));
   }
 
   async function handleDelete(id: string) {
@@ -482,6 +488,7 @@ export default function GrantsPage() {
                 grant={g}
                 onStageChange={handleStageChange}
                 onDelete={handleDelete}
+                onEdit={setEditingGrant}
               />
             ))
           ) : tab === 'pending' ? (
@@ -491,6 +498,7 @@ export default function GrantsPage() {
                 grant={g}
                 onStageChange={handleStageChange}
                 onDelete={handleDelete}
+                onEdit={setEditingGrant}
               />
             ))
           ) : (
@@ -501,11 +509,20 @@ export default function GrantsPage() {
                 onStageChange={handleStageChange}
                 onDelete={handleDelete}
                 onDeadlineChange={handleDeadlineChange}
+                onEdit={setEditingGrant}
               />
             ))
           )}
         </div>
       </div>
+
+      {editingGrant && (
+        <EditGrantModal
+          grant={editingGrant}
+          onClose={() => setEditingGrant(null)}
+          onSaved={handleEdited}
+        />
+      )}
     </div>
   );
 }

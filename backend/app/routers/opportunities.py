@@ -1843,6 +1843,16 @@ async def convert_to_grant(
     if io:
         io.status = "actively_pursuing"
 
+    # Once a grant is started it lives in Grants, not the shortlist — drop it from
+    # everyone's personal shortlist (the org shortlist already drops via the
+    # status change above, which excludes it from the potential_fit filter).
+    from sqlalchemy import update as _sa_update
+    await db.execute(
+        _sa_update(UserOpportunityState)
+        .where(UserOpportunityState.opportunity_id == opp_id)
+        .values(saved_at=None)
+    )
+
     await db.commit()
     await db.refresh(grant)
     await invalidate_permission_cache(current_user.id, redis)

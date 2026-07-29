@@ -20,9 +20,10 @@ interface Props {
   grant: GrantSummary;
   onStageChange: (id: string, newStage: string) => void;
   onDelete: (id: string) => void;
+  onEdit?: (grant: GrantSummary) => void;
 }
 
-export default function PendingCard({ grant, onStageChange, onDelete }: Props) {
+export default function PendingCard({ grant, onStageChange, onDelete, onEdit }: Props) {
   const [transition, setTransition] = useState<'accept' | 'reject' | null>(null);
   const [menuOpen, setMenuOpen] = useState(false);
 
@@ -145,6 +146,18 @@ export default function PendingCard({ grant, onStageChange, onDelete }: Props) {
                 >
                   Mark Rejected
                 </button>
+                {onEdit && (
+                  <button
+                    type="button"
+                    onClick={() => { setMenuOpen(false); onEdit(grant); }}
+                    className="w-full text-left px-3 py-2 text-sm transition-colors"
+                    style={{ color: 'var(--ink-secondary)' }}
+                    onMouseEnter={e => (e.currentTarget.style.background = 'var(--surface-sunken)')}
+                    onMouseLeave={e => (e.currentTarget.style.background = 'transparent')}
+                  >
+                    Edit details
+                  </button>
+                )}
                 <div style={{ borderTop: '1px solid var(--rule-subtle)', margin: '4px 0' }} />
                 <button
                   type="button"

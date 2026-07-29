@@ -442,7 +442,6 @@ export default function OpportunitiesPage() {
               { id: 'queue' as TabMode, label: 'All Opportunities', badge: unreadCount > 0 ? unreadCount.toLocaleString() : null },
               { id: 'shortlist' as TabMode, label: 'My Shortlist', badge: shortlist.length > 0 ? String(shortlist.length) : null },
               { id: 'org-shortlist' as TabMode, label: 'Org Shortlist', badge: orgShortlistCount > 0 ? String(orgShortlistCount) : null },
-              { id: 'awarded' as TabMode, label: 'Awarded', badge: awarded.length > 0 ? String(awarded.length) : null },
             ] as { id: TabMode; label: string; badge: string | null }[]).map(t => {
               const active = activeTab === t.id;
               return (
