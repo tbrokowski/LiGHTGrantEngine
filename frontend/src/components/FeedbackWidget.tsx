@@ -49,26 +49,35 @@ export default function FeedbackWidget() {
 
   return (
     <>
-      {/* Floating trigger */}
+      {/* Sidebar trigger — sits above the Settings item */}
       <button
         type="button"
         aria-label="Send feedback"
-        onClick={() => setOpen((v) => !v)}
-        className="fixed bottom-5 right-5 z-[60] w-12 h-12 rounded-full flex items-center justify-center shadow-lg transition-transform hover:scale-105 active:scale-95"
-        style={{ background: 'var(--accent-primary, #1c3c72)', color: '#fff' }}
+        onClick={() => setOpen(true)}
+        className="w-full flex items-center gap-2 px-3 py-2 rounded-[var(--radius-sm)] transition-colors duration-150"
+        style={{ color: 'var(--sidebar-fg)', fontSize: '13px' }}
+        onMouseEnter={(e) => { (e.currentTarget as HTMLButtonElement).style.background = 'rgba(255,255,255,0.07)'; }}
+        onMouseLeave={(e) => { (e.currentTarget as HTMLButtonElement).style.background = 'transparent'; }}
       >
-        {open ? <X className="w-5 h-5" /> : <MessageSquarePlus className="w-5 h-5" />}
+        <MessageSquarePlus className="w-3.5 h-3.5 shrink-0" strokeWidth={1.8} />
+        <span>Feedback</span>
       </button>
 
-      {/* Popup panel */}
+      {/* Centered modal */}
       {open && (
         <div
-          className="fixed bottom-20 right-5 z-[60] w-80 rounded-2xl overflow-hidden"
+          className="fixed inset-0 z-[80] flex items-center justify-center p-4"
+          style={{ background: 'var(--surface-overlay, rgba(0,0,0,0.4))' }}
+          onMouseDown={close}
+        >
+        <div
+          className="w-full max-w-sm rounded-2xl overflow-hidden"
           style={{
             background: 'var(--surface-panel, #fff)',
             border: '1px solid var(--rule-subtle, #e5e7eb)',
             boxShadow: 'var(--shadow-floating, 0 12px 32px rgba(0,0,0,0.18))',
           }}
+          onMouseDown={(e) => e.stopPropagation()}
         >
           {status === 'sent' ? (
             <div className="flex flex-col items-center justify-center gap-2 px-6 py-10 text-center">
@@ -146,6 +155,7 @@ export default function FeedbackWidget() {
               </button>
             </form>
           )}
+        </div>
         </div>
       )}
     </>

@@ -3,7 +3,6 @@ import Sidebar from '@/components/layout/Sidebar';
 import EmailVerificationBanner from '@/components/auth/EmailVerificationBanner';
 import OnboardingGate from '@/components/onboarding/OnboardingGate';
 import UsageLimitWarning from '@/components/ai/UsageLimitWarning';
-import FeedbackWidget from '@/components/FeedbackWidget';
 import { AuthProvider } from '@/lib/auth';
 import { PdfViewerProvider } from '@/contexts/PdfViewerContext';
 
@@ -22,7 +21,6 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
             </main>
           </div>
         </div>
-        <FeedbackWidget />
         <Toaster position="bottom-right" richColors closeButton />
       </PdfViewerProvider>
     </AuthProvider>
