@@ -477,18 +477,20 @@ function GrantDetailContent() {
                       className="w-full mt-1 text-sm text-gray-700 bg-gray-50/60 border border-gray-200 rounded-lg px-3 py-2 focus:bg-white focus:border-indigo-400 focus:outline-none resize-y"
                     />
                   </div>
-                </div>
 
-                {/* Overview summary (deadlines, alerts, milestones) */}
-                {summary && (
-                  <div className="bg-white border border-gray-200 rounded-xl">
-                    <WorkspaceDashboard
-                      summary={summary}
-                      onTabChange={(tab) => handleTabChange(tab as WorkspaceTab)}
-                      lean
-                    />
-                  </div>
-                )}
+                  {/* Deadlines, alerts & milestones — same box, no duplicate name */}
+                  {summary && (
+                    <div className="pt-4 border-t border-gray-100">
+                      <WorkspaceDashboard
+                        summary={summary}
+                        onTabChange={(tab) => handleTabChange(tab as WorkspaceTab)}
+                        lean
+                        hideTitle
+                        embedded
+                      />
+                    </div>
+                  )}
+                </div>
 
                 {/* Tasks — Kanban board (drag & drop, subtasks, assignees, due dates, hours) */}
                 <div className="bg-white border border-gray-200 rounded-xl overflow-hidden">

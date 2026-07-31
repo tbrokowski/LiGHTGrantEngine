@@ -9,9 +9,13 @@ interface Props {
   /**
    * Lean overview: hide the Tasks/Sections/Checklist stat grid and the
    * quick-action strip. Used by the single-scroll workspace, where tasks live
-   * in the gantt below and files/team in their own sections.
+   * in the board below and files/team in their own sections.
    */
   lean?: boolean;
+  /** Hide the title/funder heading (the parent already shows the grant name). */
+  hideTitle?: boolean;
+  /** Drop the card's own padding/width so it can sit inside another box. */
+  embedded?: boolean;
 }
 
 function formatDeadlineDate(dateStr: string | null) {
@@ -98,7 +102,7 @@ function StatCard({
   );
 }
 
-export default function WorkspaceDashboard({ summary, onTabChange, lean = false }: Props) {
+export default function WorkspaceDashboard({ summary, onTabChange, lean = false, hideTitle = false, embedded = false }: Props) {
   const hasInternalDeadline = summary.days_to_internal_deadline !== null || summary.internal_deadline !== null;
   const hasExternalDeadline = summary.days_to_external_deadline !== null || summary.external_deadline !== null;
   const hasAlerts = summary.overdue_tasks > 0 || summary.blocked_tasks > 0 || summary.due_this_week_tasks > 0;
@@ -114,15 +118,17 @@ export default function WorkspaceDashboard({ summary, onTabChange, lean = false 
   ];
 
   return (
-    <div className="p-6 space-y-6 max-w-2xl">
+    <div className={embedded ? 'space-y-5' : 'p-6 space-y-6 max-w-2xl'}>
       {/* Title + funder */}
-      <div>
-        <h2 className="text-base font-semibold text-gray-900 leading-snug">{summary.title}</h2>
-        {summary.funder && <p className="text-xs text-gray-400 mt-0.5">{summary.funder}</p>}
-      </div>
+      {!hideTitle && (
+        <div>
+          <h2 className="text-base font-semibold text-gray-900 leading-snug">{summary.title}</h2>
+          {summary.funder && <p className="text-xs text-gray-400 mt-0.5">{summary.funder}</p>}
+        </div>
+      )}
 
-      {/* Deadline cards */}
-      {(hasInternalDeadline || hasExternalDeadline) && (
+      {/* Deadline cards — external is shown by the parent header when embedded */}
+      {(hasInternalDeadline || (hasExternalDeadline && !embedded)) && (
         <div className="flex gap-3">
           {hasInternalDeadline && (
             <DeadlineCard
@@ -131,7 +137,7 @@ export default function WorkspaceDashboard({ summary, onTabChange, lean = false 
               dateStr={summary.internal_deadline}
             />
           )}
-          {hasExternalDeadline && (
+          {hasExternalDeadline && !embedded && (
             <DeadlineCard
               days={summary.days_to_external_deadline}
               label="External deadline"
@@ -250,7 +256,7 @@ export default function WorkspaceDashboard({ summary, onTabChange, lean = false 
         </button>
       )}
 
-      <div className="border-t border-gray-100" />
+      {!embedded && <div className="border-t border-gray-100" />}
 
       {/* Upcoming milestones */}
       {upcomingMilestones.length > 0 ? (
