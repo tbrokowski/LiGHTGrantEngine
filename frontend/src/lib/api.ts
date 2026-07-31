@@ -548,6 +548,13 @@ export const analytics = {
   successRate: () => api.get('/analytics/success-rate'),
 };
 
+// ── Feedback (comments / concerns / bugs / revisions) ────────────────────────
+export const feedback = {
+  submit: (data: { category: string; message: string; page_url?: string }) =>
+    api.post('/feedback', data),
+  list: () => api.get('/feedback'),
+};
+
 // ── Notifications ────────────────────────────────────────────────────────────
 export const notifications = {
   list: () => api.get('/notifications/'),

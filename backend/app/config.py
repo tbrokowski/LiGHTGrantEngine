@@ -172,6 +172,9 @@ class Settings(BaseSettings):
     resend_api_key: Optional[str] = None
     smtp_from: str = "onboarding@resend.dev"
 
+    # Where user-submitted feedback / bug reports are emailed.
+    feedback_email: str = "tbrokowski@yahoo.com"
+
     # Legacy SMTP fields (unused — kept so existing .env files don't break)
     smtp_host: str = "smtp.resend.com"
     smtp_port: int = 587

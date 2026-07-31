@@ -46,6 +46,7 @@ from .preseed_run import PreseedRun
 from .email_verification import EmailVerification
 from .org_join_request import OrgJoinRequest
 from .password_reset import PasswordResetToken
+from .feedback import Feedback
 
 __all__ = [
     "Institution", "User", "Source", "SourceRun", "Opportunity", "OpportunityReview",
@@ -64,5 +65,5 @@ __all__ = [
     "OpportunityTask", "OpportunityNote", "OpportunityLink",
     "InstitutionOpportunity", "InstitutionTasteProfile", "UserTasteProfile", "InstitutionSource", "PreseedRun", "FunderOrg",
     "ShortlistCategory",
-    "EmailVerification", "OrgJoinRequest", "PasswordResetToken",
+    "EmailVerification", "OrgJoinRequest", "PasswordResetToken", "Feedback",
 ]
