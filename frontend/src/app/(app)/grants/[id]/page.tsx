@@ -30,6 +30,16 @@ const KanbanBoard = dynamic(() => import('@/components/grant-workspace/KanbanBoa
   ssr: false,
 });
 
+const TaskManager = dynamic(() => import('@/components/grant-workspace/TaskManager'), {
+  loading: () => <div className="flex justify-center py-12 text-sm text-gray-400">Loading list…</div>,
+  ssr: false,
+});
+
+const TaskTimeline = dynamic(() => import('@/components/grant-workspace/TaskTimeline'), {
+  loading: () => <div className="flex justify-center py-12 text-sm text-gray-400">Loading timeline…</div>,
+  ssr: false,
+});
+
 export type { EditorSection };
 
 interface GrantDetail {
@@ -152,6 +162,9 @@ function GrantDetailContent() {
   const [titleDraft, setTitleDraft] = useState('');
   const [deadlineDraft, setDeadlineDraft] = useState('');
   const [notesDraft, setNotesDraft] = useState('');
+
+  // Task view within the overview (board / list / timeline)
+  const [taskView, setTaskView] = useState<'board' | 'list' | 'timeline'>('board');
 
   // Track which lazy tabs have been loaded
   const [loadedTabs, setLoadedTabs] = useState<Set<WorkspaceTab>>(new Set(['overview']));
@@ -492,9 +505,46 @@ function GrantDetailContent() {
                   )}
                 </div>
 
-                {/* Tasks — Kanban board (drag & drop, subtasks, assignees, due dates, hours) */}
+                {/* Task List — switch between board / list / timeline views */}
                 <div className="bg-white border border-gray-200 rounded-xl overflow-hidden">
-                  <KanbanBoard grantId={id} tasks={taskList} onRefresh={refreshTasks} />
+                  <div className="flex items-center justify-between gap-3 px-4 py-3 border-b border-gray-100">
+                    <h3 className="text-sm font-semibold text-gray-800">Task List</h3>
+                    <div className="flex items-center gap-2">
+                      <label className="text-xs text-gray-400">View</label>
+                      <select
+                        value={taskView}
+                        onChange={(e) => setTaskView(e.target.value as 'board' | 'list' | 'timeline')}
+                        className="text-xs text-gray-700 bg-white border border-gray-200 rounded-lg px-2.5 py-1.5 focus:border-indigo-400 focus:outline-none"
+                      >
+                        <option value="board">Board (Kanban)</option>
+                        <option value="list">List</option>
+                        <option value="timeline">Timeline</option>
+                      </select>
+                    </div>
+                  </div>
+                  {taskView === 'board' && (
+                    <KanbanBoard grantId={id} tasks={taskList} onRefresh={refreshTasks} />
+                  )}
+                  {taskView === 'list' && (
+                    <TaskManager grantId={id} tasks={taskList} onRefresh={refreshTasks} />
+                  )}
+                  {taskView === 'timeline' && (
+                    <div className="p-4">
+                      {taskList.length === 0 ? (
+                        <div className="text-center py-10 text-gray-400 text-sm">
+                          No tasks yet. Add tasks with dates to see them on the timeline.
+                        </div>
+                      ) : (
+                        <TaskTimeline
+                          tasks={taskList}
+                          compact={false}
+                          grantId={id}
+                          onRefresh={refreshTasks}
+                          grantColor={grant.color ?? undefined}
+                        />
+                      )}
+                    </div>
+                  )}
                 </div>
 
                 {/* Saved files — sliding panel with folders + tags */}

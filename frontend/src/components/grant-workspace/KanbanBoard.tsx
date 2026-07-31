@@ -57,7 +57,6 @@ export default function KanbanBoard({ grantId, tasks, onRefresh }: Props) {
 
   return (
     <div className="p-4">
-      <h2 className="text-base font-semibold text-gray-800 mb-4">Kanban Board</h2>
       <DragDropContext onDragEnd={onDragEnd}>
         <div className="flex gap-3 overflow-x-auto pb-4">
           {KANBAN_COLUMNS.map((status) => {
