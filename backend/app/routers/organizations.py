@@ -456,6 +456,30 @@ async def list_org_collaborators(
     return list(guests.values())
 
 
+@router.post("/{institution_id}/collaborators/{user_id}/promote", dependencies=[Depends(require_org_admin())])
+async def promote_collaborator(
+    institution_id: str,
+    user_id: str,
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+    redis: aioredis.Redis = Depends(get_redis),
+):
+    """Promote an outside guest into a full member of this organization.
+
+    They keep their existing grant memberships (now as a core member) and gain
+    normal org-member access. Requires a registered account (user_id)."""
+    target = (await db.execute(select(User).where(User.id == user_id))).scalar_one_or_none()
+    if not target:
+        raise HTTPException(404, "User not found.")
+    if target.institution_id == institution_id:
+        raise HTTPException(400, "This person is already a member of the organization.")
+    target.institution_id = institution_id
+    target.institution_role = InstitutionRole.MEMBER
+    await db.commit()
+    await invalidate_permission_cache(user_id, redis)
+    return {"id": target.id, "institution_id": target.institution_id}
+
+
 # ── Join requests ─────────────────────────────────────────────────────────────
 
 @router.post("/{institution_id}/join-requests", status_code=201)

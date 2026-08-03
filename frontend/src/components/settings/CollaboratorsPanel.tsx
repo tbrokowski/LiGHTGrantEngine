@@ -27,6 +27,8 @@ export function CollaboratorsPanel({ institutionId }: { institutionId: string })
   const [collaborators, setCollaborators] = useState<Collaborator[]>([]);
   const [loading, setLoading] = useState(true);
 
+  const [promoting, setPromoting] = useState<string | null>(null);
+
   const load = useCallback(async () => {
     try {
       const res = await organizations.collaborators(institutionId);
@@ -35,6 +37,19 @@ export function CollaboratorsPanel({ institutionId }: { institutionId: string })
   }, [institutionId]);
 
   useEffect(() => { load(); }, [load]);
+
+  async function promote(userId: string, label: string) {
+    if (!confirm(`Make ${label} a full member of your organization? They keep their current grant access and gain normal org-member access.`)) return;
+    setPromoting(userId);
+    try {
+      await organizations.promoteCollaborator(institutionId, userId);
+      await load();
+    } catch {
+      alert('Failed to promote collaborator.');
+    } finally {
+      setPromoting(null);
+    }
+  }
 
   return (
     <div className="bg-white border border-gray-200 rounded-xl p-6">
@@ -72,6 +87,16 @@ export function CollaboratorsPanel({ institutionId }: { institutionId: string })
                   ))}
                 </div>
               </div>
+              {c.user_id && (
+                <button
+                  onClick={() => promote(c.user_id!, c.name || c.email)}
+                  disabled={promoting === c.user_id}
+                  className="shrink-0 text-xs font-medium px-2.5 py-1.5 border border-indigo-200 text-indigo-700 rounded-lg hover:bg-indigo-50 disabled:opacity-50 transition-colors"
+                  title="Add this guest to your organization as a full member"
+                >
+                  {promoting === c.user_id ? 'Adding…' : 'Make org member'}
+                </button>
+              )}
             </div>
           ))}
         </div>

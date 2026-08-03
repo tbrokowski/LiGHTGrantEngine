@@ -49,15 +49,17 @@ export default function FeedbackWidget() {
 
   return (
     <>
-      {/* Floating trigger — centered at the bottom of the screen */}
+      {/* Sidebar trigger — sits above the Settings item; opens the centered modal */}
       <button
         type="button"
         aria-label="Send feedback"
         onClick={() => setOpen(true)}
-        className="fixed bottom-5 left-1/2 -translate-x-1/2 z-[60] flex items-center gap-2 px-4 py-2.5 rounded-full shadow-lg text-sm font-medium transition-transform hover:scale-105 active:scale-95"
-        style={{ background: 'var(--accent-primary, #1c3c72)', color: '#fff' }}
+        className="w-full flex items-center gap-2 px-3 py-2 rounded-[var(--radius-sm)] transition-colors duration-150"
+        style={{ color: 'var(--sidebar-fg)', fontSize: '13px' }}
+        onMouseEnter={(e) => { (e.currentTarget as HTMLButtonElement).style.background = 'rgba(255,255,255,0.07)'; }}
+        onMouseLeave={(e) => { (e.currentTarget as HTMLButtonElement).style.background = 'transparent'; }}
       >
-        <MessageSquarePlus className="w-4 h-4 shrink-0" />
+        <MessageSquarePlus className="w-3.5 h-3.5 shrink-0" strokeWidth={1.8} />
         <span>Feedback</span>
       </button>
 

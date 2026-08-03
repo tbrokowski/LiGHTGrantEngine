@@ -92,6 +92,8 @@ export const organizations = {
   orgGrants: (institutionId: string) =>
     api.get(`/organizations/${institutionId}/grants`),
   collaborators: (id: string) => api.get(`/organizations/${id}/collaborators`),
+  promoteCollaborator: (orgId: string, userId: string) =>
+    api.post(`/organizations/${orgId}/collaborators/${userId}/promote`),
   getMemberGrantMemberships: (orgId: string, userId: string) =>
     api.get(`/organizations/${orgId}/members/${userId}/grant-memberships`),
   setMemberGrantMemberships: (orgId: string, userId: string, grantIds: string[]) =>
