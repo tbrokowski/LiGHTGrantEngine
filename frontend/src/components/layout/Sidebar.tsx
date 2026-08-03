@@ -6,7 +6,6 @@ import { useEffect, useCallback, useState } from 'react';
 import { useAuth, hasModulePermission, ModulePermissions } from '@/lib/auth';
 import { opportunities } from '@/lib/api';
 import { onOpportunitiesChanged } from '@/lib/opportunities-events';
-import FeedbackWidget from '@/components/FeedbackWidget';
 
 interface NavItem {
   href: string;
@@ -274,11 +273,6 @@ export default function Sidebar() {
           )}
         </div>
       )}
-
-      {/* Feedback (opens a comment/bug modal) — sits above Settings */}
-      <div className="px-3">
-        <FeedbackWidget />
-      </div>
 
       {/* Settings */}
       <div className="px-3 pb-4">
