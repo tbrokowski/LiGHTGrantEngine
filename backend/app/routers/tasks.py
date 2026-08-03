@@ -110,19 +110,31 @@ async def tasks_due_soon(days: int = 7, db: AsyncSession = Depends(get_db), curr
 
 
 async def _get_accessible_grant_ids(user: User, db: AsyncSession) -> list[str]:
-    """Return grant IDs the user can see, scoped to their institution."""
-    inst_id = user.institution_id
-    q = select(ActiveGrant.id)
-    if inst_id:
-        q = q.where(ActiveGrant.institution_id == inst_id)
-    if not is_org_admin(user):
-        member_ids = (await db.execute(
-            select(GrantMember.grant_id).where(
-                GrantMember.user_id == user.id,
-                GrantMember.status == GrantMemberStatus.ACCEPTED,
-            )
-        )).scalars().all()
-        q = q.where(ActiveGrant.id.in_(member_ids))
+    """Grant IDs whose tasks the user may see on the dashboard.
+
+    Org admins see every grant in their institution. Everyone else sees ONLY the
+    grants they're explicitly included in — leading, created, an accepted member
+    of (any org, incl. guest invites), or on the proposal team — never the whole
+    org portfolio. Mirrors grants.list_grants so the dashboard matches the Grants tab.
+    """
+    if is_org_admin(user):
+        q = select(ActiveGrant.id)
+        if user.institution_id:
+            q = q.where(ActiveGrant.institution_id == user.institution_id)
+        return list((await db.execute(q)).scalars().all())
+
+    member_subq = select(GrantMember.grant_id).where(
+        GrantMember.user_id == user.id,
+        GrantMember.status == GrantMemberStatus.ACCEPTED,
+    )
+    q = select(ActiveGrant.id).where(
+        or_(
+            ActiveGrant.internal_lead_id == user.id,
+            ActiveGrant.created_by_id == user.id,
+            ActiveGrant.id.in_(member_subq),
+            ActiveGrant.proposal_team.cast(String).contains(user.id),
+        )
+    )
     return list((await db.execute(q)).scalars().all())
 
 def _task_dict(t: Task) -> dict:

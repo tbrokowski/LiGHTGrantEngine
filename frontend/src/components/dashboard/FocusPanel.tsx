@@ -1,4 +1,5 @@
 'use client';
+import { useState } from 'react';
 import Link from 'next/link';
 
 export interface GrantItem {
@@ -121,12 +122,21 @@ function TaskRow({ task, days }: TaskRowProps) {
 
 interface FocusPanelProps {
   grants: GrantItem[];
-  tasks: TaskItem[];
+  /** Active tasks assigned to the current user (already scoped). */
+  myTasks: TaskItem[];
+  /** All tasks across grants the user is included in (any status; scoped). */
+  allTasks: TaskItem[];
   loading: boolean;
   currentUserId?: string | null;
 }
 
-export default function FocusPanel({ tasks, loading }: FocusPanelProps) {
+const isActive = (t: TaskItem) => t.status !== 'complete' && t.status !== 'dropped';
+
+export default function FocusPanel({ myTasks, allTasks, loading }: FocusPanelProps) {
+  const [view, setView] = useState<'mine' | 'all'>('mine');
+
+  const tasks = view === 'mine' ? myTasks.filter(isActive) : allTasks.filter(isActive);
+
   const withDate = tasks
     .filter(t => t.due_date != null)
     .sort((a, b) => new Date(a.due_date!).getTime() - new Date(b.due_date!).getTime());
@@ -160,18 +170,35 @@ export default function FocusPanel({ tasks, loading }: FocusPanelProps) {
       }}
     >
       <div
-        className="px-4 py-3.5 flex items-center justify-between gap-2"
+        className="px-4 py-3 flex items-center gap-2"
         style={{
           background: 'var(--panel-header-bg)',
           borderBottom: '1px solid var(--panel-header-rule)',
         }}
       >
         <h2
-          className="text-sm font-semibold"
+          className="text-sm font-semibold shrink-0"
           style={{ color: 'var(--panel-header-text)' }}
         >
-          Focus
+          Tasks
         </h2>
+
+        {/* Assigned to me / All active toggle */}
+        <div className="flex items-center gap-0.5 p-0.5 rounded-lg" style={{ background: 'var(--surface-sunken)' }}>
+          {([['mine', 'Assigned to me'], ['all', 'All active']] as const).map(([v, label]) => (
+            <button
+              key={v}
+              onClick={() => setView(v)}
+              className="text-[11px] font-medium px-2 py-1 rounded-md transition-colors"
+              style={view === v
+                ? { background: 'var(--surface-base)', color: 'var(--ink-primary)', boxShadow: '0 1px 2px rgba(0,0,0,0.06)' }
+                : { color: 'var(--ink-muted)' }}
+            >
+              {label}
+            </button>
+          ))}
+        </div>
+
         <p
           className="text-[10px] font-medium ml-auto shrink-0"
           style={{ color: 'var(--ink-muted)' }}
@@ -196,7 +223,9 @@ export default function FocusPanel({ tasks, loading }: FocusPanelProps) {
             </svg>
           </div>
           <p className="text-sm font-medium text-gray-500">No open tasks</p>
-          <p className="text-xs text-gray-300 mt-1">Tasks assigned to you will appear here</p>
+          <p className="text-xs text-gray-300 mt-1">
+            {view === 'mine' ? 'Tasks assigned to you will appear here' : 'Active tasks across your grants will appear here'}
+          </p>
         </div>
       ) : (
         <div className="flex-1 flex flex-col overflow-hidden">

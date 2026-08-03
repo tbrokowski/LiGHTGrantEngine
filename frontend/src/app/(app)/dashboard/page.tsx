@@ -227,7 +227,7 @@ export default function DashboardPage() {
 
         {/* Row 1 — Focus + Scratchpad side by side */}
         <div className="grid grid-cols-1 xl:grid-cols-2 gap-5 p-5">
-          <FocusPanel grants={grantList} tasks={taskList} loading={loading} currentUserId={user?.id ?? null} />
+          <FocusPanel grants={grantList} myTasks={taskList} allTasks={allTaskList} loading={loading} currentUserId={user?.id ?? null} />
           <Scratchpad />
         </div>
 
