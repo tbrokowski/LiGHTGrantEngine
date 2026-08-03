@@ -2,6 +2,7 @@
 import { useEffect, useState, useRef, useMemo } from 'react';
 import { useRouter } from 'next/navigation';
 import { grants, tasks as tasksApi } from '@/lib/api';
+import { useAuth, isInstitutionAdmin } from '@/lib/auth';
 import ProposalCard, { GrantSummary } from '@/components/grants/ProposalCard';
 import PendingCard from '@/components/grants/PendingCard';
 import ActiveGrantCard from '@/components/grants/ActiveGrantCard';
@@ -50,8 +51,8 @@ interface NewGrantForm {
   color: string | null;
 }
 
-function NewGrantModal({ onClose, onCreated }: { onClose: () => void; onCreated: (id: string) => void }) {
-  const [form, setForm] = useState<NewGrantForm>({ title: '', funder: '', pi_name: '', external_deadline: '', is_personal: false, color: null });
+function NewGrantModal({ onClose, onCreated, canCreateOrgGrant }: { onClose: () => void; onCreated: (id: string) => void; canCreateOrgGrant: boolean }) {
+  const [form, setForm] = useState<NewGrantForm>({ title: '', funder: '', pi_name: '', external_deadline: '', is_personal: !canCreateOrgGrant, color: null });
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState('');
   const firstRef = useRef<HTMLInputElement>(null);
@@ -97,16 +98,22 @@ function NewGrantModal({ onClose, onCreated }: { onClose: () => void; onCreated:
         </div>
         <form onSubmit={handleSubmit} className="px-6 py-5 space-y-4">
           {error && <p className="text-sm text-red-600 bg-red-50 rounded-lg px-3 py-2">{error}</p>}
-          <div className="flex items-center gap-1 bg-gray-100 rounded-xl p-1">
-            <button type="button" onClick={() => set('is_personal', false)}
-              className={`flex-1 text-xs font-medium py-1.5 rounded-lg transition-colors ${!form.is_personal ? 'bg-white text-gray-900 shadow-sm' : 'text-gray-500'}`}>
-              Organization
-            </button>
-            <button type="button" onClick={() => set('is_personal', true)}
-              className={`flex-1 text-xs font-medium py-1.5 rounded-lg transition-colors ${form.is_personal ? 'bg-white text-gray-900 shadow-sm' : 'text-gray-500'}`}>
-              Personal draft
-            </button>
-          </div>
+          {canCreateOrgGrant ? (
+            <div className="flex items-center gap-1 bg-gray-100 rounded-xl p-1">
+              <button type="button" onClick={() => set('is_personal', false)}
+                className={`flex-1 text-xs font-medium py-1.5 rounded-lg transition-colors ${!form.is_personal ? 'bg-white text-gray-900 shadow-sm' : 'text-gray-500'}`}>
+                Organization
+              </button>
+              <button type="button" onClick={() => set('is_personal', true)}
+                className={`flex-1 text-xs font-medium py-1.5 rounded-lg transition-colors ${form.is_personal ? 'bg-white text-gray-900 shadow-sm' : 'text-gray-500'}`}>
+                Personal draft
+              </button>
+            </div>
+          ) : (
+            <p className="text-xs text-gray-400">
+              This is your personal draft. Invite a collaborator later to share it with your organization.
+            </p>
+          )}
           <div>
             <label className="block text-xs font-medium text-gray-500 mb-1.5">Title <span className="text-red-400">*</span></label>
             <input ref={firstRef} type="text" value={form.title} onChange={e => set('title', e.target.value)}
@@ -268,6 +275,8 @@ function NewActiveGrantModal({ onClose, onCreated }: { onClose: () => void; onCr
 
 export default function GrantsPage() {
   const router = useRouter();
+  const { user } = useAuth();
+  const canCreateOrgGrant = isInstitutionAdmin(user) || user?.role === 'grant_lead' || user?.role === 'admin';
   const [tab, setTab] = useState<TabId>('proposals');
   const [allGrants, setAllGrants] = useState<GrantSummary[]>([]);
   const [allTasks, setAllTasks] = useState<TaskItem[]>([]);
@@ -356,6 +365,7 @@ export default function GrantsPage() {
         <NewGrantModal
           onClose={() => setShowModal(false)}
           onCreated={handleCreated}
+          canCreateOrgGrant={canCreateOrgGrant}
         />
       )}
       {showActiveModal && (
