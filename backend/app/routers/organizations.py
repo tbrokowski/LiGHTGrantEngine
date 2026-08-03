@@ -393,6 +393,69 @@ async def set_member_grant_memberships(
     return {"grant_ids": list(requested_ids)}
 
 
+@router.get("/{institution_id}/collaborators", dependencies=[Depends(require_org_admin())])
+async def list_org_collaborators(
+    institution_id: str,
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    """Outside guests on this org's grants — people with grant access who are NOT
+    core org members — grouped by person with the grant(s) they're on."""
+    from app.models.grant_member import GrantMember
+    from app.models.active_grant import ActiveGrant
+
+    # Grants in this org, mapped id -> title.
+    grants = (await db.execute(
+        select(ActiveGrant).where(
+            ActiveGrant.institution_id == institution_id,
+            ActiveGrant.is_personal.is_(False),
+        )
+    )).scalars().all()
+    grant_titles = {g.id: g.title for g in grants}
+    if not grant_titles:
+        return []
+
+    members = (await db.execute(
+        select(GrantMember).where(GrantMember.grant_id.in_(list(grant_titles.keys())))
+    )).scalars().all()
+
+    # Which member user_ids are core org members (to exclude them).
+    user_ids = [m.user_id for m in members if m.user_id]
+    core_ids: set[str] = set()
+    if user_ids:
+        core_rows = (await db.execute(
+            select(User.id, User.name).where(
+                User.id.in_(user_ids),
+                User.institution_id == institution_id,
+            )
+        )).all()
+        core_ids = {r[0] for r in core_rows}
+    names = {}
+    if user_ids:
+        for r in (await db.execute(select(User.id, User.name).where(User.id.in_(user_ids)))).all():
+            names[r[0]] = r[1]
+
+    # Group guests by email.
+    guests: dict[str, dict] = {}
+    for m in members:
+        if m.user_id and m.user_id in core_ids:
+            continue  # core org member, not a guest
+        key = m.email
+        g = guests.setdefault(key, {
+            "email": m.email,
+            "name": names.get(m.user_id),
+            "user_id": m.user_id,
+            "status": m.status,
+            "grants": [],
+        })
+        g["grants"].append({
+            "id": m.grant_id,
+            "title": grant_titles.get(m.grant_id, "—"),
+            "role": m.role,
+        })
+    return list(guests.values())
+
+
 # ── Join requests ─────────────────────────────────────────────────────────────
 
 @router.post("/{institution_id}/join-requests", status_code=201)

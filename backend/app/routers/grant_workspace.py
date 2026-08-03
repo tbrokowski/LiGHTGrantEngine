@@ -7,7 +7,7 @@ from datetime import date, datetime, timezone
 from fastapi import APIRouter, Depends, HTTPException, UploadFile, File
 from fastapi.responses import StreamingResponse
 from pydantic import BaseModel
-from sqlalchemy import select, desc
+from sqlalchemy import select, desc, or_
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.database import get_db
@@ -195,7 +195,10 @@ async def delete_task(
 # ── Grant Members ──────────────────────────────────────────────────────────────
 
 class GrantMemberInvite(BaseModel):
-    email: str
+    # Provide user_id (existing org member picked from the dropdown) OR email
+    # (outside guest invited by address). Role change (PATCH) uses only `role`.
+    email: Optional[str] = None
+    user_id: Optional[str] = None
     role: str = GrantMemberRole.EDITOR
 
 
@@ -205,14 +208,25 @@ async def list_grant_members(
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ):
-    await _get_grant_or_404(grant_id, db)
+    grant = await _get_grant_or_404(grant_id, db)
     result = await db.execute(
         select(GrantMember).where(GrantMember.grant_id == grant_id)
     )
     members = result.scalars().all()
     out = []
     for m in members:
-        row = {
+        # A member is a core org member when their account belongs to the grant's
+        # institution; otherwise they're an outside guest (their own workspace,
+        # or not yet registered).
+        is_org_member = False
+        name = None
+        if m.user_id:
+            ur = await db.execute(select(User).where(User.id == m.user_id))
+            u = ur.scalar_one_or_none()
+            if u:
+                name = u.name
+                is_org_member = bool(grant.institution_id) and u.institution_id == grant.institution_id
+        out.append({
             "id": m.id,
             "grant_id": m.grant_id,
             "user_id": m.user_id,
@@ -221,15 +235,42 @@ async def list_grant_members(
             "status": m.status,
             "invited_by_id": m.invited_by_id,
             "created_at": m.created_at.isoformat() if m.created_at else None,
-            "name": None,
-        }
-        if m.user_id:
-            ur = await db.execute(select(User).where(User.id == m.user_id))
-            u = ur.scalar_one_or_none()
-            if u:
-                row["name"] = u.name
-        out.append(row)
+            "name": name,
+            "is_org_member": is_org_member,
+        })
     return out
+
+
+@router.get("/{grant_id}/assignable-members")
+async def list_assignable_members(
+    grant_id: str,
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+    _edit: None = Depends(grant_access(require_editor=True)),
+):
+    """Core org members (of the grant's institution) not already on the grant —
+    the candidates for the 'Add from organization' picker."""
+    grant = await _get_grant_or_404(grant_id, db)
+    if not grant.institution_id:
+        return []
+    existing = (await db.execute(
+        select(GrantMember.user_id).where(
+            GrantMember.grant_id == grant_id,
+            GrantMember.user_id.is_not(None),
+        )
+    )).scalars().all()
+    existing_ids = {uid for uid in existing if uid}
+    members = (await db.execute(
+        select(User).where(
+            User.institution_id == grant.institution_id,
+            User.is_active == True,  # noqa: E712
+        )
+    )).scalars().all()
+    return [
+        {"id": u.id, "name": u.name, "email": u.email, "role": u.role}
+        for u in members
+        if u.id not in existing_ids
+    ]
 
 
 @router.post("/{grant_id}/members", status_code=201)
@@ -256,25 +297,36 @@ async def invite_grant_member(
         await db.flush()
         await invalidate_permission_cache(current_user.id, redis)
 
-    # Check if this email is already a member of this grant
-    existing = await db.execute(
-        select(GrantMember).where(
-            GrantMember.grant_id == grant_id,
-            GrantMember.email == data.email,
-        )
-    )
-    if existing.scalar_one_or_none():
-        raise HTTPException(400, "This person is already a member of the grant")
+    # Resolve the target user: from a picked user_id (org member) or by email (guest).
+    if data.user_id:
+        user_result = await db.execute(select(User).where(User.id == data.user_id))
+        user = user_result.scalar_one_or_none()
+        if not user:
+            raise HTTPException(404, "User not found")
+        target_email = user.email
+    elif data.email:
+        target_email = data.email.strip()
+        user_result = await db.execute(select(User).where(User.email == target_email))
+        user = user_result.scalar_one_or_none()
+    else:
+        raise HTTPException(400, "Provide a user to add or an email to invite")
 
-    # Look up existing user by email
-    user_result = await db.execute(select(User).where(User.email == data.email))
-    user = user_result.scalar_one_or_none()
+    # Reject duplicates by email OR user_id
+    dup_q = select(GrantMember).where(
+        GrantMember.grant_id == grant_id,
+        or_(
+            GrantMember.email == target_email,
+            *( [GrantMember.user_id == user.id] if user else [] ),
+        ),
+    )
+    if (await db.execute(dup_q)).scalar_one_or_none():
+        raise HTTPException(400, "This person is already a member of the grant")
 
     member = GrantMember(
         id=str(uuid.uuid4()),
         grant_id=grant_id,
         user_id=user.id if user else None,
-        email=data.email,
+        email=target_email,
         role=data.role,
         status=GrantMemberStatus.ACCEPTED if user else GrantMemberStatus.PENDING,
         invited_by_id=current_user.id,
@@ -282,7 +334,7 @@ async def invite_grant_member(
     db.add(member)
     await log_activity(
         db, grant_id, "member_invited", current_user.id, "grant_member", member.id,
-        f"Invited {data.email} as {data.role}"
+        f"Invited {target_email} as {data.role}"
     )
     await db.commit()
     if user:

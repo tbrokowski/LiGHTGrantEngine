@@ -233,6 +233,28 @@ async def list_grants(
         for g in result.scalars().all():
             grants_out.append(_grant_summary(g))
 
+    # ── Guest access: grants the user is an accepted member of in ANY org ──
+    # (a collaborator invited to a single grant outside their own institution).
+    seen_ids = {g["id"] for g in grants_out}
+    guest_ids_q = select(GrantMember.grant_id).where(
+        GrantMember.user_id == current_user.id,
+        GrantMember.status == GrantMemberStatus.ACCEPTED,
+    )
+    guest_ids = [gid for gid in (await db.execute(guest_ids_q)).scalars().all() if gid not in seen_ids]
+    if guest_ids:
+        gq = select(ActiveGrant).where(
+            ActiveGrant.id.in_(guest_ids),
+            ActiveGrant.is_personal.is_(False),
+        )
+        if stage:
+            gq = gq.where(ActiveGrant.grant_stage == stage)
+        elif status:
+            gq = gq.where(ActiveGrant.status == status)
+        elif not include_inactive:
+            gq = gq.where(ActiveGrant.status.notin_(INACTIVE_STATUSES))
+        for g in (await db.execute(gq)).scalars().all():
+            grants_out.append(_grant_summary(g))
+
     return grants_out
 
 

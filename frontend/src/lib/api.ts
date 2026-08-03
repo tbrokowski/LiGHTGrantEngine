@@ -91,6 +91,7 @@ export const organizations = {
     api.delete(`/organizations/${orgId}/members/${userId}`),
   orgGrants: (institutionId: string) =>
     api.get(`/organizations/${institutionId}/grants`),
+  collaborators: (id: string) => api.get(`/organizations/${id}/collaborators`),
   getMemberGrantMemberships: (orgId: string, userId: string) =>
     api.get(`/organizations/${orgId}/members/${userId}/grant-memberships`),
   setMemberGrantMemberships: (orgId: string, userId: string, grantIds: string[]) =>
@@ -333,8 +334,12 @@ export const grants = {
     api.get(`/grants/${grantId}/activity`, { params: { limit } }),
   // Grant members / collaborators
   listMembers: (grantId: string) => api.get(`/grants/${grantId}/members`),
-  inviteMember: (grantId: string, data: { email: string; role?: string }) =>
+  assignableMembers: (grantId: string) => api.get(`/grants/${grantId}/assignable-members`),
+  // email (outside guest) OR user_id (existing org member from the picker)
+  inviteMember: (grantId: string, data: { email?: string; user_id?: string; role?: string }) =>
     api.post(`/grants/${grantId}/members`, data),
+  updateMember: (grantId: string, memberId: string, data: { role: string }) =>
+    api.patch(`/grants/${grantId}/members/${memberId}`, data),
   removeMember: (grantId: string, memberId: string) =>
     api.delete(`/grants/${grantId}/members/${memberId}`),
 };

@@ -5,6 +5,7 @@ import { Suspense } from 'react';
 import { sources, auth, admin } from '@/lib/api';
 import { notifyOpportunitiesChanged } from '@/lib/opportunities-events';
 import { MembersPanel } from '@/components/settings/MembersPanel';
+import { CollaboratorsPanel } from '@/components/settings/CollaboratorsPanel';
 import { JoinRequestsPanel } from '@/components/settings/JoinRequestsPanel';
 import { InvitePanel } from '@/components/settings/InvitePanel';
 import { ProfilePanel } from '@/components/settings/ProfilePanel';
@@ -918,6 +919,7 @@ function SettingsPageInner() {
       {activeTab === 'organization' && currentUser?.institution_id && (
         <div className="space-y-10">
           <MembersPanel institutionId={currentUser.institution_id} />
+          <CollaboratorsPanel institutionId={currentUser.institution_id} />
           <JoinRequestsPanel institutionId={currentUser.institution_id} />
           <InvitePanel institutionId={currentUser.institution_id} />
         </div>

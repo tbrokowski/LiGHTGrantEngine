@@ -186,6 +186,19 @@ async def register(
     db.add(user)
     await db.flush()
 
+    # Link any pending grant invitations addressed to this email — an outside
+    # collaborator invited before they had an account now gains guest access.
+    from app.models.grant_member import GrantMember, GrantMemberStatus
+    pending = (await db.execute(
+        select(GrantMember).where(
+            GrantMember.email == user.email,
+            GrantMember.user_id.is_(None),
+        )
+    )).scalars().all()
+    for gm in pending:
+        gm.user_id = user.id
+        gm.status = GrantMemberStatus.ACCEPTED
+
     if body.institution_id and account_status == "pending_approval":
         # Create OrgJoinRequest
         join_req = OrgJoinRequest(
@@ -312,6 +325,18 @@ async def accept_invite(
             module_permissions=invited_module_permissions,
         )
         db.add(user)
+        await db.flush()
+        # Link any pending grant invitations addressed to this email.
+        from app.models.grant_member import GrantMember, GrantMemberStatus
+        pending = (await db.execute(
+            select(GrantMember).where(
+                GrantMember.email == user.email,
+                GrantMember.user_id.is_(None),
+            )
+        )).scalars().all()
+        for gm in pending:
+            gm.user_id = user.id
+            gm.status = GrantMemberStatus.ACCEPTED
         await db.commit()
 
     token_str = create_access_token({"sub": user.id, "role": user.role})
