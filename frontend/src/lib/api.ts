@@ -560,6 +560,8 @@ export const feedback = {
   submit: (data: { category: string; message: string; page_url?: string }) =>
     api.post('/feedback', data),
   list: () => api.get('/feedback'),
+  updateStatus: (id: string, status: string) =>
+    api.patch(`/feedback/${id}`, { status }),
 };
 
 // ── Notifications ────────────────────────────────────────────────────────────

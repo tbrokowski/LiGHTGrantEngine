@@ -7,11 +7,12 @@ the source of truth.
 import html
 import uuid
 
-from fastapi import APIRouter, Depends, Request
+from fastapi import APIRouter, Depends, HTTPException, Request
 from pydantic import BaseModel, Field
 from sqlalchemy import desc, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.auth.permissions import is_org_admin
 from app.config import get_settings
 from app.database import get_db
 from app.models.feedback import Feedback
@@ -20,6 +21,9 @@ from app.routers.auth import get_current_user
 from app.services.email import send_email
 
 router = APIRouter()
+
+# Statuses an admin can set: unreviewed → in progress → done.
+_VALID_STATUSES = {"new", "in_progress", "resolved"}
 
 _CATEGORY_LABELS = {
     "bug": "Bug",
@@ -105,7 +109,32 @@ async def list_feedback(
 ):
     """Admins see all feedback (the log); everyone else sees their own."""
     query = select(Feedback).order_by(desc(Feedback.created_at))
-    if current_user.institution_role != "admin":
+    if not is_org_admin(current_user):
         query = query.where(Feedback.user_id == current_user.id)
     result = await db.execute(query)
     return [_dict(f) for f in result.scalars().all()]
+
+
+class FeedbackStatusUpdate(BaseModel):
+    status: str  # new (unreviewed) | in_progress | resolved (done)
+
+
+@router.patch("/{feedback_id}")
+async def update_feedback_status(
+    feedback_id: str,
+    data: FeedbackStatusUpdate,
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    """Admins triage feedback: mark unreviewed / in progress / done."""
+    if not is_org_admin(current_user):
+        raise HTTPException(403, "Requires organization admin privileges.")
+    if data.status not in _VALID_STATUSES:
+        raise HTTPException(400, f"Invalid status. Must be one of {sorted(_VALID_STATUSES)}.")
+    result = await db.execute(select(Feedback).where(Feedback.id == feedback_id))
+    fb = result.scalar_one_or_none()
+    if not fb:
+        raise HTTPException(404, "Feedback not found.")
+    fb.status = data.status
+    await db.commit()
+    return _dict(fb)
