@@ -107,12 +107,12 @@ export default function PendingCard({ grant, onStageChange, onDelete, onEdit }: 
               type="button"
               onClick={() => setMenuOpen(v => !v)}
               className="w-6 h-6 flex items-center justify-center rounded-[var(--radius-xs)] transition-colors"
-              style={{ color: 'var(--ink-faint)' }}
-              onMouseEnter={e => { e.currentTarget.style.color = 'var(--ink-muted)'; e.currentTarget.style.background = 'var(--surface-sunken)'; }}
-              onMouseLeave={e => { e.currentTarget.style.color = 'var(--ink-faint)'; e.currentTarget.style.background = 'transparent'; }}
+              style={{ color: 'var(--ink-primary)' }}
+              onMouseEnter={e => { e.currentTarget.style.background = 'var(--surface-sunken)'; }}
+              onMouseLeave={e => { e.currentTarget.style.background = 'transparent'; }}
             >
-              <svg className="w-3.5 h-3.5" fill="currentColor" viewBox="0 0 24 24">
-                <circle cx="12" cy="5" r="1.5" /><circle cx="12" cy="12" r="1.5" /><circle cx="12" cy="19" r="1.5" />
+              <svg className="w-4 h-4" fill="currentColor" viewBox="0 0 24 24">
+                <circle cx="12" cy="5" r="1.6" /><circle cx="12" cy="12" r="1.6" /><circle cx="12" cy="19" r="1.6" />
               </svg>
             </button>
             {menuOpen && (
@@ -126,6 +126,15 @@ export default function PendingCard({ grant, onStageChange, onDelete, onEdit }: 
                 }}
                 onMouseLeave={() => setMenuOpen(false)}
               >
+                {grant.call_url && (
+                  <a href={grant.call_url} target="_blank" rel="noopener noreferrer"
+                    onClick={() => setMenuOpen(false)}
+                    className="block w-full text-left px-3 py-2 text-sm transition-colors"
+                    style={{ color: 'var(--ink-secondary)' }}
+                    onMouseEnter={e => (e.currentTarget.style.background = 'var(--surface-sunken)')}
+                    onMouseLeave={e => (e.currentTarget.style.background = 'transparent')}
+                  >View call ↗</a>
+                )}
                 <button
                   type="button"
                   onClick={() => { setMenuOpen(false); setTransition('accept'); }}

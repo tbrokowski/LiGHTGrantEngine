@@ -62,9 +62,9 @@ function formatAxisDate(d: Date) {
   return d.toLocaleDateString('en-US', { month: 'short', day: 'numeric' });
 }
 
-type Window = 30 | 60 | 90;
+type Window = number;  // days to show on the timeline (type-in)
 
-const AXIS_TICKS: Record<Window, number> = { 30: 6, 60: 6, 90: 6 };
+const AXIS_TICKS = 6;   // fixed number of axis ticks regardless of window
 const ROW_H = 36;
 const LABEL_W = 160;
 
@@ -401,7 +401,7 @@ export default function GrantTimeline({ grants, loading, starredIds = new Set(),
   const hasAny = grants.length > 0;
 
   // Build axis ticks
-  const ticks = AXIS_TICKS[window];
+  const ticks = AXIS_TICKS;
   const tickDates: Date[] = [];
   for (let i = 0; i <= ticks; i++) {
     const d = new Date(today);
@@ -478,34 +478,24 @@ export default function GrantTimeline({ grants, loading, starredIds = new Set(),
               </button>
             ))}
           </div>
-          {viewMode === 'timeline' && ([30, 60, 90] as Window[]).map(w => (
-            <button
-              key={w}
-              onClick={() => setWindow(w)}
-              className="text-xs px-2.5 py-1 rounded-md font-medium transition-colors"
-              style={window === w ? {
-                background: 'var(--panel-header-text)',
-                color: '#FFFFFF',
-              } : {
-                color: 'var(--ink-muted)',
-                background: 'transparent',
-              }}
-              onMouseEnter={e => {
-                if (window !== w) {
-                  (e.currentTarget as HTMLButtonElement).style.background = 'rgba(28,60,114,0.08)';
-                  (e.currentTarget as HTMLButtonElement).style.color = 'var(--panel-header-text)';
-                }
-              }}
-              onMouseLeave={e => {
-                if (window !== w) {
-                  (e.currentTarget as HTMLButtonElement).style.background = 'transparent';
-                  (e.currentTarget as HTMLButtonElement).style.color = 'var(--ink-muted)';
-                }
-              }}
-            >
-              {w}d
-            </button>
-          ))}
+          {viewMode === 'timeline' && (
+            <div className="flex items-center gap-1.5">
+              <span className="text-xs" style={{ color: 'var(--ink-faint)' }}>Show</span>
+              <input
+                type="number"
+                min={7}
+                max={365}
+                value={window}
+                onChange={e => {
+                  const n = Number(e.target.value);
+                  if (!Number.isNaN(n)) setWindow(Math.min(365, Math.max(7, n)));
+                }}
+                className="w-14 text-xs text-center px-1.5 py-1 rounded-md"
+                style={{ border: '1px solid var(--rule-subtle)', background: 'var(--surface-base)', color: 'var(--ink-primary)', outline: 'none' }}
+              />
+              <span className="text-xs" style={{ color: 'var(--ink-faint)' }}>days</span>
+            </div>
+          )}
         </div>
       </div>
 

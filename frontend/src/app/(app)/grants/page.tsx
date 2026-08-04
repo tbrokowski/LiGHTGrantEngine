@@ -18,12 +18,11 @@ function loadStarredIds(): Set<string> {
   } catch { return new Set(); }
 }
 
-type TabId = 'proposals' | 'pending' | 'active';
+type TabId = 'development' | 'active';
 
-const TABS: { id: TabId; label: string; stage: string; emptyText: string }[] = [
-  { id: 'proposals', label: 'Proposals', stage: 'proposal', emptyText: 'No proposals in progress. Create one or convert a shortlisted opportunity.' },
-  { id: 'pending', label: 'Pending', stage: 'pending', emptyText: 'No submissions awaiting decisions.' },
-  { id: 'active', label: 'Active', stage: 'active', emptyText: 'No funded grants yet.' },
+const TABS: { id: TabId; label: string; stages: string[]; emptyText: string }[] = [
+  { id: 'development', label: 'Proposals in Development', stages: ['proposal'], emptyText: 'No proposals in progress. Create one or convert a shortlisted opportunity.' },
+  { id: 'active', label: 'Active', stages: ['active', 'pending'], emptyText: 'No active or pending-review grants yet.' },
 ];
 
 function SkeletonRow() {
@@ -277,7 +276,7 @@ export default function GrantsPage() {
   const router = useRouter();
   const { user } = useAuth();
   const canCreateOrgGrant = isInstitutionAdmin(user) || user?.role === 'grant_lead' || user?.role === 'admin';
-  const [tab, setTab] = useState<TabId>('proposals');
+  const [tab, setTab] = useState<TabId>('development');
   const [allGrants, setAllGrants] = useState<GrantSummary[]>([]);
   const [allTasks, setAllTasks] = useState<TaskItem[]>([]);
   const [starredIds, setStarredIds] = useState<Set<string>>(new Set());
@@ -341,7 +340,7 @@ export default function GrantsPage() {
 
   const currentTab = TABS.find(t => t.id === tab)!;
   const tabGrants = useMemo(() => {
-    let result = allGrants.filter(g => g.grant_stage === currentTab.stage);
+    let result = allGrants.filter(g => currentTab.stages.includes(g.grant_stage));
     if (search.trim()) {
       const q = search.toLowerCase();
       result = result.filter(g =>
@@ -351,12 +350,11 @@ export default function GrantsPage() {
       );
     }
     return result;
-  }, [allGrants, tab, search, currentTab.stage]);
+  }, [allGrants, tab, search, currentTab.stages]);
 
   const counts = useMemo(() => ({
-    proposals: allGrants.filter(g => g.grant_stage === 'proposal').length,
-    pending: allGrants.filter(g => g.grant_stage === 'pending').length,
-    active: allGrants.filter(g => g.grant_stage === 'active').length,
+    development: allGrants.filter(g => g.grant_stage === 'proposal').length,
+    active: allGrants.filter(g => ['active', 'pending'].includes(g.grant_stage)).length,
   }), [allGrants]);
 
   return (
@@ -514,36 +512,17 @@ export default function GrantsPage() {
                 </button>
               )}
             </div>
-          ) : tab === 'proposals' ? (
-            tabGrants.map(g => (
-              <ProposalCard
-                key={g.id}
-                grant={g}
-                onStageChange={handleStageChange}
-                onDelete={handleDelete}
-                onEdit={setEditingGrant}
-              />
-            ))
-          ) : tab === 'pending' ? (
-            tabGrants.map(g => (
-              <PendingCard
-                key={g.id}
-                grant={g}
-                onStageChange={handleStageChange}
-                onDelete={handleDelete}
-                onEdit={setEditingGrant}
-              />
-            ))
           ) : (
+            // Dispatch the right card per grant's own stage (the Active tab mixes
+            // active + pending-review grants).
             tabGrants.map(g => (
-              <ActiveGrantCard
-                key={g.id}
-                grant={g}
-                onStageChange={handleStageChange}
-                onDelete={handleDelete}
-                onDeadlineChange={handleDeadlineChange}
-                onEdit={setEditingGrant}
-              />
+              g.grant_stage === 'proposal' ? (
+                <ProposalCard key={g.id} grant={g} onStageChange={handleStageChange} onDelete={handleDelete} onEdit={setEditingGrant} />
+              ) : g.grant_stage === 'pending' ? (
+                <PendingCard key={g.id} grant={g} onStageChange={handleStageChange} onDelete={handleDelete} onEdit={setEditingGrant} />
+              ) : (
+                <ActiveGrantCard key={g.id} grant={g} onStageChange={handleStageChange} onDelete={handleDelete} onDeadlineChange={handleDeadlineChange} onEdit={setEditingGrant} />
+              )
             ))
           )}
         </div>

@@ -881,6 +881,7 @@ def _grant_summary(g: ActiveGrant) -> dict:
         "currency": g.currency,
         "award_amount": g.award_amount,
         "color": g.color,
+        "call_url": g.call_url,
         "created_at": str(g.created_at) if g.created_at else None,
         "updated_at": str(g.updated_at) if g.updated_at else None,
     }
