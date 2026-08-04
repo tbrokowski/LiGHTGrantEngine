@@ -36,7 +36,9 @@ export default function Sidebar() {
       .catch(() => null);
   }, []);
 
-  useEffect(() => { refreshCount(); }, [refreshCount, path]);
+  // Fetch the unread badge once on mount; refresh only when opportunities
+  // actually change (not on every navigation, which re-ran the full feed query).
+  useEffect(() => { refreshCount(); }, [refreshCount]);
   useEffect(() => onOpportunitiesChanged(refreshCount), [refreshCount]);
 
   const visibleNav = NAV.filter(item =>

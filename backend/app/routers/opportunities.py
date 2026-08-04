@@ -5,8 +5,10 @@ from datetime import date, datetime, timezone, timedelta
 import redis.asyncio as aioredis
 from fastapi import APIRouter, Depends, HTTPException, Query, BackgroundTasks
 from pydantic import BaseModel
+import asyncio
 import hashlib
 import json as _json
+import time
 from sqlalchemy import select, and_, or_, func, desc, case, text as sa_text
 from sqlalchemy import Text as SaText
 from sqlalchemy.dialects.postgresql import JSONB
@@ -1879,6 +1881,7 @@ async def mark_read(
 ):
     await _get_opp_or_404(opp_id, db)
     await _mark_read(db, current_user.id, opp_id)
+    invalidate_feed_cache(current_user.id)
     return {"id": opp_id, "is_read": True}
 
 
@@ -1890,6 +1893,7 @@ async def mark_unread(
 ):
     await _get_opp_or_404(opp_id, db)
     await _mark_unread(db, current_user.id, opp_id)
+    invalidate_feed_cache(current_user.id)
     return {"id": opp_id, "is_read": False}
 
 
@@ -2208,12 +2212,48 @@ async def _fetch_institution_feed(
     return items, read_map, io_map
 
 
+# ── Institution-feed cache ────────────────────────────────────────────────────
+# The full org feed (join + Python dedup + read-map) is computed by 3 endpoints
+# the dashboard/sidebar fire together (analytics stats, the shortlist list, and
+# the sidebar counts). Computing it once and sharing the result for a few seconds
+# collapses those into a single DB pass and makes repeat navigations instant.
+# Safe because the ORM objects only expose already-loaded columns and the session
+# uses expire_on_commit=False.
+_FEED_CACHE_TTL = 20.0  # seconds
+_feed_cache: dict[str, tuple[float, tuple]] = {}
+_feed_locks: dict[str, asyncio.Lock] = {}
+
+
+def invalidate_feed_cache(user_id: str) -> None:
+    _feed_cache.pop(user_id, None)
+
+
 async def _fetch_new_opportunities_pool(
     db: AsyncSession,
     user: User,
 ) -> tuple[list[Opportunity], dict[str, bool], dict[str, InstitutionOpportunity]]:
-    """All institution-surfaced grants ranked by org relevance (for shortlist)."""
-    return await _fetch_institution_feed(db, user, statuses=None)
+    """All institution-surfaced grants ranked by org relevance (for shortlist).
+
+    Short-TTL, lock-coalesced so the dashboard's concurrent consumers share one
+    computation instead of each scanning the whole feed."""
+    key = user.id
+    hit = _feed_cache.get(key)
+    if hit and (time.monotonic() - hit[0]) < _FEED_CACHE_TTL:
+        return hit[1]
+
+    lock = _feed_locks.setdefault(key, asyncio.Lock())
+    async with lock:
+        hit = _feed_cache.get(key)
+        if hit and (time.monotonic() - hit[0]) < _FEED_CACHE_TTL:
+            return hit[1]
+        result = await _fetch_institution_feed(db, user, statuses=None)
+        _feed_cache[key] = (time.monotonic(), result)
+        # Light prune of stale entries so the cache can't grow unbounded.
+        if len(_feed_cache) > 500:
+            now = time.monotonic()
+            for k in [k for k, v in _feed_cache.items() if now - v[0] > _FEED_CACHE_TTL]:
+                _feed_cache.pop(k, None)
+        return result
 
 
 async def get_shortlist_stats(db: AsyncSession, user: User) -> dict:

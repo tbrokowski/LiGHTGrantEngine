@@ -151,10 +151,11 @@ export default function DashboardPage() {
   useEffect(() => { loadDashboard(); }, [loadDashboard, pathname]);
 
   useEffect(() => {
-    const onVisible = () => { if (document.visibilityState === 'visible') loadDashboard(); };
-    document.addEventListener('visibilitychange', onVisible);
+    // Refresh when opportunities change (read/save/scan), but NOT on every tab
+    // focus — reloading five heavy endpoints on each visibility change was a
+    // major source of dashboard slowness.
     const unsub = onOpportunitiesChanged(loadDashboard);
-    return () => { document.removeEventListener('visibilitychange', onVisible); unsub(); };
+    return () => { unsub(); };
   }, [loadDashboard]);
 
   const metrics: StatMetric[] = stats ? [
