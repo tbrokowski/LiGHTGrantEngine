@@ -258,6 +258,37 @@ function ScraperConfigPanel({ sourceType, config, onChange }: ScraperConfigPanel
               style={scrapInputStyle}
             />
           </div>
+          <div>
+            <label className="block text-xs font-medium mb-1" style={{ color: 'var(--ink-muted)' }}>
+              Follow pagination
+              <span className="ml-1 font-normal" style={{ color: 'var(--ink-faint)' }}>(max pages to crawl, 1 = first page only)</span>
+            </label>
+            <input
+              type="number"
+              min={1}
+              max={50}
+              value={String(config.max_pages ?? 1)}
+              onChange={e => {
+                const n = Math.max(1, Number(e.target.value) || 1);
+                onChange({ ...config, max_pages: n, paginate: n > 1 });
+              }}
+              style={scrapInputStyle}
+            />
+          </div>
+          <div>
+            <label className="block text-xs font-medium mb-1" style={{ color: 'var(--ink-muted)' }}>
+              Max detail links
+              <span className="ml-1 font-normal" style={{ color: 'var(--ink-faint)' }}>(per page, when following links)</span>
+            </label>
+            <input
+              type="number"
+              min={1}
+              max={100}
+              value={String(config.max_detail_links ?? 25)}
+              onChange={e => update('max_detail_links', Math.max(1, Number(e.target.value) || 25))}
+              style={scrapInputStyle}
+            />
+          </div>
         </div>
         <div className="flex items-center gap-2 pt-1">
           <input
@@ -666,7 +697,7 @@ function SettingsPageInner() {
     setSaving(true);
     try {
       const themeList = newThemes.split(',').map(t => t.trim()).filter(Boolean);
-      await sources.create({
+      const res = await sources.create({
         name: newName,
         url: newUrl || undefined,
         api_endpoint: newApiEndpoint || undefined,
@@ -681,6 +712,9 @@ function SettingsPageInner() {
         scraper_config: newScraperConfig,
       });
       resetForm();
+      // Auto-run a first scan of the new source right away.
+      const newId = res.data?.id;
+      if (newId) { try { await sources.runNow(newId); } catch { /* worker may be down */ } }
       fetchSources();
     } finally {
       setSaving(false);

@@ -824,6 +824,20 @@ async def list_org_sources(
     )).scalars().all()
     sub_map = {s.source_id: s.is_enabled for s in sub_rows}
 
+    # Opportunity count per source in this org's feed (one grouped query).
+    from app.models.opportunity import Opportunity
+    from app.models.institution_opportunity import InstitutionOpportunity
+    count_rows = (await db.execute(
+        select(Opportunity.source_id, func.count())
+        .join(InstitutionOpportunity, InstitutionOpportunity.opportunity_id == Opportunity.id)
+        .where(
+            InstitutionOpportunity.institution_id == institution_id,
+            Opportunity.status != "duplicate",
+        )
+        .group_by(Opportunity.source_id)
+    )).all()
+    count_map = {row[0]: row[1] for row in count_rows}
+
     return [
         {
             "id": s.id,
@@ -837,6 +851,7 @@ async def list_org_sources(
             "logo_url": s.logo_url,
             "is_enabled": sub_map.get(s.id, True),
             "is_subscribed": s.id in sub_map,
+            "opportunity_count": count_map.get(s.id, 0),
         }
         for s in sources
     ]
@@ -965,6 +980,8 @@ async def add_org_source(
 
     try:
         from app.workers.celery_app import celery_app
+        # Scan the new source right away, then fan out its results to the org feed.
+        celery_app.send_task("app.workers.discovery_tasks.scan_source", args=[source.id])
         celery_app.send_task("app.workers.surfacing_tasks.fan_out_sources_to_all")
     except Exception:
         pass

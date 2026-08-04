@@ -5,6 +5,7 @@ import { opportunities, organizations } from '@/lib/api';
 import { useAuth } from '@/lib/auth';
 import { onOpportunitiesChanged } from '@/lib/opportunities-events';
 import OpportunityRow from '@/components/opportunities/OpportunityRow';
+import SourcesDirectory from '@/components/opportunities/SourcesDirectory';
 import OpportunityFiltersSidebar from '@/components/opportunities/OpportunityFilters';
 import OpportunityGraphView, { GraphNode, GraphCluster, GraphEdge } from '@/components/opportunities/OpportunityGraphView';
 import AddToShortlistModal from '@/components/opportunities/AddToShortlistModal';
@@ -78,6 +79,7 @@ export default function OpportunitiesPage() {
   const { user } = useAuth();
   const [priorityFunderGroups, setPriorityFunderGroups] = useState<{ name: string; funders: string[] }[]>([]);
   const [activeTab, setActiveTab] = useState<TabMode>('queue');
+  const [showSources, setShowSources] = useState(false);
   const [viewMode, setViewMode] = useState<ViewMode>('table');
   const [queue, setQueue] = useState<Opportunity[]>([]);
   const [shortlist, setShortlist] = useState<Opportunity[]>([]);
@@ -472,7 +474,20 @@ export default function OpportunitiesPage() {
           </div>
 
           <div className="flex items-center gap-2 py-2.5">
-            {(activeTab === 'shortlist' || activeTab === 'queue') && (
+            {/* Sources directory toggle */}
+            <button
+              onClick={() => setShowSources(v => !v)}
+              className="px-3 py-1.5 text-sm font-medium transition-colors"
+              style={{
+                borderRadius: 'var(--radius-sm)',
+                border: '1px solid var(--rule-subtle)',
+                color: showSources ? 'var(--ink-inverse)' : 'var(--ink-muted)',
+                background: showSources ? 'var(--ink-primary)' : 'transparent',
+              }}
+            >
+              Sources
+            </button>
+            {!showSources && (activeTab === 'shortlist' || activeTab === 'queue') && (
               <button
                 onClick={() => setShowAddModal(true)}
                 className="px-3 py-1.5 text-sm font-medium transition-colors"
@@ -562,7 +577,9 @@ export default function OpportunitiesPage() {
         {/* Scrollable content */}
         <div className="flex-1 overflow-y-auto px-7 py-5">
 
-          {loading ? (
+          {showSources ? (
+            <SourcesDirectory institutionId={user?.institution_id ?? null} />
+          ) : loading ? (
             <div
               style={{
                 border: '1px solid var(--rule-subtle)',
