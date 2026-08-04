@@ -1,7 +1,7 @@
 'use client';
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { useRouter } from 'next/navigation';
-import { DragDropContext, Droppable, Draggable, DropResult } from '@hello-pangea/dnd';
+import { DragDropContext, Droppable, Draggable, DropResult, type DraggableProvidedDragHandleProps } from '@hello-pangea/dnd';
 import FunderLogo from './FunderLogo';
 import OpportunityActions, { type OpportunityActionHandlers } from './OpportunityActions';
 import OpportunityTypeBadge from './OpportunityTypeBadge';
@@ -74,16 +74,22 @@ function Card({
   );
 }
 
+const LANE_COLORS = ['#6366f1', '#8b5cf6', '#ec4899', '#ef4444', '#f59e0b', '#10b981', '#06b6d4', '#64748b'];
+
 function ColumnHeader({
   category,
   count,
   onRename,
   onDelete,
+  onSetColor,
+  dragHandleProps,
 }: {
   category: ShortlistCategory;
   count: number;
   onRename: (name: string) => void;
   onDelete: () => void;
+  onSetColor: (color: string) => void;
+  dragHandleProps?: DraggableProvidedDragHandleProps | null;
 }) {
   const [menuOpen, setMenuOpen] = useState(false);
   const [editing, setEditing] = useState(false);
@@ -109,6 +115,8 @@ function ColumnHeader({
         />
       ) : (
         <div className="flex items-center gap-1.5 min-w-0">
+          {/* Drag handle for reordering columns */}
+          <span {...dragHandleProps} className="shrink-0 cursor-grab select-none text-xs" style={{ color: 'var(--ink-faint)' }} title="Drag to reorder">⠿</span>
           <span className="text-xs font-semibold uppercase tracking-wide truncate" style={{ color: 'var(--ink-muted)' }}>{category.name}</span>
           <span className="mono-data text-[11px]" style={{ color: 'var(--ink-faint)' }}>· {count}</span>
         </div>
@@ -126,7 +134,7 @@ function ColumnHeader({
         {menuOpen && (
           <>
             <div className="fixed inset-0 z-10" onClick={() => setMenuOpen(false)} />
-            <div className="absolute right-0 top-6 z-20 w-32 rounded-md overflow-hidden text-xs" style={{ border: '1px solid var(--rule-subtle)', background: 'var(--surface-raised)', boxShadow: 'var(--shadow-md, 0 4px 12px rgba(0,0,0,0.12))' }}>
+            <div className="absolute right-0 top-6 z-20 w-40 rounded-md overflow-hidden text-xs" style={{ border: '1px solid var(--rule-subtle)', background: 'var(--surface-raised)', boxShadow: 'var(--shadow-md, 0 4px 12px rgba(0,0,0,0.12))' }}>
               <button
                 onClick={() => { setMenuOpen(false); setDraft(category.name); setEditing(true); }}
                 className="w-full text-left px-3 py-1.5 transition-colors hover:opacity-80"
@@ -134,6 +142,18 @@ function ColumnHeader({
               >
                 Rename
               </button>
+              {/* Color swatches */}
+              <div className="px-3 py-2 flex flex-wrap gap-1.5" style={{ borderTop: '1px solid var(--rule-subtle)' }}>
+                {LANE_COLORS.map(c => (
+                  <button
+                    key={c}
+                    onClick={() => { onSetColor(c); setMenuOpen(false); }}
+                    className="w-4 h-4 rounded-full transition-transform hover:scale-110"
+                    style={{ background: c, outline: category.color === c ? '2px solid var(--ink-primary)' : 'none', outlineOffset: '1px' }}
+                    title={c}
+                  />
+                ))}
+              </div>
               <button
                 onClick={() => { setMenuOpen(false); onDelete(); }}
                 className="w-full text-left px-3 py-1.5 transition-colors hover:opacity-80"
@@ -208,6 +228,24 @@ export default function ShortlistBoard({ items, scope, onNavigate, ...handlers }
 
   async function onDragEnd(result: DropResult) {
     if (!result.destination) return;
+
+    // Column reorder
+    if (result.type === 'column') {
+      const from = result.source.index;
+      const to = result.destination.index;
+      if (from === to) return;
+      const next = [...sortedCats];
+      const [moved] = next.splice(from, 1);
+      next.splice(to, 0, moved);
+      const repositioned = next.map((c, i) => ({ ...c, position: i }));
+      setCategories(repositioned);
+      await Promise.all(
+        repositioned.map(c => opportunities.updateShortlistCategory(c.id, { position: c.position }).catch(() => {})),
+      );
+      return;
+    }
+
+    // Card move between lanes
     const destLane = result.destination.droppableId;
     const oppId = result.draggableId;
     if (destLane === result.source.droppableId) return;
@@ -217,6 +255,11 @@ export default function ShortlistBoard({ items, scope, onNavigate, ...handlers }
     } catch {
       setOverrides(prev => { const next = { ...prev }; delete next[oppId]; return next; });
     }
+  }
+
+  async function setCategoryColor(id: string, color: string) {
+    setCategories(prev => prev.map(c => (c.id === id ? { ...c, color } : c)));
+    try { await opportunities.updateShortlistCategory(id, { color }); } catch { /* ignore */ }
   }
 
   async function addCategory() {
@@ -283,16 +326,30 @@ export default function ShortlistBoard({ items, scope, onNavigate, ...handlers }
         </div>
       )}
       <DragDropContext onDragEnd={onDragEnd}>
-        <div className="flex gap-4 overflow-x-auto pb-3 items-start">
-        {sortedCats.map(cat => (
-          <div key={cat.id} className="flex-shrink-0 w-64 flex flex-col">
+        <Droppable droppableId="board" direction="horizontal" type="column">
+          {(boardProvided) => (
+            <div
+              ref={boardProvided.innerRef}
+              {...boardProvided.droppableProps}
+              className="flex gap-4 overflow-x-auto pb-3 items-start"
+            >
+        {sortedCats.map((cat, colIndex) => (
+          <Draggable key={cat.id} draggableId={`col-${cat.id}`} index={colIndex}>
+            {(colProvided) => (
+          <div
+            ref={colProvided.innerRef}
+            {...colProvided.draggableProps}
+            className="flex-shrink-0 w-64 flex flex-col"
+          >
             <ColumnHeader
               category={cat}
               count={itemsByLane[cat.id]?.length ?? 0}
               onRename={name => renameCategory(cat.id, name)}
               onDelete={() => deleteCategory(cat.id)}
+              onSetColor={color => setCategoryColor(cat.id, color)}
+              dragHandleProps={colProvided.dragHandleProps}
             />
-            <Droppable droppableId={cat.id}>
+            <Droppable droppableId={cat.id} type="card">
               {(provided, snapshot) => (
                 <div
                   ref={provided.innerRef}
@@ -331,6 +388,8 @@ export default function ShortlistBoard({ items, scope, onNavigate, ...handlers }
               )}
             </Droppable>
           </div>
+            )}
+          </Draggable>
         ))}
 
         {/* Add-category lane */}
@@ -358,7 +417,10 @@ export default function ShortlistBoard({ items, scope, onNavigate, ...handlers }
             </button>
           )}
         </div>
-        </div>
+        {boardProvided.placeholder}
+            </div>
+          )}
+        </Droppable>
       </DragDropContext>
     </>
   );
