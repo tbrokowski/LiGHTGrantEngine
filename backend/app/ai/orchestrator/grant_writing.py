@@ -669,6 +669,25 @@ class GrantWritingOrchestrator:
         if analysis.get("evaluation_criteria"):
             parts.append("EVALUATION CRITERIA:\n" + "\n".join(f"- {c}" for c in analysis["evaluation_criteria"]))
 
+        rb = analysis.get("reviewer_brief")
+        if isinstance(rb, dict) and rb:
+            rb_lines = ["HOW THIS WILL BE JUDGED (reviewer brief — draft to win points):"]
+            if rb.get("overall_reviewer_summary"):
+                rb_lines.append(rb["overall_reviewer_summary"])
+            for r in rb.get("scoring_rubric") or []:
+                if isinstance(r, dict):
+                    rb_lines.append(
+                        f"- {r.get('criterion', '?')} ({r.get('weight', '')}): "
+                        f"high = {r.get('scores_high', '')}; low = {r.get('scores_low', '')}"
+                    )
+            if rb.get("winning_factors"):
+                rb_lines.append("Wins points: " + "; ".join(rb["winning_factors"]))
+            if rb.get("losing_factors"):
+                rb_lines.append("Loses points: " + "; ".join(rb["losing_factors"]))
+            if rb.get("eligibility_red_flags"):
+                rb_lines.append("Red flags (rejection risk): " + "; ".join(rb["eligibility_red_flags"]))
+            parts.append("\n".join(rb_lines))
+
         if analysis.get("required_sections"):
             parts.append("REQUIRED SECTIONS:\n" + "\n".join(f"- {s}" for s in analysis["required_sections"]))
 

@@ -226,6 +226,17 @@ def analyze_grant_call(
                                       steps=[{"id": "extract", "label": "Extracting requirements", "status": "error", "detail": err}])
             return {"status": "failed", "error": err}
 
+        # Reviewer-grade critique: read the call as an evaluation panel would
+        # (rubric, weightings, wins/loses, red flags, per-section expectations) so
+        # the whole pipeline drafts against how it will actually be judged.
+        try:
+            from app.ai.agents.call_reviewer import review_call
+            review = asyncio.run(review_call(call_text=call_text, call_analysis=result, funder=funder))
+            if review:
+                result["reviewer_brief"] = review
+        except Exception as exc:
+            logger.warning("call_reviewer skipped: %s", exc)
+
         orchestrator = GrantWritingOrchestrator()
         requirements_text = orchestrator._format_call_requirements(result)
 
