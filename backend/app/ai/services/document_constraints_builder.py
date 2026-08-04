@@ -57,6 +57,15 @@ def _build_section_list(
                 "required": kwargs.get("required", False),
             }
 
+    # Deterministic parse of the call's OWN headings comes first — structure
+    # anchored to what the document literally says (Part A/B, numbered headings).
+    for sec in call_analysis.get("document_sections") or []:
+        if isinstance(sec, dict) and sec.get("name"):
+            add(sec["name"], required=True, priority="high",
+                word_limit=sec.get("word_limit"), page_limit=sec.get("page_limit"))
+        elif isinstance(sec, str):
+            add(sec, required=True, priority="high")
+
     for sec_name in call_analysis.get("required_sections") or []:
         if isinstance(sec_name, str):
             add(sec_name, required=True, priority="high")

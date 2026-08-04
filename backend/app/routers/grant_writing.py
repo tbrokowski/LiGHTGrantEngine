@@ -267,29 +267,39 @@ async def upload_call_document(
 
 
 async def _resolve_call_text(grant_id: str, grant, db: AsyncSession) -> tuple[str, Document | None]:
-    """Load call document text for analysis, re-parsing from R2 if parsed_text is missing."""
+    """Load and MERGE every call document (call + guidance + FAQ + annexes) for
+    analysis, re-parsing from R2 where parsed_text is missing. Returns the merged
+    text (each doc labelled) and the most-recent doc handle for status tracking."""
     result = await db.execute(
         select(Document).where(
             Document.grant_id == grant_id,
             Document.document_type == DocumentType.CALL_DOCUMENT,
-        ).order_by(Document.uploaded_at.desc())
+        ).order_by(Document.uploaded_at.asc())
     )
-    doc = result.scalars().first()
-    call_text = (doc.parsed_text if doc else None) or ""
-    if doc and len(call_text.strip()) < 200:
-        r2_key = storage_svc.resolve_storage_key(doc.notes)
-        if r2_key and storage_svc.object_exists(r2_key):
-            try:
-                raw = storage_svc.download_file(r2_key)
-                call_text = parse_uploaded_bytes(raw, doc.file_name or "call.pdf")
-                doc.parsed_text = call_text
-                doc.processing_status = ProcessingStatus.PROCESSED
-                await db.commit()
-            except Exception:
-                pass
+    docs = list(result.scalars().all())
+    primary = docs[-1] if docs else None
+
+    parts: list[str] = []
+    for d in docs:
+        text = (d.parsed_text or "")
+        if len(text.strip()) < 200:
+            r2_key = storage_svc.resolve_storage_key(d.notes)
+            if r2_key and storage_svc.object_exists(r2_key):
+                try:
+                    raw = storage_svc.download_file(r2_key)
+                    text = parse_uploaded_bytes(raw, d.file_name or "call.pdf")
+                    d.parsed_text = text
+                    d.processing_status = ProcessingStatus.PROCESSED
+                    await db.commit()
+                except Exception:
+                    pass
+        if text.strip():
+            parts.append(f"===== DOCUMENT: {d.file_name or 'call document'} =====\n{text.strip()}")
+
+    call_text = "\n\n".join(parts)
     if not call_text.strip():
         call_text = grant.call_requirements or ""
-    return call_text, doc
+    return call_text, primary
 
 
 async def _enqueue_call_analysis(

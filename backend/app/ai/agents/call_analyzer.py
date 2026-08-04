@@ -149,7 +149,10 @@ CHUNK_SIZE = 400_000  # GPT-4o supports 128k tokens (~512k chars) — covers any
 CHUNK_OVERLAP = 500
 SHORT_DOC_THRESHOLD = 60_000   # chars — skip Stage 1 structure scan below this
 SCAN_CAP = 60_000              # chars fed to Stage 1 structure scan
-STAGE2_INPUT_CAP = 120_000     # max chars sent to Stage 2 for single-chunk docs
+STAGE2_INPUT_CAP = 1_200_000   # generous ceiling (~3 chunks). Must be > CHUNK_SIZE
+                               # so long/merged multi-doc calls get CHUNKED + merged
+                               # rather than silently truncated (the old 120k cap
+                               # sat below CHUNK_SIZE, making chunking dead code).
 
 # Progress labels cycled during the extraction LLM call (fires every 3.5 s)
 _EXTRACTION_PROGRESS_LABELS = [
@@ -801,6 +804,78 @@ def _merge_chunk_results(chunks: list[dict]) -> dict:
 
 
 # ---------------------------------------------------------------------------
+# Deterministic structure parse — read the document's OWN headings
+# ---------------------------------------------------------------------------
+
+# Section names funders literally use as headings (matched as a whole line).
+_KNOWN_SECTION_NAMES = {
+    "excellence", "impact", "implementation", "quality and efficiency of the implementation",
+    "objectives", "ambition", "state of the art", "methodology", "approach",
+    "work plan", "work packages", "work package", "deliverables", "milestones",
+    "management structure", "consortium", "partners", "risk management",
+    "dissemination and exploitation", "communication", "ethics", "gender dimension",
+    "background", "significance", "innovation", "research strategy", "specific aims",
+    "preliminary studies", "research design and methods", "budget", "budget justification",
+    "timeline", "gantt chart", "sustainability", "evaluation", "monitoring and evaluation",
+    "problem statement", "needs assessment", "goals and objectives", "theory of change",
+    "expected outcomes", "capacity", "letters of support",
+}
+
+_HEADING_PATTERNS = [
+    re.compile(r"^\s*(part\s+[a-z])\b[\s:.–—-]*(.{0,80})$", re.IGNORECASE),
+    re.compile(r"^\s*((?:section|chapter|annex)\s+[\divxlc]+)[\s:.–—-]+(.{2,80})$", re.IGNORECASE),
+    re.compile(r"^\s*(\d+(?:\.\d+){0,2})[.)]?\s+([A-Z][^\n]{2,80})$"),
+]
+
+_SEP_CHARS = " :.-–—"
+
+
+def extract_document_sections(text: str) -> list[dict]:
+    """Deterministically pull the call's OWN section headings (Part A/B, numbered
+    headings, named sections) straight from the raw text — so proposal structure
+    reflects what the document literally requires, not just what the LLM emitted.
+    Conservative: short heading-shaped lines only, order preserved, deduped."""
+    if not text:
+        return []
+    out: list[dict] = []
+    seen: set[str] = set()
+
+    def _push(name: str, raw: str):
+        name = re.sub(r"\s+", " ", name).strip(_SEP_CHARS).strip()
+        if not name or len(name) > 90:
+            return
+        key = name.lower()
+        if key in seen:
+            return
+        seen.add(key)
+        out.append({"name": name, "raw": raw.strip()[:120]})
+
+    for line in text.splitlines():
+        stripped = line.strip()
+        if not stripped or len(stripped) > 100:
+            continue
+        low = stripped.lower().strip(_SEP_CHARS)
+        if low in _KNOWN_SECTION_NAMES:
+            _push(stripped, stripped)
+            continue
+        for pat in _HEADING_PATTERNS:
+            m = pat.match(stripped)
+            if m:
+                label = m.group(1).strip(_SEP_CHARS)
+                title = (m.group(2) or "").strip(_SEP_CHARS)
+                if pat is _HEADING_PATTERNS[2]:
+                    # numbered heading — the title is the real name
+                    name = title or stripped
+                else:
+                    name = f"{label} — {title}" if title else label
+                _push(name, stripped)
+                break
+        if len(out) >= 50:
+            break
+    return out
+
+
+# ---------------------------------------------------------------------------
 # Main entry point
 # ---------------------------------------------------------------------------
 
@@ -1008,5 +1083,14 @@ async def analyze_call(
                 "call_analyzer: simple fallback populated keys=%s",
                 [k for k in simple if simple[k]],
             )
+
+    # Deterministic structure: the call's OWN headings, authoritative for the
+    # section list (merged with the LLM extraction downstream).
+    try:
+        doc_sections = extract_document_sections(call_text)
+        if doc_sections:
+            merged["document_sections"] = doc_sections
+    except Exception:
+        pass
 
     return merged
