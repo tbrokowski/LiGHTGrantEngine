@@ -53,7 +53,7 @@ export default function Sidebar() {
   const collapsible = !path.startsWith('/dashboard');
   const [hovered, setHovered] = useState(false);
   const expanded = !collapsible || hovered;
-  const STRIP_W = 16;
+  const STRIP_W = 30;
 
   return (
     <div className="relative shrink-0 h-full" style={{ width: collapsible ? STRIP_W : 'var(--space-rail)' }}>

@@ -511,6 +511,24 @@ export default function OpportunitiesPage() {
                   ))}
                 </div>
 
+                {/* Sort control — defaults to Fit score */}
+                <div
+                  className="flex items-center gap-1.5 px-2 py-1"
+                  style={{ border: '1px solid var(--rule-subtle)', borderRadius: 'var(--radius-sm)' }}
+                >
+                  <span className="text-xs" style={{ color: 'var(--ink-faint)' }}>Sort</span>
+                  <select
+                    value={filters.sortBy}
+                    onChange={e => setFilter('sortBy', e.target.value as OpportunityFilters['sortBy'])}
+                    className="text-xs bg-transparent focus:outline-none"
+                    style={{ color: 'var(--ink-primary)' }}
+                  >
+                    <option value="relevance">Fit score</option>
+                    <option value="deadline">Deadline</option>
+                    <option value="award">Award</option>
+                  </select>
+                </div>
+
                 {/* View mode toggle */}
                 <div
                   className="flex items-center overflow-hidden"

@@ -2043,6 +2043,16 @@ async def _get_opp_or_404(opp_id: str, db: AsyncSession) -> Opportunity:
     return opp
 
 
+def _truncate_words(text: str | None, limit: int = 300) -> str | None:
+    """Cap free text to `limit` words (keeps list payloads small + rows tidy)."""
+    if not text:
+        return text
+    words = text.split()
+    if len(words) <= limit:
+        return text
+    return " ".join(words[:limit]) + "…"
+
+
 def _opp_summary(
     o: Opportunity,
     is_read: bool = False,
@@ -2064,7 +2074,7 @@ def _opp_summary(
         "award_min": o.award_min, "award_max": o.award_max, "currency": o.currency,
         "date_discovered": str(o.date_discovered),
         "short_summary": o.short_summary or (io.ai_summary[:300] if io and io.ai_summary else None) or (o.ai_summary[:300] if o.ai_summary else None),
-        "description": o.description or o.parsed_text,
+        "description": _truncate_words(o.description or o.parsed_text, 300),
         "has_description": bool(o.description or o.parsed_text),
         "funder_logo_url": o.funder_logo_url,
         "opportunity_url": o.opportunity_url,

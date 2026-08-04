@@ -121,30 +121,44 @@ export default function OpportunityRow({
           <span className="mt-0.5 shrink-0">
             <ReadToggleButton opp={opp} onToggleRead={onToggleRead} />
           </span>
-          <Link href={`/opportunities/${opp.id}`} className="block min-w-0 flex-1" onClick={() => onNavigate?.(opp.id)}>
-            <span
-              className="text-sm block leading-snug"
-              style={{
-                fontWeight: prominent ? 500 : 400,
-                color: prominent ? 'var(--ink-primary)' : 'var(--ink-muted)',
-              }}
-            >
-              {opp.title}
-            </span>
-            {(opp.short_summary || opp.description) ? (
-              <span className="text-xs mt-0.5 line-clamp-2 block" style={{ color: 'var(--ink-muted)' }}>
-                {opp.short_summary || opp.description}
+          <div className="min-w-0 flex-1 max-w-[560px]">
+            <Link href={`/opportunities/${opp.id}`} className="block min-w-0" onClick={() => onNavigate?.(opp.id)}>
+              <span
+                className="text-sm block leading-snug"
+                style={{
+                  fontWeight: prominent ? 500 : 400,
+                  color: prominent ? 'var(--ink-primary)' : 'var(--ink-muted)',
+                }}
+              >
+                {opp.title}
               </span>
-            ) : opp.thematic_areas?.length > 0 ? (
-              <span className="mono-data text-[11px] mt-0.5 block" style={{ color: 'var(--ink-faint)' }}>
-                {opp.thematic_areas.slice(0, 3).join('  ·  ')}
-              </span>
-            ) : !opp.has_description ? (
-              <span className="text-xs mt-0.5 italic block" style={{ color: 'var(--ink-faint)' }}>
-                Fetching description…
-              </span>
-            ) : null}
-          </Link>
+              {(opp.short_summary || opp.description) ? (
+                <span className="text-xs mt-0.5 line-clamp-2 block" style={{ color: 'var(--ink-muted)' }}>
+                  {opp.short_summary || opp.description}
+                </span>
+              ) : opp.thematic_areas?.length > 0 ? (
+                <span className="mono-data text-[11px] mt-0.5 block" style={{ color: 'var(--ink-faint)' }}>
+                  {opp.thematic_areas.slice(0, 3).join('  ·  ')}
+                </span>
+              ) : !opp.has_description ? (
+                <span className="text-xs mt-0.5 italic block" style={{ color: 'var(--ink-faint)' }}>
+                  Fetching description…
+                </span>
+              ) : null}
+            </Link>
+            {opp.opportunity_url && (
+              <a
+                href={opp.opportunity_url}
+                target="_blank"
+                rel="noopener noreferrer"
+                onClick={(e) => e.stopPropagation()}
+                className="inline-flex items-center gap-0.5 text-[11px] mt-1 hover:underline"
+                style={{ color: 'var(--accent-primary)' }}
+              >
+                View source ↗
+              </a>
+            )}
+          </div>
         </div>
       </td>
       <td className="px-4 py-3 hidden md:table-cell">
@@ -158,12 +172,12 @@ export default function OpportunityRow({
           {opp.opportunity_type && <OpportunityTypeBadge type={opp.opportunity_type} size="xs" />}
         </div>
       </td>
-      <td className="px-4 py-3 hidden lg:table-cell whitespace-nowrap">
+      <td className="px-4 py-3 hidden md:table-cell whitespace-nowrap">
         <span className="mono-data text-[12px]" style={{ color: 'var(--ink-muted)' }}>
           {formatDate(opp.deadline) ?? '—'}
         </span>
       </td>
-      <td className="px-4 py-3 text-right hidden lg:table-cell whitespace-nowrap">
+      <td className="px-4 py-3 text-right hidden md:table-cell whitespace-nowrap">
         <span className="mono-data text-[12px]" style={{ color: 'var(--ink-muted)' }}>
           {formatAward(opp.award_min, opp.award_max, opp.currency) ?? '—'}
         </span>
