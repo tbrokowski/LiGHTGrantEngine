@@ -524,10 +524,11 @@ async def generate_draft(
     """Enqueue draft generation as a background Celery task."""
     grant = await _get_grant(grant_id, db)
     skeleton = grant.proposal_skeleton or {}
-    has_sections = bool(skeleton.get("sections"))
-    has_raw_text = bool(skeleton.get("raw_text"))
-    if not has_sections and not has_raw_text:
-        raise HTTPException(400, "Proposal skeleton is required. Generate or edit skeleton first.")
+    # One-shot: a skeleton is NO LONGER required. When there's no structure, the
+    # LEAD ARCHITECT plans the full proposal from the idea + call analysis in the
+    # pipeline's needs_full_plan path. We only need something to write about.
+    if not (grant.call_analysis or grant.call_requirements) and not (grant.grant_idea or "").strip():
+        raise HTTPException(400, "Add a grant idea or run call analysis before generating a draft.")
     if getattr(grant, "draft_status", "idle") == "running":
         return JSONResponse(status_code=202, content={"status": "running", "message": "Draft generation already in progress"})
 

@@ -13,9 +13,11 @@ Flow (few agent *types*, the same writer parallelized, shared-memory blackboard)
 
   GROUND +  each section, in dependency waves (parallel within a wave, bounded by a
   WRITE     semaphore): retrieve archive exemplars + style + reusable language (the
-            reranked/contextual/verbatim RAG stack), then ONE writer (`draft_section`)
-            writes it grounded in our voice + the running document-so-far. As each
-            finishes it posts a ledger entry (key_claims) other writers read.
+            reranked/contextual/verbatim RAG stack), then ONE agentic writer
+            (`draft_section_agentic`) that can call the archive/RAG + academic search
+            mid-draft writes it grounded in our voice + the running document-so-far
+            (intro sections follow the problem→gap→solution arc). As each finishes it
+            posts a ledger entry (key_claims) other writers read.
 
   CRITIC    every section gets one combined critique->rewrite pass
             (`evaluate_and_improve_section`) against the running document + ledger,
@@ -35,7 +37,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.models.active_grant import ActiveGrant
 from app.ai.client import reset_call_counts
-from app.ai.agents.section_drafter import draft_section
+from app.ai.agents.section_drafter_agentic import draft_section_agentic
 from app.ai.agents.meta_agent import evaluate_and_improve_section
 from app.ai.agents.section_ledger import build_ledger_entry, render_ledger_for_prompt
 from app.ai.context.grant_context import insert_section_content, skeleton_to_html
@@ -52,6 +54,23 @@ _MAX_PARALLEL_WRITERS = 4
 
 def _section_name(sec: dict, idx: int) -> str:
     return sec.get("name") or sec.get("title") or f"Section {idx + 1}"
+
+
+def _agent_kind(sec_type: str, name: str) -> tuple[str, bool]:
+    """Map a section to (agent_kind, is_intro) for the agentic writer, so intros
+    get the problem→gap→solution arc and methods/WP/impact get their addenda."""
+    t = (sec_type or "").lower()
+    n = (name or "").lower()
+    is_intro = t in ("introduction", "intro") or "introduction" in n or n.strip() in ("intro", "background & significance")
+    if is_intro:
+        return "intro", True
+    if any(k in t or k in n for k in ("method", "approach", "research plan", "technical")):
+        return "methods", False
+    if any(k in t or k in n for k in ("work package", "wp", "workplan", "implementation")):
+        return "work_package", False
+    if "impact" in t or "impact" in n:
+        return "impact", False
+    return "section", False
 
 
 def _dependency_waves(sections: list[dict], deps: list) -> list[list[int]]:
@@ -96,8 +115,8 @@ async def run_draft_pipeline_stream(
     sections = skeleton.get("sections") or []
     if not sections and skeleton.get("raw_text"):
         sections = parse_raw_sections(skeleton["raw_text"])
-    if not grant.call_analysis and not grant.call_requirements:
-        yield sse({"error": "Call analysis required before draft. Run call analysis first."})
+    if not grant.call_analysis and not grant.call_requirements and not (grant.grant_idea or "").strip():
+        yield sse({"error": "Add a grant idea or run call analysis before generating a draft."})
         return
 
     call_req = grant.call_requirements or ""
@@ -206,19 +225,35 @@ async def run_draft_pipeline_stream(
                 f"DO NOT COVER (other sections own): {', '.join(brief.get('defers') or [])}"
             )
 
+        # Full text of the 1-2 immediately preceding drafted sections for local
+        # coherence/transitions (available once earlier waves have completed).
+        adjacent = [
+            (drafts[j]["name"], drafts[j]["html"])
+            for j in (idx - 2, idx - 1)
+            if j >= 0 and j in drafts
+        ]
+        agent_kind, is_intro = _agent_kind(sec_type, name)
+
         try:
-            result = await draft_section(
+            # Agentic, self-grounding writer: it can call the archive/RAG + academic
+            # search mid-draft and follows the intro gap-arc when is_intro.
+            result = await draft_section_agentic(
+                agent=agent_kind,
                 section_name=name,
+                db=db,
+                funder=funder,
                 section_type=sec_type,
+                adjacent_sections=adjacent,
+                ledger_block=prior,
+                outline=(brief.get("points") if brief else None),
+                is_intro=is_intro,
                 call_requirements=call_req,
                 evaluation_criteria=eval_criteria,
                 retrieved_sections=exemplars,
                 style_exemplars=style_ex,
                 reusable_language=reusable,
-                word_limit=word_limit,
-                funder=funder,
+                target_words=word_limit,
                 style_profile=style_profile,
-                prior_sections_summary=prior,
                 grant_idea=grant_idea,
                 section_specific_requirements=section_requirements_map.get(name),
                 call_narrative_brief=call_narrative_brief,
