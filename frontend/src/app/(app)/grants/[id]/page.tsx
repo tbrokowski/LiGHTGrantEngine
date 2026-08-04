@@ -152,6 +152,7 @@ function GrantDetailContent() {
   const [myGrantRole, setMyGrantRole] = useState<string | null>(null);
   const [promoting, setPromoting] = useState(false);
   const [showColorPicker, setShowColorPicker] = useState(false);
+  const [menuOpen, setMenuOpen] = useState(false);
 
   // Workspace data
   const [summary, setSummary] = useState<WorkspaceSummary | null>(null);
@@ -285,6 +286,17 @@ function GrantDetailContent() {
     }
   }, [id, fetchGrant]);
 
+  async function handleDelete() {
+    if (!id) return;
+    if (!confirm('Permanently delete this grant? This cannot be undone.')) return;
+    try {
+      await grants.delete(id);
+      router.push('/grants');
+    } catch {
+      alert('Failed to delete grant.');
+    }
+  }
+
   async function handlePromote() {
     if (!id) return;
     if (!confirm('Promote this draft to your organization\'s portfolio? It will become visible to other org members.')) return;
@@ -360,15 +372,15 @@ function GrantDetailContent() {
             </div>
 
             {/* Title + funder */}
-            <div className="min-w-0 flex items-baseline gap-2 shrink-0 max-w-[260px]">
-              <h1 className="text-sm font-semibold text-gray-900 truncate leading-none">{grant.title}</h1>
+            <div className="flex items-baseline gap-2 min-w-0 max-w-[260px]">
+              <h1 className="text-sm font-semibold text-gray-900 truncate leading-none min-w-0">{grant.title}</h1>
               {grant.funder && (
-                <span className="text-xs text-gray-400 truncate shrink-0">{grant.funder}</span>
+                <span className="text-xs text-gray-400 truncate shrink-0 max-w-[100px]">{grant.funder}</span>
               )}
             </div>
 
             {/* Metadata chips */}
-            <div className="hidden md:flex items-center gap-x-3 text-xs shrink-0">
+            <div className="hidden md:flex items-center gap-x-3 text-xs shrink-0 whitespace-nowrap">
               {grant.external_deadline && (
                 <DeadlineChip label="Deadline" date={grant.external_deadline} />
               )}
@@ -397,8 +409,58 @@ function GrantDetailContent() {
               )}
             </div>
 
-            {/* Tab nav — inline, right side */}
-            <div className="ml-auto flex-shrink-0">
+            {/* Options + tab nav — right side */}
+            <div className="ml-auto flex items-center gap-1 shrink-0">
+              {/* Options menu (delete / remove) */}
+              <div className="relative">
+                <button
+                  type="button"
+                  onClick={() => setMenuOpen(v => !v)}
+                  title="Grant options"
+                  className="w-7 h-7 flex items-center justify-center rounded-lg text-gray-700 hover:text-gray-900 hover:bg-gray-100 transition-colors"
+                >
+                  <svg className="w-4 h-4" fill="currentColor" viewBox="0 0 24 24">
+                    <circle cx="12" cy="5" r="1.6" /><circle cx="12" cy="12" r="1.6" /><circle cx="12" cy="19" r="1.6" />
+                  </svg>
+                </button>
+                {menuOpen && (
+                  <>
+                    <div className="fixed inset-0 z-20" onClick={() => setMenuOpen(false)} />
+                    <div className="absolute right-0 top-full mt-1 w-44 py-1 z-30 bg-white border border-gray-200 rounded-lg shadow-lg">
+                      <a
+                        href={`/grants/${id}?tab=editor`}
+                        onClick={() => setMenuOpen(false)}
+                        className="block px-3 py-2 text-sm text-gray-700 hover:bg-gray-50"
+                      >
+                        Open editor
+                      </a>
+                      {grant.call_url && (
+                        <a
+                          href={grant.call_url}
+                          target="_blank"
+                          rel="noopener noreferrer"
+                          onClick={() => setMenuOpen(false)}
+                          className="block px-3 py-2 text-sm text-gray-700 hover:bg-gray-50"
+                        >
+                          View call ↗
+                        </a>
+                      )}
+                      {isGrantEditor && (
+                        <>
+                          <div className="my-1 border-t border-gray-100" />
+                          <button
+                            type="button"
+                            onClick={() => { setMenuOpen(false); handleDelete(); }}
+                            className="w-full text-left px-3 py-2 text-sm text-red-600 hover:bg-red-50"
+                          >
+                            Delete grant
+                          </button>
+                        </>
+                      )}
+                    </div>
+                  </>
+                )}
+              </div>
               <WorkspaceNav activeTab={activeTab} onChange={handleTabChange} compact />
             </div>
           </div>
