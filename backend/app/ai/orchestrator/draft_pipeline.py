@@ -267,7 +267,11 @@ async def run_draft_pipeline_stream(
         draft_html = draft_text if draft_text.strip().startswith("<") else "".join(
             f"<p>{p.strip()}</p>" for p in draft_text.split("\n\n") if p.strip()
         )
-        return idx, name, {"html": draft_html, "word_count": result.get("word_count") or len(draft_text.split())}
+        return idx, name, {
+            "html": draft_html,
+            "word_count": result.get("word_count") or len(draft_text.split()),
+            "citation_markers": result.get("citation_markers") or [],
+        }
 
     # ── GROUND + PARALLEL WRITE (dependency-layered) ───────────────────────────
     yield sse({"event": "research_start", "total": len(sections)})
@@ -322,6 +326,18 @@ async def run_draft_pipeline_stream(
         await db.commit()
         yield sse({"event": "section_complete", "section": name, "index": idx,
                    "total": len(sections), "word_count": drafts[idx]["word_count"]})
+
+    # ── VERIFY-THEN-KEEP CITATIONS ────────────────────────────────────────────
+    # Persist only archive citations that resolve to a real ProposalSection (real
+    # click-through references); markers that don't resolve are dropped, not faked.
+    try:
+        from app.ai.orchestrator.adaptive_draft import _persist_archive_citations
+        for idx in sorted(drafts):
+            markers = drafts[idx].get("citation_markers") or []
+            if markers:
+                await _persist_archive_citations(grant.id, drafts[idx]["name"], markers, db)
+    except Exception as exc:
+        logger.warning("draft_pipeline citation persist failed", error=str(exc))
 
     grant.editor_document = html
     grant.writing_phase = "draft"
