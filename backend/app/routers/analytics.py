@@ -25,7 +25,11 @@ async def dashboard_stats(db: AsyncSession = Depends(get_db), current_user: User
     new_this_week = shortlist["new_opportunities_this_week"]
     high_fit_pending = shortlist["high_fit_pending_review"]
 
-    # Scope grant queries to institution
+    # Stages that count as "live" work (not archived/rejected). Submitting a grant
+    # → grant_stage 'pending', which stays live; closed/rejected → 'archived'.
+    LIVE_STAGES = ["proposal", "active", "pending"]
+
+    # Scope grant queries to institution / the user's accessible grants.
     grant_base = select(func.count()).select_from(ActiveGrant)
     if inst_id and not is_org_admin(current_user):
         member_grant_ids = (await db.execute(
@@ -38,18 +42,38 @@ async def dashboard_stats(db: AsyncSession = Depends(get_db), current_user: User
     else:
         grant_filter = ActiveGrant.institution_id == inst_id if inst_id else True
 
-    active_grants_count = (await db.execute(
-        grant_base.where(ActiveGrant.status.notin_(["closed","withdrawn","archived"]), grant_filter)
+    # Proposals in development (proposal stage).
+    proposals_in_development = (await db.execute(
+        grant_base.where(ActiveGrant.grant_stage == "proposal", grant_filter)
     )).scalar()
 
+    # Active grants = active + pending review.
+    active_grants_count = (await db.execute(
+        grant_base.where(ActiveGrant.grant_stage.in_(["active", "pending"]), grant_filter)
+    )).scalar()
+
+    # Grants due within 30 days — live grants only (ignore archived/rejected).
     due_30 = (await db.execute(
         select(func.count()).select_from(ActiveGrant).where(
-            and_(ActiveGrant.external_deadline <= thirty_days, ActiveGrant.external_deadline >= today, grant_filter)
+            and_(ActiveGrant.external_deadline <= thirty_days,
+                 ActiveGrant.external_deadline >= today,
+                 ActiveGrant.grant_stage.in_(LIVE_STAGES),
+                 grant_filter)
         )
     )).scalar()
 
-    overdue_tasks = (await db.execute(
-        select(func.count()).select_from(Task).where(and_(Task.due_date < today, Task.status.notin_(["complete","dropped"])))
+    # Tasks due this week — scoped to the user's accessible, live grants (so a
+    # submitted/archived grant's tasks drop off). Fixes the old global, unscoped
+    # 'overdue' count and the complete/completed status mismatch.
+    seven_days = today + timedelta(days=7)
+    live_grant_ids = select(ActiveGrant.id).where(grant_filter, ActiveGrant.grant_stage.in_(LIVE_STAGES))
+    tasks_due_this_week = (await db.execute(
+        select(func.count()).select_from(Task).where(and_(
+            Task.due_date >= today,
+            Task.due_date <= seven_days,
+            Task.status.notin_(["complete", "completed", "dropped"]),
+            Task.grant_id.in_(live_grant_ids),
+        ))
     )).scalar()
 
     archived_count = (await db.execute(select(func.count()).select_from(GrantArchive))).scalar()
@@ -57,9 +81,10 @@ async def dashboard_stats(db: AsyncSession = Depends(get_db), current_user: User
     return {
         "new_opportunities_this_week": new_this_week,
         "high_fit_pending_review": high_fit_pending,
+        "proposals_in_development": proposals_in_development,
         "active_grants": active_grants_count,
         "grants_due_within_30_days": due_30,
-        "overdue_tasks": overdue_tasks,
+        "tasks_due_this_week": tasks_due_this_week,
         "archived_grants": archived_count,
     }
 

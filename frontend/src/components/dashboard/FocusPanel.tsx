@@ -132,10 +132,15 @@ interface FocusPanelProps {
 
 const isActive = (t: TaskItem) => t.status !== 'complete' && t.status !== 'dropped';
 
-export default function FocusPanel({ myTasks, allTasks, loading }: FocusPanelProps) {
+export default function FocusPanel({ grants, myTasks, allTasks, loading }: FocusPanelProps) {
   const [view, setView] = useState<'mine' | 'all'>('mine');
 
-  const tasks = view === 'mine' ? myTasks.filter(isActive) : allTasks.filter(isActive);
+  // Exclude tasks whose grant is archived/rejected (e.g. after submit → closed).
+  const nonLive = new Set(
+    grants.filter(g => !['proposal', 'active', 'pending'].includes(g.grant_stage)).map(g => g.id),
+  );
+  const live = (t: TaskItem) => !nonLive.has(t.grant_id);
+  const tasks = (view === 'mine' ? myTasks : allTasks).filter(t => isActive(t) && live(t));
 
   const withDate = tasks
     .filter(t => t.due_date != null)

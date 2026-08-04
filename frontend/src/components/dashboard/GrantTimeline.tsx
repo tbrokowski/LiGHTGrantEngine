@@ -353,9 +353,17 @@ function TaskListView({ tasks, loading }: { tasks: TaskDot[]; loading: boolean }
   return <div>{sorted.map(t => <TaskListRow key={t.id} task={t} />)}</div>;
 }
 
-export default function GrantTimeline({ grants, loading, starredIds = new Set(), tasks = [] }: GrantTimelineProps) {
+export default function GrantTimeline({ grants, loading, starredIds = new Set(), tasks: allTasks = [] }: GrantTimelineProps) {
   const [window, setWindow] = useState<Window>(60);
   const [viewMode, setViewMode] = useState<ViewMode>('timeline');
+
+  // Drop tasks whose grant is archived/rejected (e.g. once a grant is submitted
+  // and later closed) so they leave the "Xd overdue" views. Tasks whose grant
+  // isn't in this list (out of scope) are kept.
+  const nonLiveGrantIds = new Set(
+    grants.filter(g => !['proposal', 'active', 'pending'].includes(g.grant_stage)).map(g => g.id),
+  );
+  const tasks = allTasks.filter(t => !nonLiveGrantIds.has(t.grant_id));
   const containerRef = useRef<HTMLDivElement>(null);
   const [containerW, setContainerW] = useState(700);
 

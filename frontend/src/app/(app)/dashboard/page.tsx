@@ -12,9 +12,10 @@ import GrantTimeline from '@/components/dashboard/GrantTimeline';
 interface DashboardStats {
   new_opportunities_this_week: number;
   high_fit_pending_review: number;
+  proposals_in_development: number;
   active_grants: number;
   grants_due_within_30_days: number;
-  overdue_tasks: number;
+  tasks_due_this_week: number;
   archived_grants: number;
 }
 
@@ -160,10 +161,15 @@ export default function DashboardPage() {
 
   const metrics: StatMetric[] = stats ? [
     {
-      label: 'Pending Review',
+      label: 'High Priority',
       value: stats.high_fit_pending_review,
       href: '/opportunities',
       warn: stats.high_fit_pending_review > 0,
+    },
+    {
+      label: 'Proposals in Development',
+      value: stats.proposals_in_development,
+      href: '/grants',
     },
     {
       label: 'Active Grants',
@@ -171,16 +177,16 @@ export default function DashboardPage() {
       href: '/grants',
     },
     {
-      label: 'Due in 30 Days',
+      label: 'Grants Due in 30 Days',
       value: stats.grants_due_within_30_days,
       href: '/grants',
       warn: stats.grants_due_within_30_days > 0,
     },
     {
-      label: 'Overdue Tasks',
-      value: stats.overdue_tasks,
+      label: 'Tasks Due This Week',
+      value: stats.tasks_due_this_week,
       href: '/grants',
-      alert: stats.overdue_tasks > 0,
+      warn: stats.tasks_due_this_week > 0,
     },
   ] : [];
 
@@ -210,7 +216,7 @@ export default function DashboardPage() {
         style={{ borderBottom: '1px solid var(--rule-subtle)' }}
       >
         {loading
-          ? [0,1,2,3].map(i => (
+          ? [0,1,2,3,4].map(i => (
               <div key={i} style={{ width: '180px' }}>
                 <MetricCell loading={true} />
               </div>
