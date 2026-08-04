@@ -7667,6 +7667,27 @@
       "notes": "API for enterprise clients; no public documentation. [audit 2026-07-22] redirects to https://eunasolutions.com/solutions/grants/?utm_source=redirect&utm_medium=referral&utm_content=ecivis \u2014 verify new URL"
     },
     {
+      "name": "UK Find a Grant (government grants)",
+      "category": "Government Grants",
+      "url": "https://www.find-government-grants.service.gov.uk/grants",
+      "source_type": "ai_scraper",
+      "api_endpoint": null,
+      "scraper_config": {
+        "use_playwright": true,
+        "crawl_depth": 1,
+        "paginate": true,
+        "max_pages": 10,
+        "link_filter": "/grants/",
+        "max_detail_links": 40
+      },
+      "refresh_frequency": "weekly",
+      "is_high_priority": true,
+      "logo_url": "https://www.find-government-grants.service.gov.uk/assets/images/favicon.ico",
+      "status": "active",
+      "relevant_themes": [],
+      "notes": "UK government 'Find a Grant' service — paginated grants listing."
+    },
+    {
       "name": "OpenReview (AI/ML Conferences & Workshops)",
       "category": "Conferences & Workshops",
       "url": "https://openreview.net",

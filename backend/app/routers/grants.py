@@ -663,6 +663,25 @@ async def transition_stage(
         if data.award_amount is not None:
             grant.award_amount = data.award_amount
         await _upsert_grant_archive(db, grant, outcome="awarded", close_grant=False)
+        # Once active, the originating opportunity leaves everyone's shortlist.
+        if grant.opportunity_id:
+            from sqlalchemy import update as _sa_update
+            from app.models.user_opportunity_state import UserOpportunityState
+            from app.models.institution_opportunity import InstitutionOpportunity
+            await db.execute(
+                _sa_update(UserOpportunityState)
+                .where(UserOpportunityState.opportunity_id == grant.opportunity_id)
+                .values(saved_at=None)
+            )
+            if grant.institution_id:
+                await db.execute(
+                    _sa_update(InstitutionOpportunity)
+                    .where(
+                        InstitutionOpportunity.opportunity_id == grant.opportunity_id,
+                        InstitutionOpportunity.institution_id == grant.institution_id,
+                    )
+                    .values(status="actively_pursuing")
+                )
         await db.commit()
 
     elif new_stage == "rejected":

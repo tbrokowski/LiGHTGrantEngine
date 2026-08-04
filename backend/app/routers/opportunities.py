@@ -1800,6 +1800,23 @@ async def convert_to_grant(
         )
         db.add(linked)
 
+    # Leave the source/call in the grant's Saved Files as the call document, so
+    # it's one click away and feeds the auto-loaded call requirements.
+    from app.models.workspace_file import WorkspaceFile, FileCategory, FileSourceType
+    if opp.opportunity_url:
+        db.add(WorkspaceFile(
+            id=str(uuid.uuid4()),
+            grant_id=grant.id,
+            file_name=(f"Call — {opp.title}")[:500],
+            file_url=opp.opportunity_url,
+            file_type="url",
+            file_category=FileCategory.CALL_DOCUMENTS,
+            source_type=FileSourceType.EXTERNAL_URL,
+            description="Original call / source for this opportunity.",
+            tags=["call", "source"],
+            uploaded_by=current_user.id,
+        ))
+
     # ── Carry the opportunity workspace into the grant ────────────────────────
     # Migrate org-scope items (shared) + the converting user's own private items:
     # tasks -> grant Tasks; notes/links -> appended to the grant's notes so
