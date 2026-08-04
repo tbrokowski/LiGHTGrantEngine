@@ -1093,4 +1093,12 @@ async def analyze_call(
     except Exception:
         pass
 
+    # Persist the funder-type classification so downstream (constraints builder,
+    # built-in template fallback) can key off it (e.g. Horizon Europe structure).
+    try:
+        if not merged.get("funder_type"):
+            merged["funder_type"] = classification.get("funder_type")
+    except (NameError, AttributeError):
+        pass
+
     return merged

@@ -107,7 +107,28 @@ def _build_section_list(
             if isinstance(sec, dict) and sec.get("name"):
                 add(sec["name"], priority="medium")
 
+    # Built-in Horizon Europe fallback: when nothing structured was found and the
+    # call is an EU/Horizon call, apply the canonical Part B structure so EU
+    # proposals get the right skeleton even without an uploaded template.
+    if not seen and (call_analysis.get("funder_type") == "ec_horizon"):
+        for name in _HORIZON_PARTB_SECTIONS:
+            add(name, required=True, priority="high")
+
     return sorted(seen.values(), key=lambda x: x.get("order", 99))
+
+
+# Canonical Horizon Europe Part B (RIA/IA) narrative structure.
+_HORIZON_PARTB_SECTIONS = [
+    "1. Excellence",
+    "1.1 Objectives and ambition",
+    "1.2 Methodology",
+    "2. Impact",
+    "2.1 Project's pathways towards impact",
+    "2.2 Measures to maximise impact – Dissemination, exploitation and communication",
+    "3. Quality and efficiency of the implementation",
+    "3.1 Work plan and resources",
+    "3.2 Capacity of participants and consortium as a whole",
+]
 
 
 def merge_user_section_overrides(
