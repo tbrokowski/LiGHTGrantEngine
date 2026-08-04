@@ -63,50 +63,9 @@ def send_partner_reminders():
             db.add(notif)
             reminder.sent_at = now
 
-        # 2. Create reminders for overdue follow-ups (partners not contacted in 60+ days)
-        cutoff_stale = now - timedelta(days=60)
-        overdue_partners = db.execute(
-            select(Partner).where(Partner.status == "active")
-        ).scalars().all()
-
-        for partner in overdue_partners:
-            latest_update = db.execute(
-                select(PartnerUpdate)
-                .where(PartnerUpdate.partner_id == partner.id)
-                .order_by(PartnerUpdate.created_at.desc())
-                .limit(1)
-            ).scalar_one_or_none()
-
-            if latest_update and latest_update.created_at:
-                last_contact = latest_update.created_at
-                if last_contact.tzinfo is None:
-                    last_contact = last_contact.replace(tzinfo=timezone.utc)
-                if last_contact < cutoff_stale:
-                    # Check if reminder already exists this week
-                    week_ago = now - timedelta(days=7)
-                    existing = db.execute(
-                        select(PartnerReminder).where(
-                            and_(
-                                PartnerReminder.partner_id == partner.id,
-                                PartnerReminder.reminder_type == "follow_up",
-                                PartnerReminder.created_at >= week_ago,
-                            )
-                        )
-                    ).scalar_one_or_none()
-
-                    if not existing and partner.created_by:
-                        days_silent = (now - last_contact).days
-                        reminder = PartnerReminder(
-                            id=str(__import__("uuid").uuid4()),
-                            partner_id=partner.id,
-                            user_id=partner.created_by,
-                            institution_id=partner.institution_id or "",
-                            reminder_type="follow_up",
-                            title=f"Follow up with {partner.name}",
-                            description=f"No contact logged for {days_silent} days",
-                            scheduled_for=now,
-                        )
-                        db.add(reminder)
+        # (Removed the stale-"active"/interaction-based auto-follow-up branch — the
+        # app no longer tracks status or interactions. Reminders are now explicit
+        # "reach out" reminders set by the user, delivered above.)
 
         db.commit()
         logger.info("partner_reminders: processed %d due reminders", len(due_reminders))

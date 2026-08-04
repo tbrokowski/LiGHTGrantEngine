@@ -6,7 +6,7 @@ import uuid
 from typing import Optional
 from datetime import datetime, timedelta, timezone
 
-from fastapi import APIRouter, Depends, HTTPException, BackgroundTasks
+from fastapi import APIRouter, Depends, HTTPException, BackgroundTasks, UploadFile, File
 from fastapi.responses import StreamingResponse
 from pydantic import BaseModel
 from sqlalchemy import select, desc, or_, func, and_
@@ -493,6 +493,160 @@ async def create_partner(
     await db.commit()
     await db.refresh(partner)
     return {"id": partner.id}
+
+
+# ── Reach-out reminders (replaces follow-up/status) ───────────────────────────
+
+class ReminderCreate(BaseModel):
+    scheduled_for: datetime
+    title: str
+    description: Optional[str] = None
+
+
+@router.post("/{partner_id}/reminders", status_code=201)
+async def create_partner_reminder(
+    partner_id: str, data: ReminderCreate,
+    db: AsyncSession = Depends(get_db), current_user: User = Depends(get_current_user),
+):
+    from app.models.partner_reminder import PartnerReminder
+    await _get_partner_or_404(partner_id, db)
+    r = PartnerReminder(
+        id=str(uuid.uuid4()), partner_id=partner_id, user_id=current_user.id,
+        institution_id=getattr(current_user, "institution_id", None),
+        reminder_type="reach_out", title=data.title, description=data.description,
+        scheduled_for=data.scheduled_for,
+    )
+    db.add(r)
+    await db.commit()
+    return {"id": r.id}
+
+
+@router.get("/{partner_id}/reminders")
+async def list_partner_reminders(
+    partner_id: str, db: AsyncSession = Depends(get_db), current_user: User = Depends(get_current_user),
+):
+    from app.models.partner_reminder import PartnerReminder
+    rows = (await db.execute(
+        select(PartnerReminder).where(
+            PartnerReminder.partner_id == partner_id,
+            PartnerReminder.dismissed_at.is_(None),
+        ).order_by(PartnerReminder.scheduled_for)
+    )).scalars().all()
+    return [{
+        "id": r.id, "title": r.title, "description": r.description,
+        "scheduled_for": r.scheduled_for.isoformat() if r.scheduled_for else None,
+        "sent_at": r.sent_at.isoformat() if r.sent_at else None,
+    } for r in rows]
+
+
+@router.delete("/{partner_id}/reminders/{reminder_id}", status_code=204)
+async def delete_partner_reminder(
+    partner_id: str, reminder_id: str,
+    db: AsyncSession = Depends(get_db), current_user: User = Depends(get_current_user),
+):
+    from sqlalchemy import delete as sa_delete
+    from app.models.partner_reminder import PartnerReminder
+    await db.execute(sa_delete(PartnerReminder).where(
+        PartnerReminder.id == reminder_id, PartnerReminder.partner_id == partner_id))
+    await db.commit()
+
+
+# ── Add a partner from a pasted email thread (extract → find LinkedIn → enrich) ─
+
+class EmailThreadIn(BaseModel):
+    text: str
+
+
+@router.post("/from-email-thread")
+async def partner_from_email_thread(
+    data: EmailThreadIn, db: AsyncSession = Depends(get_db), current_user: User = Depends(get_current_user),
+):
+    from app.ai.agents.email_partner_extractor import extract_partner_from_email
+    from app.ai.agents.partner_enrichment_agent import enrich_partner_profile
+    from app.services.web_search import search_web
+
+    ex = await extract_partner_from_email(data.text)
+    name = (ex.get("name") or "").strip()
+    if not name:
+        raise HTTPException(400, "Couldn't find a contact in that email thread.")
+    org = ex.get("organization") or None
+    email = ex.get("email") or None
+    title = ex.get("title") or None
+
+    # Find their LinkedIn via web search (no direct scraping).
+    linkedin_url = None
+    try:
+        for r in (await search_web(f"{name} {org or ''} LinkedIn")) or []:
+            u = (r.get("url") or "") if isinstance(r, dict) else ""
+            if "linkedin.com/in" in u:
+                linkedin_url = u
+                break
+    except Exception:
+        pass
+
+    enrich: dict = {}
+    try:
+        enrich = await enrich_partner_profile(
+            name=name, organization=org, email=email, linkedin_url=linkedin_url, title=title) or {}
+    except Exception:
+        pass
+
+    tags = enrich.get("expertise_tags") or []
+    if org:
+        tags = [f"from:{org}"] + [t for t in tags if t]
+    partner = Partner(
+        id=str(uuid.uuid4()), created_by=current_user.id,
+        institution_id=getattr(current_user, "institution_id", None),
+        name=name, email=email, organization=org, title=title,
+        linkedin_url=linkedin_url, tags=tags,
+        h_index=enrich.get("h_index"), notes=enrich.get("bio_snippet"),
+    )
+    db.add(partner)
+    await db.commit()
+    await db.refresh(partner)
+    return {"id": partner.id, "name": name, "email": email, "organization": org,
+            "linkedin_url": linkedin_url, "tags": tags}
+
+
+# ── Bulk CSV import ───────────────────────────────────────────────────────────
+
+@router.post("/import-csv")
+async def import_partners_csv(
+    file: UploadFile = File(...),
+    db: AsyncSession = Depends(get_db), current_user: User = Depends(get_current_user),
+):
+    """Import partners from a CSV with columns name,email,organization,title,tags
+    (tags separated by ; or ,)."""
+    raw = await file.read()
+    if not raw:
+        raise HTTPException(400, "Empty file")
+    text = raw.decode("utf-8", errors="ignore")
+    reader = csv.DictReader(io.StringIO(text))
+
+    def g(row: dict, *keys: str) -> Optional[str]:
+        for k in keys:
+            v = row.get(k) or row.get(k.capitalize()) or row.get(k.upper())
+            if v and str(v).strip():
+                return str(v).strip()
+        return None
+
+    created = 0
+    for row in reader:
+        name = g(row, "name")
+        if not name:
+            continue
+        tags_raw = g(row, "tags") or ""
+        sep = ";" if ";" in tags_raw else ","
+        tags = [t.strip() for t in tags_raw.split(sep) if t.strip()]
+        db.add(Partner(
+            id=str(uuid.uuid4()), created_by=current_user.id,
+            institution_id=getattr(current_user, "institution_id", None),
+            name=name, email=g(row, "email"), organization=g(row, "organization", "org"),
+            title=g(row, "title"), tags=tags,
+        ))
+        created += 1
+    await db.commit()
+    return {"created": created}
 
 
 @router.get("/{partner_id}")

@@ -603,6 +603,20 @@ export const partners = {
   discover: (params: { q: string; institution_type?: string; country?: string }) =>
     api.get('/partners/search-discover', { params }),
   analytics: () => api.get('/partners/analytics'),
+  // Reach-out reminders (replaces follow-up)
+  listReminders: (id: string) => api.get(`/partners/${id}/reminders`),
+  addReminder: (id: string, data: { scheduled_for: string; title: string; description?: string }) =>
+    api.post(`/partners/${id}/reminders`, data),
+  deleteReminder: (id: string, reminderId: string) =>
+    api.delete(`/partners/${id}/reminders/${reminderId}`),
+  // Add a partner from a pasted email thread (extract → find LinkedIn → enrich)
+  fromEmailThread: (text: string) => api.post('/partners/from-email-thread', { text }),
+  // Bulk CSV import
+  importCsv: (file: File) => {
+    const form = new FormData();
+    form.append('file', file);
+    return api.post('/partners/import-csv', form, { headers: { 'Content-Type': 'multipart/form-data' } });
+  },
   workspaceSyncStatus: (id: string) => api.get(`/partners/${id}/workspace-sync-status`),
   // Meetings
   listMeetings: (id: string) => api.get(`/partners/${id}/meetings`),
