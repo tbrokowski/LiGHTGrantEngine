@@ -555,6 +555,15 @@ export const analytics = {
   successRate: () => api.get('/analytics/success-rate'),
 };
 
+// ── LLM API keys + usage (multi-provider grant writing) ──────────────────────
+export const apiKeys = {
+  list: () => api.get('/api-keys'),
+  save: (data: { provider: string; key: string; label?: string }) => api.put('/api-keys', data),
+  remove: (provider: string) => api.delete(`/api-keys/${provider}`),
+  catalog: () => api.get('/api-keys/catalog'),
+  usage: () => api.get('/api-keys/usage'),
+};
+
 // ── Feedback (comments / concerns / bugs / revisions) ────────────────────────
 export const feedback = {
   submit: (data: { category: string; message: string; page_url?: string }) =>

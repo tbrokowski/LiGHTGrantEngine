@@ -2,6 +2,16 @@ ai:
   base_url: https://api.openai.com/v1
   model: gpt-4o-mini  # default for scrapers, taggers, utility agents; grant-writing agents override to gpt-4o below
   api_key: EMPTY  # set OPENAI_API_KEY env var — this field is overridden by config.py
+  # Multi-provider system keys. Per-agent `provider` (in agent_overrides) or the
+  # model id prefix selects the provider; users can also add their own keys in
+  # Settings, which take precedence for their runs.
+  providers:
+    openai:
+      api_key: EMPTY      # falls back to settings.ai.api_key / OPENAI_API_KEY
+    anthropic:
+      api_key: EMPTY      # or ANTHROPIC_API_KEY env
+    google:
+      api_key: EMPTY      # or GOOGLE_API_KEY / GEMINI_API_KEY env
   embeddings:
     base_url: https://api.openai.com/v1
     model: text-embedding-3-small

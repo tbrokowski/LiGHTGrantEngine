@@ -16,9 +16,35 @@ from tenacity import (
 )
 
 from app.config import get_settings
+from app.ai import providers as _providers
 
 logger = structlog.get_logger()
 settings = get_settings()
+
+
+def _system_keys() -> dict:
+    """System (config/env) API keys per provider."""
+    import os
+    ai = settings.ai
+    keys: dict = {"openai": ai.api_key}
+    providers_cfg = getattr(ai, "providers", None) or {}
+    if isinstance(providers_cfg, dict):
+        for name, cfg in providers_cfg.items():
+            k = cfg.get("api_key") if isinstance(cfg, dict) else None
+            if k and k != "EMPTY":
+                keys[name] = k
+    keys.setdefault("anthropic", os.environ.get("ANTHROPIC_API_KEY"))
+    keys.setdefault("google", os.environ.get("GOOGLE_API_KEY") or os.environ.get("GEMINI_API_KEY"))
+    return keys
+
+
+def _resolve_model_provider(agent_name: Optional[str]) -> tuple[str, str, dict]:
+    """Return (provider, model, agent_overrides) for an agent."""
+    ai_cfg = settings.ai
+    ov = ai_cfg.agent_overrides.get(agent_name or "", {})
+    model = ov.get("model", ai_cfg.model)
+    provider = ov.get("provider") or _providers.infer_provider(model)
+    return provider, model, ov
 
 # Lightweight per-process LLM call counter, tagged by agent_name — used to verify
 # the draft pipeline's call count during/after a run. Safe under the Celery
@@ -38,6 +64,18 @@ def get_call_counts() -> dict[str, int]:
 def _record_call(agent_name: Optional[str]) -> None:
     key = agent_name or "unknown"
     _call_counts[key] = _call_counts.get(key, 0) + 1
+
+
+def _record_usage(agent_name: Optional[str], provider: str, model: str, pt: int, ct: int) -> None:
+    """Buffer token usage for this request; the worker flushes it to LLMUsage."""
+    try:
+        _providers.record_usage({
+            "agent": agent_name or "unknown", "provider": provider, "model": model,
+            "prompt_tokens": pt, "completion_tokens": ct,
+            "cost_cents": _providers.estimate_cost_cents(model, pt, ct),
+        })
+    except Exception:
+        pass
 
 
 def _get_client() -> AsyncOpenAI:
@@ -82,35 +120,21 @@ async def chat_complete(
     Returns:
         The assistant message content as a string.
     """
-    ai_cfg = settings.ai
-    gen = ai_cfg.generation
+    gen = settings.ai.generation
+    provider, model, ov = _resolve_model_provider(agent_name)
+    temp = temperature if temperature is not None else ov.get("temperature", gen.temperature)
+    tokens = max_tokens if max_tokens is not None else ov.get("max_tokens", gen.max_tokens)
+    effort = reasoning_effort or ov.get("reasoning_effort")
 
-    agent_overrides = ai_cfg.agent_overrides.get(agent_name or "", {})
-    temp = temperature if temperature is not None else agent_overrides.get("temperature", gen.temperature)
-    tokens = max_tokens if max_tokens is not None else agent_overrides.get("max_tokens", gen.max_tokens)
-    model = agent_overrides.get("model", ai_cfg.model)
-    effort = reasoning_effort or agent_overrides.get("reasoning_effort")
-
-    kwargs: dict[str, Any] = {
-        "model": model,
-        "messages": messages,
-        "temperature": temp,
-        "max_tokens": tokens,
-        "top_p": gen.top_p,
-    }
-    if json_mode:
-        kwargs["response_format"] = {"type": "json_object"}
-    if effort:
-        kwargs["reasoning_effort"] = effort
-
-    logger.debug("AI chat call", agent=agent_name, model=model, messages=len(messages))
-
-    async with _get_client() as client:
-        response = await client.chat.completions.create(**kwargs)
+    logger.debug("AI chat call", agent=agent_name, provider=provider, model=model, messages=len(messages))
+    content, pt, ct = await _providers.complete(
+        provider=provider, model=model, messages=messages,
+        temperature=temp, max_tokens=tokens, top_p=gen.top_p,
+        system_keys=_system_keys(), json_mode=json_mode, reasoning_effort=effort,
+        timeout=gen.timeout_seconds,
+    )
     _record_call(agent_name)
-
-    content = response.choices[0].message.content or ""
-    logger.debug("AI chat response", agent=agent_name, tokens=response.usage.total_tokens if response.usage else None)
+    _record_usage(agent_name, provider, model, pt, ct)
     return content
 
 
@@ -127,48 +151,42 @@ async def chat_complete_stream(
         async for chunk in chat_complete_stream(messages):
             yield chunk
     """
-    ai_cfg = settings.ai
-    gen = ai_cfg.generation
+    gen = settings.ai.generation
+    provider, model, ov = _resolve_model_provider(agent_name)
+    temp = temperature if temperature is not None else ov.get("temperature", gen.temperature)
+    tokens = max_tokens if max_tokens is not None else ov.get("max_tokens", gen.max_tokens)
 
-    agent_overrides = ai_cfg.agent_overrides.get(agent_name or "", {})
-    temp = temperature if temperature is not None else agent_overrides.get("temperature", gen.temperature)
-    tokens = max_tokens if max_tokens is not None else agent_overrides.get("max_tokens", gen.max_tokens)
+    logger.debug("AI stream call", agent=agent_name, provider=provider, model=model)
 
-    model = agent_overrides.get("model", ai_cfg.model)
-    client = _get_client()
+    if provider != "openai":
+        # Non-OpenAI providers: no token streaming here — emit the full text once.
+        content, pt, ct = await _providers.complete(
+            provider=provider, model=model, messages=messages,
+            temperature=temp, max_tokens=tokens, top_p=gen.top_p,
+            system_keys=_system_keys(), timeout=gen.timeout_seconds,
+        )
+        _record_call(agent_name)
+        _record_usage(agent_name, provider, model, pt, ct)
+        if content:
+            yield content
+        return
 
-    logger.debug("AI stream call", agent=agent_name, model=model, messages=len(messages))
-
-    stream = await client.chat.completions.create(
-        model=model,
-        messages=messages,
-        temperature=temp,
-        max_tokens=tokens,
-        top_p=gen.top_p,
-        stream=True,
-    )
-
-    async for chunk in stream:
-        delta = chunk.choices[0].delta
-        if delta and delta.content:
-            yield delta.content
-
-
-# Cost rates in micro-dollars per token (multiply by 0.0001 to get cents)
-# gpt-4o-mini: $0.15/1M prompt, $0.60/1M completion → 0.015 and 0.06 cents per 1K tokens
-_MODEL_RATES: dict[str, dict[str, float]] = {
-    "gpt-4o-mini": {"prompt": 0.000015, "completion": 0.00006},   # cents per token
-    "gpt-4o": {"prompt": 0.0005, "completion": 0.0015},
-    "gpt-4": {"prompt": 0.003, "completion": 0.006},
-    "default": {"prompt": 0.000015, "completion": 0.00006},
-}
+    from openai import AsyncOpenAI
+    async with AsyncOpenAI(api_key=_system_keys().get("openai"), timeout=gen.timeout_seconds) as client:
+        stream = await client.chat.completions.create(
+            model=model, messages=messages, temperature=temp,
+            max_tokens=tokens, top_p=gen.top_p, stream=True,
+        )
+        async for chunk in stream:
+            delta = chunk.choices[0].delta
+            if delta and delta.content:
+                yield delta.content
+    _record_call(agent_name)
 
 
 def estimate_cost_cents(model: str, prompt_tokens: int, completion_tokens: int) -> int:
-    """Estimate cost in cents (integer) for a completion call."""
-    rates = _MODEL_RATES.get(model, _MODEL_RATES["default"])
-    total_cents = (prompt_tokens * rates["prompt"]) + (completion_tokens * rates["completion"])
-    return max(0, round(total_cents))
+    """Estimate cost in cents — delegates to the multi-provider pricing registry."""
+    return _providers.estimate_cost_cents(model, prompt_tokens, completion_tokens)
 
 
 @retry(
@@ -188,33 +206,20 @@ async def chat_complete_tracked(
     Like chat_complete but also returns (content, prompt_tokens, completion_tokens, cost_cents).
     Use this for AI calls that need billing tracking.
     """
-    ai_cfg = settings.ai
-    gen = ai_cfg.generation
-    agent_overrides = ai_cfg.agent_overrides.get(agent_name or "", {})
-    temp = temperature if temperature is not None else agent_overrides.get("temperature", gen.temperature)
-    tokens = max_tokens if max_tokens is not None else agent_overrides.get("max_tokens", gen.max_tokens)
-    model = agent_overrides.get("model", ai_cfg.model)
+    gen = settings.ai.generation
+    provider, model, ov = _resolve_model_provider(agent_name)
+    temp = temperature if temperature is not None else ov.get("temperature", gen.temperature)
+    tokens = max_tokens if max_tokens is not None else ov.get("max_tokens", gen.max_tokens)
 
-    kwargs: dict[str, Any] = {
-        "model": model,
-        "messages": messages,
-        "temperature": temp,
-        "max_tokens": tokens,
-        "top_p": gen.top_p,
-    }
-    if json_mode:
-        kwargs["response_format"] = {"type": "json_object"}
-
-    async with _get_client() as client:
-        response = await client.chat.completions.create(**kwargs)
+    content, pt, ct = await _providers.complete(
+        provider=provider, model=model, messages=messages,
+        temperature=temp, max_tokens=tokens, top_p=gen.top_p,
+        system_keys=_system_keys(), json_mode=json_mode,
+        reasoning_effort=ov.get("reasoning_effort"), timeout=gen.timeout_seconds,
+    )
     _record_call(agent_name)
-
-    content = response.choices[0].message.content or ""
-    usage = response.usage
-    pt = usage.prompt_tokens if usage else 0
-    ct = usage.completion_tokens if usage else 0
-    cost = estimate_cost_cents(model, pt, ct)
-    return content, pt, ct, cost
+    _record_usage(agent_name, provider, model, pt, ct)
+    return content, pt, ct, estimate_cost_cents(model, pt, ct)
 
 
 async def chat_complete_with_tools(
@@ -242,77 +247,25 @@ async def chat_complete_with_tools(
         ends on a tool call without a follow-up text response).
         tool_call_log is a list of {"tool": name, "arguments": dict, "result": dict} records.
     """
-    ai_cfg = settings.ai
-    gen = ai_cfg.generation
-    agent_overrides = ai_cfg.agent_overrides.get(agent_name or "", {})
-    temp = agent_overrides.get("temperature", gen.temperature)
-    tokens = agent_overrides.get("max_tokens", gen.max_tokens)
-    model = agent_overrides.get("model", ai_cfg.model)
-    effort = agent_overrides.get("reasoning_effort")
+    gen = settings.ai.generation
+    provider, model, ov = _resolve_model_provider(agent_name)
+    temp = ov.get("temperature", gen.temperature)
+    tokens = ov.get("max_tokens", gen.max_tokens)
+    effort = ov.get("reasoning_effort")
 
-    tool_call_log: list[dict] = []
-    current_messages = list(messages)
-    final_text: Optional[str] = None
+    # Gemini tool-calling isn't mapped yet — route tool-using agents to the system
+    # OpenAI model so the agentic drafter always has working tools.
+    if provider == "google":
+        provider, model = "openai", settings.ai.model
 
-    _extra = {"reasoning_effort": effort} if effort else {}
-    for _ in range(max_rounds):
-        async with _get_client() as client:
-            response = await client.chat.completions.create(
-                model=model,
-                messages=current_messages,
-                tools=tools,
-                tool_choice="auto",
-                temperature=temp,
-                max_tokens=tokens,
-                top_p=gen.top_p,
-                **_extra,
-            )
-        _record_call(agent_name)
-
-        choice = response.choices[0]
-        message = choice.message
-
-        # If no tool calls, the model is done
-        if not message.tool_calls:
-            final_text = message.content or ""
-            break
-
-        # Append the assistant's tool-call message to history
-        current_messages.append({
-            "role": "assistant",
-            "content": message.content,
-            "tool_calls": [
-                {
-                    "id": tc.id,
-                    "type": "function",
-                    "function": {"name": tc.function.name, "arguments": tc.function.arguments},
-                }
-                for tc in message.tool_calls
-            ],
-        })
-
-        # Dispatch each tool call and append results
-        import json as _json
-        for tc in message.tool_calls:
-            tool_name = tc.function.name
-            try:
-                arguments = _json.loads(tc.function.arguments)
-            except (_json.JSONDecodeError, TypeError):
-                arguments = {}
-
-            try:
-                result = await tool_executor(tool_name, arguments)
-            except Exception as exc:
-                result = {"error": str(exc)}
-
-            tool_call_log.append({"tool": tool_name, "arguments": arguments, "result": result})
-
-            current_messages.append({
-                "role": "tool",
-                "tool_call_id": tc.id,
-                "content": _json.dumps(result) if not isinstance(result, str) else result,
-            })
-
+    final_text, tool_call_log = await _providers.complete_with_tools(
+        provider=provider, model=model, messages=list(messages),
+        tools=tools, tool_executor=tool_executor,
+        temperature=temp, max_tokens=tokens, top_p=gen.top_p,
+        system_keys=_system_keys(), max_rounds=max_rounds,
+        reasoning_effort=effort, timeout=gen.timeout_seconds,
+    )
+    _record_call(agent_name)
     return final_text, tool_call_log
 
 

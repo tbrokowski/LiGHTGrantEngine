@@ -6,6 +6,7 @@ import { sources, auth, admin } from '@/lib/api';
 import { notifyOpportunitiesChanged } from '@/lib/opportunities-events';
 import { MembersPanel } from '@/components/settings/MembersPanel';
 import { CollaboratorsPanel } from '@/components/settings/CollaboratorsPanel';
+import { ModelsPanel } from '@/components/settings/ModelsPanel';
 import { FeedbackPanel } from '@/components/settings/FeedbackPanel';
 import { JoinRequestsPanel } from '@/components/settings/JoinRequestsPanel';
 import { InvitePanel } from '@/components/settings/InvitePanel';
@@ -345,7 +346,7 @@ function ScraperConfigPanel({ sourceType, config, onChange }: ScraperConfigPanel
   return null;
 }
 
-type Tab = 'sources' | 'organization' | 'feedback' | 'profile' | 'integrations' | 'usage';
+type Tab = 'sources' | 'organization' | 'feedback' | 'models' | 'profile' | 'integrations' | 'usage';
 
 function UsageTab({ user }: { user: AuthUser | null }) {
   if (!user) return <p className="text-sm" style={{ color: 'var(--ink-faint)' }}>Loading…</p>;
@@ -871,6 +872,7 @@ function SettingsPageInner() {
     { id: 'organization', label: 'Organization', show: isAdmin && hasInstitution },
     // Feedback triage — admin only
     { id: 'feedback', label: 'Feedback', show: isAdmin },
+    { id: 'models', label: 'Models & Keys', show: true },
     { id: 'profile', label: 'My Profile', show: true },
     { id: 'integrations', label: 'Integrations', show: true },
     { id: 'usage', label: 'Usage', show: true },
@@ -966,6 +968,9 @@ function SettingsPageInner() {
       {activeTab === 'feedback' && isAdmin && (
         <FeedbackPanel />
       )}
+
+      {/* Models & API keys */}
+      {activeTab === 'models' && <ModelsPanel />}
 
       {/* Usage tab */}
       {activeTab === 'usage' && (

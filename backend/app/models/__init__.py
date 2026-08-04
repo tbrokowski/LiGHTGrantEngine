@@ -47,6 +47,8 @@ from .email_verification import EmailVerification
 from .org_join_request import OrgJoinRequest
 from .password_reset import PasswordResetToken
 from .feedback import Feedback
+from .user_api_key import UserApiKey
+from .llm_usage import LLMUsage
 
 __all__ = [
     "Institution", "User", "Source", "SourceRun", "Opportunity", "OpportunityReview",
@@ -66,4 +68,5 @@ __all__ = [
     "InstitutionOpportunity", "InstitutionTasteProfile", "UserTasteProfile", "InstitutionSource", "PreseedRun", "FunderOrg",
     "ShortlistCategory",
     "EmailVerification", "OrgJoinRequest", "PasswordResetToken", "Feedback",
+    "UserApiKey", "LLMUsage",
 ]

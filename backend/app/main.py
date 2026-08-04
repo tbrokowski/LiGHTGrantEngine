@@ -23,6 +23,7 @@ from app.routers import finance_portfolio
 from app.routers import slack_events
 from app.routers import browser_sessions
 from app.routers import feedback
+from app.routers import api_keys
 from app.routers import partner_meetings, partner_documents, partner_organizations, partner_tasks
 
 settings = get_settings()
@@ -120,6 +121,7 @@ app.include_router(grant_finance.router,     prefix=f"{API}/grants",          ta
 app.include_router(finance_portfolio.router, prefix=f"{API}/finance",         tags=["finance"])
 app.include_router(slack_events.router,    prefix=f"{API}/slack",           tags=["slack"])
 app.include_router(feedback.router,        prefix=f"{API}/feedback",        tags=["feedback"])
+app.include_router(api_keys.router,        prefix=f"{API}/api-keys",         tags=["api-keys"])
 
 
 @app.get("/health")

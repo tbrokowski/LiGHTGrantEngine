@@ -669,6 +669,36 @@ def generate_skeleton_task(
         return {"status": "failed", "error": msg}
 
 
+async def _flush_llm_usage(db, user_id: str | None, grant_id: str | None) -> None:
+    """Persist the buffered per-call LLM usage for this run + roll up the user's
+    running AI spend. Best-effort — never fail the draft over accounting."""
+    try:
+        from app.ai import providers as _providers
+        from app.models.llm_usage import LLMUsage
+        from app.models.user import User
+
+        usage = _providers.get_usage()
+        if not usage:
+            return
+        total_cents = 0
+        for u in usage:
+            db.add(LLMUsage(
+                user_id=user_id, grant_id=grant_id,
+                provider=u.get("provider", "openai"), model=u.get("model", ""),
+                agent=u.get("agent"), prompt_tokens=int(u.get("prompt_tokens", 0)),
+                completion_tokens=int(u.get("completion_tokens", 0)),
+                cost_cents=int(u.get("cost_cents", 0)),
+            ))
+            total_cents += int(u.get("cost_cents", 0))
+        if user_id and total_cents:
+            user = await db.get(User, user_id)
+            if user:
+                user.ai_usage_cents = (user.ai_usage_cents or 0) + total_cents
+        await db.commit()
+    except Exception as exc:
+        logger.warning("llm usage flush failed: %s", exc)
+
+
 # ---------------------------------------------------------------------------
 # Draft background task
 # ---------------------------------------------------------------------------
@@ -710,6 +740,9 @@ def generate_draft_task(
             from app.models.active_grant import ActiveGrant
             from app.ai.orchestrator.grant_writing import GrantWritingOrchestrator
 
+            from app.ai import providers as _providers
+            from app.routers.api_keys import load_user_provider_keys
+
             engine = create_async_engine(async_url, pool_pre_ping=True)
             try:
                 async with AsyncSession(engine, expire_on_commit=False) as db:
@@ -717,17 +750,30 @@ def generate_draft_task(
                     if not grant:
                         _upd([], "failed", f"Grant {grant_id} not found")
                         return
+
+                    # Route LLM calls through the running user's own provider keys
+                    # (if any) and collect usage for this run.
+                    try:
+                        user_keys = await load_user_provider_keys(db, user_id) if user_id else {}
+                    except Exception:
+                        user_keys = {}
+                    _providers.set_request_context(user_id, user_keys, grant_id)
+                    _providers.reset_usage()
+
                     orchestrator = GrantWritingOrchestrator()
                     current_steps: list = list(init_steps)
-                    async for chunk in orchestrator.generate_draft_stream(
-                        grant, db, flagged_sections=flagged_sections
-                    ):
-                        event = _parse_sse_event(chunk)
-                        if event:
-                            new_steps = _map_draft_event(event, current_steps)
-                            if new_steps is not None:
-                                current_steps = new_steps
-                                _upd(current_steps)
+                    try:
+                        async for chunk in orchestrator.generate_draft_stream(
+                            grant, db, flagged_sections=flagged_sections
+                        ):
+                            event = _parse_sse_event(chunk)
+                            if event:
+                                new_steps = _map_draft_event(event, current_steps)
+                                if new_steps is not None:
+                                    current_steps = new_steps
+                                    _upd(current_steps)
+                    finally:
+                        await _flush_llm_usage(db, user_id, grant_id)
             finally:
                 await engine.dispose()
 

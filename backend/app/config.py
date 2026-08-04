@@ -50,6 +50,9 @@ class AIConfig(BaseModel):
     embeddings: EmbeddingsConfig = EmbeddingsConfig()
     generation: GenerationConfig = GenerationConfig()
     agent_overrides: dict[str, Any] = {}
+    # System API keys per provider (openai | anthropic | google). Env vars
+    # (ANTHROPIC_API_KEY / GOOGLE_API_KEY) also work; per-user keys override.
+    providers: dict[str, Any] = {}
 
 
 class FitScoringConfig(BaseModel):
