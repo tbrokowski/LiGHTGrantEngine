@@ -12,22 +12,23 @@
   --surface-chrome:  #FFFFFF;   /* outer shell — white canvas */
   --surface-base:    #FFFFFF;   /* white — page/card background */
   --surface-raised:  #FFFFFF;   /* panels, cards, nav */
-  --surface-sunken:  #F0F4F8;   /* recessed regions, input bg */
+  --surface-sunken:  #F4F4F5;   /* recessed regions, input bg — neutral gray */
   --surface-panel:   #FFFFFF;   /* inspection pane, modals */
   --surface-overlay: rgba(12, 12, 10, 0.50); /* modal backdrop */
+  --surface-card:    rgba(255, 255, 255, 0.62); /* frosted card fill */
 
-  /* Sidebar — deep navy identity column */
-  --sidebar-bg:         #0F2347;
+  /* Sidebar — graphite identity column (mono) */
+  --sidebar-bg:         #18181B;
   --sidebar-fg:         rgba(255, 255, 255, 0.80);
   --sidebar-fg-active:  #FFFFFF;
   --sidebar-fg-muted:   rgba(255, 255, 255, 0.40);
   --sidebar-accent:     rgba(255, 255, 255, 0.12);
   --sidebar-rule:       rgba(255, 255, 255, 0.08);
 
-  /* Panel section headers — blue accent */
-  --panel-header-bg:    #EEF3FB;
-  --panel-header-text:  #1C3C72;
-  --panel-header-rule:  rgba(28, 60, 114, 0.12);
+  /* Panel section headers — neutral */
+  --panel-header-bg:    #F4F4F5;
+  --panel-header-text:  #18181B;
+  --panel-header-rule:  rgba(0, 0, 0, 0.08);
 
   /* Ink */
   --ink-primary:   #111110;   /* headings, labels — warm near-black */
@@ -39,13 +40,14 @@
   /* Rules — horizontal dividers, the primary spatial motif */
   --rule-subtle: #E5E4DF;     /* default divider */
   --rule-strong: #C8C7BF;     /* emphasized borders */
-  --rule-accent: #1C3C72;     /* institutional navy rule */
+  --rule-accent: #18181B;     /* graphite rule */
 
-  /* Accent — institutional navy as the single controlled accent */
-  --accent-primary:   #1C3C72;               /* active states, links */
-  --accent-secondary: rgba(28, 60, 114, 0.10); /* tinted bg for selection */
-  --accent-warm:      #8A6A14;               /* brass/gold — numbers, important values */
-  --accent-cool:      #2C6848;               /* institutional green — success */
+  /* Accent — graphite as the single controlled chrome accent (per-grant color is
+     the only vivid accent, applied inline) */
+  --accent-primary:   #18181B;               /* active states, links */
+  --accent-secondary: rgba(0, 0, 0, 0.06);   /* tinted bg for selection */
+  --accent-warm:      #6B6B66;               /* muted — important values */
+  --accent-cool:      #52525B;               /* muted gray */
 
   /* State */
   --state-success:    #2C6848;
@@ -54,12 +56,12 @@
   --state-warning-bg: #FEF4E8;
   --state-danger:     #9B1C1C;
   --state-danger-bg:  #FEF2F2;
-  --state-info:       #1C3C72;
-  --state-info-bg:    #EEF2FA;
+  --state-info:       #3A3A36;
+  --state-info-bg:    #F4F4F5;
 
   /* Interaction */
-  --focus-ring:    rgba(28, 60, 114, 0.40);
-  --selection-bg:  rgba(28, 60, 114, 0.07);
+  --focus-ring:    rgba(0, 0, 0, 0.28);
+  --selection-bg:  rgba(0, 0, 0, 0.05);
 
   /* Radius */
   --radius-xs: 3px;
@@ -198,6 +200,15 @@ body {
 }
 
 /* ── Ledger utility classes ─────────────────────────────────── */
+
+/* Frosted-glass card — translucent + blur, neutral border + soft shadow. */
+.frosted-card {
+  background: var(--surface-card);
+  -webkit-backdrop-filter: blur(14px) saturate(120%);
+  backdrop-filter: blur(14px) saturate(120%);
+  border: 1px solid rgba(0, 0, 0, 0.06);
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.05), 0 10px 30px rgba(0, 0, 0, 0.04);
+}
 
 /* Section label — the repeated typographic motif */
 .ledger-label {

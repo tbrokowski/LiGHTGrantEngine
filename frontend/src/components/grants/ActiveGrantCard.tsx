@@ -157,9 +157,8 @@ export default function ActiveGrantCard({ grant, onStageChange, onDelete, onDead
       )}
 
       <div
-        className="group flex items-stretch rounded-xl overflow-hidden transition-all duration-150"
+        className="group frosted-card flex items-stretch rounded-xl overflow-hidden transition-all duration-150"
         style={{
-          background: 'var(--surface-base)',
           border: '1px solid var(--rule-subtle)',
           borderLeft: `4px solid ${accentColor}`,
           boxShadow: '0 1px 3px rgba(0,0,0,0.06)',
