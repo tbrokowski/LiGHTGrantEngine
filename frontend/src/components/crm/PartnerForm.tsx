@@ -11,23 +11,23 @@ export interface PartnerFormData {
   linkedin_url: string;
   website: string;
   tags: string[];
-  project_types: string[];
-  status: string;
   notes: string;
   orcid?: string;
   google_scholar_id?: string;
   department?: string;
   country?: string;
   city?: string;
-  relationship_stage?: string;
 }
 
 interface PartnerFormProps {
-  initial?: Partial<PartnerFormData>;
+  initial?: Partial<PartnerFormData & { project_types: string[] }>;
   onSubmit: (data: PartnerFormData) => Promise<void>;
   onCancel?: () => void;
   submitLabel?: string;
 }
+
+const FROM = 'from:';
+const NEED = 'need:';
 
 export default function PartnerForm({ initial, onSubmit, onCancel, submitLabel = 'Save' }: PartnerFormProps) {
   const [name, setName] = useState(initial?.name ?? '');
@@ -42,30 +42,37 @@ export default function PartnerForm({ initial, onSubmit, onCancel, submitLabel =
   const [website, setWebsite] = useState(initial?.website ?? '');
   const [orcid, setOrcid] = useState(initial?.orcid ?? '');
   const [googleScholar, setGoogleScholar] = useState(initial?.google_scholar_id ?? '');
-  const [tags, setTags] = useState<string[]>(initial?.tags ?? []);
-  const [tagInput, setTagInput] = useState('');
-  const [projectTypes, setProjectTypes] = useState<string[]>(initial?.project_types ?? []);
-  const [ptInput, setPtInput] = useState('');
-  const [status, setStatus] = useState(initial?.status ?? 'active');
-  const [stage, setStage] = useState(initial?.relationship_stage ?? 'prospect');
+
+  // Tags are stored as one flat list on the partner, faceted by prefix:
+  //   from:<where they're from>   need:<what we need from them>   <general tag>
+  // Legacy project_types fold into the "need" facet.
+  const initialTags = initial?.tags ?? [];
+  const strip = (p: string) => (t: string) => t.slice(p.length).trim();
+  const [fromTags, setFromTags] = useState<string[]>(initialTags.filter(t => t.startsWith(FROM)).map(strip(FROM)));
+  const [needTags, setNeedTags] = useState<string[]>([
+    ...initialTags.filter(t => t.startsWith(NEED)).map(strip(NEED)),
+    ...(initial?.project_types ?? []),
+  ]);
+  const [otherTags, setOtherTags] = useState<string[]>(initialTags.filter(t => !t.startsWith(FROM) && !t.startsWith(NEED)));
+  const [fromInput, setFromInput] = useState('');
+  const [needInput, setNeedInput] = useState('');
+  const [otherInput, setOtherInput] = useState('');
+
   const [notes, setNotes] = useState(initial?.notes ?? '');
   const [saving, setSaving] = useState(false);
 
-  function addTag(e: React.KeyboardEvent) {
+  function commit(
+    e: React.KeyboardEvent,
+    input: string,
+    setInput: (v: string) => void,
+    list: string[],
+    setList: (v: string[]) => void,
+  ) {
     if (e.key === 'Enter' || e.key === ',') {
       e.preventDefault();
-      const val = tagInput.trim();
-      if (val && !tags.includes(val)) setTags([...tags, val]);
-      setTagInput('');
-    }
-  }
-
-  function addPt(e: React.KeyboardEvent) {
-    if (e.key === 'Enter' || e.key === ',') {
-      e.preventDefault();
-      const val = ptInput.trim();
-      if (val && !projectTypes.includes(val)) setProjectTypes([...projectTypes, val]);
-      setPtInput('');
+      const val = input.trim();
+      if (val && !list.includes(val)) setList([...list, val]);
+      setInput('');
     }
   }
 
@@ -73,12 +80,16 @@ export default function PartnerForm({ initial, onSubmit, onCancel, submitLabel =
     e.preventDefault();
     setSaving(true);
     try {
+      const tags = [
+        ...fromTags.map(t => `${FROM}${t}`),
+        ...needTags.map(t => `${NEED}${t}`),
+        ...otherTags,
+      ];
       await onSubmit({
         name, email, phone, organization, title,
-        linkedin_url: linkedin, website, tags, project_types: projectTypes,
-        status, notes, orcid: orcid || undefined, google_scholar_id: googleScholar || undefined,
+        linkedin_url: linkedin, website, tags,
+        notes, orcid: orcid || undefined, google_scholar_id: googleScholar || undefined,
         department: department || undefined, country: country || undefined, city: city || undefined,
-        relationship_stage: stage,
       });
     } finally { setSaving(false); }
   }
@@ -147,60 +158,53 @@ export default function PartnerForm({ initial, onSubmit, onCancel, submitLabel =
         </div>
       </div>
 
-      {/* Tags */}
+      {/* Tags — two guided facets + general */}
       <div>
-        <label className="block text-xs font-medium text-gray-700 mb-1">Expertise tags</label>
+        <label className="block text-xs font-medium text-gray-700 mb-1">Where they’re from</label>
         <div className="flex flex-wrap gap-1.5 mb-1.5">
-          {tags.map(t => (
-            <PartnerTagChip key={t} tag={t} onRemove={() => setTags(tags.filter(x => x !== t))} />
+          {fromTags.map(t => (
+            <PartnerTagChip key={t} tag={t} onRemove={() => setFromTags(fromTags.filter(x => x !== t))} />
           ))}
         </div>
         <input
-          value={tagInput}
-          onChange={e => setTagInput(e.target.value)}
-          onKeyDown={addTag}
-          placeholder="Type and press Enter to add tags…"
+          value={fromInput}
+          onChange={e => setFromInput(e.target.value)}
+          onKeyDown={e => commit(e, fromInput, setFromInput, fromTags, setFromTags)}
+          placeholder="e.g. EPFL, a conference, a mutual contact… — Enter to add"
           className={field}
         />
       </div>
 
-      {/* Project types */}
       <div>
-        <label className="block text-xs font-medium text-gray-700 mb-1">Project types</label>
+        <label className="block text-xs font-medium text-gray-700 mb-1">What we need from them</label>
         <div className="flex flex-wrap gap-1.5 mb-1.5">
-          {projectTypes.map(t => (
-            <PartnerTagChip key={t} tag={t} color="indigo" onRemove={() => setProjectTypes(projectTypes.filter(x => x !== t))} />
+          {needTags.map(t => (
+            <PartnerTagChip key={t} tag={t} color="indigo" onRemove={() => setNeedTags(needTags.filter(x => x !== t))} />
           ))}
         </div>
         <input
-          value={ptInput}
-          onChange={e => setPtInput(e.target.value)}
-          onKeyDown={addPt}
-          placeholder="Type and press Enter to add project types…"
+          value={needInput}
+          onChange={e => setNeedInput(e.target.value)}
+          onKeyDown={e => commit(e, needInput, setNeedInput, needTags, setNeedTags)}
+          placeholder="e.g. biostatistics, a letter of support, EU network… — Enter to add"
           className={field}
         />
       </div>
 
-      {/* Status + Stage */}
-      <div className="grid grid-cols-2 gap-3">
-        <div>
-          <label className="block text-xs font-medium text-gray-700 mb-1">Status</label>
-          <select value={status} onChange={e => setStatus(e.target.value)} className={field}>
-            <option value="active">Active</option>
-            <option value="prospect">Prospect</option>
-            <option value="inactive">Inactive</option>
-          </select>
+      <div>
+        <label className="block text-xs font-medium text-gray-700 mb-1">Other tags</label>
+        <div className="flex flex-wrap gap-1.5 mb-1.5">
+          {otherTags.map(t => (
+            <PartnerTagChip key={t} tag={t} color="gray" onRemove={() => setOtherTags(otherTags.filter(x => x !== t))} />
+          ))}
         </div>
-        <div>
-          <label className="block text-xs font-medium text-gray-700 mb-1">Relationship stage</label>
-          <select value={stage} onChange={e => setStage(e.target.value)} className={field}>
-            <option value="prospect">Prospect</option>
-            <option value="qualified">Qualified</option>
-            <option value="engaged">Engaged</option>
-            <option value="collaborating">Collaborating</option>
-            <option value="alumni">Alumni</option>
-          </select>
-        </div>
+        <input
+          value={otherInput}
+          onChange={e => setOtherInput(e.target.value)}
+          onKeyDown={e => commit(e, otherInput, setOtherInput, otherTags, setOtherTags)}
+          placeholder="Any other label — Enter to add"
+          className={field}
+        />
       </div>
 
       {/* Notes */}

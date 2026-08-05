@@ -5,7 +5,7 @@ import Link from 'next/link';
 import { Plus, ExternalLink, AlertTriangle, GitMerge } from 'lucide-react';
 import { partners as partnersApi } from '@/lib/api';
 import PartnerHero from '@/components/crm/PartnerHero';
-import PartnerTimeline from '@/components/crm/PartnerTimeline';
+import PartnerReminders from '@/components/crm/PartnerReminders';
 import PartnerMeetingCard from '@/components/crm/PartnerMeetingCard';
 import PartnerMeetingScheduler from '@/components/crm/PartnerMeetingScheduler';
 import PartnerDocuments from '@/components/crm/PartnerDocuments';
@@ -27,9 +27,6 @@ interface PartnerDetail {
   linkedin_url?: string;
   website?: string;
   tags: string[];
-  project_types: string[];
-  status: string;
-  relationship_stage: string;
   notes?: string;
   avatar_url?: string;
   department?: string;
@@ -44,22 +41,10 @@ interface PartnerDetail {
   owner_id?: string | null;
   owner_name?: string | null;
   task_count?: number;
-  updates: ContactUpdate[];
   grant_links: GrantLink[];
   meetings: Meeting[];
   documents: PartnerDocument[];
-  next_contact_date?: string;
   created_at?: string;
-}
-
-interface ContactUpdate {
-  id: string;
-  content: string;
-  update_type: string;
-  contact_date?: string;
-  next_contact_date?: string;
-  created_at?: string;
-  user_name?: string;
 }
 
 interface GrantLink {
@@ -97,7 +82,7 @@ interface PartnerDocument {
   created_at?: string;
 }
 
-type ActiveTab = 'timeline' | 'meetings' | 'research' | 'links' | 'insights' | 'edit';
+type ActiveTab = 'meetings' | 'research' | 'links' | 'insights' | 'edit';
 
 const RELATIONSHIP_OPTIONS = [
   'PI', 'co-I', 'collaborator', 'funder_contact', 'reviewer',
@@ -114,7 +99,7 @@ export default function PartnerDetailPage() {
   const { id } = useParams<{ id: string }>();
   const [partner, setPartner] = useState<PartnerDetail | null>(null);
   const [loading, setLoading] = useState(true);
-  const [activeTab, setActiveTab] = useState<ActiveTab>('timeline');
+  const [activeTab, setActiveTab] = useState<ActiveTab>('meetings');
   const [showMeetingScheduler, setShowMeetingScheduler] = useState(false);
   const [showLinkForm, setShowLinkForm] = useState(false);
   const [showEntitySearch, setShowEntitySearch] = useState(false);
@@ -152,12 +137,6 @@ export default function PartnerDetailPage() {
       .then(r => { if (r.data?.length > 0) setDuplicates(r.data); })
       .catch(() => {});
   }, [partner?.id]);
-
-  async function handleStageChange(stage: string) {
-    if (!partner) return;
-    await partnersApi.updateStage(partner.id, stage);
-    setPartner(p => p ? { ...p, relationship_stage: stage } : p);
-  }
 
   async function handleOwnerChange(ownerId: string | null, ownerName: string | null) {
     if (!partner) return;
@@ -222,7 +201,6 @@ export default function PartnerDetailPage() {
   const pastMeetings = partner.meetings.filter(m => m.completed_at || (m.scheduled_at && new Date(m.scheduled_at) < new Date()));
 
   const tabs: { key: ActiveTab; label: string }[] = [
-    { key: 'timeline', label: `Timeline (${partner.updates.length})` },
     { key: 'meetings', label: `Meetings (${partner.meetings.length})` },
     { key: 'research', label: `Research & CV (${partner.documents.length})` },
     { key: 'links', label: `Grant Links (${partner.grant_links.length})` },
@@ -261,11 +239,9 @@ export default function PartnerDetailPage() {
           <PartnerHero
             partner={{ ...partner, task_count: taskCount }}
             onEnrich={fetchPartner}
-            onLogInteraction={() => setActiveTab('timeline')}
             onScheduleMeeting={() => setShowMeetingScheduler(true)}
             onDraftEmail={() => setActiveTab('insights')}
             onAddToGrant={() => { setActiveTab('links'); setShowLinkForm(true); }}
-            onStageChange={handleStageChange}
             onOwnerChange={handleOwnerChange}
             onAddTask={() => {/* TaskPanel handles this inline */}}
           />
@@ -286,14 +262,6 @@ export default function PartnerDetailPage() {
             </div>
 
             <div className="p-5">
-              {activeTab === 'timeline' && (
-                <PartnerTimeline
-                  partnerId={id}
-                  updates={partner.updates}
-                  onRefresh={fetchPartner}
-                />
-              )}
-
               {activeTab === 'meetings' && (
                 <div>
                   <div className="flex items-center justify-between mb-4">
@@ -475,8 +443,6 @@ export default function PartnerDetailPage() {
                   partnerId={id}
                   partnerName={partner.name}
                   tags={partner.tags}
-                  lastContact={partner.updates[0]?.contact_date || partner.updates[0]?.created_at}
-                  nextContact={partner.next_contact_date}
                 />
               )}
 
@@ -519,6 +485,9 @@ export default function PartnerDetailPage() {
 
         {/* Right: Notes + Tasks + Info */}
         <div className="space-y-4">
+          {/* Reach-out reminders */}
+          <PartnerReminders partnerId={id} />
+
           {/* Tasks panel */}
           <TaskPanel
             partnerId={id}
@@ -549,10 +518,6 @@ export default function PartnerDetailPage() {
             <h3 className="text-sm font-semibold text-gray-700 mb-3">Overview</h3>
             <div className="space-y-2 text-xs text-gray-600">
               <div className="flex justify-between">
-                <span className="text-gray-400">Interactions</span>
-                <span className="font-medium">{partner.updates.length}</span>
-              </div>
-              <div className="flex justify-between">
                 <span className="text-gray-400">Meetings</span>
                 <span className="font-medium">{partner.meetings.length}</span>
               </div>
@@ -568,14 +533,6 @@ export default function PartnerDetailPage() {
                 <span className="text-gray-400">Open tasks</span>
                 <span className={`font-medium ${taskCount > 0 ? 'text-orange-600' : ''}`}>{taskCount}</span>
               </div>
-              {partner.next_contact_date && (
-                <div className="flex justify-between">
-                  <span className="text-gray-400">Next follow-up</span>
-                  <span className={`font-medium ${new Date(partner.next_contact_date) < new Date() ? 'text-red-600' : 'text-blue-700'}`}>
-                    {formatDate(partner.next_contact_date)}
-                  </span>
-                </div>
-              )}
               <div className="flex justify-between">
                 <span className="text-gray-400">Added</span>
                 <span>{formatDate(partner.created_at)}</span>
