@@ -187,6 +187,8 @@ export const opportunities = {
   removeFromShortlist: (id: string) => api.post(`/opportunities/${id}/remove-from-shortlist`),
   promoteToOrgShortlist: (id: string) => api.post(`/opportunities/${id}/promote-to-org-shortlist`),
   removeFromOrgShortlist: (id: string) => api.post(`/opportunities/${id}/remove-from-org-shortlist`),
+  dismiss: (id: string) => api.post(`/opportunities/${id}/dismiss`),
+  undismiss: (id: string) => api.delete(`/opportunities/${id}/dismiss`),
 };
 
 // ── Active Grants ────────────────────────────────────────────────────────────

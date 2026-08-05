@@ -377,6 +377,7 @@ async def list_opportunities(
     search: Optional[str] = None,
     priority_funder_group: Optional[str] = None,
     unread_only: bool = False,
+    include_dismissed: bool = False,
     page: int = Query(1, ge=1),
     page_size: int = Query(25, ge=1, le=200),
     sort_by: str = "relevance",
@@ -467,6 +468,17 @@ async def list_opportunities(
         )
         q = q.where(Opportunity.id.notin_(read_subq))
 
+    if not include_dismissed:
+        # Hide opportunities the user marked "Not interested".
+        dismissed_subq = (
+            select(UserOpportunityState.opportunity_id)
+            .where(
+                UserOpportunityState.user_id == current_user.id,
+                UserOpportunityState.dismissed_at.isnot(None),
+            )
+        )
+        q = q.where(Opportunity.id.notin_(dismissed_subq))
+
     count_q = select(func.count()).select_from(q.subquery())
     total = (await db.execute(count_q)).scalar()
 
@@ -500,6 +512,11 @@ async def list_opportunities(
         order_cols = [desc(sort_col) if sort_dir == "desc" else sort_col]
         diversified = False
 
+    # Per-opportunity personalized score (0–100), returned as `personal_fit` so the
+    # badge shows exactly the number the feed sorts by. Populated only on the
+    # personalized/diversified path; empty otherwise (badge falls back to org fit).
+    score_map: dict[str, int] = {}
+
     if diversified:
         # Produce a diversified, personalized order as a list of opportunity IDs,
         # then fetch only the requested page's full rows. The heavy vector math is
@@ -508,15 +525,19 @@ async def list_opportunities(
         # Redis so pagination is a cheap slice instead of a full recompute.
         import hashlib
         import asyncio
-        from app.services.relevance_ranker import diversify_order
+        from app.services.relevance_ranker import diversify_within_bands, personal_relevance
         from app.models.user_taste_profile import UserTasteProfile
 
         utp = await db.get(UserTasteProfile, current_user.id)
         user_emb = (utp.positive_embedding or utp.profile_embedding) if utp else None
+        user_neg_emb = utp.negative_embedding if utp else None
         personalize = bool(user_emb) and not semantic_ids
+        _fs = settings.fit_scoring
+        _fit_w, _sim_w, _neg_w = _fs.personal_fit_weight, _fs.personal_sim_weight, _fs.personal_neg_weight
 
         cache_sig = _json.dumps({
             "u": current_user.id, "inst": inst_id, "sort": sort_by, "unread": unread_only,
+            "dismissed": include_dismissed,
             "sem": bool(semantic_ids), "personal": bool(user_emb),
             "f": [funder, opportunity_type, geography, source_id, funder_org_id, funder_category,
                   award_min_filter, award_max_filter, priority, min_fit_score,
@@ -529,7 +550,14 @@ async def list_opportunities(
         try:
             cached = await redis.get(cache_key)
             if cached:
-                ranked_ids = _json.loads(cached)
+                payload = _json.loads(cached)
+                # New cache shape carries the per-opp scores; tolerate the old
+                # bare-list shape (scores just fall back to org fit that request).
+                if isinstance(payload, dict):
+                    ranked_ids = payload.get("ids")
+                    score_map = {k: int(v) for k, v in (payload.get("scores") or {}).items()}
+                else:
+                    ranked_ids = payload
         except Exception:
             ranked_ids = None
 
@@ -538,30 +566,63 @@ async def list_opportunities(
             # (500 = 20 pages of 25; keeps the once-per-cache-window MMR cheap).
             POOL = 500
             skey_col = func.coalesce(Opportunity.source_id, Opportunity.funder).label("skey")
-            cols = [Opportunity.id.label("oid"), relevance.label("org_fit"), skey_col]
+            cols = [
+                Opportunity.id.label("oid"), relevance.label("org_fit"), skey_col,
+                upcoming_first.label("upfirst"),
+            ]
             if personalize:
                 cols.append(Opportunity.embedding.cosine_distance(user_emb).label("pdist"))
+                if user_neg_emb is not None:
+                    cols.append(Opportunity.embedding.cosine_distance(user_neg_emb).label("ndist"))
             pool_q = q.with_only_columns(*cols).order_by(*order_cols).limit(POOL)
             pool = (await db.execute(pool_q)).all()
+            _has_neg = personalize and user_neg_emb is not None
             # Plain tuples so the CPU-bound rank/diversify can run off the event loop.
+            # (oid, org_fit, skey, upfirst, pdist, ndist)
             pool_data = [
-                (r.oid, float(r.org_fit or 0), r.skey or "?", float(r.pdist) if personalize else 0.0)
+                (
+                    r.oid, float(r.org_fit or 0), r.skey or "?", int(r.upfirst or 0),
+                    float(r.pdist) if personalize else 0.0,
+                    float(r.ndist) if _has_neg else 1.0,
+                )
                 for r in pool
             ]
 
-            def _rank(data: list[tuple]) -> list[str]:
-                if personalize:
-                    data = sorted(
-                        data,
-                        key=lambda t: 0.7 * (t[1] / 100.0) + 0.3 * max(0.0, 1.0 - t[3]),
-                        reverse=True,
+            def _rank(data: list[tuple]) -> tuple[list[str], dict[str, int]]:
+                # Single personal-relevance score = what we sort by AND show.
+                # (oid, skey, upfirst, score)
+                scored = [
+                    (
+                        t[0], t[2], t[3],
+                        personal_relevance(
+                            t[1],
+                            max(0.0, 1.0 - t[4]),
+                            max(0.0, 1.0 - t[5]),
+                            fit_weight=_fit_w, sim_weight=_sim_w, neg_weight=_neg_w,
+                            has_user_signal=personalize,
+                        ),
                     )
-                order = diversify_order(data, key_fn=lambda t: t[2])
-                return [data[i][0] for i in order]
+                    for t in data
+                ]
+                # Keep actionable (upcoming / no-deadline) items ahead of past-deadline
+                # ones, then rank each group strictly by personal score and diversify
+                # sources only within score bands (so a high-score item is never
+                # demoted below a materially lower-score one).
+                ordered: list[tuple] = []
+                for grp in (0, 1):
+                    members = [t for t in scored if t[2] == grp]
+                    members.sort(key=lambda t: t[3], reverse=True)
+                    order = diversify_within_bands(
+                        members, key_fn=lambda t: t[1], score_fn=lambda t: t[3], band=5.0
+                    )
+                    ordered.extend(members[i] for i in order)
+                return [t[0] for t in ordered], {t[0]: t[3] for t in ordered}
 
-            ranked_ids = await asyncio.to_thread(_rank, pool_data)
+            ranked_ids, score_map = await asyncio.to_thread(_rank, pool_data)
             try:
-                await redis.set(cache_key, _json.dumps(ranked_ids), ex=120)
+                await redis.set(
+                    cache_key, _json.dumps({"ids": ranked_ids, "scores": score_map}), ex=120
+                )
             except Exception:
                 pass
 
@@ -612,6 +673,7 @@ async def list_opportunities(
                 is_read=read_map.get(opp.id, False),
                 io=io,
                 is_personal_shortlisted=personal_map.get(opp.id, False),
+                personal_fit=score_map.get(opp.id),
             )
             for opp, io in rows
         ]
@@ -622,6 +684,7 @@ async def list_opportunities(
                 is_read=read_map.get(opp.id, False),
                 io=None,
                 is_personal_shortlisted=personal_map.get(opp.id, False),
+                personal_fit=score_map.get(opp.id),
             )
             for opp in opps
         ]
@@ -1942,7 +2005,9 @@ async def add_to_shortlist(
             saved_at=now,
         ))
     await db.commit()
+    invalidate_feed_cache(current_user.id)
     _queue_taste_profile_recompute(current_user.institution_id)
+    _queue_user_taste_recompute(current_user.id)
     return {"id": opp_id, "shortlisted": True}
 
 
@@ -1963,8 +2028,62 @@ async def remove_from_shortlist(
     if state:
         state.saved_at = None
         await db.commit()
+        invalidate_feed_cache(current_user.id)
         _queue_taste_profile_recompute(current_user.institution_id)
+        _queue_user_taste_recompute(current_user.id)
     return {"id": opp_id, "shortlisted": False}
+
+
+@router.post("/{opp_id}/dismiss")
+async def dismiss_opportunity(
+    opp_id: str,
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    """Mark an opportunity "Not interested": hides it from the feed and feeds it
+    as a negative signal into the user's taste profile."""
+    await _get_opp_or_404(opp_id, db)
+    now = datetime.now(timezone.utc)
+    existing = (await db.execute(
+        select(UserOpportunityState).where(
+            UserOpportunityState.user_id == current_user.id,
+            UserOpportunityState.opportunity_id == opp_id,
+        )
+    )).scalar_one_or_none()
+    if existing:
+        existing.dismissed_at = now
+    else:
+        db.add(UserOpportunityState(
+            user_id=current_user.id,
+            opportunity_id=opp_id,
+            dismissed_at=now,
+        ))
+    await db.commit()
+    invalidate_feed_cache(current_user.id)
+    _queue_user_taste_recompute(current_user.id)
+    return {"id": opp_id, "dismissed": True}
+
+
+@router.delete("/{opp_id}/dismiss")
+async def undismiss_opportunity(
+    opp_id: str,
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    """Undo "Not interested" — restore the opportunity to the feed."""
+    await _get_opp_or_404(opp_id, db)
+    state = (await db.execute(
+        select(UserOpportunityState).where(
+            UserOpportunityState.user_id == current_user.id,
+            UserOpportunityState.opportunity_id == opp_id,
+        )
+    )).scalar_one_or_none()
+    if state and state.dismissed_at is not None:
+        state.dismissed_at = None
+        await db.commit()
+        invalidate_feed_cache(current_user.id)
+        _queue_user_taste_recompute(current_user.id)
+    return {"id": opp_id, "dismissed": False}
 
 
 @router.post("/{opp_id}/promote-to-org-shortlist")
@@ -2012,6 +2131,18 @@ def _queue_taste_profile_recompute(institution_id: str | None) -> None:
     from app.workers.celery_app import celery_app
     celery_app.send_task(
         "app.workers.taste_profile_tasks.compute_taste_profile", args=[institution_id]
+    )
+
+
+def _queue_user_taste_recompute(user_id: str | None) -> None:
+    """Queue a per-user taste recompute after the user's own positive (saved /
+    started) or negative (dismissed) signal set changes, so their personalized
+    feed reflects the action on the next request."""
+    if not user_id:
+        return
+    from app.workers.celery_app import celery_app
+    celery_app.send_task(
+        "app.workers.taste_profile_tasks.compute_user_taste_profile", args=[user_id]
     )
 
 
@@ -2076,6 +2207,7 @@ def _opp_summary(
     io: InstitutionOpportunity | None = None,
     is_personal_shortlisted: bool = False,
     shortlist_category_id: str | None = None,
+    personal_fit: int | None = None,
 ) -> dict:
     fit_score = io.fit_score if io else o.fit_score
     priority = io.priority if io else o.priority
@@ -2086,6 +2218,7 @@ def _opp_summary(
         "opportunity_type": o.opportunity_type,
         "deadline": str(o.deadline) if o.deadline else None,
         "fit_score": fit_score, "priority": priority,
+        "personal_fit": personal_fit,
         "status": status, "thematic_areas": o.thematic_areas,
         "geography": o.geography,
         "award_min": o.award_min, "award_max": o.award_max, "currency": o.currency,

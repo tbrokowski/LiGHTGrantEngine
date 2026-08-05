@@ -4,7 +4,7 @@ import Link from 'next/link';
 import FunderLogo from './FunderLogo';
 import OpportunityActions, { type OpportunityActionHandlers } from './OpportunityActions';
 import OpportunityTypeBadge from './OpportunityTypeBadge';
-import { formatDate, formatAward, type Opportunity } from './types';
+import { formatDate, formatAward, effectiveFit, effectivePriority, type Opportunity } from './types';
 
 interface OpportunityRowProps extends OpportunityActionHandlers {
   opp: Opportunity;
@@ -105,7 +105,7 @@ export default function OpportunityRow({
   const unread = !opp.is_read;
   const shortlisted = opp.is_personal_shortlisted || opp.is_on_org_shortlist;
   const prominent = unread || shortlisted;
-  const tierAccent = TIER_ACCENT[opp.priority ?? ''] ?? 'transparent';
+  const tierAccent = TIER_ACCENT[effectivePriority(opp) ?? ''] ?? 'transparent';
   // Read toggle moves to the left; everything else (view link, etc.) stays right.
   const { onToggleRead, ...restHandlers } = handlers;
 
@@ -184,7 +184,7 @@ export default function OpportunityRow({
       </td>
       <td className="px-3 py-3 text-right w-16">
         <div className="flex items-center justify-end gap-2">
-          <MatchScorePill priority={opp.priority} fitScore={opp.fit_score} />
+          <MatchScorePill priority={effectivePriority(opp)} fitScore={effectiveFit(opp)} />
           <OpportunityActions opp={opp} mode={mode} {...restHandlers} />
         </div>
       </td>

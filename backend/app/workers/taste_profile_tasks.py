@@ -159,11 +159,13 @@ def compute_user_taste_profile(self, user_id: str) -> dict:
     from app.models.user_opportunity_state import UserOpportunityState
     from app.models.user_taste_profile import UserTasteProfile
     from app.models.opportunity import Opportunity
+    from app.models.active_grant import ActiveGrant
     from app.schemas.grant_profile import UserGrantPreferences
 
     engine = get_sync_engine()
     with Session(engine) as db:
-        rows = db.execute(
+        # Positives: opportunities the user explicitly saved/pinned…
+        saved_rows = db.execute(
             select(Opportunity.embedding)
             .join(UserOpportunityState, UserOpportunityState.opportunity_id == Opportunity.id)
             .where(
@@ -172,7 +174,28 @@ def compute_user_taste_profile(self, user_id: str) -> dict:
                 (UserOpportunityState.saved_at.isnot(None)) | (UserOpportunityState.pinned.is_(True)),
             )
         ).all()
-        positive = [emb for (emb,) in rows if emb is not None]
+        # …plus opportunities the user actually started as grants (strong intent).
+        grant_rows = db.execute(
+            select(Opportunity.embedding)
+            .join(ActiveGrant, ActiveGrant.opportunity_id == Opportunity.id)
+            .where(
+                ActiveGrant.created_by_id == user_id,
+                Opportunity.embedding.isnot(None),
+            )
+        ).all()
+        positive = [emb for (emb,) in [*saved_rows, *grant_rows] if emb is not None]
+
+        # Negatives: opportunities the user dismissed ("Not interested").
+        neg_rows = db.execute(
+            select(Opportunity.embedding)
+            .join(UserOpportunityState, UserOpportunityState.opportunity_id == Opportunity.id)
+            .where(
+                UserOpportunityState.user_id == user_id,
+                Opportunity.embedding.isnot(None),
+                UserOpportunityState.dismissed_at.isnot(None),
+            )
+        ).all()
+        negative = [emb for (emb,) in neg_rows if emb is not None]
 
         user = db.get(User, user_id)
         prefs = UserGrantPreferences.from_dict((user.grant_preferences if user else None) or {})
@@ -183,12 +206,14 @@ def compute_user_taste_profile(self, user_id: str) -> dict:
             profile = UserTasteProfile(user_id=user_id)
             db.add(profile)
         profile.positive_embedding = _centroid(positive)
+        profile.negative_embedding = _centroid(negative)
         profile.profile_embedding = _embed_text(pref_text)
         profile.positive_count = len(positive)
+        profile.negative_count = len(negative)
         profile.computed_at = datetime.now(timezone.utc)
         db.commit()
 
-    return {"user_id": user_id, "positive_count": len(positive)}
+    return {"user_id": user_id, "positive_count": len(positive), "negative_count": len(negative)}
 
 
 @celery_app.task(name="app.workers.taste_profile_tasks.compute_all_user_taste_profiles")
@@ -202,7 +227,11 @@ def compute_all_user_taste_profiles() -> dict:
         active = {
             row[0] for row in db.execute(
                 select(UserOpportunityState.user_id)
-                .where((UserOpportunityState.saved_at.isnot(None)) | (UserOpportunityState.pinned.is_(True)))
+                .where(
+                    (UserOpportunityState.saved_at.isnot(None))
+                    | (UserOpportunityState.pinned.is_(True))
+                    | (UserOpportunityState.dismissed_at.isnot(None))
+                )
                 .distinct()
             ).all()
         }

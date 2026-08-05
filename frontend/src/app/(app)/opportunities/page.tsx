@@ -373,11 +373,24 @@ export default function OpportunitiesPage() {
     }
   }
 
+  async function handleDismiss(id: string) {
+    // Optimistically remove; teach the recommender in the background.
+    setQueue(prev => prev.filter(o => o.id !== id));
+    try {
+      await opportunities.dismiss(id);
+      refreshCounts();
+    } catch {
+      // Re-load on failure so the row reappears rather than silently vanishing.
+      loadQueue(filters);
+    }
+  }
+
   const actionHandlers = {
     onToggleBookmark: handleToggleBookmark,
     onToggleRead: handleToggleRead,
     onPromoteToOrg: handlePromoteToOrg,
     onStartGrant: handleStartGrant,
+    onDismiss: handleDismiss,
   };
 
   function renderTableBody(listItems: Opportunity[]) {

@@ -57,6 +57,10 @@ class AIConfig(BaseModel):
 
 class FitScoringConfig(BaseModel):
     background_llm: bool = False  # use LLM fit_scorer for every new opportunity (slower, costs tokens)
+    # Personalized feed ranking weights (see relevance_ranker.personal_relevance).
+    personal_fit_weight: float = 0.5   # weight on the org fit_score
+    personal_sim_weight: float = 0.5   # weight on similarity to the user's positive taste
+    personal_neg_weight: float = 0.35  # penalty for similarity to dismissed ("not interested") taste
     thematic_alignment: int = 35
     eligibility_match: int = 20
     deadline_feasibility: int = 10

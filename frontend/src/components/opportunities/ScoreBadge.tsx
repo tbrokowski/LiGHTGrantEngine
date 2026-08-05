@@ -19,19 +19,32 @@ const TIER_LABELS: Record<string, string> = {
   low_fit: 'Low Fit',
 };
 
+function tierFromScore(score: number): string {
+  if (score >= 75) return 'high';
+  if (score >= 45) return 'medium';
+  return 'low';
+}
+
 export default function ScoreBadge({
   priority,
   fitScore,
+  personalFit,
 }: {
   priority: string | null;
   fitScore?: number | null;
+  /** Personalized "relevance to you" score (0–100). When present it drives both
+   *  the number shown AND the tier, so the badge matches the feed's sort order. */
+  personalFit?: number | null;
 }) {
-  if (!priority) return <span className="text-gray-300">—</span>;
-  const style = TIER_STYLES[priority] ?? 'bg-gray-100 text-gray-500 border border-gray-200';
-  const label = TIER_LABELS[priority] ?? priority.replace(/_/g, ' ');
+  // Prefer the personalized score so the number equals the sort key.
+  const score = personalFit != null ? personalFit : fitScore;
+  const tier = personalFit != null ? tierFromScore(personalFit) : priority;
+  if (!tier) return <span className="text-gray-300">—</span>;
+  const style = TIER_STYLES[tier] ?? 'bg-gray-100 text-gray-500 border border-gray-200';
+  const label = TIER_LABELS[tier] ?? tier.replace(/_/g, ' ');
   return (
     <span className={`inline-flex items-center justify-center px-2 h-6 rounded text-xs font-semibold ${style}`}>
-      {label}{fitScore != null ? ` · ${Math.round(fitScore)}` : ''}
+      {label}{score != null ? ` · ${Math.round(score)}` : ''}
     </span>
   );
 }

@@ -8,6 +8,8 @@ export interface OpportunityActionHandlers {
   onStartGrant?: (id: string) => void | Promise<void>;
   onToggleRead?: (id: string, isRead: boolean) => void | Promise<void>;
   onPromoteToOrg?: (id: string, isOnOrg: boolean) => void | Promise<void>;
+  /** Mark "Not interested": hides the opp and teaches the recommender. */
+  onDismiss?: (id: string) => void | Promise<void>;
 }
 
 interface OpportunityActionsProps extends OpportunityActionHandlers {
@@ -24,6 +26,7 @@ export default function OpportunityActions({
   onStartGrant,
   onToggleRead,
   onPromoteToOrg,
+  onDismiss,
 }: OpportunityActionsProps) {
   const [busy, setBusy] = useState<string | null>(null);
 
@@ -104,6 +107,24 @@ export default function OpportunityActions({
     </a>
   ) : null;
 
+  const dismissBtn = onDismiss ? (
+    <button
+      onClick={e => { e.stopPropagation(); run('dismiss', () => onDismiss(opp.id)); }}
+      disabled={!!busy}
+      title="Not interested — hide this and improve my recommendations"
+      className={`${btnBase} flex items-center gap-1 text-gray-400 border-gray-200 hover:text-red-600 hover:border-red-300`}
+    >
+      {busy === 'dismiss' ? (
+        <span className="w-2 h-2 rounded-full bg-current animate-pulse inline-block" />
+      ) : (
+        <svg className="w-3.5 h-3.5" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth={2}>
+          <path d="M4 4l8 8M12 4l-8 8" strokeLinecap="round" />
+        </svg>
+      )}
+      {mode === 'focus' ? 'Not interested' : ''}
+    </button>
+  ) : null;
+
   const startGrantBtn = onStartGrant ? (
     <button
       onClick={e => { e.stopPropagation(); run('grant', () => onStartGrant(opp.id)); }}
@@ -156,7 +177,8 @@ export default function OpportunityActions({
   return (
     <div className={`flex items-center gap-1.5 ${isTable ? 'w-full' : 'flex-wrap'} ${className}`}>
       {mode === 'queue' && (
-        <div className="ml-auto flex items-center shrink-0">
+        <div className="ml-auto flex items-center gap-1 shrink-0">
+          {dismissBtn}
           {readToggle}
         </div>
       )}
@@ -196,6 +218,7 @@ export default function OpportunityActions({
           {bookmark}
           {readToggle}
           {viewLink}
+          {mode === 'focus' && dismissBtn}
           {mode === 'focus' && startGrantBtn}
         </>
       )}
