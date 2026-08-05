@@ -446,11 +446,11 @@ export default function OpportunitiesPage() {
 
         {/* ── Tabs + controls ─────────────────────────── */}
         <div
-          className="px-7 flex items-center justify-between shrink-0"
+          className="px-7 py-2.5 flex flex-wrap items-center justify-between gap-x-4 gap-y-2 shrink-0"
           style={{ borderBottom: '1px solid var(--rule-subtle)', background: 'var(--surface-raised)' }}
         >
           <div
-            className="flex items-center overflow-hidden my-2.5"
+            className="flex items-center overflow-hidden"
             style={{ border: '1px solid var(--rule-subtle)', borderRadius: 'var(--radius-sm)' }}
           >
             {([
@@ -486,7 +486,7 @@ export default function OpportunitiesPage() {
             })}
           </div>
 
-          <div className="flex items-center gap-2 py-2.5">
+          <div className="flex flex-wrap items-center gap-2">
             {/* Sources directory toggle */}
             <button
               onClick={() => setShowSources(v => !v)}
