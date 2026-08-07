@@ -1,5 +1,5 @@
 'use client';
-import { useEffect, useCallback, useRef, useState } from 'react';
+import { useEffect, useCallback, useMemo, useRef, useState } from 'react';
 import { useEditor, EditorContent } from '@tiptap/react';
 import { Node, type CommandProps, type RawCommands } from '@tiptap/core';
 
@@ -29,7 +29,7 @@ import {
   TableIcon, ImageIcon, Link2, Download,
 } from 'lucide-react';
 import { api, grants } from '@/lib/api';
-import { InlineFontStyles } from './editor-extensions';
+import { InlineFontStyles, CommentMark, type CommentEditorApi } from './editor-extensions';
 import { FontFamilySelect, FontSizeSelect, ColorButton, HighlightButton } from './EditorFormatControls';
 
 // ── Page Break node ────────────────────────────────────────────────────────────
@@ -90,9 +90,32 @@ interface SingleDocEditorProps {
   onActiveSectionChange?: (sectionTitle: string) => void;
   /** Grant ID — needed for image upload. If omitted, images are embedded as base64. */
   grantId?: string;
+  /** Receives the imperative comment API when the editor is ready (and null on unmount). */
+  onEditorApi?: (api: CommentEditorApi | null) => void;
+  /** Fired when a highlighted comment anchor is clicked in the document. */
+  onAnchorClick?: (commentId: string) => void;
 }
 
 const DEBOUNCE_MS = 600;
+
+/** Find the first single-text-node occurrence of `query`; returns doc positions. */
+function findTextRange(
+  editor: NonNullable<ReturnType<typeof useEditor>>,
+  query: string,
+): { from: number; to: number } | null {
+  const q = (query || '').trim();
+  if (!q) return null;
+  let found: { from: number; to: number } | null = null;
+  editor.state.doc.descendants((node, pos) => {
+    if (found) return false;
+    if (node.isText && node.text) {
+      const i = node.text.indexOf(q);
+      if (i >= 0) { found = { from: pos + i, to: pos + i + q.length }; return false; }
+    }
+    return true;
+  });
+  return found;
+}
 
 function extractHeadings(editor: ReturnType<typeof useEditor>): string[] {
   if (!editor) return [];
@@ -128,9 +151,16 @@ export default function SingleDocEditor({
   onSelectionChange,
   onActiveSectionChange,
   grantId,
+  onEditorApi,
+  onAnchorClick,
 }: SingleDocEditorProps) {
   const changeTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const lastHtml = useRef(documentHtml);
+  // Last non-empty selection range — used to anchor a new comment mark even after
+  // focus moves to the comment box (which doesn't change ProseMirror's selection).
+  const lastSelRange = useRef<{ from: number; to: number } | null>(null);
+  const onAnchorClickRef = useRef(onAnchorClick);
+  useEffect(() => { onAnchorClickRef.current = onAnchorClick; }, [onAnchorClick]);
   const [selectionStats, setSelectionStats] = useState<{ words: number; chars: number } | null>(null);
   const [downloadOpen, setDownloadOpen] = useState(false);
   const [downloading, setDownloading] = useState(false);
@@ -193,9 +223,17 @@ export default function SingleDocEditor({
       TextStyle,
       Color,
       InlineFontStyles,
+      CommentMark,
     ],
     content: documentHtml || '',
     editorProps: {
+      handleClick(view, pos) {
+        const $pos = view.state.doc.resolve(pos);
+        const mark = $pos.marks().find((m) => m.type.name === 'comment');
+        const id = mark?.attrs?.commentId as string | undefined;
+        if (id && onAnchorClickRef.current) onAnchorClickRef.current(id);
+        return false;  // don't swallow — let the cursor place normally
+      },
       attributes: {
         class: [
           'prose prose-sm max-w-none focus:outline-none',
@@ -275,6 +313,7 @@ export default function SingleDocEditor({
     onSelectionUpdate: ({ editor: ed }) => {
       const { from, to } = ed.state.selection;
       if (from !== to) {
+        lastSelRange.current = { from, to };
         const selected = ed.state.doc.textBetween(from, to, ' ');
         onSelectionChange(selected);
         const selWords = selected.trim() ? selected.trim().split(/\s+/).filter(Boolean).length : 0;
@@ -304,6 +343,52 @@ export default function SingleDocEditor({
   useEffect(() => {
     return () => { if (changeTimer.current) clearTimeout(changeTimer.current); };
   }, []);
+
+  // Imperative comment API for the CommentsPanel (highlight / locate / focus).
+  const commentApi = useMemo<CommentEditorApi>(() => ({
+    applyCommentMark: (id) => {
+      const range = lastSelRange.current;
+      if (!editor || !range || range.from === range.to) return;
+      editor.chain().setTextSelection(range).setMark('comment', { commentId: id }).run();
+    },
+    removeCommentMark: (id) => {
+      if (!editor) return;
+      const ranges: { from: number; to: number }[] = [];
+      editor.state.doc.descendants((node, pos) => {
+        if (node.isText && node.marks.some((m) => m.type.name === 'comment' && m.attrs.commentId === id)) {
+          ranges.push({ from: pos, to: pos + node.nodeSize });
+        }
+        return true;
+      });
+      if (!ranges.length) return;
+      let chain = editor.chain();
+      for (const r of ranges) chain = chain.setTextSelection(r).unsetMark('comment');
+      chain.run();
+    },
+    focusComment: (id) => {
+      if (!editor) return;
+      const el = editor.view.dom.querySelector(`span[data-comment-id="${id}"]`) as HTMLElement | null;
+      if (!el) return;
+      el.scrollIntoView({ behavior: 'smooth', block: 'center' });
+      el.classList.add('comment-highlight--active');
+      window.setTimeout(() => el.classList.remove('comment-highlight--active'), 1600);
+    },
+    locateAndMark: (id, anchorText) => {
+      if (!editor) return false;
+      // Already marked? just succeed.
+      if (editor.view.dom.querySelector(`span[data-comment-id="${id}"]`)) return true;
+      const range = findTextRange(editor, anchorText);
+      if (!range) return false;
+      editor.chain().setTextSelection(range).setMark('comment', { commentId: id }).setTextSelection(range.to).run();
+      return true;
+    },
+  }), [editor]);
+
+  useEffect(() => {
+    if (!editor || !onEditorApi) return;
+    onEditorApi(commentApi);
+    return () => onEditorApi(null);
+  }, [editor, commentApi, onEditorApi]);
 
   const ToolbarButton = useCallback(({
     onClick, active, title, children,

@@ -689,6 +689,72 @@ async def run_review(
     return report
 
 
+@router.post("/{grant_id}/writing/expert-review", status_code=202)
+async def start_expert_review(
+    grant_id: str,
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    """Enqueue the strict expert reviewer — reads the whole draft, pulls funder
+    priorities, and writes anchored critique comments into the comments panel."""
+    grant = await _get_grant(grant_id, db)
+    if not (grant.editor_document or "").strip():
+        raise HTTPException(400, "No draft document to review")
+    if getattr(grant, "ai_review_status", "idle") == "running":
+        return JSONResponse(status_code=202, content={"status": "running", "message": "A review is already in progress"})
+
+    grant.ai_review_status = "running"
+    grant.ai_review_error = None
+    await db.commit()
+
+    celery_app.send_task(
+        "app.workers.grant_writing_tasks.run_expert_review_task",
+        args=[grant_id, current_user.id],
+        queue="call_analysis",
+    )
+    return JSONResponse(status_code=202, content={"status": "running", "message": "Expert review started"})
+
+
+@router.get("/{grant_id}/writing/expert-review/status")
+async def expert_review_status(
+    grant_id: str,
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    grant = await _get_grant(grant_id, db)
+    return {
+        "status": getattr(grant, "ai_review_status", "idle"),
+        "error": getattr(grant, "ai_review_error", None),
+        "summary": getattr(grant, "ai_review_summary", None),
+    }
+
+
+@router.post("/{grant_id}/writing/expert-review/clear")
+async def clear_expert_review(
+    grant_id: str,
+    document_id: str = "draft",
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    """Remove all AI-reviewer comments for the document and reset the summary."""
+    from sqlalchemy import delete as _delete
+    from app.models.comment import Comment
+
+    grant = await _get_grant(grant_id, db)
+    await db.execute(
+        _delete(Comment).where(
+            Comment.entity_type == "grant",
+            Comment.entity_id == grant_id,
+            Comment.document_id == document_id,
+            Comment.source == "ai_reviewer",
+        )
+    )
+    grant.ai_review_summary = None
+    grant.ai_review_status = "idle"
+    await db.commit()
+    return {"ok": True}
+
+
 @router.post("/{grant_id}/writing/citations/search")
 async def search_citations_endpoint(
     grant_id: str,

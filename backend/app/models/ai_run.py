@@ -25,6 +25,7 @@ class AgentType(str, Enum):
     FIT_SCORER = "fit_scorer"
     CALL_SUMMARIZER = "call_summarizer"
     PROFILE_AUGMENTER = "profile_augmenter"
+    EXPERT_REVIEWER = "expert_reviewer"
 
 
 class AIRunStatus(str, Enum):

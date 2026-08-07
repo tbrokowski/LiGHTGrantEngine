@@ -30,6 +30,9 @@ class CommentOut(BaseModel):
     anchor_text: Optional[str] = None
     parent_id: Optional[str] = None
     resolved: bool
+    mentions: list = []
+    source: Optional[str] = None
+    severity: Optional[str] = None
     google_doc_comment_id: Optional[str] = None
     document_id: str = "draft"
     created_at: datetime
@@ -44,6 +47,7 @@ class CommentCreate(BaseModel):
     anchor_text: Optional[str] = None
     parent_id: Optional[str] = None
     document_id: str = "draft"
+    mentions: list[str] = []
 
 
 class CommentUpdate(BaseModel):
@@ -114,6 +118,7 @@ async def create_comment(
         anchor_text=body.anchor_text,
         parent_id=body.parent_id,
         resolved=False,
+        mentions=body.mentions or [],
         document_id=body.document_id,
     )
 
@@ -138,6 +143,29 @@ async def create_comment(
     db.add(comment)
     await db.commit()
     await db.refresh(comment)
+
+    # Notify @mentioned teammates (in-app), skipping the author.
+    mentioned = [uid for uid in (body.mentions or []) if uid and uid != current_user.id]
+    if mentioned:
+        try:
+            from app.models.notification import Notification, NotificationType, NotificationChannel, NotificationStatus
+            preview = (body.text or "")[:140]
+            for uid in set(mentioned):
+                db.add(Notification(
+                    id=str(uuid.uuid4()),
+                    user_id=uid,
+                    notification_type=NotificationType.COMMENT_MENTION.value,
+                    entity_type="grant",
+                    entity_id=grant_id,
+                    message=f"{current_user.name or 'Someone'} mentioned you in a comment: {preview}",
+                    channel=NotificationChannel.IN_APP.value,
+                    status=NotificationStatus.SENT.value,
+                ))
+            await db.commit()
+        except Exception:
+            import logging
+            logging.getLogger(__name__).warning("Failed to create mention notifications", exc_info=True)
+
     return comment
 
 

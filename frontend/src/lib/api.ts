@@ -718,6 +718,9 @@ export interface GrantComment {
   anchor_text?: string | null;
   parent_id?: string | null;
   resolved: boolean;
+  mentions?: string[];
+  source?: string | null;
+  severity?: string | null;
   google_doc_comment_id?: string | null;
   document_id: string;
   created_at: string;
@@ -728,7 +731,7 @@ export const grantComments = {
   /** document_id defaults to "draft" — the main editor. Pass a tab id for new documents. */
   list: (grantId: string, documentId = 'draft') =>
     api.get<GrantComment[]>(`/grants/${grantId}/comments`, { params: { document_id: documentId } }),
-  add: (grantId: string, data: { text: string; anchor_text?: string; parent_id?: string; document_id?: string }) =>
+  add: (grantId: string, data: { text: string; anchor_text?: string; parent_id?: string; document_id?: string; mentions?: string[] }) =>
     api.post<GrantComment>(`/grants/${grantId}/comments`, { ...data, document_id: data.document_id ?? 'draft' }),
   update: (grantId: string, commentId: string, data: { text?: string; resolved?: boolean }) =>
     api.patch<GrantComment>(`/grants/${grantId}/comments/${commentId}`, data),
@@ -738,6 +741,14 @@ export const grantComments = {
     api.post<{ comments: GrantComment[]; sync_error?: string | null; drive_scope_error?: boolean }>(
       `/grants/${grantId}/comments/sync`, null, { params: { document_id: documentId } }
     ),
+  // Expert reviewer (AI): reads the whole draft + funder priorities and writes anchored comments.
+  startExpertReview: (grantId: string) => api.post(`/grants/${grantId}/writing/expert-review`),
+  expertReviewStatus: (grantId: string) =>
+    api.get<{ status: string; error?: string | null; summary?: Record<string, unknown> | null }>(
+      `/grants/${grantId}/writing/expert-review/status`
+    ),
+  clearAiReview: (grantId: string, documentId = 'draft') =>
+    api.post(`/grants/${grantId}/writing/expert-review/clear`, null, { params: { document_id: documentId } }),
 };
 
 // ── Streaming AI chat (uses native fetch for SSE) ─────────────────────────────

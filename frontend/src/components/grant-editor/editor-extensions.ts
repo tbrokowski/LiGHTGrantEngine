@@ -1,4 +1,4 @@
-import { Extension } from '@tiptap/core';
+import { Extension, Mark, mergeAttributes } from '@tiptap/core';
 
 // Command types for the font-family / font-size setters below.
 declare module '@tiptap/core' {
@@ -36,6 +36,51 @@ export const HIGHLIGHT_COLORS: string[] = [
   '#fff2cc', '#fce5cd', '#d9ead3', '#d0e0e3', '#cfe2f3', '#d9d2e9',
   '#ead1dc', '#fce8b2', '#f4cccc', '#ffff00',
 ];
+
+// ── Comment mark ─────────────────────────────────────────────────────────────
+// Wraps a range in <span data-comment-id="…" class="comment-highlight"> so a
+// comment's anchor is highlighted in the document, persists in the saved HTML,
+// and can be located/clicked. Overlaps with formatting marks (excludes: '').
+export const CommentMark = Mark.create({
+  name: 'comment',
+  inclusive: false,
+  excludes: '',
+  addAttributes() {
+    return {
+      commentId: {
+        default: null,
+        parseHTML: (el: HTMLElement) => el.getAttribute('data-comment-id'),
+        renderHTML: (attrs: Record<string, unknown>) =>
+          attrs.commentId ? { 'data-comment-id': attrs.commentId } : {},
+      },
+    };
+  },
+  parseHTML() {
+    return [{ tag: 'span[data-comment-id]' }];
+  },
+  renderHTML({ HTMLAttributes }) {
+    return ['span', mergeAttributes(HTMLAttributes, { class: 'comment-highlight' }), 0];
+  },
+});
+
+/** Imperative handle the CommentsPanel uses to drive the editor. */
+export interface CommentEditorApi {
+  /** Mark the last non-empty selection with this comment id. */
+  applyCommentMark: (id: string) => void;
+  /** Remove the comment mark carrying this id. */
+  removeCommentMark: (id: string) => void;
+  /** Scroll the highlight for this id into view and flash it. */
+  focusComment: (id: string) => void;
+  /** Find `anchorText` in the doc and mark it with this id. Returns true if found. */
+  locateAndMark: (id: string, anchorText: string) => boolean;
+}
+
+/** Shared, pane-local bridge between the editor and its comments panel. */
+export interface CommentBridge {
+  editor?: CommentEditorApi | null;
+  focusCard?: (id: string) => void;
+}
+
 
 // ── Inline font style extension ─────────────────────────────────────────────
 // Adds fontSize + fontFamily attributes to the textStyle mark so Google Docs

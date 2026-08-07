@@ -275,3 +275,21 @@ body {
   48%       { opacity: 0.80; }
   58%       { opacity: 0.28; }
 }
+
+/* ── Comment anchors (grant editor) ─────────────────────────────────────────
+   A span wrapping text a comment is anchored to. Subtle by default; the
+   --active modifier flashes when the comment is focused from the panel. */
+.comment-highlight {
+  background: rgba(250, 204, 21, 0.28);      /* soft amber */
+  border-bottom: 1.5px solid rgba(202, 138, 4, 0.55);
+  border-radius: 2px;
+  cursor: pointer;
+  transition: background 0.2s ease;
+}
+.comment-highlight:hover {
+  background: rgba(250, 204, 21, 0.45);
+}
+.comment-highlight--active {
+  background: rgba(250, 204, 21, 0.75);
+  box-shadow: 0 0 0 2px rgba(202, 138, 4, 0.45);
+}

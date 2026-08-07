@@ -941,3 +941,177 @@ def synthesize_call_intelligence_task(self, grant_id: str) -> dict:
     except Exception as exc:
         logger.warning("synthesize_call_intelligence_task failed for grant %s: %s", grant_id, exc)
         return {"status": "failed", "error": str(exc)[:500]}
+
+
+# ── Expert reviewer ───────────────────────────────────────────────────────────
+
+def _fmt_review_comment(comment: str, suggestion: str = "", criterion: str = "") -> str:
+    parts = [comment.strip()]
+    if suggestion:
+        parts.append(f"Suggestion: {suggestion.strip()}")
+    if criterion:
+        parts.append(f"Re: {criterion.strip()}")
+    return "\n\n".join(p for p in parts if p)
+
+
+@celery_app.task(
+    name="app.workers.grant_writing_tasks.run_expert_review_task",
+    bind=True,
+    max_retries=0,
+    soft_time_limit=1200,
+    time_limit=1320,
+)
+def run_expert_review_task(self, grant_id: str, user_id: str) -> dict:
+    """Strict expert review of the full draft → writes anchored `Comment` rows."""
+    import uuid as _uuid
+    from app.config import get_settings
+
+    logger.info("run_expert_review_task started for grant %s", grant_id)
+    settings = get_settings()
+    async_url = settings.database_url.replace("postgresql://", "postgresql+asyncpg://", 1)
+
+    async def _run() -> dict:
+        from sqlalchemy import select
+        from sqlalchemy.ext.asyncio import create_async_engine, AsyncSession
+        from app.models.active_grant import ActiveGrant
+        from app.models.comment import Comment
+        from app.ai.context.grant_context import parse_document_sections
+        from app.ai.agents.expert_reviewer import run_expert_review
+        from app.ai import providers as _providers
+        from app.routers.api_keys import load_user_provider_keys
+
+        engine = create_async_engine(async_url, pool_pre_ping=True)
+        try:
+            async with AsyncSession(engine, expire_on_commit=False) as db:
+                grant = await db.get(ActiveGrant, grant_id)
+                if not grant:
+                    return {"status": "failed", "error": "grant not found"}
+
+                grant.ai_review_status = "running"
+                grant.ai_review_error = None
+                await db.commit()
+
+                try:
+                    user_keys = await load_user_provider_keys(db, user_id) if user_id else {}
+                except Exception:
+                    user_keys = {}
+                _providers.set_request_context(user_id, user_keys, grant_id)
+                _providers.reset_usage()
+
+                html = grant.editor_document or ""
+                skeleton = grant.proposal_skeleton or None
+                sections = [
+                    {"title": s.title, "plain_text": s.plain_text, "word_count": s.word_count}
+                    for s in parse_document_sections(html, skeleton)
+                    if (s.plain_text or "").strip()
+                ]
+                if not sections:
+                    grant.ai_review_status = "failed"
+                    grant.ai_review_error = "The draft is empty — nothing to review yet."
+                    await db.commit()
+                    return {"status": "failed", "error": "empty draft"}
+
+                result = await run_expert_review(
+                    sections,
+                    funder=grant.funder or "",
+                    program=grant.program or "",
+                    call_url=grant.call_url or "",
+                    call_analysis=grant.call_analysis or {},
+                )
+
+                # Clear prior AI comments that are unresolved and have no replies;
+                # keep resolved ones and any the user has replied to.
+                existing = (await db.execute(
+                    select(Comment).where(
+                        Comment.entity_type == "grant",
+                        Comment.entity_id == grant_id,
+                        Comment.document_id == "draft",
+                        Comment.source == "ai_reviewer",
+                    )
+                )).scalars().all()
+                ai_ids = {c.id for c in existing}
+                replied_parents: set[str] = set()
+                if ai_ids:
+                    replied_parents = set((await db.execute(
+                        select(Comment.parent_id).where(Comment.parent_id.in_(ai_ids))
+                    )).scalars().all())
+                for c in existing:
+                    if not c.resolved and c.id not in replied_parents:
+                        await db.delete(c)
+
+                title_set = {s["title"] for s in sections}
+
+                def _add(anchor: str | None, text: str, severity: str):
+                    db.add(Comment(
+                        id=str(_uuid.uuid4()),
+                        entity_type="grant",
+                        entity_id=grant_id,
+                        author_id=user_id,
+                        text=text,
+                        anchor_text=anchor,
+                        resolved=False,
+                        source="ai_reviewer",
+                        severity=severity,
+                        document_id="draft",
+                    ))
+
+                n = 0
+                for mc in result.get("macro_comments", []):
+                    sec = mc.get("section") or ""
+                    anchor = sec if sec in title_set else None
+                    _add(anchor, _fmt_review_comment(mc.get("comment", ""), mc.get("suggestion", ""), mc.get("criterion", "")), mc.get("severity", "major"))
+                    n += 1
+                for tc in result.get("targeted_comments", []):
+                    anchor = tc.get("anchor_text") or (tc.get("section") if tc.get("section") in title_set else None)
+                    if not tc.get("comment"):
+                        continue
+                    _add(anchor, _fmt_review_comment(tc.get("comment", ""), tc.get("suggestion", ""), tc.get("criterion", "")), tc.get("severity", "minor"))
+                    n += 1
+
+                grant.ai_review_summary = {
+                    **(result.get("overall") or {}),
+                    "comment_count": n,
+                    "generated_at": datetime.now(timezone.utc).isoformat(),
+                }
+                grant.ai_review_status = "completed"
+                grant.ai_review_error = None
+
+                try:
+                    await _flush_llm_usage(db, user_id, grant_id)
+                except Exception:
+                    pass
+                await db.commit()
+                logger.info("run_expert_review_task wrote %d comments for grant %s", n, grant_id)
+                return {"status": "completed", "grant_id": grant_id, "comments": n}
+        finally:
+            await engine.dispose()
+
+    try:
+        return asyncio.run(_run())
+    except SoftTimeLimitExceeded:
+        _mark_review_failed(async_url, grant_id, "Review timed out. Please try again.")
+        return {"status": "failed", "error": "timed out"}
+    except Exception as exc:
+        logger.exception("run_expert_review_task failed for grant %s: %s", grant_id, exc)
+        _mark_review_failed(async_url, grant_id, str(exc)[:500])
+        return {"status": "failed", "error": str(exc)[:500]}
+
+
+def _mark_review_failed(async_url: str, grant_id: str, msg: str) -> None:
+    async def _f():
+        from sqlalchemy.ext.asyncio import create_async_engine, AsyncSession
+        from app.models.active_grant import ActiveGrant
+        engine = create_async_engine(async_url, pool_pre_ping=True)
+        try:
+            async with AsyncSession(engine, expire_on_commit=False) as db:
+                grant = await db.get(ActiveGrant, grant_id)
+                if grant:
+                    grant.ai_review_status = "failed"
+                    grant.ai_review_error = msg
+                    await db.commit()
+        finally:
+            await engine.dispose()
+    try:
+        asyncio.run(_f())
+    except Exception:
+        pass

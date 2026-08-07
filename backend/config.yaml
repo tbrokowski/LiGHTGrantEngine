@@ -31,6 +31,10 @@ ai:
       model: gpt-4o
       temperature: 0.2
       max_tokens: 4000
+    expert_reviewer:            # strict funder-panel review of the full draft (macro + targeted)
+      model: gpt-4o
+      temperature: 0.2
+      max_tokens: 4000
     call_analyzer_scan:
       model: gpt-4o-mini   # fast structural scan — mini is fine
       temperature: 0.1

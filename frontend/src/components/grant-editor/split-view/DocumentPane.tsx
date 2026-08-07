@@ -16,6 +16,7 @@ import NewDocumentPane from './NewDocumentPane';
 import ArchiveSourcePane from './ArchiveSourcePane';
 import CommentsPanel from '../CommentsPanel';
 import { useWorkspace } from '../WorkspaceContext';
+import type { CommentBridge } from '../editor-extensions';
 import { grants, api } from '@/lib/api';
 import { extractDocId } from '@/lib/extractDocId';
 import EmbeddedPdfViewer from '@/components/shared/EmbeddedPdfViewer';
@@ -81,6 +82,8 @@ export default function DocumentPane({
   const [renameValue, setRenameValue] = useState('');
   const [commentsOpen, setCommentsOpen] = useState(false);
   const [dragOverPanel, setDragOverPanel] = useState(false);
+  // Pane-local bridge between the editor and its comments panel (highlight/locate).
+  const commentBridge = useRef<CommentBridge>({});
   // Resolved presigned URL and metadata for workspace-file tabs
   const [resolvedFileUrl, setResolvedFileUrl] = useState<string | null>(null);
   const [resolvedFileName, setResolvedFileName] = useState<string | null>(null);
@@ -270,6 +273,9 @@ export default function DocumentPane({
             onDocumentChange={workspace.onDocumentChange}
             onSelectionChange={workspace.onSelectionChange}
             onActiveSectionChange={workspace.onActiveSectionChange}
+            grantId={grantId}
+            onEditorApi={(apiRef) => { commentBridge.current.editor = apiRef; }}
+            onAnchorClick={(id) => { setCommentsOpen(true); commentBridge.current.focusCard?.(id); }}
           />
         );
 
@@ -669,6 +675,7 @@ export default function DocumentPane({
               grantId={grantId}
               documentId={activeTab.type === 'editor' ? 'draft' : activeTab.id}
               onClose={() => setCommentsOpen(false)}
+              bridge={activeTab.type === 'editor' ? commentBridge : undefined}
             />
           </div>
         )}
