@@ -42,11 +42,13 @@ async def my_tasks(db: AsyncSession = Depends(get_db), current_user: User = Depe
         )
         grant_map = {row[0]: (row[1], row[2]) for row in grants_result.all()}
 
+    name_map = await _assignee_name_map(task_list, db)
     return [
         {
             **_task_dict(t),
             "grant_title": grant_map.get(t.grant_id, ("", None))[0],
             "grant_color": grant_map.get(t.grant_id, ("", None))[1],
+            "assignee_names": [name_map[uid] for uid in (t.assignee_ids or []) if name_map.get(uid)],
         }
         for t in task_list
     ]
@@ -72,11 +74,13 @@ async def all_tasks(db: AsyncSession = Depends(get_db), current_user: User = Dep
         )
         grant_map = {row[0]: (row[1], row[2]) for row in grants_result.all()}
 
+    name_map = await _assignee_name_map(task_list, db)
     return [
         {
             **_task_dict(t),
             "grant_title": grant_map.get(t.grant_id, ("", None))[0],
             "grant_color": grant_map.get(t.grant_id, ("", None))[1],
+            "assignee_names": [name_map[uid] for uid in (t.assignee_ids or []) if name_map.get(uid)],
         }
         for t in task_list
     ]
@@ -136,6 +140,15 @@ async def _get_accessible_grant_ids(user: User, db: AsyncSession) -> list[str]:
         )
     )
     return list((await db.execute(q)).scalars().all())
+
+async def _assignee_name_map(task_list, db: AsyncSession) -> dict[str, str]:
+    """Resolve every task's assignee user ids → display names in one query."""
+    ids = {uid for t in task_list for uid in (t.assignee_ids or [])}
+    if not ids:
+        return {}
+    rows = (await db.execute(select(User.id, User.name).where(User.id.in_(ids)))).all()
+    return {r[0]: r[1] for r in rows}
+
 
 def _task_dict(t: Task) -> dict:
     d = {c.name: getattr(t, c.name) for c in t.__table__.columns}

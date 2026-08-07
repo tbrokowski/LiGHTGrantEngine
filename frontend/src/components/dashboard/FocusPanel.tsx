@@ -25,6 +25,30 @@ export interface TaskItem {
   priority: string;
   owner_id: string | null;
   assignee_ids: string[];
+  assignee_names?: string[];
+}
+
+function personInitials(name: string): string {
+  const parts = name.trim().split(/\s+/);
+  return (parts.length >= 2 ? parts[0][0] + parts[parts.length - 1][0] : name.slice(0, 2)).toUpperCase();
+}
+
+function AssigneeAvatars({ names }: { names?: string[] }) {
+  if (!names?.length) return null;
+  return (
+    <div className="hidden sm:flex items-center -space-x-1.5" title={`Assigned to ${names.join(', ')}`}>
+      {names.slice(0, 3).map((n, i) => (
+        <span
+          key={i}
+          className="w-5 h-5 rounded-full flex items-center justify-center text-[9px] font-semibold text-white ring-1 ring-white"
+          style={{ background: `hsl(${(n.charCodeAt(0) * 47) % 360} 55% 55%)` }}
+        >
+          {personInitials(n)}
+        </span>
+      ))}
+      {names.length > 3 && <span className="text-[10px] text-gray-400 pl-2">+{names.length - 3}</span>}
+    </div>
+  );
 }
 
 function daysUntil(d?: string | null): number | null {
@@ -105,6 +129,7 @@ function TaskRow({ task, days }: TaskRowProps) {
         </p>
       </div>
       <div className="shrink-0 flex items-center gap-1.5">
+        <AssigneeAvatars names={task.assignee_names} />
         {task.priority && PRIORITY_LABEL[task.priority] && (
           <span className={`hidden sm:inline text-[10px] font-semibold px-1.5 py-0.5 rounded-full whitespace-nowrap ${PRIORITY_COLOR[task.priority] ?? 'bg-gray-100 text-gray-500'}`}>
             {PRIORITY_LABEL[task.priority]}

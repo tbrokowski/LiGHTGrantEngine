@@ -110,6 +110,108 @@ async def _get_semantic_candidate_ids(
         return []
 
 
+async def _embed_query_cached(query: str, redis_client=None) -> list[float] | None:
+    """Embed a short query string, caching the vector in Redis (shared with search)."""
+    from app.ai.client import get_embedding
+    key = f"search_emb:{hashlib.sha256(query.lower().strip().encode()).hexdigest()}"
+    if redis_client is not None:
+        try:
+            cached = await redis_client.get(key)
+            if cached:
+                return _json.loads(cached)
+        except Exception:
+            pass
+    emb = await get_embedding(query)
+    if emb and any(v != 0.0 for v in emb):
+        if redis_client is not None:
+            try:
+                await redis_client.setex(key, _SEMANTIC_CACHE_TTL, _json.dumps(emb))
+            except Exception:
+                pass
+        return emb
+    return None
+
+
+async def _knn_by_embedding(db, embedding, *, limit: int = 200, floor: float = 0.45) -> list[tuple[str, float]]:
+    """Nearest opportunities to a raw embedding vector, with a cosine-distance floor."""
+    if not embedding or not any(v != 0.0 for v in embedding):
+        return []
+    vec = "[" + ",".join(str(v) for v in embedding) + "]"
+    res = await db.execute(
+        sa_text(
+            "SELECT id, (embedding <=> :q) AS d FROM opportunities "
+            "WHERE embedding IS NOT NULL AND status != 'duplicate' AND (embedding <=> :q) < :floor "
+            "ORDER BY embedding <=> :q LIMIT :lim"
+        ),
+        {"q": vec, "floor": floor, "lim": limit},
+    )
+    return [(row[0], float(row[1])) for row in res.fetchall()]
+
+
+async def _compute_intent_ranking(db, user, redis_client=None) -> dict[str, float] | None:
+    """Search-style standing ranking for the default feed.
+
+    For each of the user's interest facets — their declared keywords, the org's
+    profile keywords, and the grants they've saved — find the nearest opportunities
+    (the same pgvector kNN + 0.45 floor that typed search uses) and keep each
+    opportunity's BEST (min) cosine distance across facets. A grant ranks high if it
+    strongly matches ANY one facet, not the muddy average of all of them — which is
+    why single-topic search felt sharper than the old blended fit score. Returns
+    {opportunity_id: best_distance}, or None when the user has no usable facets.
+    """
+    from app.schemas.grant_profile import UserGrantPreferences, GrantProfile
+
+    facets: list[str] = []
+    prefs = UserGrantPreferences.from_dict(getattr(user, "grant_preferences", None) or {})
+    facets += [k.strip() for k in prefs.keywords if k and k.strip()]
+    if getattr(user, "institution_id", None):
+        from app.models.institution import Institution
+        inst = await db.get(Institution, user.institution_id)
+        if inst and inst.grant_profile:
+            gp = GrantProfile.from_dict(inst.grant_profile)
+            facets += [k.strip() for k in gp.keywords if k and k.strip()]
+
+    seen: set[str] = set()
+    kw_facets: list[str] = []
+    for f in facets:
+        fl = f.lower()
+        if fl and fl not in seen:
+            seen.add(fl)
+            kw_facets.append(f)
+    kw_facets = kw_facets[:12]
+
+    best: dict[str, float] = {}
+    for kw in kw_facets:
+        emb = await _embed_query_cached(kw, redis_client)
+        if not emb:
+            continue
+        for oid, d in await _knn_by_embedding(db, emb):
+            if oid not in best or d < best[oid]:
+                best[oid] = d
+
+    # Saved grants as facets (strong personal signal) — reuse their stored embeddings.
+    saved_ids = set((await db.execute(
+        select(UserOpportunityState.opportunity_id).where(
+            UserOpportunityState.user_id == user.id,
+            UserOpportunityState.saved_at.isnot(None),
+        )
+    )).scalars().all())
+    if saved_ids:
+        rows = (await db.execute(
+            select(Opportunity.id, Opportunity.embedding).where(
+                Opportunity.id.in_(list(saved_ids)[:10]), Opportunity.embedding.isnot(None)
+            )
+        )).all()
+        for _sid, emb in rows:
+            if emb is None:
+                continue
+            for oid, d in await _knn_by_embedding(db, list(emb)):
+                if oid not in best or d < best[oid]:
+                    best[oid] = d
+
+    return best or None
+
+
 def _build_opportunity_filters(
     *,
     funder: Optional[str] = None,
@@ -547,6 +649,7 @@ async def list_opportunities(
         cache_key = "feed_rank:" + hashlib.sha256(cache_sig.encode()).hexdigest()
 
         ranked_ids: list[str] | None = None
+        intent_active = False
         try:
             cached = await redis.get(cache_key)
             if cached:
@@ -556,10 +659,38 @@ async def list_opportunities(
                 if isinstance(payload, dict):
                     ranked_ids = payload.get("ids")
                     score_map = {k: int(v) for k, v in (payload.get("scores") or {}).items()}
+                    intent_active = bool(payload.get("intent"))
                 else:
                     ranked_ids = payload
         except Exception:
             ranked_ids = None
+
+        if ranked_ids is None:
+            # Preferred path: rank the feed like search does — by best-matching-facet
+            # semantic similarity to the user's interests, with a relevance floor. Only
+            # for the standing feed (no active text search).
+            intent = None if semantic_ids else await _compute_intent_ranking(db, current_user, redis)
+            if intent:
+                id_rows = (await db.execute(
+                    q.with_only_columns(Opportunity.id, Opportunity.deadline)
+                )).all()
+                _today = date.today()
+                scored_i: list[tuple[str, int, float]] = []
+                for oid, dl in id_rows:
+                    d = intent.get(oid)
+                    if d is None:
+                        continue  # floor: below-threshold-for-every-facet grants drop off
+                    up = 0 if (dl is None or dl >= _today) else 1
+                    scored_i.append((oid, up, d))
+                if scored_i:
+                    scored_i.sort(key=lambda t: (t[1], t[2]))  # upcoming first, then closest
+                    ranked_ids = [t[0] for t in scored_i]
+                    score_map = {t[0]: max(0, min(100, round((1.0 - t[2]) * 100))) for t in scored_i}
+                    intent_active = True
+                    try:
+                        await redis.set(cache_key, _json.dumps({"ids": ranked_ids, "scores": score_map, "intent": True}), ex=120)
+                    except Exception:
+                        pass
 
         if ranked_ids is None:
             # Fixed, page-independent pool so one cached order covers all pages
@@ -621,10 +752,15 @@ async def list_opportunities(
             ranked_ids, score_map = await asyncio.to_thread(_rank, pool_data)
             try:
                 await redis.set(
-                    cache_key, _json.dumps({"ids": ranked_ids, "scores": score_map}), ex=120
+                    cache_key, _json.dumps({"ids": ranked_ids, "scores": score_map, "intent": False}), ex=120
                 )
             except Exception:
                 pass
+
+        # When the intent feed is active it already applied the relevance floor, so the
+        # count of shown items is the ranked-id count (not the unfiltered total).
+        if intent_active and ranked_ids is not None:
+            total = len(ranked_ids)
 
         offset = (page - 1) * page_size
         page_ids = ranked_ids[offset: offset + page_size]
