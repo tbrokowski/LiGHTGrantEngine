@@ -72,6 +72,11 @@ class GrantProfileUpdate(BaseModel):
     excluded_keywords: Optional[list[str]] = None
     auto_queue_threshold: Optional[int] = None
     priority_funders: Optional[list[PriorityFunderGroupUpdate]] = None
+    # Richer interest facets (also collected during onboarding) that feed ranking.
+    domains: Optional[list[str]] = None
+    methods: Optional[list[str]] = None
+    populations: Optional[list[str]] = None
+    strategic_priorities: Optional[list[str]] = None
 
 
 class OrgSourceCreate(BaseModel):

@@ -33,6 +33,7 @@ class UserUpdate(BaseModel):
 class GrantPreferencesUpdate(BaseModel):
     keywords: Optional[list[str]] = None
     excluded_keywords: Optional[list[str]] = None
+    grant_categories: Optional[list[str]] = None
 
 
 @router.get("/")

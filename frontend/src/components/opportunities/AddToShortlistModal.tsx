@@ -39,15 +39,15 @@ export default function AddToShortlistModal({ onClose, onAdded, addToShortlist =
       if (data.error && data.error !== 'no_content') {
         setFetchError(`Could not fetch page: ${data.error}`);
       } else {
-        if (data.description && !description) setDescription(data.description);
-        // Attempt to extract a title from the first line of description if title is blank
-        if (!title && data.description) {
-          const firstLine = data.description.split('\n').find((l: string) => l.trim().startsWith('## '));
-          if (firstLine) {
-            setTitle(firstLine.replace(/^##\s*/, '').trim());
-          }
+        // Pre-fill from the structured LLM extraction (falls back to prose).
+        if (data.title && !title) setTitle(data.title);
+        if (data.funder && !funder) setFunder(data.funder);
+        if (data.deadline && !deadline) {
+          const iso = /^\d{4}-\d{2}-\d{2}/.test(data.deadline) ? data.deadline.slice(0, 10) : '';
+          if (iso) setDeadline(iso);
         }
-        if (!data.description && !data.short_summary) {
+        if (data.description && !description) setDescription(data.description);
+        if (!data.title && !data.description && !data.short_summary) {
           setFetchError('Page fetched but no grant content was found. Please fill in the fields manually.');
         }
       }

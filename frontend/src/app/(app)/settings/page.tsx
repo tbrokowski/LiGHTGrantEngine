@@ -717,6 +717,9 @@ function SettingsPageInner() {
       const newId = res.data?.id;
       if (newId) { try { await sources.runNow(newId); } catch { /* worker may be down */ } }
       fetchSources();
+    } catch (err: unknown) {
+      const detail = (err as { response?: { data?: { detail?: string } } })?.response?.data?.detail;
+      alert(`Could not add the source: ${detail || 'please check the URL and your permissions, then try again.'}`);
     } finally {
       setSaving(false);
     }
@@ -984,7 +987,7 @@ function SettingsPageInner() {
         <GrantFiltersPanel institutionId={currentUser.institution_id} isOrgAdmin={isOrgAdmin} />
       )}
 
-      {isPlatformAdmin && (
+      {(isPlatformAdmin || isOrgAdmin) && (
       <>
       <FunderOrgsPanel />
 

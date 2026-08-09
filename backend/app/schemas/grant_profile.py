@@ -34,6 +34,11 @@ class GrantProfile:
     excluded_keywords: list[str] = field(default_factory=list)
     auto_queue_threshold: int = DEFAULT_AUTO_QUEUE_THRESHOLD
     priority_funders: list[PriorityFunderGroup] = field(default_factory=list)
+    # Richer interest facets (collected during onboarding; also editable in Settings).
+    domains: list[str] = field(default_factory=list)
+    methods: list[str] = field(default_factory=list)
+    populations: list[str] = field(default_factory=list)
+    strategic_priorities: list[str] = field(default_factory=list)
 
     @classmethod
     def from_dict(cls, data: dict[str, Any] | None) -> GrantProfile:
@@ -49,6 +54,10 @@ class GrantProfile:
             priority_funders=[
                 PriorityFunderGroup.from_dict(g) for g in (data.get("priority_funders") or []) if isinstance(g, dict)
             ],
+            domains=list(data.get("domains") or []),
+            methods=list(data.get("methods") or []),
+            populations=list(data.get("populations") or []),
+            strategic_priorities=list(data.get("strategic_priorities") or []),
         )
 
     def to_dict(self) -> dict[str, Any]:
@@ -60,13 +69,32 @@ class GrantProfile:
             "excluded_keywords": self.excluded_keywords,
             "auto_queue_threshold": self.auto_queue_threshold,
             "priority_funders": [g.to_dict() for g in self.priority_funders],
+            "domains": self.domains,
+            "methods": self.methods,
+            "populations": self.populations,
+            "strategic_priorities": self.strategic_priorities,
         }
+
+    def interest_facets(self) -> list[str]:
+        """All short interest phrases used as semantic ranking facets."""
+        out: list[str] = []
+        out += self.keywords
+        out += self.domains
+        out += self.methods
+        out += self.populations
+        out += self.strategic_priorities
+        out += self.geographies
+        for g in self.priority_funders:
+            out += g.funders
+        return [s for s in (x.strip() for x in out if isinstance(x, str)) if s]
 
 
 @dataclass
 class UserGrantPreferences:
     keywords: list[str] = field(default_factory=list)
     excluded_keywords: list[str] = field(default_factory=list)
+    # Funding types / career interests (collected during personal onboarding).
+    grant_categories: list[str] = field(default_factory=list)
 
     @classmethod
     def from_dict(cls, data: dict[str, Any] | None) -> UserGrantPreferences:
@@ -75,13 +103,19 @@ class UserGrantPreferences:
         return cls(
             keywords=list(data.get("keywords") or []),
             excluded_keywords=list(data.get("excluded_keywords") or []),
+            grant_categories=list(data.get("grant_categories") or []),
         )
 
     def to_dict(self) -> dict[str, Any]:
         return {
             "keywords": self.keywords,
             "excluded_keywords": self.excluded_keywords,
+            "grant_categories": self.grant_categories,
         }
+
+    def interest_facets(self) -> list[str]:
+        out = list(self.keywords) + list(self.grant_categories)
+        return [s for s in (x.strip() for x in out if isinstance(x, str)) if s]
 
 
 def merge_keywords(org: GrantProfile, personal: UserGrantPreferences) -> tuple[list[str], list[str]]:

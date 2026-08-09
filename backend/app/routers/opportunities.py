@@ -161,15 +161,19 @@ async def _compute_intent_ranking(db, user, redis_client=None) -> dict[str, floa
     """
     from app.schemas.grant_profile import UserGrantPreferences, GrantProfile
 
+    # Every short interest phrase becomes its own semantic facet — personal keywords
+    # + funding-type/career interests, and the org's keywords, research domains,
+    # methods, populations, strategic priorities, geographies, and priority funders.
+    # (Onboarding stores domains/methods/etc. that the old ranker ignored — that
+    # emptiness was why the feed "wasn't loading in things".)
     facets: list[str] = []
     prefs = UserGrantPreferences.from_dict(getattr(user, "grant_preferences", None) or {})
-    facets += [k.strip() for k in prefs.keywords if k and k.strip()]
+    facets += prefs.interest_facets()
     if getattr(user, "institution_id", None):
         from app.models.institution import Institution
         inst = await db.get(Institution, user.institution_id)
         if inst and inst.grant_profile:
-            gp = GrantProfile.from_dict(inst.grant_profile)
-            facets += [k.strip() for k in gp.keywords if k and k.strip()]
+            facets += GrantProfile.from_dict(inst.grant_profile).interest_facets()
 
     seen: set[str] = set()
     kw_facets: list[str] = []
@@ -178,7 +182,7 @@ async def _compute_intent_ranking(db, user, redis_client=None) -> dict[str, floa
         if fl and fl not in seen:
             seen.add(fl)
             kw_facets.append(f)
-    kw_facets = kw_facets[:12]
+    kw_facets = kw_facets[:20]
 
     best: dict[str, float] = {}
     for kw in kw_facets:
@@ -838,16 +842,39 @@ async def scrape_preview(
     data: ScrapePreviewRequest,
     current_user: User = Depends(get_current_user),
 ):
-    """Fetch a URL and return extracted grant description/summary for form pre-fill. No DB write."""
+    """Fetch a URL and return extracted grant fields for form pre-fill. No DB write.
+
+    Forces a browser render (JS-heavy call pages) then runs the same LLM extractor
+    the bulk scraper uses, so title/funder/deadline/type come back — not just prose.
+    """
     from app.scrapers.detail_fetcher import DetailPageParser
+    from app.scrapers.ai_scraper import _llm_extract
     import asyncio
 
-    parser = DetailPageParser(timeout=20)
+    parser = DetailPageParser(timeout=25)
     loop = asyncio.get_event_loop()
-    result = await loop.run_in_executor(None, parser.fetch_and_parse, data.url)
+    result = await loop.run_in_executor(
+        None, lambda: parser.fetch_and_parse(data.url, None, use_playwright=True)
+    )
+
+    text = (result.get("parsed_text") or result.get("description") or "")
+    extracted: dict = {}
+    if text.strip():
+        try:
+            items = await _llm_extract(text[:16000], source_name=data.url)
+            if items:
+                extracted = items[0] or {}
+        except Exception:
+            extracted = {}
+
     return {
         "description": result.get("description"),
         "short_summary": result.get("short_summary"),
+        "title": extracted.get("title"),
+        "funder": extracted.get("funder"),
+        "deadline": extracted.get("deadline"),
+        "program": extracted.get("program"),
+        "opportunity_type": extracted.get("opportunity_type"),
         "error": result.get("error"),
     }
 
@@ -866,8 +893,23 @@ async def create_opportunity(
     await db.commit()
     await db.refresh(opp)
 
-    # Score in background
-    bg.add_task(_score_opportunity_bg, str(opp.id))
+    # If added by URL, run the FULL enrichment pipeline (re-fetch with a browser +
+    # ingest call-document PDFs → tag & embed → score → AI summary), the same path
+    # discovered grants get. This back-fills parsed_text, tags, an embedding (which
+    # the semantic ranking needs), and a summary. Falls back to just scoring when
+    # there's no URL to enrich from.
+    enqueued = False
+    if getattr(opp, "opportunity_url", None):
+        try:
+            from app.workers.celery_app import celery_app
+            celery_app.send_task(
+                "app.workers.enrichment_tasks.enrich_opportunity_force", args=[str(opp.id)]
+            )
+            enqueued = True
+        except Exception:
+            enqueued = False
+    if not enqueued:
+        bg.add_task(_score_opportunity_bg, str(opp.id))
     return {"id": opp.id, "status": "created"}
 
 

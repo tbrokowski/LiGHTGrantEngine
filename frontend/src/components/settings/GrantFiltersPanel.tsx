@@ -43,6 +43,10 @@ interface GrantProfile {
   projects?: string;
   excluded_keywords?: string[];
   priority_funders?: PriorityFunderGroup[];
+  domains?: string[];
+  methods?: string[];
+  populations?: string[];
+  strategic_priorities?: string[];
   [key: string]: unknown;
 }
 
@@ -190,6 +194,7 @@ export function GrantFiltersPanel({ institutionId, isOrgAdmin }: GrantFiltersPan
   const [orgProfile, setOrgProfile] = useState<GrantProfile>({});
   const [personalKeywords, setPersonalKeywords] = useState<string[]>([]);
   const [personalExcluded, setPersonalExcluded] = useState<string[]>([]);
+  const [personalCategories, setPersonalCategories] = useState<string[]>([]);
   const [orgSources, setOrgSources] = useState<OrgSource[]>([]);
   const [savingOrg, setSavingOrg] = useState(false);
   const [savingPersonal, setSavingPersonal] = useState(false);
@@ -212,6 +217,7 @@ export function GrantFiltersPanel({ institutionId, isOrgAdmin }: GrantFiltersPan
     users.getGrantPreferences().then(r => {
       setPersonalKeywords(r.data?.keywords ?? []);
       setPersonalExcluded(r.data?.excluded_keywords ?? []);
+      setPersonalCategories(r.data?.grant_categories ?? []);
     }).catch(() => {});
     organizations.listOrgSources(institutionId).then(r => setOrgSources(r.data ?? [])).catch(() => {});
     organizations.preseedStatus(institutionId).then(r => setPreseedStatus(r.data?.status ?? null)).catch(() => {});
@@ -231,7 +237,7 @@ export function GrantFiltersPanel({ institutionId, isOrgAdmin }: GrantFiltersPan
   async function savePersonal() {
     setSavingPersonal(true);
     try {
-      await users.updateGrantPreferences({ keywords: personalKeywords, excluded_keywords: personalExcluded });
+      await users.updateGrantPreferences({ keywords: personalKeywords, excluded_keywords: personalExcluded, grant_categories: personalCategories });
       setMessage('Personal keyword filters saved.');
     } finally {
       setSavingPersonal(false);
@@ -341,12 +347,40 @@ export function GrantFiltersPanel({ institutionId, isOrgAdmin }: GrantFiltersPan
 
         {isOrgAdmin ? (
           <>
+            <p className="text-xs text-gray-400 -mt-1">
+              The more specific interests you add below, the sharper your feed — each becomes its own search facet.
+            </p>
             <TagInput
               label="Keywords & themes"
               hint="e.g. AI for health, maternal health, Mamai"
               tags={orgProfile.keywords ?? []}
               onChange={keywords => setOrgProfile(p => ({ ...p, keywords }))}
               placeholder="Add keyword…"
+            />
+            <TagInput
+              label="Research domains"
+              hint="Broad fields you work in"
+              tags={orgProfile.domains ?? []}
+              onChange={domains => setOrgProfile(p => ({ ...p, domains }))}
+              placeholder="e.g. global health, machine learning"
+            />
+            <TagInput
+              label="Methods & approaches"
+              tags={orgProfile.methods ?? []}
+              onChange={methods => setOrgProfile(p => ({ ...p, methods }))}
+              placeholder="e.g. RCTs, implementation science"
+            />
+            <TagInput
+              label="Populations / focus"
+              tags={orgProfile.populations ?? []}
+              onChange={populations => setOrgProfile(p => ({ ...p, populations }))}
+              placeholder="e.g. children under 5, refugees"
+            />
+            <TagInput
+              label="Strategic priorities"
+              tags={orgProfile.strategic_priorities ?? []}
+              onChange={strategic_priorities => setOrgProfile(p => ({ ...p, strategic_priorities }))}
+              placeholder="e.g. health equity, capacity building"
             />
             <TagInput
               label="Geographies"
@@ -437,6 +471,13 @@ export function GrantFiltersPanel({ institutionId, isOrgAdmin }: GrantFiltersPan
           tags={personalKeywords}
           onChange={setPersonalKeywords}
           placeholder="e.g. ultrasound, POCUS"
+        />
+        <TagInput
+          label="Funding types / career interests"
+          hint="e.g. postdoc fellowships, early-career awards, travel grants"
+          tags={personalCategories}
+          onChange={setPersonalCategories}
+          placeholder="Add a funding type…"
         />
         <TagInput
           label="Personal excluded keywords"
