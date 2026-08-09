@@ -211,6 +211,13 @@ export function GrantFiltersPanel({ institutionId, isOrgAdmin }: GrantFiltersPan
   const [scanSummary, setScanSummary] = useState<ScanSummary | null>(null);
   const [runningSources, setRunningSources] = useState<Record<string, boolean>>({});
   const [sourceRunResults, setSourceRunResults] = useState<Record<string, 'queued' | 'error'>>({});
+  // Add-a-source-to-scrape (org admin)
+  const [showAddSource, setShowAddSource] = useState(false);
+  const [newSrcName, setNewSrcName] = useState('');
+  const [newSrcUrl, setNewSrcUrl] = useState('');
+  const [newSrcType, setNewSrcType] = useState('ai_scraper');
+  const [addingSrc, setAddingSrc] = useState(false);
+  const [addSrcError, setAddSrcError] = useState('');
 
   useEffect(() => {
     organizations.getGrantProfile(institutionId).then(r => setOrgProfile(r.data ?? {})).catch(() => {});
@@ -241,6 +248,30 @@ export function GrantFiltersPanel({ institutionId, isOrgAdmin }: GrantFiltersPan
       setMessage('Personal keyword filters saved.');
     } finally {
       setSavingPersonal(false);
+    }
+  }
+
+  async function handleAddSource(e: React.FormEvent) {
+    e.preventDefault();
+    if (!newSrcName.trim()) return;
+    setAddingSrc(true);
+    setAddSrcError('');
+    try {
+      await organizations.addOrgSource(institutionId, {
+        name: newSrcName.trim(),
+        url: newSrcUrl.trim() || undefined,
+        source_type: newSrcType,
+      });
+      setNewSrcName(''); setNewSrcUrl(''); setNewSrcType('ai_scraper');
+      setShowAddSource(false);
+      setMessage('Source added — a first scan has been queued. New grants will appear once the worker finishes.');
+      const r = await organizations.listOrgSources(institutionId);
+      setOrgSources(r.data ?? []);
+    } catch (err: unknown) {
+      const detail = (err as { response?: { data?: { detail?: string } } })?.response?.data?.detail;
+      setAddSrcError(detail || 'Could not add the source. Check the URL and your permissions.');
+    } finally {
+      setAddingSrc(false);
     }
   }
 
@@ -495,12 +526,64 @@ export function GrantFiltersPanel({ institutionId, isOrgAdmin }: GrantFiltersPan
       </section>
 
       <section className="border border-gray-200 rounded-lg p-5 bg-white">
-        <div className="mb-4">
-          <h3 className="text-sm font-semibold text-gray-900">Funding sources</h3>
-          <p className="text-xs text-gray-400 mt-0.5">
-            Global catalog from grant_funding_portals. {isOrgAdmin ? 'Enable or disable sources for your organization.' : 'Your org admin manages which sources are active.'}
-          </p>
+        <div className="mb-4 flex items-start justify-between gap-3">
+          <div>
+            <h3 className="text-sm font-semibold text-gray-900">Funding sources</h3>
+            <p className="text-xs text-gray-400 mt-0.5">
+              {isOrgAdmin ? 'Add a website to scrape, or enable/disable existing sources for your organization.' : 'Your org admin manages which sources are active.'}
+            </p>
+          </div>
+          {isOrgAdmin && (
+            <button
+              onClick={() => { setShowAddSource(v => !v); setAddSrcError(''); }}
+              className="shrink-0 text-xs px-3 py-1.5 rounded-md border border-blue-200 text-blue-700 bg-blue-50 hover:bg-blue-100"
+            >
+              {showAddSource ? 'Cancel' : '+ Add source'}
+            </button>
+          )}
         </div>
+
+        {isOrgAdmin && showAddSource && (
+          <form onSubmit={handleAddSource} className="mb-4 border border-gray-200 rounded-lg p-4 bg-gray-50 space-y-3">
+            <div>
+              <label className="block text-xs font-medium text-gray-600 mb-1">Name *</label>
+              <input
+                required value={newSrcName} onChange={e => setNewSrcName(e.target.value)}
+                placeholder="e.g. Wellcome Trust Grants"
+                className="w-full text-sm border border-gray-300 rounded-md px-3 py-2 focus:outline-none focus:ring-2 focus:ring-blue-500"
+              />
+            </div>
+            <div>
+              <label className="block text-xs font-medium text-gray-600 mb-1">Website URL to scrape</label>
+              <input
+                type="url" value={newSrcUrl} onChange={e => setNewSrcUrl(e.target.value)}
+                placeholder="https://funder.org/grants"
+                className="w-full text-sm border border-gray-300 rounded-md px-3 py-2 focus:outline-none focus:ring-2 focus:ring-blue-500"
+              />
+            </div>
+            <div>
+              <label className="block text-xs font-medium text-gray-600 mb-1">How to read it</label>
+              <select
+                value={newSrcType} onChange={e => setNewSrcType(e.target.value)}
+                className="w-full text-sm border border-gray-300 rounded-md px-3 py-2 bg-white focus:outline-none focus:ring-2 focus:ring-blue-500"
+              >
+                <option value="ai_scraper">Website — AI reads the page (recommended)</option>
+                <option value="rss">RSS / Atom feed</option>
+                <option value="api">JSON API endpoint</option>
+              </select>
+            </div>
+            {addSrcError && <p className="text-xs text-red-600">{addSrcError}</p>}
+            <div className="flex gap-2 justify-end">
+              <button type="button" onClick={() => { setShowAddSource(false); setAddSrcError(''); }}
+                className="text-xs px-3 py-1.5 border border-gray-200 rounded-md text-gray-600 hover:bg-gray-100">Cancel</button>
+              <button type="submit" disabled={addingSrc || !newSrcName.trim()}
+                className="text-xs px-3 py-1.5 bg-blue-600 text-white rounded-md hover:bg-blue-700 disabled:opacity-50">
+                {addingSrc ? 'Adding…' : 'Add & scan'}
+              </button>
+            </div>
+          </form>
+        )}
+
         <div className="divide-y divide-gray-100 max-h-80 overflow-y-auto">
           {orgSources.length === 0 ? (
             <p className="text-sm text-gray-400 py-4">Loading sources…</p>
