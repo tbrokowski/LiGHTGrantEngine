@@ -530,7 +530,19 @@ function SettingsPageInner() {
   const [running, setRunning] = useState<string | null>(null);
   const [scanningAll, setScanningAll] = useState(false);
   const [scanAllResult, setScanAllResult] = useState<string | null>(null);
-  const [workerStatus, setWorkerStatus] = useState<{ worker_reachable: boolean; workers: string[]; active_tasks: number } | null>(null);
+  interface WorkerStatus {
+    worker_reachable: boolean;
+    state?: 'online' | 'busy' | 'offline';
+    ping_reachable?: boolean;
+    workers: string[];
+    active_tasks: number;
+    last_activity_at?: string | null;
+  }
+  const [workerStatus, setWorkerStatus] = useState<WorkerStatus | null>(null);
+  // source_id -> what we are waiting on, so the Run now button reflects the real
+  // run rather than the lifetime of the HTTP request that queued it.
+  const [runPending, setRunPending] = useState<Record<string, 'queued' | 'running'>>({});
+  const [runNotice, setRunNotice] = useState<string | null>(null);
   interface ScanSummary {
     sources_by_status: Record<string, number>;
     total_opportunities: number;
@@ -556,6 +568,8 @@ function SettingsPageInner() {
   const [recentRuns, setRecentRuns] = useState<RecentRun[]>([]);
   const [deduplicating, setDeduplicating] = useState(false);
   const [dedupResult, setDedupResult] = useState<string | null>(null);
+  const [rebuildingRanking, setRebuildingRanking] = useState(false);
+  const [rebuildResult, setRebuildResult] = useState<string | null>(null);
   const [discoveringSource, setDiscoveringSource] = useState(false);
   const [discoverResult, setDiscoverResult] = useState<string | null>(null);
   const [backfillingTypes, setBackfillingTypes] = useState(false);
@@ -666,7 +680,7 @@ function SettingsPageInner() {
       .finally(() => setLoading(false));
     sources.workerStatus()
       .then(r => setWorkerStatus(r.data))
-      .catch(() => setWorkerStatus({ worker_reachable: false, workers: [], active_tasks: 0 }));
+      .catch(() => setWorkerStatus({ worker_reachable: false, state: 'offline', workers: [], active_tasks: 0 }));
     sources.summary()
       .then(r => setScanSummary(r.data))
       .catch(() => setScanSummary(null));
@@ -745,6 +759,27 @@ function SettingsPageInner() {
     }
   }
 
+  async function handleRebuildRanking() {
+    setRebuildingRanking(true);
+    setRebuildResult(null);
+    try {
+      const res = await sources.rebuildRanking();
+      setRebuildResult(res.data?.message ?? 'Ranking rebuild queued.');
+      setTimeout(() => setRebuildResult(null), 8000);
+    } catch (err: unknown) {
+      const status = (err as { response?: { status?: number } })?.response?.status;
+      const detail = (err as { response?: { data?: { detail?: string } } })?.response?.data?.detail;
+      if (status === 403) {
+        setRebuildResult('Admin access required to rebuild ranking.');
+      } else {
+        setRebuildResult(detail ?? 'Failed to queue the rebuild.');
+      }
+      setTimeout(() => setRebuildResult(null), 8000);
+    } finally {
+      setRebuildingRanking(false);
+    }
+  }
+
   async function handleDedup() {
     setDeduplicating(true);
     setDedupResult(null);
@@ -775,14 +810,67 @@ function SettingsPageInner() {
     }
   }
 
+  // The worker is rate-limited to 4 scans/min and the weekly fan-out staggers
+  // thousands of sources, so a manual scan can sit in the queue for a while.
+  // Follow it rather than assuming the HTTP 200 means it started.
+  const RUN_POLL_INTERVAL_MS = 4_000;
+  const RUN_POLL_TIMEOUT_MS = 3 * 60_000;
+
+  async function pollRunUntilSettled(id: string, queuedAt: number) {
+    const deadline = Date.now() + RUN_POLL_TIMEOUT_MS;
+
+    while (Date.now() < deadline) {
+      await new Promise(r => setTimeout(r, RUN_POLL_INTERVAL_MS));
+      let runs: { started_at: string | null; status: string }[] = [];
+      try {
+        runs = (await sources.getRuns(id)).data;
+      } catch {
+        continue; // transient — keep waiting rather than falsely clearing
+      }
+
+      // Only runs created after we queued count; allow for clock skew.
+      const run = runs.find(
+        r => r.started_at && new Date(r.started_at).getTime() >= queuedAt - 30_000,
+      );
+      if (!run) continue;
+
+      if (run.status === 'running') {
+        setRunPending(prev => (prev[id] === 'running' ? prev : { ...prev, [id]: 'running' }));
+        continue;
+      }
+
+      // Terminal status — the scan finished.
+      setRunPending(prev => { const next = { ...prev }; delete next[id]; return next; });
+      fetchSources();
+      return;
+    }
+
+    // Still queued behind the backlog. Stop watching, but say so.
+    setRunPending(prev => { const next = { ...prev }; delete next[id]; return next; });
+    setRunNotice(
+      'Scan is still queued — the worker processes 4 sources/min, so it may take a while to start.',
+    );
+    setTimeout(() => setRunNotice(null), 10_000);
+    fetchSources();
+  }
+
   async function handleRunNow(id: string) {
     setRunning(id);
+    const queuedAt = Date.now();
     try {
       await sources.runNow(id);
-      fetchSources();
+    } catch (err: any) {
+      // A broker outage now surfaces as a 503 instead of a silent success.
+      setRunNotice(err?.response?.data?.detail ?? 'Could not queue the scan.');
+      setTimeout(() => setRunNotice(null), 10_000);
+      return;
     } finally {
       setRunning(null);
     }
+
+    setRunPending(prev => ({ ...prev, [id]: 'queued' }));
+    fetchSources();
+    pollRunUntilSettled(id, queuedAt);
   }
 
   async function handleToggle(id: string) {
@@ -991,23 +1079,50 @@ function SettingsPageInner() {
       <>
       <FunderOrgsPanel />
 
-      {/* Worker health banner */}
-      {workerStatus !== null && (
+      {/* Worker health banner. Three states: a worker that is busy scanning runs
+          single-threaded (--pool=solo) and cannot answer a Celery ping, so a
+          failed ping alone does not mean it is down — recent run activity does. */}
+      {workerStatus !== null && (() => {
+        const state = workerStatus.state ?? (workerStatus.worker_reachable ? 'online' : 'offline');
+        const tone =
+          state === 'online' ? 'success' : state === 'busy' ? 'warning' : 'danger';
+        const lastSeen = workerStatus.last_activity_at
+          ? new Date(workerStatus.last_activity_at).toLocaleTimeString()
+          : null;
+        const message =
+          state === 'online'
+            ? `Worker online — ${workerStatus.workers.length} worker${workerStatus.workers.length !== 1 ? 's' : ''} active${workerStatus.active_tasks > 0 ? `, ${workerStatus.active_tasks} task${workerStatus.active_tasks !== 1 ? 's' : ''} running` : ''}`
+            : state === 'busy'
+              ? `Worker busy — too saturated to answer a health ping, but scans are executing${lastSeen ? ` (last run activity ${lastSeen})` : ''}.`
+              : 'Worker offline — no scan activity and no response to a health ping. Check that the Celery worker and beat services are running.';
+        return (
+          <div
+            className="mb-4 flex items-center gap-2.5 px-4 py-2.5 rounded text-xs"
+            style={{
+              background: `var(--state-${tone}-bg)`,
+              border: `1px solid var(--state-${tone})`,
+              color: `var(--state-${tone})`,
+            }}
+          >
+            <span
+              className="inline-block w-2 h-2 rounded-full shrink-0"
+              style={{ background: `var(--state-${tone})` }}
+            />
+            {message}
+          </div>
+        );
+      })()}
+
+      {runNotice && (
         <div
-          className="mb-4 flex items-center gap-2.5 px-4 py-2.5 rounded text-xs"
+          className="mb-4 px-4 py-2.5 rounded text-xs"
           style={{
-            background: workerStatus.worker_reachable ? 'var(--state-success-bg)' : 'var(--state-danger-bg)',
-            border: `1px solid ${workerStatus.worker_reachable ? 'var(--state-success)' : 'var(--state-danger)'}`,
-            color: workerStatus.worker_reachable ? 'var(--state-success)' : 'var(--state-danger)',
+            background: 'var(--state-info-bg)',
+            border: '1px solid var(--accent-primary)',
+            color: 'var(--accent-primary)',
           }}
         >
-          <span
-            className="inline-block w-2 h-2 rounded-full shrink-0"
-            style={{ background: workerStatus.worker_reachable ? 'var(--state-success)' : 'var(--state-danger)' }}
-          />
-          {workerStatus.worker_reachable
-            ? `Worker online — ${workerStatus.workers.length} worker${workerStatus.workers.length !== 1 ? 's' : ''} active${workerStatus.active_tasks > 0 ? `, ${workerStatus.active_tasks} task${workerStatus.active_tasks !== 1 ? 's' : ''} running` : ''}`
-            : 'Worker offline — scheduled scans and manual triggers are queued but not executing. Check that the Celery worker and beat services are running.'}
+          {runNotice}
         </div>
       )}
 
@@ -1092,6 +1207,37 @@ function SettingsPageInner() {
         <div className="flex flex-col items-end gap-2">
           <div className="flex items-center gap-2">
             <button
+              onClick={handleRebuildRanking}
+              disabled={rebuildingRanking}
+              title="Recompute this org's taste prototypes from the archive, then rescore and recalibrate every opportunity"
+              className="flex items-center gap-2 text-sm px-4 py-2 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+              style={{
+                color: 'var(--accent-primary)',
+                border: '1px solid var(--accent-primary)',
+                borderRadius: 'var(--radius-sm)',
+                background: 'transparent',
+              }}
+              onMouseEnter={e => (e.currentTarget.style.background = 'var(--state-info-bg)')}
+              onMouseLeave={e => (e.currentTarget.style.background = 'transparent')}
+            >
+              {rebuildingRanking ? (
+                <>
+                  <svg className="animate-spin h-4 w-4" fill="none" viewBox="0 0 24 24">
+                    <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
+                    <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z" />
+                  </svg>
+                  Rebuilding…
+                </>
+              ) : (
+                <>
+                  <svg className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+                    <path strokeLinecap="round" strokeLinejoin="round" d="M4 4v5h5M20 20v-5h-5M20 9A8 8 0 0 0 6 5.3M4 15a8 8 0 0 0 14 3.7" />
+                  </svg>
+                  Rebuild ranking
+                </>
+              )}
+            </button>
+            <button
               onClick={handleDedup}
               disabled={deduplicating}
               className="flex items-center gap-2 text-sm px-4 py-2 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
@@ -1149,6 +1295,9 @@ function SettingsPageInner() {
               )}
             </button>
           </div>
+          {rebuildResult && (
+            <p className="text-xs" style={{ color: 'var(--ink-muted)' }}>{rebuildResult}</p>
+          )}
           {dedupResult && (
             <p className="text-xs" style={{ color: 'var(--state-warning)' }}>{dedupResult}</p>
           )}
@@ -1693,14 +1842,26 @@ function SettingsPageInner() {
                           <>
                             <button
                               onClick={() => handleRunNow(s.id)}
-                              disabled={running === s.id || s.status === 'paused'}
-                              title="Run now"
+                              disabled={running === s.id || !!runPending[s.id] || s.status === 'paused'}
+                              title={
+                                runPending[s.id] === 'queued'
+                                  ? 'Queued — waiting for the worker to pick it up'
+                                  : runPending[s.id] === 'running'
+                                    ? 'Scan in progress'
+                                    : 'Run now'
+                              }
                               className="text-xs px-2.5 py-1 transition-colors disabled:opacity-40 disabled:cursor-not-allowed"
                               style={{ color: 'var(--accent-primary)', border: '1px solid var(--accent-primary)', borderRadius: 'var(--radius-xs)' }}
                               onMouseEnter={e => (e.currentTarget.style.background = 'var(--state-info-bg)')}
                               onMouseLeave={e => (e.currentTarget.style.background = 'transparent')}
                             >
-                              {running === s.id ? 'Running…' : 'Run now'}
+                              {running === s.id
+                                ? 'Queueing…'
+                                : runPending[s.id] === 'queued'
+                                  ? 'Queued…'
+                                  : runPending[s.id] === 'running'
+                                    ? 'Running…'
+                                    : 'Run now'}
                             </button>
                             <button
                               onClick={() => handleToggle(s.id)}

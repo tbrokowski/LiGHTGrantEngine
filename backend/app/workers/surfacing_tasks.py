@@ -5,7 +5,7 @@ from app.db_sync import get_sync_engine
 import asyncio
 import logging
 import uuid
-from datetime import datetime, timezone
+from datetime import date, datetime, timezone
 
 from sqlalchemy import create_engine, select
 from sqlalchemy.orm import Session
@@ -103,49 +103,117 @@ def surface_opportunity_for_institutions(opportunity_id: str) -> dict:
 
 _LLM_TIERS = {"high_priority", "worth_reviewing", "watchlist", "low_fit"}
 
+# Rows streamed per fetch during a full rescore. Bounds peak memory: at 1536-d
+# float embeddings, pulling an entire institution's feed at once would be tens
+# of MB per worker process, times concurrency.
+_RESCORE_BATCH = 500
 
-def _apply_taste_adjustment(result: dict, opp, profile_row) -> dict:
-    """Replace the coarse keyword bucket with the continuous semantic blend
-    (embedding similarity to the org profile/taste + keyword coverage), which is
-    far better differentiated so the feed can actually rank the best. Falls back
-    to the keyword result unchanged when the opportunity has no embedding."""
-    from app.services.keyword_scorer import tier_from_score
-    from app.services.relevance_ranker import semantic_fit
+# Cap on text fed to keyword matching. `parsed_text` can be an entire scraped
+# page; the signal is in the first few thousand characters.
+_MAX_MATCH_TEXT = 20_000
 
-    if opp.embedding is None:
-        return result
+# Statuses a rescore must not overwrite — a human has already acted on these.
+_PRESERVED_STATUSES = ("archived", "potential_fit", "in_review")
 
-    # Recover the org's keyword-coverage ratio from the keyword score (25 + ratio*72).
-    kw_ratio = max(0.0, min(1.0, (result.get("fit_score", 25) - 25) / 72.0))
-    has_taste = bool(profile_row and (profile_row.positive_count >= 3 or profile_row.negative_count >= 3))
-    new_score = semantic_fit(
-        opp_embedding=opp.embedding,
-        profile_embedding=getattr(profile_row, "profile_embedding", None) if profile_row else None,
-        positive_embedding=profile_row.positive_embedding if profile_row else None,
-        negative_embedding=profile_row.negative_embedding if profile_row else None,
-        keyword_ratio=kw_ratio,
-        has_taste_signal=has_taste,
+
+def _extract_features(row, ctx, profile, today):
+    """Score one streamed row into (features, keyword_result).
+
+    Shared by the full-institution rescore and the single-opportunity path so
+    both produce identical numbers. Returns (None, keyword_result) when an
+    exclusion keyword fires — the caller short-circuits to EXCLUDED_SCORE.
+    """
+    from app.services.grant_ranker import compute_features
+    from app.services.keyword_scorer import keyword_score_opportunity
+
+    description = (row.description or row.parsed_text or row.notes or "")[:_MAX_MATCH_TEXT]
+    kw = keyword_score_opportunity(
+        title=row.title,
+        description=description,
+        funder=row.funder or "",
+        eligibility=row.eligibility_criteria or "",
+        geography=row.geography or [],
+        award_min=row.award_min,
+        award_max=row.award_max,
+        deadline=row.deadline,
+        thematic_areas=row.thematic_areas or [],
+        profile_keywords=profile.keywords,
+        profile_geographies=profile.geographies,
+        excluded_keywords=profile.excluded_keywords,
     )
-    result = dict(result)
-    result["fit_score"] = new_score
-    result["priority"] = tier_from_score(new_score)
-    return result
+    if kw.get("excluded"):
+        return None, kw
+
+    feats = compute_features(
+        row.embedding,
+        ctx,
+        keyword_coverage=kw["keyword_coverage"],
+        funder=row.funder,
+        deadline=row.deadline,
+        award_min=row.award_min,
+        award_max=row.award_max,
+        today=today,
+    )
+    return feats, kw
+
+
+def _finalize(feats, kw, ctx, funder):
+    """Turn features into the persisted (score, tier, rationale, themes)."""
+    from app.services.grant_ranker import EXCLUDED_SCORE, build_rationale, calibrated_score
+    from app.services.keyword_scorer import tier_from_score
+
+    if feats is None:  # excluded
+        return EXCLUDED_SCORE, "low", kw.get("fit_rationale", "Excluded."), []
+
+    score = calibrated_score(feats, ctx)
+    return (
+        round(score),
+        tier_from_score(score),
+        build_rationale(feats, kw.get("matched_themes") or [], funder),
+        (kw.get("matched_themes") or [])[:15],
+    )
+
+
+def _scoring_columns():
+    """Column list for the streaming rescore — never selects ORM entities, so
+    1536-d embeddings are garbage-collected per batch instead of accumulating in
+    the session identity map."""
+    from app.models.institution_opportunity import InstitutionOpportunity
+    from app.models.opportunity import Opportunity
+
+    return [
+        InstitutionOpportunity.opportunity_id.label("opportunity_id"),
+        InstitutionOpportunity.priority.label("existing_priority"),
+        InstitutionOpportunity.status.label("existing_status"),
+        Opportunity.title, Opportunity.description, Opportunity.parsed_text,
+        Opportunity.notes, Opportunity.funder, Opportunity.eligibility_criteria,
+        Opportunity.geography, Opportunity.award_min, Opportunity.award_max,
+        Opportunity.deadline, Opportunity.thematic_areas, Opportunity.embedding,
+    ]
 
 
 @celery_app.task(name="app.workers.surfacing_tasks.rescore_institution", bind=True, max_retries=2)
 def rescore_institution(self, institution_id: str) -> dict:
-    from app.config import get_settings
+    """Re-score every surfaced opportunity for one institution, and refresh the
+    calibration quantiles from the resulting score distribution.
+
+    Two passes over a streamed result set:
+      1. Extract features for every row. Embeddings are touched once and
+         discarded; only the small feature structs are retained.
+      2. Build the raw-score distribution, persist its quantiles, then calibrate
+         and bulk-write. Pass 2 needs no embeddings at all, so the whole job
+         holds ~1MB of features rather than tens of MB of vectors.
+    """
     from app.models.institution import Institution
     from app.models.institution_opportunity import InstitutionOpportunity
     from app.models.institution_taste_profile import InstitutionTasteProfile
     from app.models.opportunity import Opportunity
     from app.schemas.grant_profile import GrantProfile
-    from app.services.keyword_scorer import keyword_score_opportunity
+    from app.services.grant_ranker import build_quantiles, context_from_profile
 
-    settings = get_settings()
     engine = get_sync_engine()
+    today = date.today()
 
-    scored = 0
     with Session(engine) as db:
         inst = db.get(Institution, institution_id)
         if not inst:
@@ -153,104 +221,134 @@ def rescore_institution(self, institution_id: str) -> dict:
         profile = GrantProfile.from_dict(inst.grant_profile or {})
         threshold = profile.auto_queue_threshold
         taste_profile = db.get(InstitutionTasteProfile, institution_id)
-        rows = db.execute(
-            select(InstitutionOpportunity, Opportunity)
+        ctx = context_from_profile(taste_profile)
+
+        # ── Pass 1: features only ────────────────────────────────────────────
+        stmt = (
+            select(*_scoring_columns())
             .join(Opportunity, Opportunity.id == InstitutionOpportunity.opportunity_id)
             .where(InstitutionOpportunity.institution_id == institution_id)
-        ).all()
-        for io, opp in rows:
-            if io.priority in _LLM_TIERS:
+            .execution_options(yield_per=_RESCORE_BATCH, stream_results=True)
+        )
+        pending: list[tuple] = []
+        for row in db.execute(stmt):
+            if row.existing_priority in _LLM_TIERS:
                 continue  # preserve LLM score, do not overwrite with keyword score
             try:
-                result = keyword_score_opportunity(
-                    title=opp.title,
-                    description=opp.description or opp.parsed_text or opp.notes or "",
-                    funder=opp.funder or "",
-                    eligibility=opp.eligibility_criteria or "",
-                    geography=opp.geography or [],
-                    award_min=opp.award_min,
-                    award_max=opp.award_max,
-                    deadline=opp.deadline,
-                    thematic_areas=opp.thematic_areas or [],
-                    profile_keywords=profile.keywords,
-                    profile_geographies=profile.geographies,
-                    excluded_keywords=profile.excluded_keywords,
-                )
-                result = _apply_taste_adjustment(result, opp, taste_profile)
-                io.fit_score = result["fit_score"]
-                io.priority = result["priority"]
-                io.fit_rationale = result.get("fit_rationale", "")
-                if result.get("matched_themes"):
-                    io.matched_themes = result["matched_themes"]
-                io.status = "needs_review" if io.fit_score >= threshold else "new"
-                io.scored_at = datetime.now(timezone.utc)
-                scored += 1
+                feats, kw = _extract_features(row, ctx, profile, today)
+                pending.append((row.opportunity_id, feats, kw, row.funder, row.existing_status))
             except Exception as exc:
-                logger.warning("Rescore failed for opp %s: %s", opp.id, exc)
-        db.commit()
-    return {"scored": scored}
+                logger.warning("Rescore failed for opp %s: %s", row.opportunity_id, exc)
+
+        # ── Calibration ──────────────────────────────────────────────────────
+        quantiles = build_quantiles(f.raw for _o, f, _k, _fn, _st in pending if f is not None)
+        if quantiles and taste_profile is not None:
+            meta = dict(taste_profile.ranking_meta or {})
+            meta["quantiles"] = quantiles
+            taste_profile.ranking_meta = meta
+            db.commit()
+        ctx.quantiles = quantiles
+
+        # ── Pass 2: calibrate + bulk write ───────────────────────────────────
+        now = datetime.now(timezone.utc)
+        updates = []
+        for opportunity_id, feats, kw, funder, existing_status in pending:
+            score, tier, rationale, themes = _finalize(feats, kw, ctx, funder)
+            update = {
+                "institution_id": institution_id,
+                "opportunity_id": opportunity_id,
+                "fit_score": score,
+                "priority": tier,
+                "fit_rationale": rationale,
+                "scored_at": now,
+            }
+            if themes:
+                update["matched_themes"] = themes
+            if existing_status not in _PRESERVED_STATUSES:
+                update["status"] = "needs_review" if score >= threshold else "new"
+            updates.append(update)
+
+        for i in range(0, len(updates), _RESCORE_BATCH):
+            db.bulk_update_mappings(InstitutionOpportunity, updates[i : i + _RESCORE_BATCH])
+            db.commit()
+
+    return {"scored": len(updates), "calibrated": bool(quantiles)}
 
 
 @celery_app.task(name="app.workers.surfacing_tasks.rescore_opportunity_for_institutions")
 def rescore_opportunity_for_institutions(opportunity_id: str) -> dict:
-    """Re-score one opportunity for every institution that has it surfaced."""
-    from app.config import get_settings
+    """Re-score one opportunity for every institution that has it surfaced.
+
+    The hot path: runs for every newly discovered grant. Calibration reuses the
+    quantiles each institution's last full rescore persisted, so a single new
+    opportunity lands on the same 0-100 scale as the rest of that org's feed
+    without rescoring the whole feed to find out where it falls.
+    """
     from app.models.institution import Institution
     from app.models.institution_opportunity import InstitutionOpportunity
     from app.models.institution_taste_profile import InstitutionTasteProfile
     from app.models.opportunity import Opportunity
     from app.schemas.grant_profile import GrantProfile
-    from app.services.keyword_scorer import keyword_score_opportunity
+    from app.services.grant_ranker import context_from_profile
 
-    settings = get_settings()
     engine = get_sync_engine()
+    today = date.today()
 
     scored = 0
     with Session(engine) as db:
-        opp = db.get(Opportunity, opportunity_id)
-        if not opp:
-            return {"scored": 0}
-
         rows = db.execute(
-            select(InstitutionOpportunity, Institution)
+            select(*_scoring_columns(), Institution)
+            .join(Opportunity, Opportunity.id == InstitutionOpportunity.opportunity_id)
             .join(Institution, Institution.id == InstitutionOpportunity.institution_id)
             .where(InstitutionOpportunity.opportunity_id == opportunity_id)
         ).all()
 
-        for io, inst in rows:
-            if io.priority in _LLM_TIERS:
-                continue  # preserve LLM score, do not overwrite with keyword score
-            profile = GrantProfile.from_dict(inst.grant_profile or {})
-            threshold = profile.auto_queue_threshold
-            taste_profile = db.get(InstitutionTasteProfile, inst.id)
-            try:
-                result = keyword_score_opportunity(
-                    title=opp.title,
-                    description=opp.description or opp.parsed_text or opp.notes or "",
-                    funder=opp.funder or "",
-                    eligibility=opp.eligibility_criteria or "",
-                    geography=opp.geography or [],
-                    award_min=opp.award_min,
-                    award_max=opp.award_max,
-                    deadline=opp.deadline,
-                    thematic_areas=opp.thematic_areas or [],
-                    profile_keywords=profile.keywords,
-                    profile_geographies=profile.geographies,
-                    excluded_keywords=profile.excluded_keywords,
+        # One context per institution, not per row — the unpack is the expensive
+        # part and an opportunity can be surfaced to many orgs.
+        ctx_cache: dict = {}
+        now = datetime.now(timezone.utc)
+        updates = []
+
+        for row in rows:
+            inst = row[-1]
+            if row.existing_priority in _LLM_TIERS:
+                continue  # preserve LLM score
+            if inst.id not in ctx_cache:
+                ctx_cache[inst.id] = context_from_profile(
+                    db.get(InstitutionTasteProfile, inst.id)
                 )
-                result = _apply_taste_adjustment(result, opp, taste_profile)
-                io.fit_score = result["fit_score"]
-                io.priority = result["priority"]
-                io.fit_rationale = result.get("fit_rationale", "")
-                if result.get("matched_themes"):
-                    io.matched_themes = result["matched_themes"]
-                if io.status not in ("archived", "potential_fit", "in_review"):
-                    io.status = "needs_review" if io.fit_score >= threshold else "new"
-                io.scored_at = datetime.now(timezone.utc)
-                scored += 1
+            ctx = ctx_cache[inst.id]
+            profile = GrantProfile.from_dict(inst.grant_profile or {})
+            try:
+                feats, kw = _extract_features(row, ctx, profile, today)
+                score, tier, rationale, themes = _finalize(feats, kw, ctx, row.funder)
             except Exception as exc:
-                logger.warning("Institution rescore failed for opp %s inst %s: %s", opp.id, inst.id, exc)
-        db.commit()
+                logger.warning(
+                    "Institution rescore failed for opp %s inst %s: %s",
+                    opportunity_id, inst.id, exc,
+                )
+                continue
+
+            update = {
+                "institution_id": inst.id,
+                "opportunity_id": opportunity_id,
+                "fit_score": score,
+                "priority": tier,
+                "fit_rationale": rationale,
+                "scored_at": now,
+            }
+            if themes:
+                update["matched_themes"] = themes
+            if row.existing_status not in _PRESERVED_STATUSES:
+                threshold = profile.auto_queue_threshold
+                update["status"] = "needs_review" if score >= threshold else "new"
+            updates.append(update)
+            scored += 1
+
+        if updates:
+            db.bulk_update_mappings(InstitutionOpportunity, updates)
+            db.commit()
+
     return {"scored": scored}
 
 
