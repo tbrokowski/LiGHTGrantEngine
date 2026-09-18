@@ -1,11 +1,17 @@
 """Relevance ranking helpers for the opportunities feed.
 
 Two concerns:
-  * semantic_fit() — a continuous, well-differentiated org fit score blending
-    embedding similarity, keyword coverage, and taste centroids (used by the
-    surfacing/scoring tasks to replace the coarse keyword-only buckets).
+  * personal_relevance() — blends the institution fit score with the signed-in
+    user's own taste so the feed is personalized on top of the org ranking.
   * diversify_order() — a greedy MMR-style reorder that interleaves sources/
     funders so a single source can't dominate the top of the feed.
+
+The org-level fit score itself now comes from `services.grant_ranker`, which
+calibrates against the institution's own score distribution. The old
+`semantic_fit()` blend that lived here fed raw cosine similarity straight into a
+weighted average; because embedding cosines realistically top out near 0.6, that
+compressed every opportunity into the 20s-50s and left the 75/45 tier thresholds
+unreachable.
 
 Both are pure/sync and dependency-light so they're safe to call from Celery
 workers and the request path alike.
@@ -13,59 +19,6 @@ workers and the request path alike.
 from __future__ import annotations
 
 from typing import Callable, Hashable, Sequence
-
-from app.services.taste_profile_scorer import cosine_similarity
-
-
-# ── Continuous org fit score ─────────────────────────────────────────────────
-
-def semantic_fit(
-    opp_embedding: list[float] | None,
-    profile_embedding: list[float] | None,
-    positive_embedding: list[float] | None,
-    negative_embedding: list[float] | None,
-    keyword_ratio: float,
-    *,
-    has_taste_signal: bool = False,
-    funder_priority: bool = False,
-) -> float:
-    """Blend signals into a continuous 0–100 fit score.
-
-    keyword_ratio: share of the org's profile keywords matched (0..1) — the
-      coverage signal the old keyword scorer already computes.
-    profile_embedding: embedding of the org's declared profile (keywords/mission);
-      positive/negative: taste centroids of what the org pursued/rejected.
-
-    Weighting favours semantic similarity (fine-grained) but keeps keyword
-    coverage and taste so the score stays explainable and degrades gracefully:
-    with no embedding at all it falls back to keyword coverage alone.
-    """
-    kw = max(0.0, min(1.0, keyword_ratio))
-
-    if opp_embedding is None:
-        # No vector — pure keyword coverage, same scale as before.
-        return round(25 + kw * 72)
-
-    sem = 0.0
-    sem_weight = 0.0
-    if profile_embedding is not None:
-        sem = max(0.0, cosine_similarity(opp_embedding, profile_embedding))
-        sem_weight = 0.55
-    taste = 0.0
-    if has_taste_signal and (positive_embedding is not None or negative_embedding is not None):
-        pos = cosine_similarity(opp_embedding, positive_embedding)
-        neg = cosine_similarity(opp_embedding, negative_embedding)
-        taste = pos - neg  # -1..1
-    # Re-normalise weights over whatever signals are present.
-    kw_weight = 0.30
-    taste_weight = 0.15 if (has_taste_signal and taste != 0.0) else 0.0
-    total_w = sem_weight + kw_weight + taste_weight or 1.0
-    blended = (sem_weight * sem + kw_weight * kw + taste_weight * ((taste + 1) / 2)) / total_w
-
-    score = blended * 100
-    if funder_priority:
-        score += 6
-    return round(max(0.0, min(100.0, score)))
 
 
 # ── Personalized feed relevance ──────────────────────────────────────────────
