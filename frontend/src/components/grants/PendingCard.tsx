@@ -2,6 +2,7 @@
 import { useState } from 'react';
 import Link from 'next/link';
 import StageTransitionModal from './StageTransitionModal';
+import CardMenu, { MenuDivider, MenuItem, MenuLink } from './CardMenu';
 import { GrantSummary } from './ProposalCard';
 
 function formatDate(d: string | null) {
@@ -25,7 +26,6 @@ interface Props {
 
 export default function PendingCard({ grant, onStageChange, onDelete, onEdit }: Props) {
   const [transition, setTransition] = useState<'accept' | 'reject' | null>(null);
-  const [menuOpen, setMenuOpen] = useState(false);
 
   const submittedDate = formatDate(grant.submitted_at);
   const amountLabel = formatAmount(grant.requested_amount, grant.currency);
@@ -101,85 +101,22 @@ export default function PendingCard({ grant, onStageChange, onDelete, onEdit }: 
 
         {/* Right: actions */}
         <div className="flex flex-col items-end justify-start px-4 py-4 shrink-0">
-          <div className="relative">
-            <button
-              type="button"
-              onClick={() => setMenuOpen(v => !v)}
-              className="w-6 h-6 flex items-center justify-center rounded-[var(--radius-xs)] transition-colors"
-              style={{ color: 'var(--ink-primary)' }}
-              onMouseEnter={e => { e.currentTarget.style.background = 'var(--surface-sunken)'; }}
-              onMouseLeave={e => { e.currentTarget.style.background = 'transparent'; }}
-            >
-              <svg className="w-4 h-4" fill="currentColor" viewBox="0 0 24 24">
-                <circle cx="12" cy="5" r="1.6" /><circle cx="12" cy="12" r="1.6" /><circle cx="12" cy="19" r="1.6" />
-              </svg>
-            </button>
-            {menuOpen && (
-              <div
-                className="absolute right-0 top-full mt-1 w-44 py-1 z-10"
-                style={{
-                  border: '1px solid var(--rule-subtle)',
-                  borderRadius: 'var(--radius-md)',
-                  background: 'var(--surface-panel)',
-                  boxShadow: 'var(--shadow-floating)',
-                }}
-                onMouseLeave={() => setMenuOpen(false)}
-              >
+          <CardMenu>
+            {close => (
+              <>
                 {grant.call_url && (
-                  <a href={grant.call_url} target="_blank" rel="noopener noreferrer"
-                    onClick={() => setMenuOpen(false)}
-                    className="block w-full text-left px-3 py-2 text-sm transition-colors"
-                    style={{ color: 'var(--ink-secondary)' }}
-                    onMouseEnter={e => (e.currentTarget.style.background = 'var(--surface-sunken)')}
-                    onMouseLeave={e => (e.currentTarget.style.background = 'transparent')}
-                  >View call ↗</a>
+                  <MenuLink href={grant.call_url} onClick={close}>View call ↗</MenuLink>
                 )}
-                <button
-                  type="button"
-                  onClick={() => { setMenuOpen(false); setTransition('accept'); }}
-                  className="w-full text-left px-3 py-2 text-sm transition-colors"
-                  style={{ color: 'var(--ink-secondary)' }}
-                  onMouseEnter={e => (e.currentTarget.style.background = 'var(--surface-sunken)')}
-                  onMouseLeave={e => (e.currentTarget.style.background = 'transparent')}
-                >
-                  Mark Accepted
-                </button>
-                <button
-                  type="button"
-                  onClick={() => { setMenuOpen(false); setTransition('reject'); }}
-                  className="w-full text-left px-3 py-2 text-sm transition-colors"
-                  style={{ color: 'var(--ink-secondary)' }}
-                  onMouseEnter={e => (e.currentTarget.style.background = 'var(--surface-sunken)')}
-                  onMouseLeave={e => (e.currentTarget.style.background = 'transparent')}
-                >
-                  Mark Rejected
-                </button>
+                <MenuItem onClick={() => { close(); setTransition('accept'); }}>Mark Accepted</MenuItem>
+                <MenuItem onClick={() => { close(); setTransition('reject'); }}>Mark Rejected</MenuItem>
                 {onEdit && (
-                  <button
-                    type="button"
-                    onClick={() => { setMenuOpen(false); onEdit(grant); }}
-                    className="w-full text-left px-3 py-2 text-sm transition-colors"
-                    style={{ color: 'var(--ink-secondary)' }}
-                    onMouseEnter={e => (e.currentTarget.style.background = 'var(--surface-sunken)')}
-                    onMouseLeave={e => (e.currentTarget.style.background = 'transparent')}
-                  >
-                    Edit details
-                  </button>
+                  <MenuItem onClick={() => { close(); onEdit(grant); }}>Edit details</MenuItem>
                 )}
-                <div style={{ borderTop: '1px solid var(--rule-subtle)', margin: '4px 0' }} />
-                <button
-                  type="button"
-                  onClick={() => { setMenuOpen(false); onDelete(grant.id); }}
-                  className="w-full text-left px-3 py-2 text-sm transition-colors"
-                  style={{ color: 'var(--ink-secondary)' }}
-                  onMouseEnter={e => (e.currentTarget.style.background = 'var(--surface-sunken)')}
-                  onMouseLeave={e => (e.currentTarget.style.background = 'transparent')}
-                >
-                  Delete
-                </button>
-              </div>
+                <MenuDivider />
+                <MenuItem onClick={() => { close(); onDelete(grant.id); }}>Delete</MenuItem>
+              </>
             )}
-          </div>
+          </CardMenu>
         </div>
       </div>
     </>

@@ -2,6 +2,7 @@
 import { useState } from 'react';
 import Link from 'next/link';
 import PriorityTag from './PriorityTag';
+import CardMenu, { MenuItem, MenuLink } from './CardMenu';
 import StageTransitionModal from './StageTransitionModal';
 
 export interface GrantSummary {
@@ -110,7 +111,6 @@ interface Props {
 export default function ProposalCard({ grant, onStageChange, onDelete, onEdit }: Props) {
   const [priority, setPriority] = useState(grant.priority);
   const [transition, setTransition] = useState<'submit' | null>(null);
-  const [menuOpen, setMenuOpen] = useState(false);
 
   const isPersonal = grant.is_personal;
   const meta: string[] = [];
@@ -194,79 +194,20 @@ export default function ProposalCard({ grant, onStageChange, onDelete, onEdit }:
 
         {/* Right: actions */}
         <div className="flex flex-col items-end justify-between gap-2 px-4 py-4 shrink-0">
-          <div className="relative">
-            <button
-              type="button"
-              onClick={() => setMenuOpen(v => !v)}
-              className="w-6 h-6 flex items-center justify-center rounded-[var(--radius-sm)] transition-colors"
-              style={{ color: 'var(--ink-primary)' }}
-              onMouseEnter={e => { e.currentTarget.style.background = 'var(--surface-sunken)'; }}
-              onMouseLeave={e => { e.currentTarget.style.background = 'transparent'; }}
-            >
-              <svg className="w-4 h-4" fill="currentColor" viewBox="0 0 24 24">
-                <circle cx="12" cy="5" r="1.6" /><circle cx="12" cy="12" r="1.6" /><circle cx="12" cy="19" r="1.6" />
-              </svg>
-            </button>
-            {menuOpen && (
-              <div
-                className="absolute right-0 top-full mt-1 w-44 py-1 z-10"
-                style={{
-                  border: '1px solid var(--rule-subtle)',
-                  borderRadius: 'var(--radius-md)',
-                  background: 'var(--surface-panel)',
-                  boxShadow: 'var(--shadow-floating)',
-                }}
-                onMouseLeave={() => setMenuOpen(false)}
-              >
+          <CardMenu triggerRadius="var(--radius-sm)">
+            {close => (
+              <>
                 {grant.call_url && (
-                  <a
-                    href={grant.call_url}
-                    target="_blank"
-                    rel="noopener noreferrer"
-                    onClick={() => setMenuOpen(false)}
-                    className="block w-full text-left px-3 py-2 text-sm transition-colors"
-                    style={{ color: 'var(--ink-secondary)' }}
-                    onMouseEnter={e => (e.currentTarget.style.background = 'var(--surface-sunken)')}
-                    onMouseLeave={e => (e.currentTarget.style.background = 'transparent')}
-                  >
-                    View call ↗
-                  </a>
+                  <MenuLink href={grant.call_url} onClick={close}>View call ↗</MenuLink>
                 )}
                 {onEdit && (
-                  <button
-                    type="button"
-                    onClick={() => { setMenuOpen(false); onEdit(grant); }}
-                    className="w-full text-left px-3 py-2 text-sm transition-colors"
-                    style={{ color: 'var(--ink-secondary)' }}
-                    onMouseEnter={e => (e.currentTarget.style.background = 'var(--surface-sunken)')}
-                    onMouseLeave={e => (e.currentTarget.style.background = 'transparent')}
-                  >
-                    Edit details
-                  </button>
+                  <MenuItem onClick={() => { close(); onEdit(grant); }}>Edit details</MenuItem>
                 )}
-                <button
-                  type="button"
-                  onClick={() => { setMenuOpen(false); setTransition('submit'); }}
-                  className="w-full text-left px-3 py-2 text-sm transition-colors"
-                  style={{ color: 'var(--ink-secondary)' }}
-                  onMouseEnter={e => (e.currentTarget.style.background = 'var(--surface-sunken)')}
-                  onMouseLeave={e => (e.currentTarget.style.background = 'transparent')}
-                >
-                  Mark as Submitted
-                </button>
-                <button
-                  type="button"
-                  onClick={() => { setMenuOpen(false); onDelete(grant.id); }}
-                  className="w-full text-left px-3 py-2 text-sm transition-colors"
-                  style={{ color: 'var(--ink-secondary)' }}
-                  onMouseEnter={e => (e.currentTarget.style.background = 'var(--surface-sunken)')}
-                  onMouseLeave={e => (e.currentTarget.style.background = 'transparent')}
-                >
-                  Delete
-                </button>
-              </div>
+                <MenuItem onClick={() => { close(); setTransition('submit'); }}>Mark as Submitted</MenuItem>
+                <MenuItem onClick={() => { close(); onDelete(grant.id); }}>Delete</MenuItem>
+              </>
             )}
-          </div>
+          </CardMenu>
 
           <Link
             href={`/grants/${grant.id}?tab=editor`}

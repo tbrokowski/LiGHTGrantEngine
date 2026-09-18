@@ -1,6 +1,8 @@
 'use client';
-import { useState, useRef, useEffect } from 'react';
+import { useState } from 'react';
+import { createPortal } from 'react-dom';
 import { grants } from '@/lib/api';
+import { useAnchoredMenu } from './useAnchoredMenu';
 
 interface PriorityConfig {
   value: string;
@@ -27,22 +29,12 @@ interface PriorityTagProps {
 }
 
 export default function PriorityTag({ grantId, priority, onUpdate, readOnly }: PriorityTagProps) {
-  const [open, setOpen] = useState(false);
   const [saving, setSaving] = useState(false);
-  const ref = useRef<HTMLDivElement>(null);
-
-  useEffect(() => {
-    if (!open) return;
-    function handle(e: MouseEvent) {
-      if (ref.current && !ref.current.contains(e.target as Node)) setOpen(false);
-    }
-    document.addEventListener('mousedown', handle);
-    return () => document.removeEventListener('mousedown', handle);
-  }, [open]);
+  const { open, setOpen, close, mounted, triggerRef, menuRef, menuStyle } = useAnchoredMenu({ align: 'left' });
 
   async function handleSelect(value: string | null) {
     if (readOnly) return;
-    setOpen(false);
+    close();
     setSaving(true);
     try {
       await grants.update(grantId, { priority: value });
@@ -73,10 +65,13 @@ export default function PriorityTag({ grantId, priority, onUpdate, readOnly }: P
   }
 
   return (
-    <div className="relative" ref={ref}>
+    <>
       <button
+        ref={triggerRef}
         type="button"
-        onClick={() => setOpen(v => !v)}
+        aria-haspopup="menu"
+        aria-expanded={open}
+        onClick={e => { e.preventDefault(); e.stopPropagation(); setOpen(v => !v); }}
         disabled={saving}
         className="inline-flex items-center text-[10px] font-medium px-1.5 py-0.5 rounded-[var(--radius-xs)] transition-opacity"
         style={{ ...chipStyle, opacity: saving ? 0.5 : 1 }}
@@ -89,21 +84,13 @@ export default function PriorityTag({ grantId, priority, onUpdate, readOnly }: P
         )}
       </button>
 
-      {open && (
-        <div
-          className="absolute left-0 top-full mt-1 py-1 z-20 min-w-[110px]"
-          style={{
-            border: '1px solid var(--rule-subtle)',
-            borderRadius: 'var(--radius-md)',
-            background: 'var(--surface-panel)',
-            boxShadow: 'var(--shadow-floating)',
-          }}
-        >
+      {mounted && open && createPortal(
+        <div ref={menuRef} role="menu" className="py-1 min-w-[110px]" style={menuStyle}>
           {PRIORITIES.map(p => (
             <button
               key={p.value}
               type="button"
-              onClick={() => handleSelect(p.value)}
+              onClick={e => { e.preventDefault(); e.stopPropagation(); handleSelect(p.value); }}
               className="w-full text-left px-3 py-1.5 text-xs font-medium flex items-center gap-2 transition-colors"
               style={{ color: 'var(--ink-secondary)' }}
               onMouseEnter={e => (e.currentTarget.style.background = 'var(--surface-sunken)')}
@@ -116,7 +103,7 @@ export default function PriorityTag({ grantId, priority, onUpdate, readOnly }: P
           {priority && (
             <button
               type="button"
-              onClick={() => handleSelect(null)}
+              onClick={e => { e.preventDefault(); e.stopPropagation(); handleSelect(null); }}
               className="w-full text-left px-3 py-1.5 text-xs transition-colors"
               style={{ color: 'var(--ink-faint)' }}
               onMouseEnter={e => (e.currentTarget.style.background = 'var(--surface-sunken)')}
@@ -125,8 +112,9 @@ export default function PriorityTag({ grantId, priority, onUpdate, readOnly }: P
               Clear
             </button>
           )}
-        </div>
+        </div>,
+        document.body,
       )}
-    </div>
+    </>
   );
 }
