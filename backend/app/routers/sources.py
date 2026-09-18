@@ -1,6 +1,7 @@
 """Grant source management endpoints."""
 import logging
 import uuid
+from datetime import datetime, timedelta, timezone
 from typing import Optional
 from fastapi import APIRouter, Depends, HTTPException, BackgroundTasks
 from pydantic import BaseModel
@@ -13,6 +14,12 @@ from app.routers.auth import get_current_user
 from app.auth.permissions import require_org_admin
 
 logger = logging.getLogger(__name__)
+
+# How recently a source run must have started/finished for the worker to count
+# as alive when it is too busy to answer a Celery ping. The fan-out staggers
+# dispatches 15s apart and scan_source is rate-limited to 4/m, so a healthy
+# worker touches source_runs several times a minute; 15 minutes is generous.
+_LIVENESS_WINDOW_MINUTES = 15
 
 router = APIRouter()
 
@@ -223,29 +230,83 @@ async def create_source(
 
 
 @router.get("/worker-status")
-async def get_worker_status(current_user: User = Depends(get_current_user)):
-    """Ping Celery workers to check if the discovery pipeline is actually running.
+async def get_worker_status(
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    """Report whether the discovery pipeline is actually executing work.
 
-    Returns worker_reachable=True only when at least one worker responds within
-    3 seconds. Use this to diagnose 'no new grants' — if False, manual scan
-    triggers are being queued but never executed.
+    A plain ``inspect().ping()`` is not sufficient here. The Railway worker runs
+    with ``--pool=solo``, which services task execution and the remote-control
+    (pidbox) channel from the same thread, so a worker that is busy scanning
+    cannot answer a ping and looks identical to a worker that is dead. Because
+    ``scan_source`` is rate-limited to 4/m and the fan-out staggers thousands of
+    sources, the worker is busy nearly all the time and the ping essentially
+    always timed out -- reporting "offline" while scans were succeeding.
+
+    So ping is treated as a fast path only. When it fails we fall back to the
+    database: a source run that started or finished within
+    ``_LIVENESS_WINDOW_MINUTES`` is proof the worker is consuming the queue.
     """
+    ping_result: dict = {"worker_reachable": False, "workers": [], "active_tasks": 0}
+    ping_error: str | None = None
+
     try:
         from app.workers.celery_app import celery_app
         import asyncio
 
         def _ping():
             inspector = celery_app.control.inspect(timeout=3.0)
-            ping_result = inspector.ping() or {}
-            active_result = inspector.active() or {}
-            workers = list(ping_result.keys())
-            active_count = sum(len(v) for v in active_result.values())
-            return {"worker_reachable": bool(workers), "workers": workers, "active_tasks": active_count}
+            replies = inspector.ping() or {}
+            active = inspector.active() or {}
+            workers = list(replies.keys())
+            return {
+                "worker_reachable": bool(workers),
+                "workers": workers,
+                "active_tasks": sum(len(v) for v in active.values()),
+            }
 
-        result = await asyncio.get_event_loop().run_in_executor(None, _ping)
-        return result
+        ping_result = await asyncio.get_event_loop().run_in_executor(None, _ping)
     except Exception as exc:
-        return {"worker_reachable": False, "workers": [], "active_tasks": 0, "error": str(exc)}
+        ping_error = str(exc)
+
+    # Fallback: most recent evidence of the worker touching the queue.
+    last_activity = None
+    try:
+        from sqlalchemy import func
+
+        last_activity = (await db.execute(
+            select(func.max(func.coalesce(SourceRun.ended_at, SourceRun.started_at)))
+        )).scalar()
+    except Exception as exc:  # pragma: no cover - diagnostics must never 500
+        ping_error = ping_error or str(exc)
+
+    recently_active = False
+    if last_activity is not None:
+        if last_activity.tzinfo is None:
+            last_activity = last_activity.replace(tzinfo=timezone.utc)
+        cutoff = datetime.now(timezone.utc) - timedelta(minutes=_LIVENESS_WINDOW_MINUTES)
+        recently_active = last_activity >= cutoff
+
+    if ping_result["worker_reachable"]:
+        state = "online"
+    elif recently_active:
+        # Busy, not dead: it is running tasks but too saturated to answer pings.
+        state = "busy"
+    else:
+        state = "offline"
+
+    return {
+        # Kept for backwards compatibility with existing callers.
+        "worker_reachable": state != "offline",
+        "state": state,
+        "ping_reachable": ping_result["worker_reachable"],
+        "workers": ping_result["workers"],
+        "active_tasks": ping_result["active_tasks"],
+        "last_activity_at": last_activity.isoformat() if last_activity else None,
+        "liveness_window_minutes": _LIVENESS_WINDOW_MINUTES,
+        "error": ping_error,
+    }
 
 
 @router.post("/run-all", dependencies=[Depends(require_org_admin())])
@@ -283,16 +344,45 @@ async def update_source(
 @router.post("/{source_id}/run-now", dependencies=[Depends(require_org_admin())])
 async def run_source_now(
     source_id: str,
-    bg: BackgroundTasks,
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ):
+    """Queue a scan for one source.
+
+    The enqueue happens inline rather than in a BackgroundTask: a background
+    task runs after the response is sent and swallowed its errors, so a broker
+    outage still returned "Scan triggered" and the caller had no way to know the
+    task was never queued. Returning the task id also lets the client follow the
+    run instead of guessing that it started.
+    """
     result = await db.execute(select(Source).where(Source.id == source_id))
     source = result.scalar_one_or_none()
     if not source:
         raise HTTPException(404, "Source not found")
-    bg.add_task(_trigger_source_scan, source_id)
-    return {"message": f"Scan triggered for {source.name}"}
+    if source.status == "paused":
+        raise HTTPException(409, f"{source.name} is paused. Resume it before scanning.")
+
+    import asyncio
+
+    def _enqueue() -> str:
+        from app.workers.celery_app import celery_app
+        return celery_app.send_task(
+            "app.workers.discovery_tasks.scan_source", args=[source_id]
+        ).id
+
+    try:
+        task_id = await asyncio.get_event_loop().run_in_executor(None, _enqueue)
+    except Exception as exc:
+        logger.error("Failed to queue scan for source_id=%s: %s", source_id, exc)
+        raise HTTPException(503, f"Could not reach the task queue: {exc}")
+
+    logger.info("Queued scan for source_id=%s task_id=%s", source_id, task_id)
+    return {
+        "message": f"Scan queued for {source.name}",
+        "task_id": task_id,
+        "source_id": source_id,
+        "queued_at": datetime.now(timezone.utc).isoformat(),
+    }
 
 
 @router.post("/{source_id}/toggle", dependencies=[Depends(require_org_admin())])
@@ -430,15 +520,6 @@ Return only valid JSON, no markdown.
 
 
 # ── Internal helpers (sync — called from BackgroundTasks) ─────────────────────
-
-def _trigger_source_scan(source_id: str) -> None:
-    try:
-        from app.workers.celery_app import celery_app
-        celery_app.send_task("app.workers.discovery_tasks.scan_source", args=[source_id])
-        logger.info("Queued scan for source_id=%s", source_id)
-    except Exception as exc:
-        logger.error("Failed to queue scan for source_id=%s: %s", source_id, exc)
-
 
 def _trigger_all_sources_scan() -> None:
     try:
