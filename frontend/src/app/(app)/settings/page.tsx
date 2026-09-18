@@ -1,5 +1,5 @@
 'use client';
-import { useEffect, useState } from 'react';
+import { Fragment, useEffect, useState } from 'react';
 import { useSearchParams } from 'next/navigation';
 import { Suspense } from 'react';
 import { sources, auth, admin } from '@/lib/api';
@@ -562,10 +562,12 @@ function SettingsPageInner() {
     new_opportunities: number;
     duplicates: number;
     errors: string[];
+    warnings?: string[];
     log_summary: string | null;
   }
   const [scanSummary, setScanSummary] = useState<ScanSummary | null>(null);
   const [recentRuns, setRecentRuns] = useState<RecentRun[]>([]);
+  const [expandedRun, setExpandedRun] = useState<string | null>(null);
   const [deduplicating, setDeduplicating] = useState(false);
   const [dedupResult, setDedupResult] = useState<string | null>(null);
   const [rebuildingRanking, setRebuildingRanking] = useState(false);
@@ -1172,8 +1174,16 @@ function SettingsPageInner() {
                 </tr>
               </thead>
               <tbody>
-                {recentRuns.map(run => (
-                  <tr key={run.id} style={{ borderTop: '1px solid var(--rule-subtle)' }}>
+                {recentRuns.map(run => {
+                  const warnings = run.warnings ?? [];
+                  // A run can finish 'success' and still carry warnings (all
+                  // listings were duplicates, scraper returned 0 rows, ...).
+                  // Those are not errors, so they read amber, not red.
+                  const hasDetail = run.errors.length > 0 || warnings.length > 0 || !!run.log_summary;
+                  const isOpen = expandedRun === run.id;
+                  return (
+                  <Fragment key={run.id}>
+                  <tr style={{ borderTop: '1px solid var(--rule-subtle)' }}>
                     <td className="px-3 py-1.5">{run.source_name}</td>
                     <td className="px-3 py-1.5">
                       <span style={{
@@ -1188,11 +1198,68 @@ function SettingsPageInner() {
                     <td className="px-3 py-1.5 mono-data">{run.records_found}</td>
                     <td className="px-3 py-1.5 mono-data">{run.new_opportunities}</td>
                     <td className="px-3 py-1.5 mono-data">{run.duplicates}</td>
-                    <td className="px-3 py-1.5" style={{ color: 'var(--state-danger)' }}>
-                      {run.errors.length > 0 ? run.errors[0] : (run.log_summary?.includes('WARNINGS') ? '⚠' : '')}
+                    <td className="px-3 py-1.5">
+                      {hasDetail && (
+                        <button
+                          onClick={() => setExpandedRun(isOpen ? null : run.id)}
+                          title={isOpen ? 'Hide details' : 'Show details'}
+                          className="text-xs"
+                          style={{
+                            color: run.errors.length > 0 ? 'var(--state-danger)'
+                              : warnings.length > 0 ? 'var(--state-warning)'
+                              : 'var(--ink-faint)',
+                            background: 'transparent',
+                            border: 'none',
+                            padding: 0,
+                            cursor: 'pointer',
+                            textDecoration: 'underline',
+                            textUnderlineOffset: '2px',
+                          }}
+                        >
+                          {run.errors.length > 0
+                            ? `${run.errors.length} error${run.errors.length !== 1 ? 's' : ''}`
+                            : warnings.length > 0
+                              ? `⚠ ${warnings.length} warning${warnings.length !== 1 ? 's' : ''}`
+                              : 'log'}
+                        </button>
+                      )}
                     </td>
                   </tr>
-                ))}
+                  {isOpen && (
+                    <tr style={{ background: 'var(--surface-sunken)' }}>
+                      <td colSpan={7} className="px-3 py-2.5">
+                        {run.errors.length > 0 && (
+                          <div className="mb-2">
+                            <p className="ledger-label mb-1" style={{ color: 'var(--state-danger)' }}>Errors</p>
+                            <ul className="space-y-0.5">
+                              {run.errors.map((e, i) => (
+                                <li key={i} className="text-xs" style={{ color: 'var(--state-danger)' }}>{e}</li>
+                              ))}
+                            </ul>
+                          </div>
+                        )}
+                        {warnings.length > 0 && (
+                          <div className="mb-2">
+                            <p className="ledger-label mb-1" style={{ color: 'var(--state-warning)' }}>Warnings</p>
+                            <ul className="space-y-0.5">
+                              {warnings.map((w, i) => (
+                                <li key={i} className="text-xs" style={{ color: 'var(--ink-muted)' }}>{w}</li>
+                              ))}
+                            </ul>
+                          </div>
+                        )}
+                        {run.log_summary && (
+                          <div>
+                            <p className="ledger-label mb-1" style={{ color: 'var(--ink-faint)' }}>Log</p>
+                            <p className="text-xs mono-data break-all" style={{ color: 'var(--ink-muted)' }}>{run.log_summary}</p>
+                          </div>
+                        )}
+                      </td>
+                    </tr>
+                  )}
+                  </Fragment>
+                  );
+                })}
               </tbody>
             </table>
           </div>

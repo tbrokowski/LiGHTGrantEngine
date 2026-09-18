@@ -3,7 +3,7 @@ import logging
 import uuid
 from datetime import datetime, timedelta, timezone
 from typing import Optional
-from fastapi import APIRouter, Depends, HTTPException, BackgroundTasks
+from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel
 from sqlalchemy import select, desc
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -118,6 +118,7 @@ async def get_recent_runs(
             "new_opportunities": r.new_opportunities,
             "duplicates": r.duplicates,
             "errors": r.errors or [],
+            "warnings": r.warnings or [],
             "log_summary": r.log_summary,
         }
         for r, s in rows
@@ -311,17 +312,42 @@ async def get_worker_status(
 
 @router.post("/run-all", dependencies=[Depends(require_org_admin())])
 async def run_all_sources(
-    bg: BackgroundTasks,
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ):
-    """Queue a full refresh of all non-paused sources (active, broken, and under_review)."""
+    """Queue a full refresh of all non-paused sources (active, broken, and under_review).
+
+    Enqueued inline for the same reason as ``run_source_now``: as a
+    BackgroundTask this ran after the response was sent and logged its failures
+    rather than raising, so an unreachable broker still reported "Scan queued
+    for N sources" and the button appeared to work while nothing was queued.
+    """
     result = await db.execute(
         select(Source).where(Source.status.in_(["active", "broken", "under_review"]))
     )
     count = len(result.scalars().all())
-    bg.add_task(_trigger_all_sources_scan)
-    return {"message": f"Scan queued for {count} source{'s' if count != 1 else ''}", "queued": count}
+
+    import asyncio
+
+    def _enqueue() -> str:
+        from app.workers.celery_app import celery_app
+        return celery_app.send_task("app.workers.discovery_tasks.scan_all_sources").id
+
+    try:
+        task_id = await asyncio.get_event_loop().run_in_executor(None, _enqueue)
+    except Exception as exc:
+        logger.error("Failed to queue scan_all_sources: %s", exc)
+        raise HTTPException(
+            503,
+            f"Could not reach the task queue, so no scan was started: {exc}",
+        )
+
+    logger.info("Queued scan_all_sources task id=%s", task_id)
+    return {
+        "message": f"Scan queued for {count} source{'s' if count != 1 else ''}",
+        "queued": count,
+        "task_id": task_id,
+    }
 
 
 @router.post("/rebuild-ranking", dependencies=[Depends(require_org_admin())])
@@ -557,16 +583,7 @@ Return only valid JSON, no markdown.
         raise HTTPException(500, f"Diagnosis failed: {e}")
 
 
-# ── Internal helpers (sync — called from BackgroundTasks) ─────────────────────
-
-def _trigger_all_sources_scan() -> None:
-    try:
-        from app.workers.celery_app import celery_app
-        result = celery_app.send_task("app.workers.discovery_tasks.scan_all_sources")
-        logger.info("Queued scan_all_sources task id=%s", result.id)
-    except Exception as exc:
-        logger.error("Failed to queue scan_all_sources: %s", exc)
-
+# ── Internal helpers (sync, fire-and-forget) ──────────────────────────────────
 
 def _trigger_fan_out() -> None:
     try:
