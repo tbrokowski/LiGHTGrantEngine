@@ -1021,6 +1021,17 @@ async def review_queue_counts(
     return {"total": total, "unread": unread}
 
 
+# ── Graph view sizing ────────────────────────────────────────────────────────
+# Seeds are the filter-matching grants; expansion adds their graph neighbours so
+# the rendered subgraph has real structure. Caps keep the payload wire-friendly
+# and the force simulation interactive in the browser.
+GRAPH_SEED_LIMIT = 400
+GRAPH_MAX_NODES = 1200
+GRAPH_MAX_EDGES = 4000
+# How many edge rows to scan when building the adjacency for expansion.
+GRAPH_EXPANSION_EDGE_SCAN = 20_000
+
+
 @router.get("/graph-data")
 async def get_graph_data(
     db: AsyncSession = Depends(get_db),
@@ -1054,6 +1065,7 @@ async def get_graph_data(
     """
     from app.models.opportunity_cluster import OpportunityCluster
     from app.models.opportunity_edge import OpportunityEdge
+    from app.services.graph_builder import expand_neighborhood
 
     filters = [Opportunity.status.notin_(["archived", "duplicate"])]
     filters.extend(_build_opportunity_filters(
@@ -1081,16 +1093,55 @@ async def get_graph_data(
         term = f"%{search}%"
         filters.append(or_(Opportunity.title.ilike(term), Opportunity.funder.ilike(term)))
 
-    q = select(Opportunity).where(and_(*filters)).limit(500)
-    result = await db.execute(q)
-    opps = result.scalars().all()
+    # ── Seed selection ───────────────────────────────────────────────────────
+    # Ordered, not an arbitrary slice. The previous version took an unordered
+    # LIMIT 500 and then asked for edges whose endpoints were *both* inside it;
+    # on a sparse kNN graph the induced subgraph of an arbitrary sample is
+    # essentially edgeless, which is why the view reported zero connections.
+    seed_q = (
+        select(Opportunity.id)
+        .where(and_(*filters))
+        .order_by(desc(func.coalesce(Opportunity.fit_score, 0)), Opportunity.id)
+        .limit(GRAPH_SEED_LIMIT)
+    )
+    seed_ids = [row[0] for row in (await db.execute(seed_q)).all()]
+    if not seed_ids:
+        return {"nodes": [], "edges": [], "clusters": [], "total": 0}
+
+    # ── Neighbourhood expansion ──────────────────────────────────────────────
+    # Pull the seeds' graph neighbours so the returned subgraph is connected by
+    # construction rather than by luck.
+    adjacency: dict[str, list[str]] = {}
+    nbr_rows = (
+        await db.execute(
+            select(OpportunityEdge.source_id, OpportunityEdge.target_id)
+            .where(
+                or_(
+                    OpportunityEdge.source_id.in_(seed_ids),
+                    OpportunityEdge.target_id.in_(seed_ids),
+                )
+            )
+            .order_by(OpportunityEdge.weight.desc())
+            .limit(GRAPH_EXPANSION_EDGE_SCAN)
+        )
+    ).all()
+    for src, tgt in nbr_rows:
+        adjacency.setdefault(src, []).append(tgt)
+        adjacency.setdefault(tgt, []).append(src)
+
+    node_ids = expand_neighborhood(seed_ids, adjacency, max_nodes=GRAPH_MAX_NODES, hops=1)
+
+    opps = (
+        await db.execute(select(Opportunity).where(Opportunity.id.in_(node_ids)))
+    ).scalars().all()
 
     # Load clusters
     clusters_result = await db.execute(select(OpportunityCluster))
     clusters = {c.id: {"id": c.id, "label": c.label, "color": c.color}
                 for c in clusters_result.scalars().all()}
 
-    node_ids: set[str] = {o.id for o in opps}
+    present: set[str] = {o.id for o in opps}
+    seed_set = set(seed_ids)
 
     nodes = []
     for o in opps:
@@ -1107,27 +1158,35 @@ async def get_graph_data(
             "status": o.status,
             "umap_x": o.umap_x,
             "umap_y": o.umap_y,
+            # Distinguishes grants that matched the filters from context nodes
+            # pulled in to keep the graph connected.
+            "is_seed": o.id in seed_set,
         })
 
-    # Load edges where both endpoints are in the current result set.
-    # Filter server-side using ANY to avoid pulling the full edges table.
+    # Edges induced on the expanded node set — now dense, because the set was
+    # chosen to include each seed's neighbours.
     edges_result = await db.execute(
         select(OpportunityEdge)
-        .where(OpportunityEdge.source_id.in_(node_ids))
-        .where(OpportunityEdge.target_id.in_(node_ids))
+        .where(OpportunityEdge.source_id.in_(present))
+        .where(OpportunityEdge.target_id.in_(present))
         .order_by(OpportunityEdge.weight.desc())
-        .limit(2000)
+        .limit(GRAPH_MAX_EDGES)
     )
     edges = [
         {"source": e.source_id, "target": e.target_id, "weight": e.weight}
         for e in edges_result.scalars().all()
     ]
 
+    # Only advertise clusters actually present in this subgraph, so the legend
+    # matches what is on screen.
+    present_clusters = {o.cluster_id for o in opps if o.cluster_id is not None}
+
     return {
         "nodes": nodes,
         "edges": edges,
-        "clusters": list(clusters.values()),
+        "clusters": [c for cid, c in clusters.items() if cid in present_clusters],
         "total": len(nodes),
+        "seed_count": len(seed_set & present),
     }
 
 

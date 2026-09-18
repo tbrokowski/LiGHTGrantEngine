@@ -1,33 +1,59 @@
 """
-Clustering tasks — assign opportunities to Leiden communities using a kNN
-cosine-similarity graph on OpenAI embeddings, then compute UMAP 2D positions.
+Clustering tasks — build a semantic similarity graph over *all* opportunities,
+detect Leiden communities, and compute a 2D atlas layout.
 
-Algorithm pipeline (Scanpy-style, validated on high-dimensional embedding data):
-  1. Normalise 1536-dim OpenAI embeddings (L2).
-  2. Build a k-nearest-neighbour graph (k=15, cosine similarity) via sklearn.
-     Edge weight blends embedding similarity with taxonomy overlap:
+Pipeline:
+  1. kNN graph via pgvector (``<=>`` cosine distance) in a LATERAL join, using
+     the HNSW/IVFFlat index on ``opportunities.embedding``. Previously this was
+     a brute-force sklearn ``NearestNeighbors`` over every embedding held in
+     memory at once — O(n^2) distance work on 1536-d vectors plus ~300MB of
+     resident float32 per 50k grants, which does not survive growth of the
+     corpus. Postgres does the neighbour search against an index instead, and
+     only (id, id, distance) triples cross the wire.
+
+  2. Edge weight blends embedding similarity with taxonomy overlap:
        w = ALPHA * (1 - cosine_distance) + (1 - ALPHA) * jaccard(tags_i, tags_j)
-     where tags = thematic_areas ∪ keywords. Semantic similarity stays dominant
-     (ALPHA=0.7); keyword/taxonomy overlap acts as a tiebreaker so grants that
-     share explicit tags cluster more reliably than embedding distance alone
-     would guarantee. Thresholded at 0.3 on the blended weight.
-  3. Run Leiden community detection (leidenalg, RBConfigurationVertexPartition)
-     on the igraph representation of the kNN graph.
-     → Leiden guarantees well-connected communities, fixing Louvain's
-       disconnected-subset defect. (Traag, Waltman & van Eck, Sci. Rep. 2019)
-  4. Reduce embeddings to 2D with UMAP (umap-learn, cosine metric) and store
-     the coordinates as umap_x / umap_y on each Opportunity row.
-     → Semantically similar grants land near each other in the initial layout.
-  5. Store weighted kNN edges (above threshold) in the opportunity_edges table
-     for the force-graph renderer.
-  6. AI-label each discovered community (3–5 words via existing GPT call).
+     where tags = thematic_areas union keywords. Semantic similarity stays
+     dominant; keyword overlap acts as a tiebreaker.
+
+  3. Retention is **per node**, not global — see `services.graph_builder`. The
+     old global top-N cap let a few dense clumps of near-duplicate grants
+     consume the entire edge budget, leaving most nodes with no edges and the
+     graph view rendering as unconnected dots.
+
+  4. Leiden community detection (leidenalg, RBConfigurationVertexPartition) on
+     the igraph representation. Leiden guarantees well-connected communities,
+     fixing Louvain's disconnected-subset defect.
+     (Traag, Waltman & van Eck, Sci. Rep. 2019)
+
+  5. UMAP to 2D for the atlas layout, stored as umap_x / umap_y. Above
+     ``UMAP_FIT_SAMPLE`` rows the reducer is fit on a sample and used to
+     ``transform`` the remainder in chunks, so peak memory stays bounded
+     regardless of corpus size.
+
+  6. Communities are labelled by an LLM, largest first and capped, with a
+     deterministic term-frequency fallback so labelling cost does not scale
+     linearly with the number of communities.
 
 References:
   Traag et al. (2019) From Louvain to Leiden. Sci Rep 9:5233.
   McInnes et al. (2018) UMAP. arXiv:1802.03426.
-  Abbe (2018) Community Detection and Stochastic Block Models. JMLR 18(177).
 """
 import logging
+import random
+
+from celery import shared_task
+
+# Re-exported for backwards compatibility — these moved to services.graph_builder
+# so the retention policy could be unit-tested without a database.
+from app.services.graph_builder import (  # noqa: F401
+    ALPHA,
+    EDGE_WEIGHT_THRESHOLD,
+    blend_edge_weight,
+    cap_edges,
+    jaccard,
+    top_k_per_node,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -37,238 +63,381 @@ CLUSTER_COLORS = [
     "#14b8a6", "#a855f7", "#3b82f6", "#22c55e", "#fbbf24",
 ]
 
-# Edges with cosine similarity below this threshold are dropped before Leiden.
-EDGE_WEIGHT_THRESHOLD = 0.30
-# kNN neighbours per node
+# Neighbours fetched per node from pgvector.
 KNN_K = 15
-# Maximum edges written to opportunity_edges (cap for wire-friendly API responses)
-MAX_STORED_EDGES = 5000
-# Weight given to embedding (semantic) similarity vs. keyword/taxonomy overlap
-# in the blended edge weight. Semantic stays dominant; keyword overlap tiebreaks.
-ALPHA = 0.7
+# Edges retained per node after blending/thresholding. Lower than KNN_K so the
+# stored graph is sparser than the candidate graph — this is the readable-atlas
+# density, roughly what Connected-Papers-style layouts use.
+EDGES_PER_NODE = 8
+# Global safety cap, applied only *after* per-node selection. Sized for the
+# whole corpus rather than a single view; the API pages a subgraph out of this.
+MAX_STORED_EDGES = 400_000
+# IVFFlat probe count for the kNN scan. The default of 1 gives poor recall and
+# would produce a noticeably worse graph than brute force.
+IVFFLAT_PROBES = 10
+# HNSW search breadth. Same purpose as IVFFLAT_PROBES for the HNSW index that
+# migration 059 creates where pgvector supports it.
+HNSW_EF_SEARCH = 100
+# Above this many embedded rows, UMAP is fit on a sample and used to transform
+# the rest in chunks instead of fitting on everything.
+UMAP_FIT_SAMPLE = 25_000
+# Rows pulled per round trip when streaming embeddings for the layout.
+EMBEDDING_STREAM_CHUNK = 2_000
+# Communities labelled by the LLM (largest first). The rest get a deterministic
+# label so cost does not grow with community count.
+MAX_LLM_LABELLED_COMMUNITIES = 40
+# Communities smaller than this are folded into the "assorted" bucket rather
+# than cluttering the legend with singletons.
+MIN_COMMUNITY_SIZE = 3
 
-
-def jaccard(tags_a: set, tags_b: set) -> float:
-    """Jaccard overlap of two tag sets. Returns 0.0 when either side is empty."""
-    if not tags_a or not tags_b:
-        return 0.0
-    union = tags_a | tags_b
-    if not union:
-        return 0.0
-    return len(tags_a & tags_b) / len(union)
-
-
-def blend_edge_weight(semantic_weight: float, tag_jaccard: float, alpha: float = ALPHA) -> float:
-    """Blend embedding-similarity weight with keyword/taxonomy Jaccard overlap."""
-    return alpha * semantic_weight + (1 - alpha) * tag_jaccard
-
-
-from celery import shared_task
+_EXCLUDED_STATUSES = ("archived", "duplicate")
 
 
 @shared_task(name="app.workers.clustering_tasks.cluster_opportunities")
 def cluster_opportunities():
-    """
-    Re-cluster all opportunities with embeddings using Leiden community detection.
-    Assigns cluster_id and umap_x/umap_y to each opportunity and writes
-    similarity edges to opportunity_edges.
-    """
+    """Re-cluster every opportunity with an embedding."""
     import asyncio
+
     asyncio.run(_cluster_opportunities_async())
 
 
+def _stopwords() -> set[str]:
+    return {
+        "the", "and", "for", "with", "from", "that", "this", "are", "was", "will",
+        "grant", "grants", "funding", "fund", "call", "program", "programme",
+        "award", "awards", "opportunity", "opportunities", "project", "projects",
+        "research", "support", "new", "open", "application", "applications",
+    }
+
+
+def _fallback_label(titles: list[str]) -> str:
+    """Deterministic label from the most frequent distinctive title terms.
+
+    Used for small or overflow communities so the number of LLM calls stays
+    bounded as the corpus grows.
+    """
+    from collections import Counter
+
+    stop = _stopwords()
+    counter: Counter = Counter()
+    for title in titles:
+        for token in (title or "").lower().replace("/", " ").split():
+            token = "".join(ch for ch in token if ch.isalnum())
+            if len(token) > 3 and token not in stop:
+                counter[token] += 1
+    top = [word.title() for word, _n in counter.most_common(3)]
+    return " ".join(top) if top else "Assorted Grants"
+
+
+async def _fetch_knn_edges(db, k: int) -> list[tuple[str, str, float]]:
+    """kNN candidate edges straight out of pgvector.
+
+    One LATERAL probe per node against the vector index, rather than an
+    all-pairs distance computation in Python.
+    """
+    from sqlalchemy import text
+
+    # Session-local, so this never leaks to other users of the pool. Which knob
+    # applies depends on which index the planner picks (HNSW if migration 059
+    # created it, otherwise IVFFlat) — set both, and treat either being absent
+    # as non-fatal rather than losing the whole clustering run over a GUC.
+    for guc, value in (("ivfflat.probes", IVFFLAT_PROBES), ("hnsw.ef_search", HNSW_EF_SEARCH)):
+        try:
+            await db.execute(text(f"SET LOCAL {guc} = {int(value)}"))
+        except Exception as exc:
+            logger.debug("Could not set %s (%s) — continuing with the default", guc, exc)
+            await db.rollback()
+
+    excluded = ", ".join(f"'{s}'" for s in _EXCLUDED_STATUSES)
+    sql = text(
+        f"""
+        SELECT o.id AS src_id, nb.id AS tgt_id, nb.dist AS dist
+        FROM opportunities o
+        CROSS JOIN LATERAL (
+            SELECT o2.id AS id, (o2.embedding <=> o.embedding) AS dist
+            FROM opportunities o2
+            WHERE o2.embedding IS NOT NULL
+              AND o2.id <> o.id
+              AND (o2.status IS NULL OR o2.status NOT IN ({excluded}))
+            ORDER BY o2.embedding <=> o.embedding
+            LIMIT :k
+        ) nb
+        WHERE o.embedding IS NOT NULL
+          AND (o.status IS NULL OR o.status NOT IN ({excluded}))
+        """
+    )
+    rows = (await db.execute(sql, {"k": k})).all()
+    return [(r.src_id, r.tgt_id, 1.0 - float(r.dist)) for r in rows]
+
+
+async def _compute_layout(db, ids: list[str]) -> dict[str, tuple[float, float]]:
+    """UMAP 2D coordinates for every id, normalised to [0, 1].
+
+    Streams embeddings in chunks. Above UMAP_FIT_SAMPLE the reducer is fit on a
+    random sample and used to transform the remainder, so peak memory is a
+    function of the sample size rather than the corpus size.
+    """
+    import numpy as np
+    import umap
+    from sqlalchemy import select
+
+    from app.models.opportunity import Opportunity
+
+    n = len(ids)
+    if n < 10:
+        return {}
+
+    fit_target = min(n, UMAP_FIT_SAMPLE)
+    # Deterministic sample so re-runs produce a stable map.
+    rng = random.Random(42)
+    fit_ids = set(ids if n <= fit_target else rng.sample(ids, fit_target))
+
+    fit_rows: list[np.ndarray] = []
+    fit_order: list[str] = []
+
+    async def _load(target_ids: list[str]):
+        """Fetch embeddings for specific ids in bounded chunks."""
+        for start in range(0, len(target_ids), EMBEDDING_STREAM_CHUNK):
+            chunk = target_ids[start : start + EMBEDDING_STREAM_CHUNK]
+            rows = (
+                await db.execute(
+                    select(Opportunity.id, Opportunity.embedding).where(
+                        Opportunity.id.in_(chunk)
+                    )
+                )
+            ).all()
+            yield [(oid, emb) for oid, emb in rows if emb is not None]
+
+    # Only the sampled ids are pulled — transferring the whole corpus to keep a
+    # quarter of it would waste bandwidth proportional to the corpus size.
+    fit_id_list = [oid for oid in ids if oid in fit_ids]
+    async for batch in _load(fit_id_list):
+        for oid, emb in batch:
+            fit_rows.append(np.asarray(emb, dtype=np.float32))
+            fit_order.append(oid)
+
+    if len(fit_rows) < 10:
+        return {}
+
+    matrix = np.vstack(fit_rows)
+    reducer = umap.UMAP(
+        n_components=2,
+        random_state=42,
+        metric="cosine",
+        n_neighbors=min(15, len(fit_rows) - 1),
+        min_dist=0.1,
+    )
+    fitted = reducer.fit_transform(matrix)
+
+    coords: dict[str, np.ndarray] = {oid: fitted[i] for i, oid in enumerate(fit_order)}
+    del matrix, fit_rows
+
+    # Transform anything not in the fit sample, in bounded chunks.
+    remaining = [oid for oid in ids if oid not in coords]
+    if remaining:
+        logger.info("UMAP: transforming %d rows outside the fit sample", len(remaining))
+        async for batch in _load(remaining):
+            if not batch:
+                continue
+            chunk_matrix = np.vstack([np.asarray(e, dtype=np.float32) for _o, e in batch])
+            try:
+                transformed = reducer.transform(chunk_matrix)
+            except Exception as exc:
+                logger.warning("UMAP transform failed for a chunk (%s) — skipping", exc)
+                continue
+            for (oid, _emb), xy in zip(batch, transformed):
+                coords[oid] = xy
+
+    if not coords:
+        return {}
+
+    stacked = np.vstack(list(coords.values()))
+    lo = stacked.min(axis=0)
+    hi = stacked.max(axis=0)
+    span = np.where(hi - lo > 0, hi - lo, 1.0)
+    return {
+        oid: (float((xy[0] - lo[0]) / span[0]), float((xy[1] - lo[1]) / span[1]))
+        for oid, xy in coords.items()
+    }
+
+
 async def _cluster_opportunities_async():
-    """Async implementation of the Leiden + UMAP clustering pipeline."""
+    """Async implementation of the kNN + Leiden + UMAP pipeline."""
     try:
-        import numpy as np
+        import numpy as np  # noqa: F401
     except ImportError:
         logger.error("numpy not installed — cannot cluster")
         return
-
-    try:
-        from sklearn.preprocessing import normalize
-        from sklearn.neighbors import NearestNeighbors
-    except ImportError:
-        logger.error("scikit-learn not installed — cannot cluster")
-        return
-
     try:
         import igraph as ig
         import leidenalg
     except ImportError:
         logger.error("python-igraph / leidenalg not installed — cannot cluster")
         return
-
     try:
-        import umap
+        import umap  # noqa: F401
     except ImportError:
         logger.error("umap-learn not installed — cannot compute UMAP positions")
         return
 
-    from sqlalchemy import select, update, delete, text
+    from sqlalchemy import delete, select
+
+    from app.ai.client import chat_complete
     from app.database import AsyncSessionLocal
     from app.models.opportunity import Opportunity
     from app.models.opportunity_cluster import OpportunityCluster
     from app.models.opportunity_edge import OpportunityEdge
-    from app.ai.client import chat_complete
 
     async with AsyncSessionLocal() as db:
         try:
-            # ── 1. Load opportunities with embeddings ─────────────────────────
-            result = await db.execute(
-                select(
-                    Opportunity.id, Opportunity.embedding, Opportunity.title,
-                    Opportunity.thematic_areas, Opportunity.keywords,
+            # ── 1. Node metadata (no embeddings — those stream later) ─────────
+            rows = (
+                await db.execute(
+                    select(
+                        Opportunity.id,
+                        Opportunity.title,
+                        Opportunity.thematic_areas,
+                        Opportunity.keywords,
+                    ).where(
+                        Opportunity.embedding.isnot(None),
+                        Opportunity.status.notin_(_EXCLUDED_STATUSES),
+                    )
                 )
-                .where(Opportunity.embedding.isnot(None))
-            )
-            rows = result.all()
+            ).all()
 
             if len(rows) < 10:
                 logger.info("Not enough opportunities with embeddings to cluster (%d)", len(rows))
                 return
 
             ids = [r[0] for r in rows]
-            embeddings = np.array([r[1] for r in rows], dtype=np.float32)
-            titles = [r[2] for r in rows]
-            themes_list = [r[3] or [] for r in rows]
-            tags_list = [
-                {t.lower() for t in (r[3] or [])} | {k.lower() for k in (r[4] or [])}
+            titles = {r[0]: r[1] for r in rows}
+            tags = {
+                r[0]: {t.lower() for t in (r[2] or [])} | {kw.lower() for kw in (r[3] or [])}
                 for r in rows
-            ]
-
+            }
             n = len(ids)
             logger.info("Clustering %d opportunities", n)
 
-            # ── 2. Normalise (L2) and build kNN similarity graph ──────────────
-            embeddings = normalize(embeddings)
+            # ── 2. kNN candidates from pgvector, blended with tag overlap ─────
+            candidates = await _fetch_knn_edges(db, min(KNN_K, n - 1))
+            logger.info("Fetched %d kNN candidate edges", len(candidates))
 
-            k = min(KNN_K, n - 1)
-            nn = NearestNeighbors(n_neighbors=k, metric="cosine", algorithm="auto", n_jobs=-1)
-            nn.fit(embeddings)
-            distances, indices = nn.kneighbors(embeddings)
+            known = set(ids)
+            blended = [
+                (src, tgt, blend_edge_weight(sim, jaccard(tags.get(src, set()), tags.get(tgt, set()))))
+                for src, tgt, sim in candidates
+                if src in known and tgt in known
+            ]
 
-            # Build edge list: weight blends embedding similarity with tag overlap
-            edges = []
-            weights = []
-            for i in range(n):
-                for j_pos in range(k):
-                    j = int(indices[i, j_pos])
-                    if j <= i:
-                        continue
-                    w_semantic = float(1.0 - distances[i, j_pos])
-                    w = blend_edge_weight(w_semantic, jaccard(tags_list[i], tags_list[j]))
-                    if w >= EDGE_WEIGHT_THRESHOLD:
-                        edges.append((i, j))
-                        weights.append(w)
+            # ── 3. Per-node retention (never a global cap) ────────────────────
+            edges = cap_edges(top_k_per_node(blended, EDGES_PER_NODE), MAX_STORED_EDGES)
+            logger.info("Retained %d edges (%.1f per node)", len(edges), 2 * len(edges) / max(n, 1))
 
-            # ── 3. Build igraph and run Leiden community detection ────────────
-            g = ig.Graph(n=n, edges=edges, directed=False)
+            # ── 4. Leiden communities ─────────────────────────────────────────
+            index_of = {oid: i for i, oid in enumerate(ids)}
+            ig_edges = [(index_of[a], index_of[b]) for a, b, _w in edges]
+            weights = [w for _a, _b, w in edges]
+
+            g = ig.Graph(n=n, edges=ig_edges, directed=False)
             g.es["weight"] = weights
-
-            # RBConfigurationVertexPartition with modularity-based resolution
             partition = leidenalg.find_partition(
-                g,
-                leidenalg.RBConfigurationVertexPartition,
-                weights="weight",
-                seed=42,
+                g, leidenalg.RBConfigurationVertexPartition, weights="weight", seed=42
             )
-            labels = partition.membership  # list[int], length == n
-            n_communities = len(set(labels))
-            logger.info("Leiden found %d communities from %d nodes", n_communities, n)
+            membership = partition.membership
+            logger.info("Leiden found %d communities from %d nodes", len(set(membership)), n)
 
-            # ── 4. UMAP 2D layout ─────────────────────────────────────────────
-            reducer = umap.UMAP(
-                n_components=2,
-                random_state=42,
-                metric="cosine",
-                n_neighbors=min(15, n - 1),
-                min_dist=0.1,
-            )
-            coords_2d = reducer.fit_transform(embeddings)  # shape (n, 2)
-            # Normalise to [0, 1] for stable storage (frontend rescales)
-            coords_min = coords_2d.min(axis=0)
-            coords_max = coords_2d.max(axis=0)
-            coords_range = np.where(coords_max - coords_min > 0, coords_max - coords_min, 1.0)
-            coords_norm = (coords_2d - coords_min) / coords_range
+            # Group members, folding tiny communities into one bucket so the
+            # legend stays readable.
+            members: dict[int, list[str]] = {}
+            for idx, comm in enumerate(membership):
+                members.setdefault(comm, []).append(ids[idx])
+            ordered = sorted(members.items(), key=lambda kv: len(kv[1]), reverse=True)
+            big = [(c, m) for c, m in ordered if len(m) >= MIN_COMMUNITY_SIZE]
+            small = [oid for _c, m in ordered if len(m) < MIN_COMMUNITY_SIZE for oid in m]
 
-            # ── 5. Wipe and recreate clusters ─────────────────────────────────
-            all_clusters = (await db.execute(select(OpportunityCluster))).scalars().all()
-            for c in all_clusters:
-                await db.delete(c)
-            await db.flush()
+            # ── 5. Layout ─────────────────────────────────────────────────────
+            coords = await _compute_layout(db, ids)
+            logger.info("Computed UMAP coordinates for %d nodes", len(coords))
 
-            # Clear old edges
+            # ── 6. Rebuild clusters + edges ───────────────────────────────────
+            for stale in (await db.execute(select(OpportunityCluster))).scalars().all():
+                await db.delete(stale)
             await db.execute(delete(OpportunityEdge))
             await db.flush()
 
-            # Build community membership maps
-            community_members: dict[int, list] = {i: [] for i in range(n_communities)}
-            for idx, comm in enumerate(labels):
-                community_members[comm].append({
-                    "title": titles[idx],
-                    "themes": themes_list[idx][:3],
-                })
+            cluster_of: dict[str, int] = {}
+            for rank, (_comm, member_ids) in enumerate(big):
+                member_titles = [titles.get(m) or "" for m in member_ids]
+                if rank < MAX_LLM_LABELLED_COMMUNITIES:
+                    try:
+                        sample = "\n".join(f"- {t}" for t in member_titles[:8])
+                        label = (
+                            await chat_complete(
+                                messages=[
+                                    {"role": "system", "content": "You name grant topic clusters in 3-5 words."},
+                                    {"role": "user", "content": f"Name this cluster:\n{sample}\n\nRespond with ONLY 3-5 words."},
+                                ],
+                                agent_name="cluster_labeler",
+                                temperature=0.1,
+                                max_tokens=20,
+                            )
+                        ).strip().strip('"').strip("'")[:100] or _fallback_label(member_titles)
+                    except Exception as exc:
+                        logger.warning("Failed to label community %d: %s", rank, exc)
+                        label = _fallback_label(member_titles)
+                else:
+                    label = _fallback_label(member_titles)
 
-            # ── 6. AI-label each community ────────────────────────────────────
-            cluster_id_map: dict[int, int] = {}
-            for comm_idx in range(n_communities):
-                members = community_members[comm_idx][:8]
-                member_text = "\n".join(
-                    f"- {m['title']} ({', '.join(m['themes'])})" for m in members
-                )
-                try:
-                    label_response = await chat_complete(
-                        messages=[
-                            {"role": "system", "content": "You name grant topic clusters in 3-5 words."},
-                            {"role": "user", "content": f"Name this cluster:\n{member_text}\n\nRespond with ONLY 3-5 words."},
-                        ],
-                        agent_name="cluster_labeler",
-                        temperature=0.1,
-                        max_tokens=20,
-                    )
-                    label = label_response.strip().strip('"').strip("'")[:100]
-                except Exception as exc:
-                    logger.warning("Failed to label community %d: %s", comm_idx, exc)
-                    label = f"Topic Cluster {comm_idx + 1}"
-
-                color = CLUSTER_COLORS[comm_idx % len(CLUSTER_COLORS)]
-                new_cluster = OpportunityCluster(label=label, color=color)
-                db.add(new_cluster)
+                cluster = OpportunityCluster(label=label, color=CLUSTER_COLORS[rank % len(CLUSTER_COLORS)])
+                db.add(cluster)
                 await db.flush()
-                cluster_id_map[comm_idx] = new_cluster.id
+                for m in member_ids:
+                    cluster_of[m] = cluster.id
 
-            # ── 7. Update opportunity cluster_ids and UMAP coordinates ────────
-            for idx, opp_id in enumerate(ids):
-                await db.execute(
-                    update(Opportunity)
-                    .where(Opportunity.id == opp_id)
-                    .values(
-                        cluster_id=cluster_id_map[int(labels[idx])],
-                        umap_x=float(coords_norm[idx, 0]),
-                        umap_y=float(coords_norm[idx, 1]),
-                    )
+            if small:
+                misc = OpportunityCluster(label="Assorted Grants", color="#94a3b8")
+                db.add(misc)
+                await db.flush()
+                for m in small:
+                    cluster_of[m] = misc.id
+
+            # ── 7. Bulk-write node assignments ────────────────────────────────
+            # One statement per chunk rather than one UPDATE per row: the old
+            # per-row loop issued a round trip per opportunity.
+            payload = [
+                {
+                    "b_id": oid,
+                    "b_cluster": cluster_of.get(oid),
+                    "b_x": coords.get(oid, (None, None))[0],
+                    "b_y": coords.get(oid, (None, None))[1],
+                }
+                for oid in ids
+            ]
+            from sqlalchemy import bindparam, text as sa_text
+
+            stmt = (
+                sa_text(
+                    "UPDATE opportunities SET cluster_id = :b_cluster, "
+                    "umap_x = :b_x, umap_y = :b_y WHERE id = :b_id"
                 )
+                .bindparams(bindparam("b_cluster"), bindparam("b_x"), bindparam("b_y"), bindparam("b_id"))
+            )
+            for start in range(0, len(payload), 1000):
+                await db.execute(stmt, payload[start : start + 1000])
 
-            # ── 8. Store kNN edges in opportunity_edges ───────────────────────
-            # Sort by weight descending and cap at MAX_STORED_EDGES
-            edge_triples = sorted(
-                zip(edges, weights), key=lambda x: x[1], reverse=True
-            )[:MAX_STORED_EDGES]
-
-            id_array = ids  # list for index lookup
-            for (i, j), w in edge_triples:
-                db.add(OpportunityEdge(
-                    source_id=id_array[i],
-                    target_id=id_array[j],
-                    weight=w,
-                ))
+            # ── 8. Bulk-insert edges ──────────────────────────────────────────
+            edge_payload = [{"source_id": a, "target_id": b, "weight": w} for a, b, w in edges]
+            for start in range(0, len(edge_payload), 2000):
+                await db.execute(
+                    OpportunityEdge.__table__.insert(), edge_payload[start : start + 2000]
+                )
 
             await db.commit()
             logger.info(
-                "Clustering complete: %d communities, %d opportunities, %d edges stored",
-                n_communities, n, len(edge_triples),
+                "Clustering complete: %d communities, %d opportunities, %d edges",
+                len(big) + (1 if small else 0), n, len(edges),
             )
 
         except Exception as exc:
             logger.exception("Clustering task failed: %s", exc)
+            await db.rollback()
