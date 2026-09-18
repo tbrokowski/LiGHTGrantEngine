@@ -324,6 +324,44 @@ async def run_all_sources(
     return {"message": f"Scan queued for {count} source{'s' if count != 1 else ''}", "queued": count}
 
 
+@router.post("/rebuild-ranking", dependencies=[Depends(require_org_admin())])
+async def rebuild_ranking(
+    current_user: User = Depends(get_current_user),
+):
+    """Rebuild this organization's ranking model from scratch.
+
+    Recomputes the institution's taste prototypes (from its archive and pursued
+    opportunities), funder affinity and award history, then rescores every
+    surfaced opportunity and refreshes the calibration quantiles. The rescore is
+    chained automatically off the profile task, so this queues one task.
+
+    Normally handled by the nightly beat schedule — this is the on-demand path
+    for after an archive import, a profile edit, or a deploy.
+    """
+    if not current_user.institution_id:
+        raise HTTPException(400, "User is not attached to an institution.")
+    try:
+        from app.workers.celery_app import celery_app
+
+        result = celery_app.send_task(
+            "app.workers.taste_profile_tasks.compute_taste_profile",
+            args=[current_user.institution_id],
+        )
+    except Exception as exc:
+        # send_task failures are otherwise silent — surface this one, since the
+        # whole point of the endpoint is to confirm the rebuild was queued.
+        logger.error("Failed to queue ranking rebuild: %s", exc)
+        raise HTTPException(
+            503,
+            "Could not queue the rebuild — the task broker is unreachable. "
+            "Check that Redis is reachable from the API and that the worker is running.",
+        )
+    return {
+        "message": "Ranking rebuild queued. Scores update once the worker finishes.",
+        "task_id": result.id,
+    }
+
+
 @router.patch("/{source_id}", dependencies=[Depends(require_org_admin())])
 async def update_source(
     source_id: str,

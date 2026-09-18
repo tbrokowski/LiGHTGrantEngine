@@ -568,6 +568,8 @@ function SettingsPageInner() {
   const [recentRuns, setRecentRuns] = useState<RecentRun[]>([]);
   const [deduplicating, setDeduplicating] = useState(false);
   const [dedupResult, setDedupResult] = useState<string | null>(null);
+  const [rebuildingRanking, setRebuildingRanking] = useState(false);
+  const [rebuildResult, setRebuildResult] = useState<string | null>(null);
   const [discoveringSource, setDiscoveringSource] = useState(false);
   const [discoverResult, setDiscoverResult] = useState<string | null>(null);
   const [backfillingTypes, setBackfillingTypes] = useState(false);
@@ -754,6 +756,27 @@ function SettingsPageInner() {
       setTimeout(() => setScanAllResult(null), 6000);
     } finally {
       setScanningAll(false);
+    }
+  }
+
+  async function handleRebuildRanking() {
+    setRebuildingRanking(true);
+    setRebuildResult(null);
+    try {
+      const res = await sources.rebuildRanking();
+      setRebuildResult(res.data?.message ?? 'Ranking rebuild queued.');
+      setTimeout(() => setRebuildResult(null), 8000);
+    } catch (err: unknown) {
+      const status = (err as { response?: { status?: number } })?.response?.status;
+      const detail = (err as { response?: { data?: { detail?: string } } })?.response?.data?.detail;
+      if (status === 403) {
+        setRebuildResult('Admin access required to rebuild ranking.');
+      } else {
+        setRebuildResult(detail ?? 'Failed to queue the rebuild.');
+      }
+      setTimeout(() => setRebuildResult(null), 8000);
+    } finally {
+      setRebuildingRanking(false);
     }
   }
 
@@ -1184,6 +1207,37 @@ function SettingsPageInner() {
         <div className="flex flex-col items-end gap-2">
           <div className="flex items-center gap-2">
             <button
+              onClick={handleRebuildRanking}
+              disabled={rebuildingRanking}
+              title="Recompute this org's taste prototypes from the archive, then rescore and recalibrate every opportunity"
+              className="flex items-center gap-2 text-sm px-4 py-2 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+              style={{
+                color: 'var(--accent-primary)',
+                border: '1px solid var(--accent-primary)',
+                borderRadius: 'var(--radius-sm)',
+                background: 'transparent',
+              }}
+              onMouseEnter={e => (e.currentTarget.style.background = 'var(--state-info-bg)')}
+              onMouseLeave={e => (e.currentTarget.style.background = 'transparent')}
+            >
+              {rebuildingRanking ? (
+                <>
+                  <svg className="animate-spin h-4 w-4" fill="none" viewBox="0 0 24 24">
+                    <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
+                    <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z" />
+                  </svg>
+                  Rebuilding…
+                </>
+              ) : (
+                <>
+                  <svg className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+                    <path strokeLinecap="round" strokeLinejoin="round" d="M4 4v5h5M20 20v-5h-5M20 9A8 8 0 0 0 6 5.3M4 15a8 8 0 0 0 14 3.7" />
+                  </svg>
+                  Rebuild ranking
+                </>
+              )}
+            </button>
+            <button
               onClick={handleDedup}
               disabled={deduplicating}
               className="flex items-center gap-2 text-sm px-4 py-2 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
@@ -1241,6 +1295,9 @@ function SettingsPageInner() {
               )}
             </button>
           </div>
+          {rebuildResult && (
+            <p className="text-xs" style={{ color: 'var(--ink-muted)' }}>{rebuildResult}</p>
+          )}
           {dedupResult && (
             <p className="text-xs" style={{ color: 'var(--state-warning)' }}>{dedupResult}</p>
           )}

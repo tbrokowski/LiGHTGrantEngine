@@ -521,6 +521,7 @@ export const sources = {
   recentRuns: (limit = 20) => api.get(`/sources/status/recent-runs?limit=${limit}`),
   summary: () => api.get('/sources/status/summary'),
   workerStatus: () => api.get('/sources/worker-status'),
+  rebuildRanking: () => api.post('/sources/rebuild-ranking'),
 };
 
 // ── Funder Orgs (the funding body, distinct from Source/portal) ────────────────
