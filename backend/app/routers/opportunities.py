@@ -3,7 +3,7 @@ from typing import Optional
 from datetime import date, datetime, timezone, timedelta
 
 import redis.asyncio as aioredis
-from fastapi import APIRouter, Depends, HTTPException, Query, BackgroundTasks
+from fastapi import APIRouter, Depends, HTTPException, Query, BackgroundTasks, Request, Response
 from pydantic import BaseModel
 import asyncio
 import hashlib
@@ -1030,6 +1030,96 @@ GRAPH_MAX_NODES = 1200
 GRAPH_MAX_EDGES = 4000
 # How many edge rows to scan when building the adjacency for expansion.
 GRAPH_EXPANSION_EDGE_SCAN = 20_000
+
+
+@router.get("/graph-atlas")
+async def get_graph_atlas(
+    request: Request,
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    """Serve the precomputed whole-corpus atlas.
+
+    The same bytes for every user: the clustering task builds this once per run
+    and stores it gzipped, so the response is a straight blob read plus an ETag
+    check rather than a graph assembled per request. A conditional request that
+    still matches costs a single indexed lookup of the etag column and returns
+    304 without touching the payload.
+
+    Per-institution fit scores are *not* in here — see /graph-overlay. Folding
+    them in would make the artifact per-org and destroy the sharing.
+    """
+    from app.models.graph_snapshot import GraphSnapshot
+
+    row = (
+        await db.execute(
+            select(
+                GraphSnapshot.etag,
+                GraphSnapshot.node_count,
+                GraphSnapshot.edge_count,
+                GraphSnapshot.computed_at,
+            ).where(GraphSnapshot.kind == "opportunities")
+        )
+    ).first()
+
+    if row is None:
+        raise HTTPException(
+            404,
+            "No graph atlas has been built yet. It is produced by the "
+            "clustering task — trigger a rebuild or wait for the next run.",
+        )
+
+    etag = f'"{row.etag}"'
+    if request.headers.get("if-none-match") == etag:
+        return Response(status_code=304, headers={"ETag": etag})
+
+    snapshot = await db.get(GraphSnapshot, "opportunities")
+    return Response(
+        content=snapshot.payload,
+        media_type="application/json",
+        headers={
+            "Content-Encoding": "gzip",
+            "ETag": etag,
+            # Shared and immutable between clustering runs; revalidation is a
+            # cheap 304 so clients can hold it aggressively.
+            "Cache-Control": "private, max-age=300, must-revalidate",
+            "X-Atlas-Nodes": str(row.node_count),
+            "X-Atlas-Edges": str(row.edge_count),
+            "X-Atlas-Computed-At": row.computed_at.isoformat() if row.computed_at else "",
+        },
+    )
+
+
+@router.get("/graph-overlay")
+async def get_graph_overlay(
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    """Per-institution fit scores for the atlas, as a compact id -> score map.
+
+    Kept out of the atlas so that artifact stays identical for every user. This
+    is small (one int per surfaced opportunity) and varies only per org, so it
+    caches per institution rather than per user.
+    """
+    inst_id = current_user.institution_id
+    if not inst_id:
+        return {"scores": {}, "institution_id": None}
+
+    rows = (
+        await db.execute(
+            select(
+                InstitutionOpportunity.opportunity_id,
+                InstitutionOpportunity.fit_score,
+            ).where(
+                InstitutionOpportunity.institution_id == inst_id,
+                InstitutionOpportunity.fit_score.isnot(None),
+            )
+        )
+    ).all()
+    return {
+        "scores": {oid: int(score) for oid, score in rows},
+        "institution_id": inst_id,
+    }
 
 
 @router.get("/graph-data")

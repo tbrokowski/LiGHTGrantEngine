@@ -43,6 +43,9 @@ interface FGNode extends GraphNode {
   y?: number;
   vx?: number;
   vy?: number;
+  // d3-force treats fx/fy as fixed positions and skips simulating the node.
+  fx?: number;
+  fy?: number;
   index?: number;
 }
 
@@ -166,17 +169,24 @@ export default function OpportunityGraphView({ nodes, clusters, edges }: Props) 
     }
   }, [colorMode, clusterColorMap, themeColorMap]);
 
+  // Above this many nodes the browser cannot run a force simulation at an
+  // interactive frame rate, and it does not need to: the atlas already carries
+  // a UMAP layout computed over the whole corpus. Nodes are pinned to it and
+  // the simulation is skipped entirely.
+  const isLargeAtlas = nodes.length > 2000;
+
   const getNodeVal = useCallback((rawNode: unknown): number => {
     const node = rawNode as FGNode;
     const score = node.fit_score ?? 50;
-    // Map [0, 100] → [4, 20] for node size
-    return Math.max(4, Math.min(20, 4 + score / 5));
-  }, []);
+    // Map [0, 100] → [4, 20] for node size. Scaled down on a full-corpus atlas,
+    // where 20px nodes would overlap into a solid mass.
+    const scale = isLargeAtlas ? 0.35 : 1;
+    return Math.max(isLargeAtlas ? 1.5 : 4, Math.min(20, 4 + score / 5) * scale);
+  }, [isLargeAtlas]);
 
   // ── Graph data ────────────────────────────────────────────────────────────
 
   const graphData = useMemo(() => {
-    // Scale UMAP [0,1] coordinates to canvas space, centered and padded
     const padding = 80;
     const usableW = dimensions.width - padding * 2;
     const usableH = dimensions.height - padding * 2;
@@ -184,8 +194,15 @@ export default function OpportunityGraphView({ nodes, clusters, edges }: Props) 
     const fgNodes: FGNode[] = nodes.map(n => {
       const base: FGNode = { ...n };
       if (n.umap_x !== null && n.umap_y !== null) {
-        base.x = padding + n.umap_x * usableW;
-        base.y = padding + n.umap_y * usableH;
+        const x = padding + n.umap_x * usableW;
+        const y = padding + n.umap_y * usableH;
+        base.x = x;
+        base.y = y;
+        if (isLargeAtlas) {
+          // fx/fy pin the node: d3-force treats these as fixed and does no work.
+          base.fx = x;
+          base.fy = y;
+        }
       }
       return base;
     });
@@ -195,7 +212,16 @@ export default function OpportunityGraphView({ nodes, clusters, edges }: Props) 
     const links = edges.map(e => ({ ...e }));
 
     return { nodes: fgNodes, links };
-  }, [nodes, edges, dimensions]);
+  }, [nodes, edges, dimensions, isLargeAtlas]);
+
+  // Drawing 100k links every frame stalls the canvas. On a large atlas the
+  // links are revealed on zoom-in, where they are legible anyway — at full
+  // extent they would render as an unreadable grey wash regardless.
+  const [zoomLevel, setZoomLevel] = useState(1);
+  const linkVisibility = useCallback(
+    () => !isLargeAtlas || zoomLevel >= 2.5,
+    [isLargeAtlas, zoomLevel],
+  );
 
   // ── Edge rendering ────────────────────────────────────────────────────────
 
@@ -301,12 +327,16 @@ export default function OpportunityGraphView({ nodes, clusters, edges }: Props) 
           linkColor={getLinkColor}
           linkWidth={getLinkWidth}
           linkCurvature={0.1}
+          linkVisibility={linkVisibility}
           onNodeHover={(node) => setHoveredNode(node as FGNode | null)}
           onNodeClick={(node) => router.push(`/opportunities/${(node as FGNode).id}`)}
-          d3AlphaDecay={0.02}
+          onZoom={(t: { k: number }) => setZoomLevel(t.k)}
+          enableNodeDrag={!isLargeAtlas}
+          d3AlphaDecay={isLargeAtlas ? 1 : 0.02}
           d3VelocityDecay={0.3}
-          warmupTicks={60}
-          cooldownTime={3000}
+          warmupTicks={isLargeAtlas ? 0 : 60}
+          cooldownTicks={isLargeAtlas ? 0 : undefined}
+          cooldownTime={isLargeAtlas ? 0 : 3000}
         />
 
         {/* Cluster legend */}

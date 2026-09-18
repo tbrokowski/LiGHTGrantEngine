@@ -38,6 +38,7 @@ from .section_chunk import SectionChunk
 from .opportunity_task import OpportunityTask, OpportunityNote, OpportunityLink
 from .institution_opportunity import InstitutionOpportunity
 from .institution_taste_profile import InstitutionTasteProfile
+from .graph_snapshot import GraphSnapshot
 from .user_taste_profile import UserTasteProfile
 from .institution_source import InstitutionSource
 from .funder_org import FunderOrg

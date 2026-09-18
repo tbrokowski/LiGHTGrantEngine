@@ -433,6 +433,13 @@ async def _cluster_opportunities_async():
                 )
 
             await db.commit()
+
+            # ── 9. Build and store the shared atlas ───────────────────────────
+            # Identical for every user, so it is written once here rather than
+            # assembled per request. Serving the whole corpus any other way
+            # would mean touching every node and edge on every page load.
+            await _store_atlas(db, ids, edges, cluster_of)
+
             logger.info(
                 "Clustering complete: %d communities, %d opportunities, %d edges",
                 len(big) + (1 if small else 0), n, len(edges),
@@ -441,3 +448,84 @@ async def _cluster_opportunities_async():
         except Exception as exc:
             logger.exception("Clustering task failed: %s", exc)
             await db.rollback()
+
+
+async def _store_atlas(db, ids, edges, cluster_of) -> None:
+    """Serialize the full graph and upsert it as the current snapshot."""
+    from datetime import datetime, timezone
+
+    from sqlalchemy import select
+
+    from app.models.graph_snapshot import GraphSnapshot
+    from app.models.opportunity import Opportunity
+    from app.models.opportunity_cluster import OpportunityCluster
+    from app.services.graph_atlas import ATLAS_FORMAT_VERSION, build_atlas_payload, encode_atlas
+
+    try:
+        # Only the fields the atlas renders — deliberately not ai_summary or the
+        # full tag arrays, which would dominate a whole-corpus payload and are
+        # fetched on demand when a node is opened.
+        meta_rows = (
+            await db.execute(
+                select(
+                    Opportunity.id,
+                    Opportunity.title,
+                    Opportunity.funder,
+                    Opportunity.deadline,
+                    Opportunity.fit_score,
+                    Opportunity.thematic_areas,
+                    Opportunity.umap_x,
+                    Opportunity.umap_y,
+                ).where(Opportunity.id.in_(ids))
+            )
+        ).all()
+
+        nodes = [
+            {
+                "id": r.id,
+                "title": r.title,
+                "funder": r.funder,
+                "deadline": str(r.deadline) if r.deadline else None,
+                "fit_score": r.fit_score,
+                "cluster_id": cluster_of.get(r.id),
+                # One theme is enough to colour by; the full array is not.
+                "theme": (r.thematic_areas or [None])[0],
+                "x": r.umap_x if r.umap_x is not None else 0.5,
+                "y": r.umap_y if r.umap_y is not None else 0.5,
+            }
+            for r in meta_rows
+        ]
+
+        clusters = [
+            {"id": c.id, "label": c.label, "color": c.color}
+            for c in (await db.execute(select(OpportunityCluster))).scalars().all()
+        ]
+
+        payload = build_atlas_payload(
+            nodes, edges, clusters,
+            computed_at=datetime.now(timezone.utc).isoformat(),
+        )
+        blob, etag = encode_atlas(payload)
+
+        snapshot = await db.get(GraphSnapshot, "opportunities")
+        if snapshot is None:
+            snapshot = GraphSnapshot(kind="opportunities")
+            db.add(snapshot)
+        snapshot.payload = blob
+        snapshot.etag = etag
+        snapshot.node_count = payload["node_count"]
+        snapshot.edge_count = payload["edge_count"]
+        snapshot.format_version = ATLAS_FORMAT_VERSION
+        snapshot.computed_at = datetime.now(timezone.utc)
+        await db.commit()
+
+        logger.info(
+            "Atlas stored: %d nodes, %d edges, %.1f KB gzipped",
+            payload["node_count"], payload["edge_count"], len(blob) / 1024,
+        )
+    except Exception as exc:
+        # The clustering results are already committed; a failed atlas build
+        # must not lose them. The previous snapshot stays served until the next
+        # run succeeds.
+        logger.exception("Failed to build graph atlas: %s", exc)
+        await db.rollback()

@@ -175,6 +175,11 @@ export const opportunities = {
     api.post(`/opportunities/${id}/links`, data),
   deleteOppLink: (id: string, linkId: string) => api.delete(`/opportunities/${id}/links/${linkId}`),
   graphData: (params?: Record<string, unknown>) => api.get('/opportunities/graph-data', { params }),
+  // Whole-corpus atlas: one precomputed artifact, identical for every user, so
+  // it is fetched unfiltered and cached. Filters are applied client-side against
+  // it rather than refetching a different graph per filter combination.
+  graphAtlas: () => api.get('/opportunities/graph-atlas'),
+  graphOverlay: () => api.get('/opportunities/graph-overlay'),
   get: (id: string) => api.get(`/opportunities/${id}`),
   create: (data: Record<string, unknown>) => api.post('/opportunities/', data),
   scrapePreview: (url: string) => api.post('/opportunities/scrape-preview', { url }),

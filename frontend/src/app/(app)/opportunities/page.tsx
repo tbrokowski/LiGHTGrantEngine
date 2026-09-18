@@ -8,6 +8,7 @@ import OpportunityRow from '@/components/opportunities/OpportunityRow';
 import SourcesDirectory from '@/components/opportunities/SourcesDirectory';
 import OpportunityFiltersSidebar from '@/components/opportunities/OpportunityFilters';
 import OpportunityGraphView, { GraphNode, GraphCluster, GraphEdge } from '@/components/opportunities/OpportunityGraphView';
+import { decodeAtlas } from '@/lib/graphAtlas';
 import AddToShortlistModal from '@/components/opportunities/AddToShortlistModal';
 import ShortlistBoard from '@/components/opportunities/ShortlistBoard';
 import {
@@ -100,6 +101,7 @@ export default function OpportunitiesPage() {
   const [graphNodes, setGraphNodes] = useState<GraphNode[]>([]);
   const [graphClusters, setGraphClusters] = useState<GraphCluster[]>([]);
   const [graphEdges, setGraphEdges] = useState<GraphEdge[]>([]);
+  const [graphError, setGraphError] = useState<string | null>(null);
   const [graphLoading, setGraphLoading] = useState(false);
 
   useEffect(() => {
@@ -231,29 +233,39 @@ export default function OpportunitiesPage() {
   function setView(mode: ViewMode | 'graph') {
     setViewMode(mode as ViewMode);
     localStorage.setItem(VIEW_STORAGE_KEY, mode);
-    if (mode === 'graph') loadGraphData(filters);
+    if (mode === 'graph') loadGraphData();
   }
 
   // Graph view now shares the same sidebar OpportunityFilters as the table,
   // instead of its own narrower funder/theme/deadline_days-only filter bar.
-  const loadGraphData = useCallback((activeFilters: OpportunityFilters) => {
+  // The atlas is one precomputed artifact covering every grant in the database,
+  // identical for every user. It is fetched once and cached (ETag / 304), so
+  // changing filters re-styles the existing graph instead of refetching a
+  // different subgraph per filter combination.
+  const loadGraphData = useCallback(() => {
+    if (graphNodes.length > 0) return; // already loaded this session
     setGraphLoading(true);
-    opportunities.graphData(_buildApiParams(activeFilters))
-      .then(r => {
-        setGraphNodes(r.data.nodes || []);
-        setGraphClusters(r.data.clusters || []);
-        setGraphEdges(r.data.edges || []);
+    Promise.all([
+      opportunities.graphAtlas(),
+      opportunities.graphOverlay().catch(() => ({ data: { scores: {} } })),
+    ])
+      .then(([atlasRes, overlayRes]) => {
+        const decoded = decodeAtlas(atlasRes.data, overlayRes.data?.scores ?? {});
+        setGraphNodes(decoded.nodes);
+        setGraphEdges(decoded.edges);
+        setGraphClusters(decoded.clusters);
       })
-      .catch(console.error)
+      .catch(err => {
+        // 404 means the clustering task has not produced an atlas yet.
+        if (err?.response?.status === 404) {
+          setGraphError('The graph is still being built. It is produced by the clustering job — try again shortly.');
+        } else {
+          console.error(err);
+          setGraphError('Could not load the graph.');
+        }
+      })
       .finally(() => setGraphLoading(false));
-  }, []);
-
-  // Reload the graph when filters change while already in graph mode
-  // (switching *into* graph mode is handled by setView() below).
-  useEffect(() => {
-    if ((viewMode as string) === 'graph') loadGraphData(filters);
-  // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [filters]);
+  }, [graphNodes.length]);
 
   function setFilter<K extends keyof OpportunityFilters>(key: K, value: OpportunityFilters[K]) {
     setFilters(prev => ({ ...prev, [key]: value }));
