@@ -15,6 +15,7 @@ from app.scrapers.three60giving_scraper import ThreeSixtyGivingScraper
 from app.scrapers.openalex_scraper import OpenAlexScraper
 from app.scrapers.propublica_scraper import ProPublicaScraper
 from app.scrapers.openreview_scraper import OpenReviewScraper
+from app.scrapers.apply_gov_sg_scraper import ApplyGovSGScraper
 
 
 def get_scraper(source) -> BaseScraper:
@@ -42,6 +43,7 @@ def get_scraper(source) -> BaseScraper:
         "openalex": OpenAlexScraper,
         "propublica": ProPublicaScraper,
         "openreview": OpenReviewScraper,
+        "apply_gov_sg": ApplyGovSGScraper,
     }
     cls = type_map.get(source.source_type, AIScraper)
     return cls(source)

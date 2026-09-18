@@ -4181,6 +4181,30 @@
       "notes": "South Korea's primary research funding body. Active bilateral with JSPS Japan (2026 call active), NRF South Africa. [audit 2026-07-22] listing path http_404; repointed https://www.nrf.re.kr/eng/main \u2192 site root"
     },
     {
+      "name": "Singapore Research Grants Portal (apply.gov.sg)",
+      "category": "International / Regional",
+      "url": "https://www.apply.gov.sg/grants/research/listing",
+      "source_type": "apply_gov_sg",
+      "api_endpoint": null,
+      "scraper_config": {
+        "follow_details": true,
+        "max_details": 25,
+        "include_closed": false
+      },
+      "refresh_frequency": "weekly",
+      "is_high_priority": false,
+      "logo_url": null,
+      "status": "active",
+      "relevant_themes": [
+        "AI",
+        "health",
+        "innovation",
+        "Singapore",
+        "Southeast Asia"
+      ],
+      "notes": "Whole-of-government research grants portal covering NRF, NMRC, MOE and other agencies. JS-rendered SPA: the listing URL 404s on a plain GET and only returns JSON with Accept: application/json, so it needs the dedicated apply_gov_sg scraper rather than ai_scraper. Each card's website_url is the grant's page on the administering agency's own site; the scraper follows it for the full description and the closing date."
+    },
+    {
       "name": "Singapore National Research Foundation (NRF-SG)",
       "category": "International / Regional",
       "url": "https://www.nrf.gov.sg/funding-grants/",
