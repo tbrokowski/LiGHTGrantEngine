@@ -58,6 +58,14 @@ function daysFrom(base: Date, target: string | null): number | null {
   } catch { return null; }
 }
 
+function daysSince(base: Date, target: string | null): number | null {
+  if (!target) return null;
+  // Timestamps arrive as "YYYY-MM-DD HH:MM:SS+00:00"; not every browser parses
+  // the space form, so normalise it to ISO before measuring.
+  const d = daysFrom(base, target.replace(' ', 'T'));
+  return d === null || Number.isNaN(d) ? null : -d;
+}
+
 function formatAxisDate(d: Date) {
   return d.toLocaleDateString('en-US', { month: 'short', day: 'numeric' });
 }
@@ -92,7 +100,19 @@ function GrantBar({ grant, windowDays, containerW, today, starred, tasks = [] }:
   const barWidthPx = Math.max(4, (barEnd - barStart) * dayPx);
 
   const daysLeft = extDays;
-  const isOverdue = daysLeft !== null && daysLeft < 0;
+
+  // A grant awaiting a decision is past its call deadline by definition, so
+  // counting days "over" it says nothing — count from the submission instead,
+  // and don't flag it as overdue.
+  const sinceSubmission = grant.grant_stage === 'pending'
+    ? daysSince(today, grant.submitted_at)
+    : null;
+  const sinceSubmissionLabel =
+    sinceSubmission === null ? null
+    : sinceSubmission <= 0 ? 'Submitted today'
+    : `${sinceSubmission}d since submission`;
+
+  const isOverdue = daysLeft !== null && daysLeft < 0 && sinceSubmissionLabel === null;
   const isUrgent = daysLeft !== null && daysLeft >= 0 && daysLeft <= 7;
   const isSoon = daysLeft !== null && daysLeft > 7 && daysLeft <= 30;
 
@@ -215,25 +235,34 @@ function GrantBar({ grant, windowDays, containerW, today, starred, tasks = [] }:
           );
         })}
 
-        {/* No deadline label */}
-        {extDays === null && (
-          <div className="absolute inset-y-0 left-0 flex items-center">
-            <span className="text-[10px] text-gray-300 italic">No deadline set</span>
-          </div>
-        )}
-        {/* Day countdown badge */}
-        {extDays !== null && extDays >= 0 && extDays <= windowDays && (
-          <span
-            className={`absolute top-1/2 -translate-y-1/2 text-[10px] font-semibold tabular-nums pl-1 ${dayLabelColor}`}
-            style={{ left: Math.min(barStartPx + barWidthPx + 4, gridW - 48) }}
-          >
-            {dayLabel}
+        {sinceSubmissionLabel ? (
+          /* Awaiting a decision — time is measured from the submission */
+          <span className="absolute top-1/2 -translate-y-1/2 left-1 text-[10px] font-semibold tabular-nums text-gray-400">
+            {sinceSubmissionLabel}
           </span>
-        )}
-        {extDays !== null && extDays < 0 && (
-          <span className={`absolute top-1/2 -translate-y-1/2 left-1 text-[10px] font-semibold tabular-nums ${dayLabelColor}`}>
-            {dayLabel}
-          </span>
+        ) : (
+          <>
+            {/* No deadline label */}
+            {extDays === null && (
+              <div className="absolute inset-y-0 left-0 flex items-center">
+                <span className="text-[10px] text-gray-300 italic">No deadline set</span>
+              </div>
+            )}
+            {/* Day countdown badge */}
+            {extDays !== null && extDays >= 0 && extDays <= windowDays && (
+              <span
+                className={`absolute top-1/2 -translate-y-1/2 text-[10px] font-semibold tabular-nums pl-1 ${dayLabelColor}`}
+                style={{ left: Math.min(barStartPx + barWidthPx + 4, gridW - 48) }}
+              >
+                {dayLabel}
+              </span>
+            )}
+            {extDays !== null && extDays < 0 && (
+              <span className={`absolute top-1/2 -translate-y-1/2 left-1 text-[10px] font-semibold tabular-nums ${dayLabelColor}`}>
+                {dayLabel}
+              </span>
+            )}
+          </>
         )}
       </div>
     </div>

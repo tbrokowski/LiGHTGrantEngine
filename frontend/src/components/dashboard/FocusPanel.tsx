@@ -11,6 +11,7 @@ export interface GrantItem {
   grant_stage: string;
   external_deadline: string | null;
   internal_deadline: string | null;
+  submitted_at: string | null;
   color?: string | null;
 }
 
