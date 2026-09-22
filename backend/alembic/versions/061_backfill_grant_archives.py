@@ -23,7 +23,8 @@ from html import unescape
 from alembic import op
 import sqlalchemy as sa
 
-revision = "061_backfill_missing_grant_archives"
+# Kept under 32 characters: alembic_version.version_num is varchar(32).
+revision = "061_backfill_grant_archives"
 down_revision = "060_graph_snapshots"
 branch_labels = None
 depends_on = None
