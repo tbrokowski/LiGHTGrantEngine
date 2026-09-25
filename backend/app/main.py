@@ -24,7 +24,7 @@ from app.routers import slack_events
 from app.routers import browser_sessions
 from app.routers import feedback
 from app.routers import api_keys
-from app.routers import partner_meetings, partner_documents, partner_organizations, partner_tasks
+from app.routers import partner_meetings, partner_documents, partner_organizations, partner_tasks, partner_groups
 
 settings = get_settings()
 logger = structlog.get_logger()
@@ -111,6 +111,8 @@ app.include_router(partner_meetings.router,      prefix=f"{API}/partners",      
 app.include_router(partner_documents.router,     prefix=f"{API}/partners",               tags=["partner-documents"])
 app.include_router(partner_organizations.router, prefix=f"{API}/partner-organizations",  tags=["partner-organizations"])
 app.include_router(partner_tasks.router,         prefix=f"{API}/partners",               tags=["partner-tasks"])
+app.include_router(partner_tasks.board_router,   prefix=f"{API}/partner-tasks",          tags=["partner-tasks"])
+app.include_router(partner_groups.router,        prefix=f"{API}/partner-groups",         tags=["partner-groups"])
 app.include_router(grant_workspace.router,         prefix=f"{API}/grants",  tags=["grant-workspace"])
 app.include_router(grant_writing.status_router,    prefix=f"{API}/grants",  tags=["grant-writing"])
 app.include_router(grant_writing.router,           prefix=f"{API}/grants",  tags=["grant-writing"])

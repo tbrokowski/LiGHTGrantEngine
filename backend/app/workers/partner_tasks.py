@@ -143,3 +143,25 @@ def generate_pre_meeting_preps():
                 logger.info("Generated prep for meeting %s", meeting.id)
             except Exception as e:
                 logger.warning("Failed to generate prep for meeting %s: %s", meeting.id, e)
+
+
+@celery_app.task(
+    name="app.workers.partner_tasks.research_partner",
+    # Paced so a 100-address paste doesn't burst the search APIs.
+    rate_limit="20/m",
+    soft_time_limit=240,
+    time_limit=300,
+)
+def research_partner(partner_id: str, name_guessed: bool = False):
+    """Look one partner up on the web (search → scrape profile pages →
+    OpenAlex → LLM) and fill in their profile. See app.services.partner_research."""
+    from app.services.partner_research import run_research_sync, mark_research_failed
+
+    try:
+        status = run_research_sync(partner_id, name_guessed)
+    except BaseException:
+        # Includes SoftTimeLimitExceeded — don't leave the row stuck on "pending".
+        mark_research_failed(partner_id)
+        raise
+    logger.info("research_partner %s: %s", partner_id, status)
+    return status

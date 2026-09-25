@@ -5,6 +5,7 @@ import Link from 'next/link';
 import { Plus, ExternalLink, AlertTriangle, GitMerge } from 'lucide-react';
 import { partners as partnersApi } from '@/lib/api';
 import PartnerHero from '@/components/crm/PartnerHero';
+import NewTaskModal from '@/components/crm/NewTaskModal';
 import PartnerReminders from '@/components/crm/PartnerReminders';
 import PartnerMeetingCard from '@/components/crm/PartnerMeetingCard';
 import PartnerMeetingScheduler from '@/components/crm/PartnerMeetingScheduler';
@@ -28,6 +29,14 @@ interface PartnerDetail {
   website?: string;
   tags: string[];
   notes?: string;
+  bio?: string | null;
+  enrichment_sources?: string[];
+  priority?: number;
+  groups?: { id: string; name: string; color?: string | null }[];
+  weeks?: number[];
+  last_touch?: string | null;
+  last_touch_kind?: string | null;
+  touches_90d?: number;
   avatar_url?: string;
   department?: string;
   country?: string;
@@ -100,6 +109,14 @@ export default function PartnerDetailPage() {
   const [partner, setPartner] = useState<PartnerDetail | null>(null);
   const [loading, setLoading] = useState(true);
   const [activeTab, setActiveTab] = useState<ActiveTab>('meetings');
+  const [showNewTask, setShowNewTask] = useState(false);
+  const [taskKey, setTaskKey] = useState(0);
+
+  // Deep links such as ?tab=insights (the "Draft email" action on the Partners home).
+  useEffect(() => {
+    const tab = new URLSearchParams(window.location.search).get('tab');
+    if (tab && ['meetings', 'research', 'links', 'insights', 'edit'].includes(tab)) setActiveTab(tab as ActiveTab);
+  }, []);
   const [showMeetingScheduler, setShowMeetingScheduler] = useState(false);
   const [showLinkForm, setShowLinkForm] = useState(false);
   const [showEntitySearch, setShowEntitySearch] = useState(false);
@@ -129,6 +146,13 @@ export default function PartnerDetailPage() {
   }, [id]);
 
   useEffect(() => { if (id) fetchPartner(); }, [id, fetchPartner]);
+
+  // Web research runs in the background — refresh until it lands.
+  useEffect(() => {
+    if (partner?.enrichment_status !== 'pending') return;
+    const t = setTimeout(fetchPartner, 4000);
+    return () => clearTimeout(t);
+  }, [partner, fetchPartner]);
 
   // Check for duplicates after load
   useEffect(() => {
@@ -243,7 +267,8 @@ export default function PartnerDetailPage() {
             onDraftEmail={() => setActiveTab('insights')}
             onAddToGrant={() => { setActiveTab('links'); setShowLinkForm(true); }}
             onOwnerChange={handleOwnerChange}
-            onAddTask={() => {/* TaskPanel handles this inline */}}
+            onAddTask={() => setShowNewTask(true)}
+            onChanged={fetchPartner}
           />
 
           {/* Tab bar */}
@@ -490,9 +515,10 @@ export default function PartnerDetailPage() {
 
           {/* Tasks panel */}
           <TaskPanel
+            key={taskKey}
             partnerId={id}
             onTaskCountChange={setTaskCount}
-            defaultOpen={taskCount > 0}
+            defaultOpen={taskCount > 0 || taskKey > 0}
           />
 
           {/* Notes */}
@@ -596,6 +622,14 @@ export default function PartnerDetailPage() {
           destructive
           onConfirm={() => handleMerge(mergeTargetId)}
           onCancel={() => setShowMergeModal(false)}
+        />
+      )}
+
+      {showNewTask && (
+        <NewTaskModal
+          target={{ kind: 'partner', id: partner.id, name: partner.name }}
+          onClose={() => setShowNewTask(false)}
+          onCreated={() => { setTaskKey(k => k + 1); fetchPartner(); }}
         />
       )}
     </div>

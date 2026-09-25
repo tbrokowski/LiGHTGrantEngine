@@ -21,6 +21,7 @@ from .partner_meeting import PartnerMeeting
 from .partner_document import PartnerDocument
 from .partner_reminder import PartnerReminder
 from .partner_task import PartnerTask
+from .partner_group import PartnerGroup, PartnerGroupMember
 from .milestone import Milestone
 from .gantt_item import GanttItem
 from .workspace_section import WorkspaceSection

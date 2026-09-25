@@ -1,6 +1,5 @@
 """CRM Partners endpoints — full contact management, meetings, documents, AI enrichment."""
 import csv
-from app.db_sync import get_sync_engine
 import io
 import uuid
 from typing import Optional
@@ -8,8 +7,8 @@ from datetime import datetime, timedelta, timezone
 
 from fastapi import APIRouter, Depends, HTTPException, BackgroundTasks, UploadFile, File
 from fastapi.responses import StreamingResponse
-from pydantic import BaseModel
-from sqlalchemy import select, desc, or_, func, and_
+from pydantic import BaseModel, Field
+from sqlalchemy import select, desc, or_, func, and_, cast, String
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.database import get_db
@@ -43,6 +42,7 @@ class PartnerCreate(BaseModel):
     country: Optional[str] = None
     city: Optional[str] = None
     owner_id: Optional[str] = None
+    priority: int = Field(1, ge=1, le=3)
 
 
 class PartnerUpdateSchema(BaseModel):
@@ -66,6 +66,7 @@ class PartnerUpdateSchema(BaseModel):
     city: Optional[str] = None
     avatar_url: Optional[str] = None
     owner_id: Optional[str] = None
+    priority: Optional[int] = Field(None, ge=1, le=3)
 
 
 class BulkUpdateSchema(BaseModel):
@@ -73,6 +74,7 @@ class BulkUpdateSchema(BaseModel):
     relationship_stage: Optional[str] = None
     owner_id: Optional[str] = None
     status: Optional[str] = None
+    priority: Optional[int] = Field(None, ge=1, le=3)
 
 
 class BulkDeleteSchema(BaseModel):
@@ -129,6 +131,7 @@ def _partner_summary(
         "next_contact_date": str(next_contact_date) if next_contact_date else None,
         "owner_id": p.owner_id,
         "owner_name": owner_name,
+        "priority": p.priority or 1,
     }
 
 
@@ -148,6 +151,10 @@ def _partner_full(p: Partner, owner_name: str | None = None) -> dict:
         "status": p.status,
         "relationship_stage": p.relationship_stage,
         "notes": p.notes,
+        "bio": p.bio,
+        "enrichment_sources": p.enrichment_sources or [],
+        "priority": p.priority or 1,
+        "snoozed_until": p.snoozed_until.isoformat() if p.snoozed_until else None,
         "avatar_url": p.avatar_url,
         "department": p.department,
         "country": p.country,
@@ -290,6 +297,100 @@ async def partner_analytics(
     }
 
 
+@router.get("/home")
+async def partners_home(
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    """Everything the Partners home shows above the people/groups split:
+    headline numbers, reach-out suggestions, 12-week team activity and the
+    next 7 days of meetings."""
+    if not has_module_permission(current_user, "can_view_partners"):
+        raise HTTPException(status_code=403, detail="No access to partners.")
+    from app.models.partner_meeting import PartnerMeeting
+    from app.models.partner_task import PartnerTask
+    from app.models.partner_group import PartnerGroup
+    from app.services.partner_engagement import (
+        now_utc, touch_events, reach_out_suggestions, week_index, WEEKS, COLD_AFTER_DAYS, last_touch_map,
+    )
+
+    now = now_utc()
+    open_q = select(PartnerTask).where(PartnerTask.status.in_(["open", "in_progress"]))
+    open_tasks = (await db.execute(open_q)).scalars().all()
+    overdue = [t for t in open_tasks if t.due_date and t.due_date < now]
+    mine = [t for t in open_tasks if t.assigned_to == current_user.id]
+
+    events = await touch_events(db, None, since=now - timedelta(weeks=WEEKS))
+    weekly = [0] * WEEKS
+    last30 = prev30 = 0
+    for _, ts, _k in events:
+        if (i := week_index(ts, now)) is not None:
+            weekly[i] += 1
+        age = (now - ts).days
+        if age < 30:
+            last30 += 1
+        elif age < 60:
+            prev30 += 1
+
+    prio_partners = (await db.execute(
+        select(Partner.id, Partner.priority).where(Partner.priority >= 2, Partner.status != "inactive")
+    )).all()
+    last = await last_touch_map(db, [pid for pid, _ in prio_partners])
+    going_cold = sum(
+        1 for pid, prio in prio_partners
+        if last.get(pid) and (now - last[pid]).days > COLD_AFTER_DAYS[prio]
+    )
+
+    week_end = now + timedelta(days=7)
+    meetings = (await db.execute(
+        select(PartnerMeeting, Partner.name)
+        .join(Partner, Partner.id == PartnerMeeting.partner_id)
+        .where(PartnerMeeting.scheduled_at >= now, PartnerMeeting.scheduled_at <= week_end,
+               PartnerMeeting.completed_at.is_(None))
+        .order_by(PartnerMeeting.scheduled_at).limit(6)
+    )).all()
+
+    people = (await db.execute(select(func.count(Partner.id)))).scalar() or 0
+    inst = getattr(current_user, "institution_id", None)
+    groups = (await db.execute(select(func.count(PartnerGroup.id)).where(
+        PartnerGroup.institution_id == inst if inst else PartnerGroup.institution_id.is_(None)
+    ))).scalar() or 0
+
+    return {
+        "counts": {"people": people, "groups": groups},
+        "kpis": {
+            "open_tasks": len(open_tasks), "my_open_tasks": len(mine),
+            "overdue": len(overdue), "my_overdue": sum(1 for t in overdue if t.assigned_to == current_user.id),
+            "touches_30d": last30, "touches_prev_30d": prev30,
+            "going_cold": going_cold,
+            "meetings_week": len(meetings),
+        },
+        "weekly_touches": weekly,
+        "suggestions": await reach_out_suggestions(db),
+        "meetings": [{
+            "id": m.id, "partner_id": m.partner_id, "partner_name": name, "title": m.title,
+            "scheduled_at": m.scheduled_at.isoformat() if m.scheduled_at else None,
+            "attendee_count": len(m.attendees or []),
+        } for m, name in meetings],
+    }
+
+
+class SnoozeIn(BaseModel):
+    days: int = Field(14, ge=1, le=365)
+
+
+@router.post("/{partner_id}/snooze")
+async def snooze_partner(
+    partner_id: str, data: SnoozeIn,
+    db: AsyncSession = Depends(get_db), current_user: User = Depends(get_current_user),
+):
+    """Hide a partner from reach-out suggestions for a while."""
+    partner = await _get_partner_or_404(partner_id, db)
+    partner.snoozed_until = datetime.now(timezone.utc) + timedelta(days=data.days)
+    await db.commit()
+    return {"snoozed_until": partner.snoozed_until.isoformat()}
+
+
 @router.get("/upcoming-contacts")
 async def upcoming_contacts(
     days: int = 30,
@@ -379,6 +480,8 @@ async def list_partners(
     owner_me: Optional[bool] = None,
     overdue: Optional[bool] = None,
     days_inactive: Optional[int] = None,
+    priority: Optional[int] = None,
+    group_id: Optional[str] = None,
     sort_by: Optional[str] = None,
     sort_dir: str = "desc",
     limit: int = 200,
@@ -441,8 +544,15 @@ async def list_partners(
                 Partner.organization.ilike(like),
                 Partner.title.ilike(like),
                 Partner.department.ilike(like),
+                cast(Partner.tags, String).ilike(like),
             )
         )
+    if priority:
+        stmt = stmt.where(Partner.priority == priority)
+    if group_id:
+        from app.models.partner_group import PartnerGroupMember
+        stmt = stmt.where(Partner.id.in_(
+            select(PartnerGroupMember.partner_id).where(PartnerGroupMember.group_id == group_id)))
     if tag:
         stmt = stmt.where(Partner.tags.contains([tag]))
     if project_type:
@@ -456,6 +566,7 @@ async def list_partners(
         "last_contact": Partner.updated_at,
         "next_contact": ncd_subq.c.next_contact_date,
         "created": Partner.created_at,
+        "priority": Partner.priority,
     }.get(sort_by or "last_contact", Partner.updated_at)
 
     if sort_dir == "asc":
@@ -474,7 +585,39 @@ async def list_partners(
         users = (await db.execute(select(User).where(User.id.in_(owner_ids)))).scalars().all()
         owner_name_map = {u.id: u.name for u in users}
 
-    return [_partner_summary(p, ncd, owner_name_map.get(p.owner_id or "")) for p, ncd in rows]
+    out = [_partner_summary(p, ncd, owner_name_map.get(p.owner_id or "")) for p, ncd in rows]
+    await _attach_engagement(out, db)
+    return out
+
+
+async def _attach_engagement(items: list[dict], db: AsyncSession) -> None:
+    """Add each partner's groups, last contact and 12-week activity strip."""
+    from app.services.partner_engagement import last_touch_map, weekly_by_partner, WEEKS
+    ids = [d["id"] for d in items]
+    groups = await _groups_by_partner(ids, db)
+    last = await last_touch_map(db, ids)
+    weeks = await weekly_by_partner(db, ids)
+    for d in items:
+        d["groups"] = groups.get(d["id"], [])
+        lt = last.get(d["id"])
+        d["last_touch"] = lt.isoformat() if lt else None
+        d["weeks"] = weeks.get(d["id"], [0] * WEEKS)
+
+
+async def _groups_by_partner(ids: list[str], db: AsyncSession) -> dict[str, list[dict]]:
+    from app.models.partner_group import PartnerGroup, PartnerGroupMember
+    if not ids:
+        return {}
+    rows = (await db.execute(
+        select(PartnerGroupMember.partner_id, PartnerGroup.id, PartnerGroup.name, PartnerGroup.color)
+        .join(PartnerGroup, PartnerGroup.id == PartnerGroupMember.group_id)
+        .where(PartnerGroupMember.partner_id.in_(ids))
+        .order_by(PartnerGroup.name)
+    )).all()
+    out: dict[str, list[dict]] = {}
+    for pid, gid, name, color in rows:
+        out.setdefault(pid, []).append({"id": gid, "name": name, "color": color})
+    return out
 
 
 @router.post("/", status_code=201)
@@ -551,61 +694,150 @@ async def delete_partner_reminder(
     await db.commit()
 
 
-# ── Add a partner from a pasted email thread (extract → find LinkedIn → enrich) ─
+# ── Bulk add from a pasted list of emails (parse → create → research each) ────
 
-class EmailThreadIn(BaseModel):
+class EmailListIn(BaseModel):
     text: str
 
 
-@router.post("/from-email-thread")
-async def partner_from_email_thread(
-    data: EmailThreadIn, db: AsyncSession = Depends(get_db), current_user: User = Depends(get_current_user),
+class EmailContactIn(BaseModel):
+    email: str
+    name: str
+    name_guessed: bool = False
+    priority: Optional[int] = Field(None, ge=1, le=3)
+
+
+class BulkFromEmailsIn(BaseModel):
+    contacts: list[EmailContactIn]
+    research: bool = True
+    group_ids: list[str] = []
+    priority: int = Field(1, ge=1, le=3)
+
+
+class IdsIn(BaseModel):
+    ids: list[str]
+
+
+@router.post("/parse-email-list")
+async def parse_email_list_preview(
+    data: EmailListIn, db: AsyncSession = Depends(get_db), current_user: User = Depends(get_current_user),
 ):
-    from app.ai.agents.email_partner_extractor import extract_partner_from_email
-    from app.ai.agents.partner_enrichment_agent import enrich_partner_profile
-    from app.services.web_search import search_web
+    """Parse a pasted To:/Cc: list (or any text with addresses) into contacts,
+    flagging ones already in the CRM and the current user's own address."""
+    from app.services.email_list_parser import parse_email_list
 
-    ex = await extract_partner_from_email(data.text)
-    name = (ex.get("name") or "").strip()
-    if not name:
-        raise HTTPException(400, "Couldn't find a contact in that email thread.")
-    org = ex.get("organization") or None
-    email = ex.get("email") or None
-    title = ex.get("title") or None
+    contacts = parse_email_list(data.text)
+    if len(contacts) > 500:
+        raise HTTPException(400, "That's more than 500 addresses — split the list and paste it in parts.")
+    emails = [c.email for c in contacts]
+    existing: dict[str, Partner] = {}
+    if emails:
+        rows = (await db.execute(select(Partner).where(func.lower(Partner.email).in_(emails)))).scalars().all()
+        existing = {(p.email or "").lower(): p for p in rows}
+    me = (current_user.email or "").lower()
+    out = []
+    for c in contacts:
+        hit = existing.get(c.email)
+        out.append({
+            **c.to_dict(),
+            "is_self": c.email == me,
+            "existing_partner_id": hit.id if hit else None,
+            "existing_name": hit.name if hit else None,
+        })
+    return {"contacts": out}
 
-    # Find their LinkedIn via web search (no direct scraping).
-    linkedin_url = None
-    try:
-        for r in (await search_web(f"{name} {org or ''} LinkedIn")) or []:
-            u = (r.get("url") or "") if isinstance(r, dict) else ""
-            if "linkedin.com/in" in u:
-                linkedin_url = u
-                break
-    except Exception:
-        pass
 
-    enrich: dict = {}
-    try:
-        enrich = await enrich_partner_profile(
-            name=name, organization=org, email=email, linkedin_url=linkedin_url, title=title) or {}
-    except Exception:
-        pass
+@router.post("/bulk-from-emails", status_code=201)
+async def bulk_create_from_emails(
+    data: BulkFromEmailsIn, background_tasks: BackgroundTasks,
+    db: AsyncSession = Depends(get_db), current_user: User = Depends(get_current_user),
+):
+    """Create a partner for each contact (skipping emails already in the CRM),
+    then research each one on the web in the background to fill in title,
+    organization, bio, expertise and links. Poll /research-status for progress."""
+    if len(data.contacts) > 500:
+        raise HTTPException(400, "At most 500 contacts per batch.")
+    emails = [c.email.strip().lower() for c in data.contacts]
+    taken = set()
+    if emails:
+        taken = {
+            (e or "").lower() for e in (await db.execute(
+                select(Partner.email).where(func.lower(Partner.email).in_(emails))
+            )).scalars().all()
+        }
 
-    tags = enrich.get("expertise_tags") or []
-    if org:
-        tags = [f"from:{org}"] + [t for t in tags if t]
-    partner = Partner(
-        id=str(uuid.uuid4()), created_by=current_user.id,
-        institution_id=getattr(current_user, "institution_id", None),
-        name=name, email=email, organization=org, title=title,
-        linkedin_url=linkedin_url, tags=tags,
-        h_index=enrich.get("h_index"), notes=enrich.get("bio_snippet"),
-    )
-    db.add(partner)
+    created: list[dict] = []
+    skipped: list[str] = []
+    queue: list[tuple[str, bool]] = []
+    for c in data.contacts:
+        email = c.email.strip().lower()
+        if not email or email in taken:
+            skipped.append(email)
+            continue
+        taken.add(email)
+        p = Partner(
+            id=str(uuid.uuid4()), created_by=current_user.id,
+            institution_id=getattr(current_user, "institution_id", None),
+            name=(c.name or email).strip()[:300], email=email, tags=[],
+            priority=c.priority or data.priority,
+            enrichment_status="pending" if data.research else "none",
+        )
+        db.add(p)
+        created.append({"id": p.id, "name": p.name, "email": email})
+        queue.append((p.id, c.name_guessed))
+    await db.flush()
+    if data.group_ids and created:
+        from app.services.partner_groups import add_members
+        for gid in data.group_ids:
+            await add_members(db, gid, [c["id"] for c in created], current_user.id)
     await db.commit()
-    await db.refresh(partner)
-    return {"id": partner.id, "name": name, "email": email, "organization": org,
-            "linkedin_url": linkedin_url, "tags": tags}
+
+    if data.research and queue:
+        _queue_research(queue, background_tasks)
+    return {"created": created, "skipped_existing": skipped}
+
+
+@router.post("/research-status")
+async def research_status(
+    data: IdsIn, db: AsyncSession = Depends(get_db), current_user: User = Depends(get_current_user),
+):
+    """Progress for a batch of partners being researched."""
+    if not data.ids:
+        return []
+    rows = (await db.execute(select(Partner).where(Partner.id.in_(data.ids[:500])))).scalars().all()
+    return [{
+        "id": p.id, "name": p.name, "email": p.email, "title": p.title,
+        "organization": p.organization, "enrichment_status": p.enrichment_status,
+        "has_bio": bool(p.bio),
+    } for p in rows]
+
+
+def _queue_research(items: list[tuple[str, bool]], background_tasks: BackgroundTasks) -> None:
+    """One Celery task per partner. If the broker is unreachable (e.g. running
+    without a worker), fall back to researching in this process, a few at a time."""
+    try:
+        from app.workers.celery_app import celery_app
+        for pid, guessed in items:
+            celery_app.send_task("app.workers.partner_tasks.research_partner", args=[pid, guessed])
+        return
+    except Exception:
+        pass
+
+    async def _local(batch: list[tuple[str, bool]]) -> None:
+        import asyncio
+        from app.services.partner_research import research_partner
+
+        sem = asyncio.Semaphore(3)
+
+        async def one(pid: str, guessed: bool) -> None:
+            async with sem:
+                try:
+                    await research_partner(pid, guessed)
+                except Exception:
+                    pass
+        await asyncio.gather(*(one(pid, g) for pid, g in batch))
+
+    background_tasks.add_task(_local, items)
 
 
 # ── Bulk CSV import ───────────────────────────────────────────────────────────
@@ -749,6 +981,28 @@ async def get_partner(
         "documents": [_document_summary(d) for d in documents],
         "org_info": org_info,
         "next_contact_date": str(latest_next_contact) if latest_next_contact else None,
+        "groups": (await _groups_by_partner([partner.id], db)).get(partner.id, []),
+        **(await _engagement_detail(partner.id, db)),
+    }
+
+
+async def _engagement_detail(partner_id: str, db: AsyncSession) -> dict:
+    from app.services.partner_engagement import touch_events, week_index, now_utc, WEEKS
+    now = now_utc()
+    events = await touch_events(db, [partner_id], since=now - timedelta(days=90))
+    weeks = [0] * WEEKS
+    kinds: dict[str, int] = {}
+    for _, ts, kind in events:
+        if (i := week_index(ts, now)) is not None:
+            weeks[i] += 1
+        kinds[kind] = kinds.get(kind, 0) + 1
+    last = await touch_events(db, [partner_id])
+    return {
+        "last_touch": last[0][1].isoformat() if last else None,
+        "last_touch_kind": last[0][2] if last else None,
+        "weeks": weeks,
+        "touches_90d": len(events),
+        "touches_90d_by_kind": kinds,
     }
 
 
@@ -838,63 +1092,14 @@ async def enrich_partner(
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ):
-    """Trigger background profile enrichment via Tavily + OpenAlex."""
+    """Research this partner on the web (search, profile pages, OpenAlex) in the
+    background and fill in empty fields, bio and expertise tags."""
     partner = await _get_partner_or_404(partner_id, db)
     partner.enrichment_status = "pending"
     await db.commit()
 
-    background_tasks.add_task(_run_enrichment, partner_id)
+    _queue_research([(partner_id, False)], background_tasks)
     return {"status": "enrichment_queued", "partner_id": partner_id}
-
-
-async def _run_enrichment(partner_id: str) -> None:
-    """Background enrichment — runs in FastAPI background task."""
-    from app.ai.agents.partner_enrichment_agent import enrich_partner_profile
-
-    try:
-        from sqlalchemy import create_engine
-        from sqlalchemy.orm import Session
-        from app.config import get_settings
-        settings = get_settings()
-        engine = get_sync_engine()
-        with Session(engine) as db:
-            partner = db.get(Partner, partner_id)
-            if not partner:
-                return
-            partner_data = {
-                "name": partner.name,
-                "organization": partner.organization,
-                "email": partner.email,
-                "orcid": partner.orcid,
-                "linkedin_url": partner.linkedin_url,
-                "title": partner.title,
-            }
-
-        import asyncio
-        result = asyncio.run(enrich_partner_profile(**partner_data))
-
-        with Session(engine) as db:
-            partner = db.get(Partner, partner_id)
-            if not partner:
-                return
-            if result.get("h_index"):
-                partner.h_index = result["h_index"]
-            if result.get("enrichment_source"):
-                partner.enrichment_source = result["enrichment_source"]
-            if result.get("expertise_tags") and not partner.tags:
-                partner.tags = result["expertise_tags"][:10]
-            partner.enrichment_status = "done"
-            partner.last_enriched_at = datetime.now(timezone.utc)
-            db.commit()
-    except Exception:
-        try:
-            with Session(engine) as db:  # type: ignore
-                partner = db.get(Partner, partner_id)
-                if partner:
-                    partner.enrichment_status = "failed"
-                    db.commit()
-        except Exception:
-            pass
 
 
 # ── AI: fit scores ─────────────────────────────────────────────────────────────

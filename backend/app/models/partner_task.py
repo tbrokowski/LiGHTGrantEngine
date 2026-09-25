@@ -11,7 +11,9 @@ class PartnerTask(Base):
     __tablename__ = "partner_tasks"
 
     id: Mapped[str] = mapped_column(String, primary_key=True, default=lambda: str(uuid.uuid4()))
-    partner_id: Mapped[str] = mapped_column(String, ForeignKey("partners.id", ondelete="CASCADE"), nullable=False, index=True)
+    # Exactly one of partner_id / group_id is set (ck_partner_tasks_one_owner).
+    partner_id: Mapped[str | None] = mapped_column(String, ForeignKey("partners.id", ondelete="CASCADE"), nullable=True, index=True)
+    group_id: Mapped[str | None] = mapped_column(String, ForeignKey("partner_groups.id", ondelete="CASCADE"), nullable=True, index=True)
     institution_id: Mapped[str | None] = mapped_column(String, ForeignKey("institutions.id"), nullable=True)
 
     title: Mapped[str] = mapped_column(String(500), nullable=False)

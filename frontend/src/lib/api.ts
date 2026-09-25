@@ -617,8 +617,16 @@ export const partners = {
     api.post(`/partners/${id}/reminders`, data),
   deleteReminder: (id: string, reminderId: string) =>
     api.delete(`/partners/${id}/reminders/${reminderId}`),
-  // Add a partner from a pasted email thread (extract → find LinkedIn → enrich)
-  fromEmailThread: (text: string) => api.post('/partners/from-email-thread', { text }),
+  // Add partners from a pasted list of emails (parse → review → create → research each online)
+  parseEmailList: (text: string) => api.post('/partners/parse-email-list', { text }),
+  bulkFromEmails: (
+    contacts: { email: string; name: string; name_guessed: boolean; priority?: number }[],
+    research = true,
+    opts: { group_ids?: string[]; priority?: number } = {},
+  ) => api.post('/partners/bulk-from-emails', { contacts, research, ...opts }),
+  home: () => api.get('/partners/home'),
+  snooze: (id: string, days = 14) => api.post(`/partners/${id}/snooze`, { days }),
+  researchStatus: (ids: string[]) => api.post('/partners/research-status', { ids }),
   // Bulk CSV import
   importCsv: (file: File) => {
     const form = new FormData();
@@ -668,6 +676,32 @@ export const partners = {
   bulkDelete: (ids: string[]) => api.post('/partners/bulk-delete', { ids }),
   exportCsv: (params?: Record<string, unknown>) =>
     api.get('/partners/export', { params: { format: 'csv', ...params }, responseType: 'blob' }),
+};
+
+// Partner groups — named sets of partners (sites, consortia, projects)
+export const partnerGroups = {
+  list: () => api.get('/partner-groups/'),
+  get: (id: string) => api.get(`/partner-groups/${id}`),
+  create: (data: { name: string; description?: string; color?: string; partner_ids?: string[]; tags?: string[]; match?: 'any' | 'all' }) =>
+    api.post('/partner-groups/', data),
+  update: (id: string, data: { name?: string; description?: string; color?: string }) => api.patch(`/partner-groups/${id}`, data),
+  remove: (id: string) => api.delete(`/partner-groups/${id}`),
+  allTags: () => api.get('/partner-groups/tags/all'),
+  previewMembers: (id: string, tags: string[], match: 'any' | 'all') =>
+    api.get(`/partner-groups/${id}/members/preview`, { params: { tags, match }, paramsSerializer: { indexes: null } }),
+  addMembers: (id: string, data: { partner_ids?: string[]; tags?: string[]; match?: 'any' | 'all'; exclude_ids?: string[] }) =>
+    api.post(`/partner-groups/${id}/members`, data),
+  removeMember: (id: string, partnerId: string) => api.delete(`/partner-groups/${id}/members/${partnerId}`),
+  createTask: (id: string, data: Record<string, unknown>) => api.post(`/partner-groups/${id}/tasks`, data),
+};
+
+// Tasks across every partner and group
+export const partnerTasks = {
+  list: (params: { scope?: 'mine' | 'team' | 'unassigned'; include_done?: boolean; limit?: number } = {}) =>
+    api.get('/partner-tasks/', { params }),
+  create: (data: Record<string, unknown>) => api.post('/partner-tasks/', data),
+  update: (id: string, data: Record<string, unknown>) => api.patch(`/partner-tasks/${id}`, data),
+  remove: (id: string) => api.delete(`/partner-tasks/${id}`),
 };
 
 export const partnerOrgs = {

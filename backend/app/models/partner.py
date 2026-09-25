@@ -63,6 +63,13 @@ class Partner(Base):
     project_types: Mapped[list] = mapped_column(JSON, default=list)
     status: Mapped[str] = mapped_column(String(50), default=PartnerStatus.ACTIVE, index=True)
     notes: Mapped[str | None] = mapped_column(Text)
+    # Researched from the web (migration 062); `notes` stays the team's own.
+    bio: Mapped[str | None] = mapped_column(Text)
+    enrichment_sources: Mapped[list | None] = mapped_column(JSON)
+    # 1 regular · 2 medium · 3 high (migration 063)
+    priority: Mapped[int] = mapped_column(Integer, default=1, server_default="1", index=True)
+    # Hidden from reach-out suggestions until then.
+    snoozed_until: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
 
     # CRM enrichment fields (added in migration 032)
     organization_id: Mapped[str | None] = mapped_column(String, ForeignKey("partner_organizations.id"), nullable=True, index=True)
