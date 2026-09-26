@@ -622,7 +622,7 @@ export const partners = {
   bulkFromEmails: (
     contacts: { email: string; name: string; name_guessed: boolean; priority?: number }[],
     research = true,
-    opts: { group_ids?: string[]; priority?: number } = {},
+    opts: { group_ids?: string[]; priority?: number; tags?: string[] } = {},
   ) => api.post('/partners/bulk-from-emails', { contacts, research, ...opts }),
   home: () => api.get('/partners/home'),
   snooze: (id: string, days = 14) => api.post(`/partners/${id}/snooze`, { days }),

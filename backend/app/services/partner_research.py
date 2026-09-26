@@ -93,7 +93,8 @@ async def research_partner(partner_id: str, name_guessed: bool = False) -> str:
         partner.enrichment_status = "pending"
         db.commit()
         args = dict(email=partner.email, name=partner.name, organization=partner.organization,
-                    title=partner.title, orcid=partner.orcid, name_guessed=name_guessed)
+                    title=partner.title, orcid=partner.orcid, name_guessed=name_guessed,
+                    tags=list(partner.tags or []))
 
     status = "failed"
     try:
@@ -113,6 +114,45 @@ async def research_partner(partner_id: str, name_guessed: bool = False) -> str:
         partner.last_enriched_at = datetime.now(timezone.utc)
         db.commit()
     return status
+
+
+# Per-contact cap inside a batch so one slow site can't hold up the rest.
+CONTACT_TIMEOUT_S = 150
+BATCH_CONCURRENCY = 4
+
+
+async def research_many(items: list[tuple[str, bool]], concurrency: int = BATCH_CONCURRENCY) -> dict[str, str]:
+    sem = asyncio.Semaphore(concurrency)
+
+    async def one(pid: str, guessed: bool) -> tuple[str, str]:
+        async with sem:
+            try:
+                return pid, await asyncio.wait_for(research_partner(pid, guessed), CONTACT_TIMEOUT_S)
+            except Exception as exc:  # includes TimeoutError
+                logger.warning("partner research failed", partner_id=pid, error=repr(exc))
+                await asyncio.to_thread(mark_research_failed, pid)
+                return pid, "failed"
+
+    return dict(await asyncio.gather(*(one(pid, g) for pid, g in items)))
+
+
+def run_batch_sync(items: list[tuple[str, bool]]) -> dict[str, str]:
+    """Entry point for the Celery batch task."""
+    return asyncio.run(research_many(items))
+
+
+def fail_stale(hours: int = 2) -> int:
+    from datetime import timedelta
+    from sqlalchemy import update
+    cutoff = datetime.now(timezone.utc) - timedelta(hours=hours)
+    with Session(get_sync_engine()) as db:
+        res = db.execute(
+            update(Partner)
+            .where(Partner.enrichment_status == "pending", Partner.updated_at < cutoff)
+            .values(enrichment_status="failed")
+        )
+        db.commit()
+        return res.rowcount or 0
 
 
 def run_research_sync(partner_id: str, name_guessed: bool = False) -> str:

@@ -64,8 +64,24 @@ export default function AddFromEmailsModal({ onClose, onChanged }: { onClose: ()
   const [newGroup, setNewGroup] = useState('');
   const [priority, setPriority] = useState<1 | 2 | 3>(1);
   const [rowPrio, setRowPrio] = useState<Record<string, number>>({});
+  const [tags, setTags] = useState<string[]>([]);
+  const [tagInput, setTagInput] = useState('');
+  const [knownTags, setKnownTags] = useState<{ tag: string; count: number }[]>([]);
 
   useEffect(() => { partnerGroups.list().then(r => setGroups(r.data || [])).catch(() => {}); }, []);
+  useEffect(() => { partnerGroups.allTags().then(r => setKnownTags(r.data || [])).catch(() => {}); }, []);
+
+  function addTag(raw: string) {
+    const t = raw.trim().replace(/,+$/, '').trim();
+    if (!t) return;
+    setTags(ts => ts.some(x => x.toLowerCase() === t.toLowerCase()) ? ts : [...ts, t]);
+    setTagInput('');
+  }
+
+  const tagSuggestions = knownTags
+    .filter(k => !tags.some(t => t.toLowerCase() === k.tag.toLowerCase()))
+    .filter(k => !tagInput.trim() || k.tag.toLowerCase().includes(tagInput.trim().toLowerCase()))
+    .slice(0, 8);
 
   async function createGroup() {
     const name = newGroup.trim();
@@ -113,7 +129,7 @@ export default function AddFromEmailsModal({ onClose, onChanged }: { onClose: ()
             ...(rowPrio[c.email] ? { priority: rowPrio[c.email] } : {}),
           };
         });
-      const res = await partnersApi.bulkFromEmails(payload, research, { group_ids: groupIds, priority });
+      const res = await partnersApi.bulkFromEmails(payload, research, { group_ids: groupIds, priority, tags: tagInput.trim() ? [...tags, tagInput.trim()] : tags });
       const created: { id: string; name: string; email: string }[] = res.data.created;
       setSkipped(res.data.skipped_existing.length);
       setRows(created.map(c => ({
@@ -222,6 +238,46 @@ export default function AddFromEmailsModal({ onClose, onChanged }: { onClose: ()
               <input value={newGroup} onChange={e => setNewGroup(e.target.value)} onKeyDown={e => { if (e.key === 'Enter') createGroup(); }}
                 placeholder="+ New group…" aria-label="New group name"
                 className="h-7 px-2.5 text-xs rounded-full w-36" style={{ border: '1px dashed var(--rule-strong)', background: 'transparent', outline: 'none', color: 'var(--ink-primary)' }} />
+            </div>
+            <div className="flex items-start gap-2">
+              <span className="ledger-label w-16 shrink-0 pt-2">Tags</span>
+              <div className="flex-1 min-w-0">
+                <div className="flex items-center gap-1.5 flex-wrap">
+                  {tags.map(t => (
+                    <span key={t} className="h-7 pl-2.5 pr-1.5 text-xs font-medium rounded-full flex items-center gap-1"
+                      style={{ background: 'var(--surface-sunken)', color: 'var(--ink-primary)', border: '1px solid var(--rule-strong)' }}>
+                      {t}
+                      <button type="button" onClick={() => setTags(ts => ts.filter(x => x !== t))} aria-label={`Remove tag ${t}`} style={{ color: 'var(--ink-muted)' }}>
+                        <X className="w-3 h-3" />
+                      </button>
+                    </span>
+                  ))}
+                  <input
+                    value={tagInput}
+                    onChange={e => { const v = e.target.value; if (v.endsWith(',')) addTag(v); else setTagInput(v); }}
+                    onKeyDown={e => {
+                      if (e.key === 'Enter') { e.preventDefault(); addTag(tagInput); }
+                      if (e.key === 'Backspace' && !tagInput && tags.length) setTags(ts => ts.slice(0, -1));
+                    }}
+                    onBlur={() => addTag(tagInput)}
+                    placeholder={tags.length ? 'Add another…' : 'Type a tag and press Enter, e.g. consortium-2026'}
+                    aria-label="Tags for everyone added"
+                    className="h-7 px-2.5 text-xs rounded-full flex-1 min-w-[180px]"
+                    style={{ border: '1px dashed var(--rule-strong)', background: 'transparent', outline: 'none', color: 'var(--ink-primary)' }}
+                  />
+                </div>
+                {tagSuggestions.length > 0 && (
+                  <div className="flex items-center gap-1 flex-wrap mt-1.5">
+                    <span className="text-[11px] mr-0.5" style={{ color: 'var(--ink-muted)' }}>In use:</span>
+                    {tagSuggestions.map(k => (
+                      <button key={k.tag} type="button" onMouseDown={e => e.preventDefault()} onClick={() => addTag(k.tag)}
+                        className="h-6 px-2 text-[11px] rounded-full" style={{ background: 'var(--surface-sunken)', color: 'var(--ink-secondary)' }}>
+                        + {k.tag} <span className="mono-data opacity-60">{k.count}</span>
+                      </button>
+                    ))}
+                  </div>
+                )}
+              </div>
             </div>
             <div className="flex items-center gap-2">
               <span className="ledger-label w-16">Priority</span>

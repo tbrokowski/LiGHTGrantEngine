@@ -42,6 +42,10 @@ celery_app.conf.update(
         Queue("celery"),          # default — discovery, enrichment, scoring
         Queue("call_analysis"),   # dedicated — never starved by bulk tasks
         Queue("summaries"),       # low-priority — AI summaries (bulk, deferrable)
+        # User-initiated partner web research. Its own queue so a big import
+        # isn't stuck behind the discovery/enrichment backlog: a worker that
+        # consumes several queues takes from them in turn.
+        Queue("partner_research"),
     ),
     task_routes={
         "app.workers.grant_writing_tasks.analyze_grant_call":    {"queue": "call_analysis"},
@@ -50,6 +54,8 @@ celery_app.conf.update(
         "app.workers.grant_writing_tasks.summarize_conversation_task":      {"queue": "summaries"},
         "app.workers.grant_writing_tasks.synthesize_call_intelligence_task": {"queue": "summaries"},
         "app.workers.enrichment_tasks.generate_ai_summary":            {"queue": "summaries"},
+        "app.workers.partner_tasks.research_partner":                  {"queue": "partner_research"},
+        "app.workers.partner_tasks.research_partners_batch":           {"queue": "partner_research"},
     },
 )
 
@@ -129,6 +135,10 @@ celery_app.conf.beat_schedule = {
     "partner-reminders": {
         "task": "app.workers.partner_tasks.send_partner_reminders",
         "schedule": crontab(hour=8, minute=30),
+    },
+    "fail-stale-partner-research": {
+        "task": "app.workers.partner_tasks.fail_stale_research",
+        "schedule": crontab(minute="*/15"),
     },
     "pre-meeting-preps": {
         "task": "app.workers.partner_tasks.generate_pre_meeting_preps",

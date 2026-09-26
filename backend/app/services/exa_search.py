@@ -11,6 +11,7 @@ API reference: https://docs.exa.ai/reference/search-api-guide-for-coding-agents
 """
 from __future__ import annotations
 
+import asyncio
 import hashlib
 import time
 from typing import Any
@@ -87,7 +88,9 @@ async def exa_search(
     if not api_key:
         return []
 
-    cache_key = _key("search", query, str(num_results), search_type)
+    cache_key = _key("search", query, str(num_results), search_type,
+                     ",".join(include_domains or []), ",".join(exclude_domains or []),
+                     start_published_date or "")
     cached = _cache_get(cache_key)
     if cached is not None:
         return cached
@@ -110,7 +113,9 @@ async def exa_search(
         if start_published_date:
             kwargs["start_published_date"] = start_published_date
 
-        response = client.search(query, **kwargs)
+        # exa-py is synchronous; keep it off the event loop so concurrent
+        # callers (e.g. partner research batches) aren't serialized.
+        response = await asyncio.to_thread(client.search, query, **kwargs)
         results = _normalise(response.results)
         _cache_set(cache_key, results)
         return results
@@ -144,7 +149,8 @@ async def exa_find_similar(
         from exa_py import Exa  # type: ignore
 
         client = Exa(api_key=api_key)
-        response = client.find_similar(
+        response = await asyncio.to_thread(
+            client.find_similar,
             url,
             num_results=num_results,
             exclude_source_domain=exclude_source_domain,
@@ -184,7 +190,8 @@ async def exa_get_contents(
         from exa_py import Exa  # type: ignore
 
         client = Exa(api_key=api_key)
-        response = client.get_contents(
+        response = await asyncio.to_thread(
+            client.get_contents,
             urls,
             text={"max_characters": max_characters},
         )

@@ -711,6 +711,7 @@ class BulkFromEmailsIn(BaseModel):
     contacts: list[EmailContactIn]
     research: bool = True
     group_ids: list[str] = []
+    tags: list[str] = []
     priority: int = Field(1, ge=1, le=3)
 
 
@@ -766,6 +767,13 @@ async def bulk_create_from_emails(
             )).scalars().all()
         }
 
+    # Tags chosen on import go on everyone; de-duplicated case-insensitively.
+    tags: list[str] = []
+    for t in data.tags:
+        t = t.strip()[:100]
+        if t and t.lower() not in {x.lower() for x in tags}:
+            tags.append(t)
+
     created: list[dict] = []
     skipped: list[str] = []
     queue: list[tuple[str, bool]] = []
@@ -778,7 +786,7 @@ async def bulk_create_from_emails(
         p = Partner(
             id=str(uuid.uuid4()), created_by=current_user.id,
             institution_id=getattr(current_user, "institution_id", None),
-            name=(c.name or email).strip()[:300], email=email, tags=[],
+            name=(c.name or email).strip()[:300], email=email, tags=list(tags),
             priority=c.priority or data.priority,
             enrichment_status="pending" if data.research else "none",
         )
@@ -813,29 +821,25 @@ async def research_status(
 
 
 def _queue_research(items: list[tuple[str, bool]], background_tasks: BackgroundTasks) -> None:
-    """One Celery task per partner. If the broker is unreachable (e.g. running
-    without a worker), fall back to researching in this process, a few at a time."""
+    """Queue web research on the partner_research queue — batches of 20, each
+    researched 4 at a time. If the broker is unreachable (e.g. running
+    without a worker), fall back to researching in this process."""
     try:
         from app.workers.celery_app import celery_app
-        for pid, guessed in items:
-            celery_app.send_task("app.workers.partner_tasks.research_partner", args=[pid, guessed])
+        if len(items) == 1:
+            celery_app.send_task("app.workers.partner_tasks.research_partner", args=list(items[0]),
+                                 queue="partner_research")
+        else:
+            for i in range(0, len(items), 20):
+                celery_app.send_task("app.workers.partner_tasks.research_partners_batch",
+                                     args=[[list(x) for x in items[i:i + 20]]], queue="partner_research")
         return
     except Exception:
         pass
 
     async def _local(batch: list[tuple[str, bool]]) -> None:
-        import asyncio
-        from app.services.partner_research import research_partner
-
-        sem = asyncio.Semaphore(3)
-
-        async def one(pid: str, guessed: bool) -> None:
-            async with sem:
-                try:
-                    await research_partner(pid, guessed)
-                except Exception:
-                    pass
-        await asyncio.gather(*(one(pid, g) for pid, g in batch))
+        from app.services.partner_research import research_many
+        await research_many(batch, concurrency=3)
 
     background_tasks.add_task(_local, items)
 
