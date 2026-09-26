@@ -1,7 +1,7 @@
 """Research a CRM partner on the web and write what was found onto their record.
 
-Shared by bulk add-from-emails (one Celery task per contact) and the
-per-partner "Enrich now" button. Research never overwrites what the team typed:
+Shared by bulk add-from-emails and the per-partner "Research online" button;
+runs inside the API process (see start_research at the bottom). Research never overwrites what the team typed:
 it fills empty fields, merges tags, and replaces the name only when the name
 on file was guessed from an email address.
 """
@@ -81,30 +81,20 @@ def apply_profile(db: Session, partner: Partner, profile: dict, *, name_guessed:
     partner.enrichment_source = profile.get("enrichment_source") or "web"
 
 
-async def research_partner(partner_id: str, name_guessed: bool = False) -> str:
-    """Research one partner and save the result. Returns the final status."""
-    from app.ai.agents.partner_profile_researcher import research_contact
-
-    engine = get_sync_engine()
-    with Session(engine) as db:
+def _load_for_research(partner_id: str, name_guessed: bool) -> dict | None:
+    with Session(get_sync_engine()) as db:
         partner = db.get(Partner, partner_id)
         if not partner:
-            return "missing"
+            return None
         partner.enrichment_status = "pending"
         db.commit()
-        args = dict(email=partner.email, name=partner.name, organization=partner.organization,
+        return dict(email=partner.email, name=partner.name, organization=partner.organization,
                     title=partner.title, orcid=partner.orcid, name_guessed=name_guessed,
                     tags=list(partner.tags or []))
 
-    status = "failed"
-    try:
-        profile = await research_contact(**args)
-        status = "done" if profile.get("sources") or profile.get("bio") else "not_found"
-    except Exception as exc:
-        logger.warning("partner research failed", partner_id=partner_id, error=str(exc))
-        profile = {}
 
-    with Session(engine) as db:
+def _save_research(partner_id: str, profile: dict, status: str, name_guessed: bool) -> str:
+    with Session(get_sync_engine()) as db:
         partner = db.get(Partner, partner_id)
         if not partner:
             return "missing"
@@ -116,29 +106,28 @@ async def research_partner(partner_id: str, name_guessed: bool = False) -> str:
     return status
 
 
-# Per-contact cap inside a batch so one slow site can't hold up the rest.
+async def research_partner(partner_id: str, name_guessed: bool = False) -> str:
+    """Research one partner and save the result. Returns the final status.
+    Database work runs on a thread so this is safe inside the API's event loop."""
+    from app.ai.agents.partner_profile_researcher import research_contact
+
+    args = await asyncio.to_thread(_load_for_research, partner_id, name_guessed)
+    if args is None:
+        return "missing"
+
+    status = "failed"
+    try:
+        profile = await research_contact(**args)
+        status = "done" if profile.get("sources") or profile.get("bio") else "not_found"
+    except Exception as exc:
+        logger.warning("partner research failed", partner_id=partner_id, error=str(exc))
+        profile = {}
+    return await asyncio.to_thread(_save_research, partner_id, profile, status, name_guessed)
+
+
+# Per-contact cap so one slow site can't hold up the rest.
 CONTACT_TIMEOUT_S = 150
 BATCH_CONCURRENCY = 4
-
-
-async def research_many(items: list[tuple[str, bool]], concurrency: int = BATCH_CONCURRENCY) -> dict[str, str]:
-    sem = asyncio.Semaphore(concurrency)
-
-    async def one(pid: str, guessed: bool) -> tuple[str, str]:
-        async with sem:
-            try:
-                return pid, await asyncio.wait_for(research_partner(pid, guessed), CONTACT_TIMEOUT_S)
-            except Exception as exc:  # includes TimeoutError
-                logger.warning("partner research failed", partner_id=pid, error=repr(exc))
-                await asyncio.to_thread(mark_research_failed, pid)
-                return pid, "failed"
-
-    return dict(await asyncio.gather(*(one(pid, g) for pid, g in items)))
-
-
-def run_batch_sync(items: list[tuple[str, bool]]) -> dict[str, str]:
-    """Entry point for the Celery batch task."""
-    return asyncio.run(research_many(items))
 
 
 def fail_stale(hours: int = 2) -> int:
@@ -155,14 +144,65 @@ def fail_stale(hours: int = 2) -> int:
         return res.rowcount or 0
 
 
-def run_research_sync(partner_id: str, name_guessed: bool = False) -> str:
-    """Entry point for Celery / threads, which have no running event loop."""
-    return asyncio.run(research_partner(partner_id, name_guessed))
-
-
 def mark_research_failed(partner_id: str) -> None:
     with Session(get_sync_engine()) as db:
         partner = db.get(Partner, partner_id)
         if partner and partner.enrichment_status == "pending":
             partner.enrichment_status = "failed"
             db.commit()
+
+
+# ── In-process runner (the API) ────────────────────────────────────────────────
+# Research runs inside the API rather than on Celery: it's user-initiated and
+# almost all waiting on the network, and the production worker runs one job at
+# a time behind the discovery backlog, so queued research could sit for hours.
+
+_running: set[asyncio.Task] = set()
+_in_flight: set[str] = set()
+_sem: asyncio.Semaphore | None = None
+
+
+def start_research(items: list[tuple[str, bool]]) -> int:
+    """Research these partners in the background of the current event loop,
+    BATCH_CONCURRENCY at a time. Partners already being researched are
+    skipped. Returns how many were started."""
+    global _sem
+    if _sem is None:
+        _sem = asyncio.Semaphore(BATCH_CONCURRENCY)
+    loop = asyncio.get_running_loop()
+    started = 0
+    for pid, guessed in items:
+        if pid in _in_flight:
+            continue
+        _in_flight.add(pid)
+        task = loop.create_task(_run_one(pid, guessed))
+        _running.add(task)
+        task.add_done_callback(_running.discard)
+        started += 1
+    return started
+
+
+async def _run_one(pid: str, guessed: bool) -> None:
+    try:
+        async with _sem:
+            try:
+                status = await asyncio.wait_for(research_partner(pid, guessed), CONTACT_TIMEOUT_S)
+                logger.info("partner research finished", partner_id=pid, status=status)
+            except Exception as exc:  # includes TimeoutError
+                logger.warning("partner research failed", partner_id=pid, error=repr(exc))
+                await asyncio.to_thread(mark_research_failed, pid)
+    finally:
+        _in_flight.discard(pid)
+
+
+def _pending_ids() -> list[str]:
+    from sqlalchemy import select
+    with Session(get_sync_engine()) as db:
+        return list(db.execute(select(Partner.id).where(Partner.enrichment_status == "pending")).scalars().all())
+
+
+async def resume_pending_research() -> int:
+    """On API startup, pick back up anything left "pending" — research that
+    was queued to Celery before this change, or cut off by a redeploy."""
+    ids = await asyncio.to_thread(_pending_ids)
+    return start_research([(pid, False) for pid in ids]) if ids else 0

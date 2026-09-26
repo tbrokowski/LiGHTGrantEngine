@@ -106,6 +106,35 @@ Extract and return JSON:
     }
 
 
+_ORG_STOPWORDS = {
+    "university", "universite", "universidad", "institute", "institut", "college", "school",
+    "health", "public", "research", "centre", "center", "national", "department", "faculty",
+    "hospital", "medical", "sciences", "science", "the", "and", "for", "of",
+}
+
+
+def _org_tokens(organization: str | None) -> set[str]:
+    words = "".join(ch.lower() if ch.isalnum() else " " for ch in (organization or "")).split()
+    return {w for w in words if len(w) >= 3 and w not in _ORG_STOPWORDS}
+
+
+def pick_openalex_author(items: list[dict], organization: str | None = None) -> dict | None:
+    """Choose the author from a name search. Prefer one whose institutions
+    share a distinctive word with ours ("Swiss TPH" ↔ "Swiss Tropical and
+    Public Health Institute"); if the name is unique, take it; if several
+    people share the name and none matches, return None rather than guess."""
+    if not items:
+        return None
+    wanted = _org_tokens(organization)
+    if wanted:
+        for a in items:
+            insts = [i.get("display_name", "") for i in (a.get("last_known_institutions") or [])]
+            insts += [(x.get("institution") or {}).get("display_name", "") for x in (a.get("affiliations") or [])]
+            if any(wanted & _org_tokens(n) for n in insts):
+                return a
+    return items[0] if len(items) == 1 else None
+
+
 async def _search_openalex_author(
     name: str,
     orcid: Optional[str] = None,
@@ -126,12 +155,12 @@ async def _search_openalex_author(
                 url = f"{base_url}/authors/https://orcid.org/{orcid_clean}"
                 resp = await client.get(url, params={"mailto": email})
             else:
-                query = f"{name}"
-                if organization:
-                    query += f" {organization}"
+                # Name only: OpenAlex's author search matches names, so adding
+                # the institution to the query ("Klaus Reither Swiss TPH")
+                # returns nothing at all.
                 resp = await client.get(
                     f"{base_url}/authors",
-                    params={"search": query, "per_page": 3, "mailto": email},
+                    params={"search": name, "per_page": 10, "mailto": email},
                 )
 
             if resp.status_code != 200:
@@ -140,10 +169,9 @@ async def _search_openalex_author(
 
             # Handle search results vs direct lookup
             if "results" in data:
-                items = data["results"]
-                if not items:
+                author = pick_openalex_author(data["results"], organization)
+                if author is None:
                     return None
-                author = items[0]
             else:
                 author = data
 
@@ -172,8 +200,14 @@ async def _search_openalex_author(
                         })
 
             display_name = author.get("display_name", name)
-            affiliations = author.get("affiliations", [])
-            aff_str = ", ".join(a.get("institution", {}).get("display_name", "") for a in affiliations[:2] if a.get("institution"))
+            # Current institution first — `affiliations` is historical and
+            # often leads with a past or collaborating institute.
+            current = [i.get("display_name", "") for i in (author.get("last_known_institutions") or [])]
+            past = [a.get("institution", {}).get("display_name", "") for a in author.get("affiliations", []) if a.get("institution")]
+            aff_str = "; ".join(filter(None, [
+                ("current: " + ", ".join(filter(None, current[:2]))) if current else "",
+                ("past: " + ", ".join(x for x in past[:3] if x and x not in current)) if past else "",
+            ]))
 
             return {
                 "h_index": h_index,

@@ -6,6 +6,7 @@ import { Plus, ExternalLink, AlertTriangle, GitMerge } from 'lucide-react';
 import { partners as partnersApi } from '@/lib/api';
 import PartnerHero from '@/components/crm/PartnerHero';
 import NewTaskModal from '@/components/crm/NewTaskModal';
+import DraftEmailModal from '@/components/crm/DraftEmailModal';
 import PartnerReminders from '@/components/crm/PartnerReminders';
 import PartnerMeetingCard from '@/components/crm/PartnerMeetingCard';
 import PartnerMeetingScheduler from '@/components/crm/PartnerMeetingScheduler';
@@ -110,9 +111,10 @@ export default function PartnerDetailPage() {
   const [loading, setLoading] = useState(true);
   const [activeTab, setActiveTab] = useState<ActiveTab>('meetings');
   const [showNewTask, setShowNewTask] = useState(false);
+  const [showDraft, setShowDraft] = useState(false);
   const [taskKey, setTaskKey] = useState(0);
 
-  // Deep links such as ?tab=insights (the "Draft email" action on the Partners home).
+  // Deep links such as ?tab=insights open a specific tab.
   useEffect(() => {
     const tab = new URLSearchParams(window.location.search).get('tab');
     if (tab && ['meetings', 'research', 'links', 'insights', 'edit'].includes(tab)) setActiveTab(tab as ActiveTab);
@@ -233,6 +235,8 @@ export default function PartnerDetailPage() {
   ];
 
   return (
+    // The app shell's <main> doesn't scroll; each page scrolls its own content.
+    <div className="h-full overflow-y-auto">
     <div className="px-6 py-6 max-w-6xl mx-auto">
       {/* Breadcrumb */}
       <div className="text-sm text-gray-400 mb-5 flex items-center gap-2">
@@ -264,7 +268,7 @@ export default function PartnerDetailPage() {
             partner={{ ...partner, task_count: taskCount }}
             onEnrich={fetchPartner}
             onScheduleMeeting={() => setShowMeetingScheduler(true)}
-            onDraftEmail={() => setActiveTab('insights')}
+            onDraftEmail={() => setShowDraft(true)}
             onAddToGrant={() => { setActiveTab('links'); setShowLinkForm(true); }}
             onOwnerChange={handleOwnerChange}
             onAddTask={() => setShowNewTask(true)}
@@ -625,6 +629,10 @@ export default function PartnerDetailPage() {
         />
       )}
 
+      {showDraft && (
+        <DraftEmailModal partner={partner} onClose={() => setShowDraft(false)} />
+      )}
+
       {showNewTask && (
         <NewTaskModal
           target={{ kind: 'partner', id: partner.id, name: partner.name }}
@@ -632,6 +640,7 @@ export default function PartnerDetailPage() {
           onCreated={() => { setTaskKey(k => k + 1); fetchPartner(); }}
         />
       )}
+    </div>
     </div>
   );
 }

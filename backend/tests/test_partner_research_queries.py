@@ -71,3 +71,31 @@ def test_no_duplicates():
     qs = build_queries("a@b.org", "Jo Bloggs", False, "", "b.org", [])
     keys = [(" ".join(q.lower().split()), tuple(kw.get("include_domains") or [])) for q, kw in qs]
     assert len(keys) == len(set(keys))
+
+
+# ── Picking the right OpenAlex author ──────────────────────────────────────────
+from app.ai.agents.partner_enrichment_agent import pick_openalex_author
+
+
+def _author(name, inst):
+    return {"display_name": name, "last_known_institutions": [{"display_name": inst}]}
+
+
+def test_openalex_prefers_matching_institution():
+    items = [_author("Andrew Redfern", "The University of Queensland"), _author("A. Redfern", "Stellenbosch University")]
+    assert pick_openalex_author(items, "Stellenbosch University")["last_known_institutions"][0]["display_name"] == "Stellenbosch University"
+
+
+def test_openalex_acronym_org_matches_on_distinctive_word():
+    items = [_author("Klaus Reither", "Swiss Tropical and Public Health Institute")]
+    assert pick_openalex_author(items * 2, "Swiss TPH") is not None
+
+
+def test_openalex_unique_name_is_taken_without_org():
+    assert pick_openalex_author([_author("Klaus Reither", "Swiss TPH")], None) is not None
+
+
+def test_openalex_ambiguous_name_is_skipped():
+    items = [_author("Simon Redfern", "NTU"), _author("Andrew Redfern", "UQ")]
+    assert pick_openalex_author(items, "Stellenbosch University") is None
+    assert pick_openalex_author(items, None) is None

@@ -145,54 +145,11 @@ def generate_pre_meeting_preps():
                 logger.warning("Failed to generate prep for meeting %s: %s", meeting.id, e)
 
 
-@celery_app.task(
-    name="app.workers.partner_tasks.research_partner",
-    soft_time_limit=240,
-    time_limit=300,
-)
-def research_partner(partner_id: str, name_guessed: bool = False):
-    """Look one partner up on the web (search → scrape profile pages →
-    OpenAlex → LLM) and fill in their profile. Used by "Enrich now"; bulk
-    imports use research_partners_batch. See app.services.partner_research."""
-    from app.services.partner_research import run_research_sync, mark_research_failed
-
-    try:
-        status = run_research_sync(partner_id, name_guessed)
-    except BaseException:
-        # Includes SoftTimeLimitExceeded — don't leave the row stuck on "pending".
-        mark_research_failed(partner_id)
-        raise
-    logger.info("research_partner %s: %s", partner_id, status)
-    return status
-
-
-@celery_app.task(
-    name="app.workers.partner_tasks.research_partners_batch",
-    soft_time_limit=900,
-    time_limit=960,
-)
-def research_partners_batch(items: list):
-    """Research a batch of partners ([[partner_id, name_guessed], ...]) a few
-    at a time inside one job. The production worker runs one job at a time
-    (--pool=solo), so one job per contact meant a 100-address import took
-    100 turns in the queue; this takes one per batch."""
-    from app.services.partner_research import run_batch_sync, mark_research_failed
-
-    try:
-        statuses = run_batch_sync([(pid, bool(g)) for pid, g in items])
-    except BaseException:
-        for pid, _ in items:
-            mark_research_failed(pid)
-        raise
-    logger.info("research_partners_batch: %s", statuses)
-    return statuses
-
-
 @celery_app.task(name="app.workers.partner_tasks.fail_stale_research")
 def fail_stale_research():
-    """Partners still "pending" research after 2 hours were lost (worker
-    restart, deploy mid-job): mark them failed so the UI stops showing a
-    spinner and offers a retry."""
+    """Partner research runs in the API (app.services.partner_research). Anything
+    still "pending" after 2 hours was lost (e.g. a crash mid-run): mark it
+    failed so the UI stops showing a spinner and offers a retry."""
     from app.services.partner_research import fail_stale
     n = fail_stale(hours=2)
     if n:

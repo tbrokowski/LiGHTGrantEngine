@@ -68,7 +68,7 @@ class Partner(Base):
     enrichment_sources: Mapped[list | None] = mapped_column(JSON)
     # 1 regular · 2 medium · 3 high (migration 063)
     priority: Mapped[int] = mapped_column(Integer, default=1, server_default="1", index=True)
-    # Hidden from reach-out suggestions until then.
+    # Unused since the reach-out suggestions were removed; kept to avoid a migration.
     snoozed_until: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
 
     # CRM enrichment fields (added in migration 032)

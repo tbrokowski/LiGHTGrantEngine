@@ -272,7 +272,8 @@ async def _scrape(url: str) -> str:
         return ""
     if not res.ok:
         return ""
-    return _html_to_text(res.html)
+    # Parsing a large page is CPU work — keep it off the event loop too.
+    return await asyncio.to_thread(_html_to_text, res.html)
 
 
 async def research_contact(
@@ -299,6 +300,7 @@ async def research_contact(
     surname = parts["last"]
 
     queries = build_queries(email, name, name_guessed, organization or "", domain_root, tags)
+    from_tag = next((str(t)[5:].strip() for t in tags or [] if str(t).startswith("from:")), "")
     if not queries:
         return {}
     # OpenAlex needs at least an initial + surname to find the right author.
@@ -306,7 +308,7 @@ async def research_contact(
 
     results, openalex = await asyncio.gather(
         _search_all(queries),
-        _search_openalex_author(openalex_name, orcid, organization) if openalex_name else asyncio.sleep(0),
+        _search_openalex_author(openalex_name, orcid, organization or from_tag) if openalex_name else asyncio.sleep(0),
     )
 
     linkedin_urls = [

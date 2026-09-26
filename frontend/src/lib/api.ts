@@ -625,7 +625,6 @@ export const partners = {
     opts: { group_ids?: string[]; priority?: number; tags?: string[] } = {},
   ) => api.post('/partners/bulk-from-emails', { contacts, research, ...opts }),
   home: () => api.get('/partners/home'),
-  snooze: (id: string, days = 14) => api.post(`/partners/${id}/snooze`, { days }),
   researchStatus: (ids: string[]) => api.post('/partners/research-status', { ids }),
   // Bulk CSV import
   importCsv: (file: File) => {
@@ -693,6 +692,8 @@ export const partnerGroups = {
     api.post(`/partner-groups/${id}/members`, data),
   removeMember: (id: string, partnerId: string) => api.delete(`/partner-groups/${id}/members/${partnerId}`),
   createTask: (id: string, data: Record<string, unknown>) => api.post(`/partner-groups/${id}/tasks`, data),
+  logInteraction: (id: string, data: { kind: 'meeting' | 'call' | 'email' | 'other'; title?: string; notes?: string; date?: string; partner_ids?: string[] }) =>
+    api.post(`/partner-groups/${id}/interactions`, data),
 };
 
 // Tasks across every partner and group

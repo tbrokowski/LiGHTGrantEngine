@@ -63,6 +63,15 @@ async def lifespan(app: FastAPI):
     except Exception as exc:
         logger.warning("Startup dedup skipped or failed", error=str(exc))
 
+    # Partner web research runs in this process; resume any left pending.
+    try:
+        from app.services.partner_research import resume_pending_research
+        resumed = await resume_pending_research()
+        if resumed:
+            logger.info("Resumed partner research", count=resumed)
+    except Exception as exc:
+        logger.warning("Resuming partner research failed", error=str(exc))
+
     yield
     logger.info("LiGHT Grant System shutting down")
 

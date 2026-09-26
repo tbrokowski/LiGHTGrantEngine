@@ -79,7 +79,7 @@ services:
         condition: service_healthy
     command: >
       celery -A app.workers.celery_app worker
-      --queues=celery,summaries,partner_research
+      --queues=celery,summaries
       --loglevel=info
       --concurrency=4
       --hostname=worker@%h

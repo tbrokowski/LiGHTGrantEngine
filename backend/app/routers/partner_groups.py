@@ -40,6 +40,14 @@ class GroupUpdate(BaseModel):
     color: Optional[str] = Field(None, max_length=20)
 
 
+class InteractionIn(BaseModel):
+    kind: Literal["meeting", "call", "email", "other"] = "meeting"
+    title: Optional[str] = Field(None, max_length=300)
+    notes: Optional[str] = None
+    date: Optional[datetime] = None
+    partner_ids: Optional[list[str]] = None  # default: every member
+
+
 class MembersAdd(BaseModel):
     partner_ids: list[str] = []
     tags: list[str] = []
@@ -222,13 +230,23 @@ async def get_group(group_id: str, db: AsyncSession = Depends(get_db), current_u
         ups = (await db.execute(
             select(PartnerUpdate, User.name).outerjoin(User, User.id == PartnerUpdate.user_id)
             .where(PartnerUpdate.partner_id.in_(ids))
-            .order_by(PartnerUpdate.created_at.desc()).limit(10)
+            .order_by(PartnerUpdate.created_at.desc()).limit(80)
         )).all()
+        # A meeting logged for the group is one row per attendee — show it once.
+        logged: dict[tuple, list] = {}
         for u, who in ups:
-            text = (u.content or "").strip().replace("\n", " ")
+            when = u.contact_date or u.created_at
+            key = (u.update_type, (u.content or "").strip(), when.strftime("%Y-%m-%dT%H:%M"), u.user_id)
+            logged.setdefault(key, []).append((u, who))
+        for (kind, content, _, _), entries in logged.items():
+            u, who = entries[0]
+            label = {"meeting": "Meeting", "call": "Call", "email": "Email", "note": "Note"}.get(kind or "", "Contact")
+            people = (names.get(u.partner_id, "") if len(entries) == 1
+                      else f"{len(entries)} people")
+            text = content.replace("\n", " ")
             activity.append({
-                "kind": u.update_type or "note", "partner_id": u.partner_id,
-                "text": f"{names.get(u.partner_id, '')}: {u.update_type or 'note'}" + (f" — {text[:140]}" if text else ""),
+                "kind": kind or "note", "partner_id": u.partner_id if len(entries) == 1 else None,
+                "text": f"{label} · {people}" + (f" — {text[:160]}" if text else ""),
                 "who": who, "at": (u.contact_date or u.created_at).isoformat(),
             })
     # People added together (same minute) read as one entry, not one line each.
@@ -363,3 +381,31 @@ async def create_group_task(group_id: str, data: TaskCreate, db: AsyncSession = 
     await db.commit()
     await db.refresh(t)
     return (await task_dicts([t], db))[0]
+
+
+@router.post("/{group_id}/interactions", status_code=201)
+async def log_group_interaction(
+    group_id: str, data: InteractionIn,
+    db: AsyncSession = Depends(get_db), current_user: User = Depends(get_current_user),
+):
+    """Log a meeting (or call/email) with the group. It's recorded on each
+    attending member's contact log, so it counts toward their last contact
+    and the group's touches, and shows once in the group's activity."""
+    _require(current_user)
+    await _get_group(group_id, db, current_user)
+    members = set(await _member_ids(db, group_id))
+    ids = [pid for pid in (data.partner_ids if data.partner_ids is not None else members) if pid in members]
+    if not ids:
+        raise HTTPException(400, "Pick at least one member of the group.")
+    title = (data.title or "").strip()
+    notes = (data.notes or "").strip()
+    content = "\n".join(x for x in (title, notes) if x) or data.kind.capitalize()
+    from app.services.partner_engagement import now_utc
+    when = data.date or now_utc()
+    for pid in ids:
+        db.add(PartnerUpdate(
+            id=str(uuid.uuid4()), partner_id=pid, user_id=current_user.id,
+            content=content, update_type=data.kind, contact_date=when,
+        ))
+    await db.commit()
+    return {"logged": len(ids)}

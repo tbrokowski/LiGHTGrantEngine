@@ -1,7 +1,7 @@
 'use client';
 import { Suspense, useCallback, useEffect, useRef, useState } from 'react';
 import { useRouter } from 'next/navigation';
-import { Search, Mail, Plus } from 'lucide-react';
+import { Search, Mail } from 'lucide-react';
 import { partners as partnersApi } from '@/lib/api';
 import PartnerForm, { PartnerFormData } from '@/components/crm/PartnerForm';
 import CommandPalette from '@/components/crm/CommandPalette';
@@ -10,8 +10,8 @@ import NewTaskModal from '@/components/crm/NewTaskModal';
 import GroupFormModal from '@/components/crm/GroupFormModal';
 import AddToGroupModal from '@/components/crm/AddToGroupModal';
 import CrmModal from '@/components/crm/CrmModal';
-import { btnOutline, btnPrimary } from '@/components/crm/crmUi';
-import { HomeData, MyTasksCard, PulseStrip, ReachOutCard, ThisWeekCard } from '@/components/crm/home/HomeCards';
+import { btnOutline } from '@/components/crm/crmUi';
+import { MyTasksCard } from '@/components/crm/home/HomeCards';
 import PeoplePanel from '@/components/crm/home/PeoplePanel';
 import GroupsPanel from '@/components/crm/home/GroupsPanel';
 
@@ -26,14 +26,14 @@ type Modal =
 
 function PartnersHome() {
   const router = useRouter();
-  const [home, setHome] = useState<HomeData | null>(null);
+  const [counts, setCounts] = useState<{ people: number; groups: number } | null>(null);
   const [modal, setModal] = useState<Modal>(null);
   const [refreshKey, setRefreshKey] = useState(0);
   const [importing, setImporting] = useState(false);
   const fileRef = useRef<HTMLInputElement>(null);
 
-  const loadHome = useCallback(() => { partnersApi.home().then(r => setHome(r.data)).catch(() => {}); }, []);
-  useEffect(() => { loadHome(); }, [loadHome, refreshKey]);
+  const loadCounts = useCallback(() => { partnersApi.home().then(r => setCounts(r.data.counts)).catch(() => {}); }, []);
+  useEffect(() => { loadCounts(); }, [loadCounts, refreshKey]);
   const refresh = useCallback(() => setRefreshKey(k => k + 1), []);
 
   useEffect(() => {
@@ -65,7 +65,6 @@ function PartnersHome() {
     }
   }
 
-  const counts = home?.counts;
   return (
     <div className="flex flex-col h-full" style={{ background: 'var(--surface-base)' }}>
       <header className="px-7 py-4 flex items-center justify-between gap-4 shrink-0" style={{ borderBottom: '1px solid var(--rule-subtle)' }}>
@@ -87,20 +86,11 @@ function PartnersHome() {
             title="Paste a list of emails — each contact is looked up online and their profile filled in">
             <Mail className="w-3.5 h-3.5" /><span className="hidden sm:inline">Add from emails</span>
           </button>
-          <button type="button" onClick={() => setModal({ kind: 'task' })} className="flex items-center gap-2 h-9 px-3.5 text-[13px] font-medium" style={btnPrimary}>
-            <Plus className="w-3.5 h-3.5" />New task
-          </button>
         </div>
       </header>
 
       <div className="flex-1 min-h-0 overflow-y-auto px-7 py-5 flex flex-col gap-5">
-        <PulseStrip data={home} />
-
-        <section className="grid grid-cols-1 lg:grid-cols-12 gap-5">
-          <div className="lg:col-span-5"><MyTasksCard refreshKey={refreshKey} onNewTask={() => setModal({ kind: 'task' })} onChanged={loadHome} /></div>
-          <div className="lg:col-span-4"><ReachOutCard data={home} onChanged={loadHome} /></div>
-          <div className="lg:col-span-3"><ThisWeekCard data={home} /></div>
-        </section>
+        <MyTasksCard refreshKey={refreshKey} onNewTask={() => setModal({ kind: 'task' })} onChanged={() => {}} />
 
         <section className="grid grid-cols-1 lg:grid-cols-12 gap-5 lg:h-[760px] shrink-0">
           <div className="lg:col-span-7 min-h-0 flex flex-col">
@@ -110,7 +100,7 @@ function PartnersHome() {
               onImport={() => fileRef.current?.click()}
               onAddPerson={() => setModal({ kind: 'person' })}
               onAddToGroup={ids => setModal({ kind: 'addToGroup', partnerIds: ids })}
-              onChanged={() => { loadHome(); setRefreshKey(k => k + 1); }}
+              onChanged={refresh}
             />
           </div>
           <div className="lg:col-span-5 min-h-0 flex flex-col">

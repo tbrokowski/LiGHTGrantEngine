@@ -154,7 +154,6 @@ def _partner_full(p: Partner, owner_name: str | None = None) -> dict:
         "bio": p.bio,
         "enrichment_sources": p.enrichment_sources or [],
         "priority": p.priority or 1,
-        "snoozed_until": p.snoozed_until.isoformat() if p.snoozed_until else None,
         "avatar_url": p.avatar_url,
         "department": p.department,
         "country": p.country,
@@ -302,93 +301,17 @@ async def partners_home(
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ):
-    """Everything the Partners home shows above the people/groups split:
-    headline numbers, reach-out suggestions, 12-week team activity and the
-    next 7 days of meetings."""
+    """Counts for the Partners header."""
     if not has_module_permission(current_user, "can_view_partners"):
         raise HTTPException(status_code=403, detail="No access to partners.")
-    from app.models.partner_meeting import PartnerMeeting
-    from app.models.partner_task import PartnerTask
     from app.models.partner_group import PartnerGroup
-    from app.services.partner_engagement import (
-        now_utc, touch_events, reach_out_suggestions, week_index, WEEKS, COLD_AFTER_DAYS, last_touch_map,
-    )
-
-    now = now_utc()
-    open_q = select(PartnerTask).where(PartnerTask.status.in_(["open", "in_progress"]))
-    open_tasks = (await db.execute(open_q)).scalars().all()
-    overdue = [t for t in open_tasks if t.due_date and t.due_date < now]
-    mine = [t for t in open_tasks if t.assigned_to == current_user.id]
-
-    events = await touch_events(db, None, since=now - timedelta(weeks=WEEKS))
-    weekly = [0] * WEEKS
-    last30 = prev30 = 0
-    for _, ts, _k in events:
-        if (i := week_index(ts, now)) is not None:
-            weekly[i] += 1
-        age = (now - ts).days
-        if age < 30:
-            last30 += 1
-        elif age < 60:
-            prev30 += 1
-
-    prio_partners = (await db.execute(
-        select(Partner.id, Partner.priority).where(Partner.priority >= 2, Partner.status != "inactive")
-    )).all()
-    last = await last_touch_map(db, [pid for pid, _ in prio_partners])
-    going_cold = sum(
-        1 for pid, prio in prio_partners
-        if last.get(pid) and (now - last[pid]).days > COLD_AFTER_DAYS[prio]
-    )
-
-    week_end = now + timedelta(days=7)
-    meetings = (await db.execute(
-        select(PartnerMeeting, Partner.name)
-        .join(Partner, Partner.id == PartnerMeeting.partner_id)
-        .where(PartnerMeeting.scheduled_at >= now, PartnerMeeting.scheduled_at <= week_end,
-               PartnerMeeting.completed_at.is_(None))
-        .order_by(PartnerMeeting.scheduled_at).limit(6)
-    )).all()
 
     people = (await db.execute(select(func.count(Partner.id)))).scalar() or 0
     inst = getattr(current_user, "institution_id", None)
     groups = (await db.execute(select(func.count(PartnerGroup.id)).where(
         PartnerGroup.institution_id == inst if inst else PartnerGroup.institution_id.is_(None)
     ))).scalar() or 0
-
-    return {
-        "counts": {"people": people, "groups": groups},
-        "kpis": {
-            "open_tasks": len(open_tasks), "my_open_tasks": len(mine),
-            "overdue": len(overdue), "my_overdue": sum(1 for t in overdue if t.assigned_to == current_user.id),
-            "touches_30d": last30, "touches_prev_30d": prev30,
-            "going_cold": going_cold,
-            "meetings_week": len(meetings),
-        },
-        "weekly_touches": weekly,
-        "suggestions": await reach_out_suggestions(db),
-        "meetings": [{
-            "id": m.id, "partner_id": m.partner_id, "partner_name": name, "title": m.title,
-            "scheduled_at": m.scheduled_at.isoformat() if m.scheduled_at else None,
-            "attendee_count": len(m.attendees or []),
-        } for m, name in meetings],
-    }
-
-
-class SnoozeIn(BaseModel):
-    days: int = Field(14, ge=1, le=365)
-
-
-@router.post("/{partner_id}/snooze")
-async def snooze_partner(
-    partner_id: str, data: SnoozeIn,
-    db: AsyncSession = Depends(get_db), current_user: User = Depends(get_current_user),
-):
-    """Hide a partner from reach-out suggestions for a while."""
-    partner = await _get_partner_or_404(partner_id, db)
-    partner.snoozed_until = datetime.now(timezone.utc) + timedelta(days=data.days)
-    await db.commit()
-    return {"snoozed_until": partner.snoozed_until.isoformat()}
+    return {"counts": {"people": people, "groups": groups}}
 
 
 @router.get("/upcoming-contacts")
@@ -821,27 +744,12 @@ async def research_status(
 
 
 def _queue_research(items: list[tuple[str, bool]], background_tasks: BackgroundTasks) -> None:
-    """Queue web research on the partner_research queue — batches of 20, each
-    researched 4 at a time. If the broker is unreachable (e.g. running
-    without a worker), fall back to researching in this process."""
-    try:
-        from app.workers.celery_app import celery_app
-        if len(items) == 1:
-            celery_app.send_task("app.workers.partner_tasks.research_partner", args=list(items[0]),
-                                 queue="partner_research")
-        else:
-            for i in range(0, len(items), 20):
-                celery_app.send_task("app.workers.partner_tasks.research_partners_batch",
-                                     args=[[list(x) for x in items[i:i + 20]]], queue="partner_research")
-        return
-    except Exception:
-        pass
-
-    async def _local(batch: list[tuple[str, bool]]) -> None:
-        from app.services.partner_research import research_many
-        await research_many(batch, concurrency=3)
-
-    background_tasks.add_task(_local, items)
+    """Start web research for these partners inside the API process, 4 at a
+    time. Not Celery: the production worker runs one job at a time behind the
+    discovery backlog, so queued research could sit on "Researching…" for
+    hours. See app.services.partner_research.start_research."""
+    from app.services.partner_research import start_research
+    start_research(items)
 
 
 # ── Bulk CSV import ───────────────────────────────────────────────────────────
