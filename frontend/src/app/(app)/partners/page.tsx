@@ -1,7 +1,7 @@
 'use client';
 import { Suspense, useCallback, useEffect, useRef, useState } from 'react';
 import { useRouter } from 'next/navigation';
-import { Search, Mail } from 'lucide-react';
+import { Search } from 'lucide-react';
 import { partners as partnersApi } from '@/lib/api';
 import PartnerForm, { PartnerFormData } from '@/components/crm/PartnerForm';
 import CommandPalette from '@/components/crm/CommandPalette';
@@ -10,7 +10,6 @@ import NewTaskModal from '@/components/crm/NewTaskModal';
 import GroupFormModal from '@/components/crm/GroupFormModal';
 import AddToGroupModal from '@/components/crm/AddToGroupModal';
 import CrmModal from '@/components/crm/CrmModal';
-import { btnOutline } from '@/components/crm/crmUi';
 import { MyTasksCard } from '@/components/crm/home/HomeCards';
 import PeoplePanel from '@/components/crm/home/PeoplePanel';
 import GroupsPanel from '@/components/crm/home/GroupsPanel';
@@ -82,10 +81,6 @@ function PartnersHome() {
             <span className="flex-1 text-left">Jump to a person, group, task…</span>
             <kbd className="mono-data text-[11px] px-1.5 py-0.5 rounded" style={{ background: 'var(--surface-sunken)' }}>⌘K</kbd>
           </button>
-          <button type="button" onClick={() => setModal({ kind: 'emails' })} className="flex items-center gap-2 h-9 px-3.5 text-[13px] font-medium" style={btnOutline}
-            title="Paste a list of emails — each contact is looked up online and their profile filled in">
-            <Mail className="w-3.5 h-3.5" /><span className="hidden sm:inline">Add from emails</span>
-          </button>
         </div>
       </header>
 
@@ -99,6 +94,7 @@ function PartnersHome() {
               importing={importing}
               onImport={() => fileRef.current?.click()}
               onAddPerson={() => setModal({ kind: 'person' })}
+              onAddFromEmails={() => setModal({ kind: 'emails' })}
               onAddToGroup={ids => setModal({ kind: 'addToGroup', partnerIds: ids })}
               onChanged={refresh}
             />

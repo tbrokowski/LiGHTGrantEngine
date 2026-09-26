@@ -1,7 +1,7 @@
 'use client';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import Link from 'next/link';
-import { Search, X, Trash2, Download, FolderPlus } from 'lucide-react';
+import { Search, X, Trash2, Download, FolderPlus, Mail } from 'lucide-react';
 import { partners as partnersApi } from '@/lib/api';
 import ConfirmModal from '@/components/ui/ConfirmModal';
 import {
@@ -28,10 +28,11 @@ type Sort = 'priority' | 'name' | 'last_touch' | 'created';
 const GRID = '28px 28px minmax(0,2.2fr) minmax(0,1.6fr) minmax(0,2fr) 64px 96px';
 
 export default function PeoplePanel({
-  refreshKey, onAddPerson, onImport, importing, onAddToGroup, onChanged,
+  refreshKey, onAddPerson, onAddFromEmails, onImport, importing, onAddToGroup, onChanged,
 }: {
   refreshKey: number;
   onAddPerson: () => void;
+  onAddFromEmails: () => void;
   onImport: () => void;
   importing: boolean;
   onAddToGroup: (ids: string[]) => void;
@@ -131,13 +132,17 @@ export default function PeoplePanel({
           <h2 className="text-sm font-semibold" style={{ color: 'var(--ink-primary)' }}>
             People <span className="mono-data font-normal" style={{ color: 'var(--ink-muted)' }}>{rows ? rows.length : ''}</span>
           </h2>
-          <div className="flex gap-1.5">
+          <div className="flex gap-1.5 flex-wrap justify-end">
             <button type="button" onClick={exportCsv} className="h-[30px] px-2.5 text-xs" style={btnQuiet} title="Export all partners as CSV">Export</button>
             <button type="button" onClick={onImport} disabled={importing} className="h-[30px] px-2.5 text-xs disabled:opacity-50" style={btnQuiet}
               title="Import partners from a CSV (columns: name, email, organization, title, tags)">
               {importing ? 'Importing…' : 'Import CSV'}
             </button>
             <Link href="/partners/find" className="h-[30px] px-2.5 text-xs flex items-center" style={btnQuiet}>Find new</Link>
+            <button type="button" onClick={onAddFromEmails} className="h-[30px] px-2.5 text-xs font-medium flex items-center gap-1.5" style={btnOutline}
+              title="Paste a list of emails — each contact is looked up online and their profile filled in">
+              <Mail className="w-3 h-3" />Add from emails
+            </button>
             <button type="button" onClick={onAddPerson} className="h-[30px] px-2.5 text-xs font-medium" style={btnOutline}>+ Add person</button>
           </div>
         </div>

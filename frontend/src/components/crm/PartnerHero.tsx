@@ -82,9 +82,8 @@ export default function PartnerHero({
   }
 
   const location = [partner.city, partner.country].filter(Boolean).join(', ');
-  const researched = partner.enrichment_status === 'done' && partner.last_enriched_at
-    ? `Researched ${new Date(partner.last_enriched_at).toLocaleDateString('en-US', { month: 'short', day: 'numeric' })}`
-    : STATUS_TEXT[partner.enrichment_status] ?? STATUS_TEXT.none;
+  // No label once research is done; only in-progress / problem states show.
+  const researched = partner.enrichment_status === 'done' ? '' : STATUS_TEXT[partner.enrichment_status] ?? STATUS_TEXT.none;
   const weeks = partner.weeks ?? [];
   const touchedWeeks = weeks.filter(n => n > 0).length;
   const days = partner.last_touch ? Math.floor((Date.now() - new Date(partner.last_touch).getTime()) / 86_400_000) : null;
