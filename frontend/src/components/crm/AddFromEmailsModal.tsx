@@ -98,6 +98,7 @@ export default function AddFromEmailsModal({ onClose, onChanged }: { onClose: ()
 
   const [rows, setRows] = useState<ResearchRow[]>([]);
   const [skipped, setSkipped] = useState(0);
+  const [updated, setUpdated] = useState(0);
 
   async function handleParse() {
     setBusy(true);
@@ -108,7 +109,8 @@ export default function AddFromEmailsModal({ onClose, onChanged }: { onClose: ()
       if (!list.length) { setError('No email addresses found in that text.'); return; }
       setContacts(list);
       setNames(Object.fromEntries(list.map(c => [c.email, c.name])));
-      setSelected(new Set(list.filter(c => !c.is_self && !c.existing_partner_id).map(c => c.email)));
+      // Existing partners are selectable too: they get the chosen groups/tags.
+      setSelected(new Set(list.filter(c => !c.is_self).map(c => c.email)));
       setPhase('review');
     } catch (err) {
       setError(errDetail(err, 'Couldn’t read that list.'));
@@ -132,6 +134,7 @@ export default function AddFromEmailsModal({ onClose, onChanged }: { onClose: ()
       const res = await partnersApi.bulkFromEmails(payload, research, { group_ids: groupIds, priority, tags: tagInput.trim() ? [...tags, tagInput.trim()] : tags });
       const created: { id: string; name: string; email: string }[] = res.data.created;
       setSkipped(res.data.skipped_existing.length);
+      setUpdated(res.data.updated_existing?.length ?? 0);
       setRows(created.map(c => ({
         ...c, enrichment_status: research ? 'pending' : 'none', has_bio: false,
       })));
@@ -159,7 +162,15 @@ export default function AddFromEmailsModal({ onClose, onChanged }: { onClose: ()
   }, [phase, pendingKey, rows]);
 
   const doneCount = rows.length - pendingIds.length;
-  const selectable = contacts.filter(c => !c.existing_partner_id);
+  const selectable = contacts;
+  const pickedExisting = contacts.filter(c => selected.has(c.email) && c.existing_partner_id).length;
+  const pickedNew = selected.size - pickedExisting;
+  const willChangeExisting = groupIds.length > 0 || tags.length > 0 || !!tagInput.trim();
+  const actionable = pickedNew > 0 || (pickedExisting > 0 && (willChangeExisting || contacts.some(c => selected.has(c.email) && c.existing_partner_id && rowPrio[c.email])));
+  const actionLabel = [
+    pickedNew ? `Add ${pickedNew} new` : '',
+    pickedExisting && willChangeExisting ? `update ${pickedExisting} existing` : '',
+  ].filter(Boolean).join(' · ') || (pickedExisting ? 'Pick a group or tag to update them' : 'Add partners');
   const allSelected = selectable.length > 0 && selectable.every(c => selected.has(c.email));
 
   function toggle(email: string) {
@@ -189,8 +200,9 @@ export default function AddFromEmailsModal({ onClose, onChanged }: { onClose: ()
             <h2 className="text-sm font-semibold" style={{ color: 'var(--ink-primary)' }}>Add partners from emails</h2>
             <p className="text-xs mt-0.5" style={{ color: 'var(--ink-muted)' }}>
               {phase === 'paste' && 'Paste a To:/Cc: line, a list of addresses, or a whole thread.'}
-              {phase === 'review' && `${contacts.length} address${contacts.length !== 1 ? 'es' : ''} found · ${selected.size} selected`}
-              {phase === 'progress' && (research
+              {phase === 'review' && `${contacts.length} address${contacts.length !== 1 ? 'es' : ''} found · ${selected.size} selected${pickedExisting ? ` (${pickedExisting} already in the CRM)` : ''}`}
+              {phase === 'progress' && rows.length === 0 && `Updated ${updated} existing partner${updated !== 1 ? 's' : ''}`}
+              {phase === 'progress' && rows.length > 0 && (research
                 ? `Researching ${rows.length} contact${rows.length !== 1 ? 's' : ''} online · ${doneCount} of ${rows.length} finished`
                 : `Added ${rows.length} contact${rows.length !== 1 ? 's' : ''}`)}
             </p>
@@ -310,9 +322,9 @@ export default function AddFromEmailsModal({ onClose, onChanged }: { onClose: ()
                 {contacts.map(c => {
                   const existing = !!c.existing_partner_id;
                   return (
-                    <tr key={c.email} style={{ borderBottom: '1px solid var(--rule-subtle)', opacity: existing ? 0.55 : 1 }}>
+                    <tr key={c.email} style={{ borderBottom: '1px solid var(--rule-subtle)' }}>
                       <td className="px-4 py-1.5">
-                        <input type="checkbox" disabled={existing} checked={selected.has(c.email)} onChange={() => toggle(c.email)} />
+                        <input type="checkbox" checked={selected.has(c.email)} onChange={() => toggle(c.email)} />
                       </td>
                       <td className="px-2 py-1.5">
                         <input
@@ -327,15 +339,20 @@ export default function AddFromEmailsModal({ onClose, onChanged }: { onClose: ()
                       </td>
                       <td className="px-2 py-1.5 mono-data text-xs" style={{ color: 'var(--ink-muted)' }}>{c.email}</td>
                       <td className="px-2 py-1.5">
-                        {!existing && (
+                        {existing ? (
+                          rowPrio[c.email]
+                            ? <PriorityBars value={rowPrio[c.email]} onChange={p => setRowPrio(r => ({ ...r, [c.email]: p }))} />
+                            : <button type="button" onClick={() => setRowPrio(r => ({ ...r, [c.email]: priority }))} className="text-[11px] underline" style={{ color: 'var(--ink-muted)' }}>keep</button>
+                        ) : (
                           <PriorityBars value={rowPrio[c.email] ?? priority} onChange={p => setRowPrio(r => ({ ...r, [c.email]: p }))} />
                         )}
                       </td>
                       <td className="px-2 py-1.5 text-xs whitespace-nowrap">
                         {existing ? (
-                          <Link href={`/partners/${c.existing_partner_id}`} style={{ color: 'var(--ink-secondary)', textDecoration: 'underline' }}>
-                            Already in CRM
-                          </Link>
+                          <span style={{ color: 'var(--ink-muted)' }}>
+                            <Link href={`/partners/${c.existing_partner_id}`} style={{ color: 'var(--ink-secondary)', textDecoration: 'underline' }}>In CRM</Link>
+                            {selected.has(c.email) && willChangeExisting ? ' · will be updated' : ''}
+                          </span>
                         ) : c.is_self ? (
                           <span style={{ color: 'var(--ink-muted)' }}>You</span>
                         ) : c.name_guessed && names[c.email] === c.name ? (
@@ -373,9 +390,10 @@ export default function AddFromEmailsModal({ onClose, onChanged }: { onClose: ()
                 </li>
               ))}
             </ul>
-            {skipped > 0 && (
+            {(updated > 0 || skipped > 0) && (
               <p className="px-6 py-3 text-xs" style={{ color: 'var(--ink-muted)' }}>
-                {skipped} already in the CRM — skipped.
+                {updated > 0 && `${updated} already in the CRM — added to the chosen groups and tags. `}
+                {skipped > 0 && `${skipped} already in the CRM — nothing to change.`}
               </p>
             )}
           </div>
@@ -386,7 +404,7 @@ export default function AddFromEmailsModal({ onClose, onChanged }: { onClose: ()
           {phase === 'review' && !error && (
             <label className="flex items-center gap-2 text-xs flex-1" style={{ color: 'var(--ink-secondary)' }}>
               <input type="checkbox" checked={research} onChange={e => setResearch(e.target.checked)} />
-              Research each contact online and fill in their profile
+              Research new contacts online and fill in their profile
             </label>
           )}
           {phase === 'progress' && (
@@ -406,8 +424,8 @@ export default function AddFromEmailsModal({ onClose, onChanged }: { onClose: ()
             {phase === 'review' && (
               <>
                 <button onClick={() => { setPhase('paste'); setError(null); }} className="text-sm px-4 py-1.5" style={secondaryBtn}>Back</button>
-                <button onClick={handleCreate} disabled={busy || selected.size === 0} className="text-sm px-4 py-1.5 font-medium disabled:opacity-50" style={primaryBtn}>
-                  {busy ? 'Adding…' : `Add ${selected.size} partner${selected.size !== 1 ? 's' : ''}`}
+                <button onClick={handleCreate} disabled={busy || !actionable} className="text-sm px-4 py-1.5 font-medium disabled:opacity-50" style={primaryBtn}>
+                  {busy ? 'Saving…' : actionLabel}
                 </button>
               </>
             )}

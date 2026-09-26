@@ -25,7 +25,7 @@ def test_split_single_name():
 
 def test_full_name_variants():
     qs = build_queries("klaus.reither@swisstph.ch", "Klaus Reither", False, "Swiss TPH", "swisstph.ch",
-                       ["tuberculosis", "from:Swiss TPH", "consortium-2026"])
+                       ["tuberculosis", "need:biostatistics", "consortium-2026"])
     t = texts(qs)
     assert t[0] == '"klaus.reither@swisstph.ch"'
     assert '"Klaus Reither" Swiss TPH' in t                      # first + last + institution
@@ -34,7 +34,7 @@ def test_full_name_variants():
     assert '"Reither" Swiss TPH' in t                             # institution + last
     assert any(kw.get("include_domains") == ["linkedin.com"] for _, kw in qs)
     assert '"Reither" tuberculosis' in t                          # last + research tag
-    assert not any("consortium-2026" in x or "from:" in x for x in t)  # bookkeeping tags skipped
+    assert not any("consortium-2026" in x or "need:" in x for x in t)  # bookkeeping/facet tags skipped
     assert len(qs) <= MAX_QUERIES
 
 
@@ -45,11 +45,6 @@ def test_initial_only_uses_surname_forms():
     assert '"Redfern" sun.ac.za' in t
     assert '"Redfern" pediatrics' in t
     assert not any(x.startswith('"A Redfern"') for x in t)  # no fake "first name" query
-
-
-def test_from_tag_stands_in_for_missing_institution():
-    t = texts(build_queries("x@gmail.com", "Karim Manji", False, "", "", ["from:Muhimbili University"]))
-    assert '"Karim Manji" Muhimbili University' in t
 
 
 def test_single_name_at_institution_stays_on_their_site():

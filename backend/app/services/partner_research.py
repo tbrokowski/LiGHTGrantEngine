@@ -69,8 +69,6 @@ def apply_profile(db: Session, partner: Partner, profile: dict, *, name_guessed:
 
     tags = list(partner.tags or [])
     lower = {t.lower() for t in tags}
-    if partner.organization and not any(t.startswith("from:") for t in tags):
-        tags.insert(0, f"from:{partner.organization}")
     for t in profile.get("expertise_tags") or []:
         if t.lower() not in lower:
             tags.append(t)

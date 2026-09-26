@@ -26,7 +26,6 @@ interface PartnerFormProps {
   submitLabel?: string;
 }
 
-const FROM = 'from:';
 const NEED = 'need:';
 
 export default function PartnerForm({ initial, onSubmit, onCancel, submitLabel = 'Save' }: PartnerFormProps) {
@@ -44,17 +43,16 @@ export default function PartnerForm({ initial, onSubmit, onCancel, submitLabel =
   const [googleScholar, setGoogleScholar] = useState(initial?.google_scholar_id ?? '');
 
   // Tags are stored as one flat list on the partner, faceted by prefix:
-  //   from:<where they're from>   need:<what we need from them>   <general tag>
-  // Legacy project_types fold into the "need" facet.
+  //   need:<what we need from them>   <general tag>
+  // Legacy project_types fold into the "need" facet. Where someone is from is
+  // the Institution field, not a tag.
   const initialTags = initial?.tags ?? [];
   const strip = (p: string) => (t: string) => t.slice(p.length).trim();
-  const [fromTags, setFromTags] = useState<string[]>(initialTags.filter(t => t.startsWith(FROM)).map(strip(FROM)));
   const [needTags, setNeedTags] = useState<string[]>([
     ...initialTags.filter(t => t.startsWith(NEED)).map(strip(NEED)),
     ...(initial?.project_types ?? []),
   ]);
-  const [otherTags, setOtherTags] = useState<string[]>(initialTags.filter(t => !t.startsWith(FROM) && !t.startsWith(NEED)));
-  const [fromInput, setFromInput] = useState('');
+  const [otherTags, setOtherTags] = useState<string[]>(initialTags.filter(t => !t.startsWith(NEED)));
   const [needInput, setNeedInput] = useState('');
   const [otherInput, setOtherInput] = useState('');
 
@@ -81,7 +79,6 @@ export default function PartnerForm({ initial, onSubmit, onCancel, submitLabel =
     setSaving(true);
     try {
       const tags = [
-        ...fromTags.map(t => `${FROM}${t}`),
         ...needTags.map(t => `${NEED}${t}`),
         ...otherTags,
       ];
@@ -117,7 +114,7 @@ export default function PartnerForm({ initial, onSubmit, onCancel, submitLabel =
           <input value={title} onChange={e => setTitle(e.target.value)} placeholder="Professor, Dr., etc." className={field} />
         </div>
         <div>
-          <label className="block text-xs font-medium text-gray-700 mb-1">Organization</label>
+          <label className="block text-xs font-medium text-gray-700 mb-1">Institution</label>
           <input value={organization} onChange={e => setOrganization(e.target.value)} className={field} />
         </div>
         <div>
@@ -158,23 +155,7 @@ export default function PartnerForm({ initial, onSubmit, onCancel, submitLabel =
         </div>
       </div>
 
-      {/* Tags — two guided facets + general */}
-      <div>
-        <label className="block text-xs font-medium text-gray-700 mb-1">Where they’re from</label>
-        <div className="flex flex-wrap gap-1.5 mb-1.5">
-          {fromTags.map(t => (
-            <PartnerTagChip key={t} tag={t} onRemove={() => setFromTags(fromTags.filter(x => x !== t))} />
-          ))}
-        </div>
-        <input
-          value={fromInput}
-          onChange={e => setFromInput(e.target.value)}
-          onKeyDown={e => commit(e, fromInput, setFromInput, fromTags, setFromTags)}
-          placeholder="e.g. EPFL, a conference, a mutual contact… — Enter to add"
-          className={field}
-        />
-      </div>
-
+      {/* Tags — "need" facet + general */}
       <div>
         <label className="block text-xs font-medium text-gray-700 mb-1">What we need from them</label>
         <div className="flex flex-wrap gap-1.5 mb-1.5">

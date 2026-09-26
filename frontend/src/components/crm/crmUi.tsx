@@ -127,7 +127,7 @@ export function GroupChip({ group, size = 'sm' }: { group: GroupRef; size?: 'sm'
 }
 
 export function TagPill({ label }: { label: string }) {
-  const facet = label.startsWith('from:') ? 'from' : label.startsWith('need:') ? 'need' : null;
+  const facet = label.startsWith('need:') ? 'need' : null;
   return (
     <span
       className="text-[11px] px-1.5 py-0.5 rounded-full whitespace-nowrap"

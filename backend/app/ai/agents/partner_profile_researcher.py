@@ -165,7 +165,7 @@ def split_name(name: str) -> dict:
 
 
 def _topic_tags(tags: Optional[list], limit: int = 2) -> list[str]:
-    """Tags that describe what someone works on — not facets (from:/need:)
+    """Tags that describe what someone works on — not facets (need:)
     or bookkeeping labels like "consortium-2026"."""
     out = []
     for t in tags or []:
@@ -190,8 +190,7 @@ def build_queries(
     would return strangers."""
     parts = split_name(name)
     first, last, initial, single = parts["first"], parts["last"], parts["initial"], parts["single"]
-    from_tag = next((str(t)[5:].strip() for t in tags or [] if str(t).startswith("from:")), "")
-    anchor = organization or from_tag or domain_root
+    anchor = organization or domain_root
     topics = _topic_tags(tags)
     q = (lambda text: text) if name_guessed else (lambda text: f'"{text}"')
 
@@ -210,7 +209,7 @@ def build_queries(
         candidates.append((f"{full} {anchor} LinkedIn".strip(), {"include_domains": ["linkedin.com"]}))
         if topics:
             candidates.append((f"{q(last)} {' '.join(topics)}", {}))
-    elif single and (domain_root or organization or from_tag):
+    elif single and (domain_root or organization):
         # One name, no idea if it's first or last: stay inside their institution.
         if domain_root:
             candidates.append((single, {"include_domains": [domain_root]}))
@@ -300,7 +299,6 @@ async def research_contact(
     surname = parts["last"]
 
     queries = build_queries(email, name, name_guessed, organization or "", domain_root, tags)
-    from_tag = next((str(t)[5:].strip() for t in tags or [] if str(t).startswith("from:")), "")
     if not queries:
         return {}
     # OpenAlex needs at least an initial + surname to find the right author.
@@ -308,7 +306,7 @@ async def research_contact(
 
     results, openalex = await asyncio.gather(
         _search_all(queries),
-        _search_openalex_author(openalex_name, orcid, organization or from_tag) if openalex_name else asyncio.sleep(0),
+        _search_openalex_author(openalex_name, orcid, organization) if openalex_name else asyncio.sleep(0),
     )
 
     linkedin_urls = [

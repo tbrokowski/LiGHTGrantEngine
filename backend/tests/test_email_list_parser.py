@@ -66,3 +66,9 @@ def test_address_inside_angle_pair_not_double_counted():
 def test_empty():
     assert parse_email_list("") == []
     assert parse_email_list("no addresses here") == []
+
+
+def test_clipped_header_label_is_not_part_of_the_name():
+    got = _by_email("O: Lario Viljoen <lario@sun.ac.za>, Cc: Jane Roe <j@x.org>")
+    assert got["lario@sun.ac.za"].name == "Lario Viljoen"
+    assert got["j@x.org"].name == "Jane Roe"

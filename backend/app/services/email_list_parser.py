@@ -49,6 +49,9 @@ class ParsedContact:
 
 def _clean_display_name(raw: str, email: str) -> str:
     name = raw.strip().strip('"').strip("'").strip()
+    # A header label that survived the paste ("O: Lario Viljoen" from a
+    # clipped "To:", "Cc: …") is not part of the name.
+    name = re.sub(r"^(?:to|o|cc|bcc|c|from|reply-to)\s*:\s*", "", name, flags=re.I)
     # "Beth Amato (beth.amato3@wits.ac.za)" → "Beth Amato"
     name = re.sub(r"\([^)]*@[^)]*\)", "", name)
     # A display name that is itself an address (possibly mangled with spaces,

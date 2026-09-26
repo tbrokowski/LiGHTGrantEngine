@@ -676,19 +676,17 @@ async def bulk_create_from_emails(
     data: BulkFromEmailsIn, background_tasks: BackgroundTasks,
     db: AsyncSession = Depends(get_db), current_user: User = Depends(get_current_user),
 ):
-    """Create a partner for each contact (skipping emails already in the CRM),
-    then research each one on the web in the background to fill in title,
-    organization, bio, expertise and links. Poll /research-status for progress."""
+    """Create a partner for each new contact and research them online in the
+    background (poll /research-status). Contacts already in the CRM are not
+    duplicated or re-researched: they get the chosen groups and tags added,
+    and their priority changes only when set on their row."""
     if len(data.contacts) > 500:
         raise HTTPException(400, "At most 500 contacts per batch.")
     emails = [c.email.strip().lower() for c in data.contacts]
-    taken = set()
+    existing: dict[str, Partner] = {}
     if emails:
-        taken = {
-            (e or "").lower() for e in (await db.execute(
-                select(Partner.email).where(func.lower(Partner.email).in_(emails))
-            )).scalars().all()
-        }
+        rows = (await db.execute(select(Partner).where(func.lower(Partner.email).in_(emails)))).scalars().all()
+        existing = {(p.email or "").lower(): p for p in rows}
 
     # Tags chosen on import go on everyone; de-duplicated case-insensitively.
     tags: list[str] = []
@@ -698,14 +696,31 @@ async def bulk_create_from_emails(
             tags.append(t)
 
     created: list[dict] = []
+    updated: list[dict] = []
     skipped: list[str] = []
+    seen: set[str] = set()
     queue: list[tuple[str, bool]] = []
     for c in data.contacts:
         email = c.email.strip().lower()
-        if not email or email in taken:
-            skipped.append(email)
+        if not email or email in seen:
             continue
-        taken.add(email)
+        seen.add(email)
+        if email in existing:
+            p = existing[email]
+            changed = bool(data.group_ids)
+            have = {str(t).lower() for t in (p.tags or [])}
+            new_tags = [t for t in tags if t.lower() not in have]
+            if new_tags:
+                p.tags = list(p.tags or []) + new_tags
+                changed = True
+            if c.priority and c.priority != p.priority:
+                p.priority = c.priority
+                changed = True
+            if changed:
+                updated.append({"id": p.id, "name": p.name, "email": email})
+            else:
+                skipped.append(email)
+            continue
         p = Partner(
             id=str(uuid.uuid4()), created_by=current_user.id,
             institution_id=getattr(current_user, "institution_id", None),
@@ -717,15 +732,16 @@ async def bulk_create_from_emails(
         created.append({"id": p.id, "name": p.name, "email": email})
         queue.append((p.id, c.name_guessed))
     await db.flush()
-    if data.group_ids and created:
+    members = [x["id"] for x in created] + [x["id"] for x in updated]
+    if data.group_ids and members:
         from app.services.partner_groups import add_members
         for gid in data.group_ids:
-            await add_members(db, gid, [c["id"] for c in created], current_user.id)
+            await add_members(db, gid, members, current_user.id)
     await db.commit()
 
     if data.research and queue:
         _queue_research(queue, background_tasks)
-    return {"created": created, "skipped_existing": skipped}
+    return {"created": created, "updated_existing": updated, "skipped_existing": skipped}
 
 
 @router.post("/research-status")
