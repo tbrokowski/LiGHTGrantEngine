@@ -2,7 +2,7 @@
 import { useEffect, useState } from 'react';
 import { partnerGroups } from '@/lib/api';
 import CrmModal, { errDetail } from './CrmModal';
-import { GroupRef, btnPrimary, btnQuiet } from './crmUi';
+import { GroupBadge, GroupRef, btnPrimary, btnQuiet } from './crmUi';
 
 /** Put the selected people into an existing group, or start a new one with them. */
 export default function AddToGroupModal({
@@ -50,7 +50,7 @@ export default function AddToGroupModal({
         {groups.map(g => (
           <label key={g.id} className="flex items-center gap-3 px-6 py-2.5 cursor-pointer" style={{ borderBottom: '1px solid var(--rule-subtle)' }}>
             <input type="radio" name="group" checked={picked === g.id} onChange={() => setPicked(g.id)} />
-            <span style={{ width: 10, height: 10, borderRadius: 3, background: g.color || 'var(--ink-muted)' }} />
+            <GroupBadge group={g} size={22} />
             <span className="flex-1 text-sm" style={{ color: 'var(--ink-primary)' }}>{g.name}</span>
             <span className="mono-data text-xs" style={{ color: 'var(--ink-muted)' }}>{g.member_count}</span>
           </label>

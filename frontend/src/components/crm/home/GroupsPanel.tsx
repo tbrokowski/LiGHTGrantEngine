@@ -2,13 +2,15 @@
 import { useEffect, useState } from 'react';
 import Link from 'next/link';
 import { partnerGroups } from '@/lib/api';
-import { initials, card, btnOutline, dueInfo } from '../crmUi';
+import { GroupBadge, initials, card, btnOutline, dueInfo } from '../crmUi';
 
 interface GroupSummary {
   id: string;
   name: string;
   description?: string | null;
   color?: string | null;
+  icon?: string | null;
+  logo?: string | null;
   member_count: number;
   members_preview: { id: string; name: string }[];
   engaged_30d: number;
@@ -51,7 +53,7 @@ export default function GroupsPanel({ refreshKey, onNewGroup }: { refreshKey: nu
               className="flex flex-col gap-2.5 p-3.5 rounded-[var(--radius-lg)] transition-colors hover:bg-[var(--surface-sunken)]"
               style={{ border: '1px solid var(--rule-subtle)' }}>
               <div className="flex items-center gap-2.5">
-                <span style={{ width: 12, height: 12, borderRadius: 3, background: color }} />
+                <GroupBadge group={g} size={28} />
                 <span className="text-sm font-semibold flex-1 truncate" style={{ color: 'var(--ink-primary)' }}>{g.name}</span>
                 <span className="text-[11px] font-medium px-2 py-0.5 rounded-full whitespace-nowrap" style={{ color: chip.color, background: chip.bg }}>{chip.text}</span>
               </div>

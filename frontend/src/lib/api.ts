@@ -681,9 +681,10 @@ export const partners = {
 export const partnerGroups = {
   list: () => api.get('/partner-groups/'),
   get: (id: string) => api.get(`/partner-groups/${id}`),
-  create: (data: { name: string; description?: string; color?: string; partner_ids?: string[]; tags?: string[]; match?: 'any' | 'all' }) =>
+  create: (data: { name: string; description?: string; color?: string; icon?: string; logo?: string; partner_ids?: string[]; tags?: string[]; match?: 'any' | 'all' }) =>
     api.post('/partner-groups/', data),
-  update: (id: string, data: { name?: string; description?: string; color?: string }) => api.patch(`/partner-groups/${id}`, data),
+  // icon / logo: "" clears
+  update: (id: string, data: { name?: string; description?: string; color?: string; icon?: string; logo?: string }) => api.patch(`/partner-groups/${id}`, data),
   remove: (id: string) => api.delete(`/partner-groups/${id}`),
   allTags: () => api.get('/partner-groups/tags/all'),
   previewMembers: (id: string, tags: string[], match: 'any' | 'all') =>

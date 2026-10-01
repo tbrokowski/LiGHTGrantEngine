@@ -5,7 +5,9 @@ from datetime import datetime, timedelta
 from typing import Literal, Optional
 
 from fastapi import APIRouter, Depends, HTTPException, Query
-from pydantic import BaseModel, Field
+import re
+
+from pydantic import BaseModel, Field, field_validator
 from sqlalchemy import select, func, delete as sa_delete
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -24,20 +26,53 @@ router = APIRouter()
 
 OPEN = ("open", "in_progress")
 
+# Raster images only: an SVG can carry script. The browser resizes uploads to
+# 128px first, so real logos come in far under this cap.
+_LOGO_RE = re.compile(r"^data:image/(png|jpeg|webp|gif);base64,[A-Za-z0-9+/=]+$")
+_LOGO_MAX_CHARS = 200_000
+_ICON_RE = re.compile(r"^[A-Za-z0-9]{1,40}$")
+
+
+def _check_logo(v: Optional[str]) -> Optional[str]:
+    if v is None or v == "":
+        return v
+    if len(v) > _LOGO_MAX_CHARS or not _LOGO_RE.match(v):
+        raise ValueError("Logo must be a PNG, JPEG, WebP or GIF image under ~150 KB.")
+    return v
+
+
+def _check_icon(v: Optional[str]) -> Optional[str]:
+    if v is None or v == "":
+        return v
+    if not _ICON_RE.match(v):
+        raise ValueError("Unknown icon.")
+    return v
+
 
 class GroupCreate(BaseModel):
     name: str = Field(..., min_length=1, max_length=200)
     description: Optional[str] = None
     color: Optional[str] = Field(None, max_length=20)
+    icon: Optional[str] = None
+    logo: Optional[str] = None
+
+    _v_logo = field_validator("logo")(classmethod(lambda cls, v: _check_logo(v)))
+    _v_icon = field_validator("icon")(classmethod(lambda cls, v: _check_icon(v)))
     partner_ids: list[str] = []
     tags: list[str] = []
     match: Literal["any", "all"] = "any"
 
 
 class GroupUpdate(BaseModel):
+    """Omitted fields are left alone; send "" for icon or logo to clear it."""
     name: Optional[str] = Field(None, min_length=1, max_length=200)
     description: Optional[str] = None
     color: Optional[str] = Field(None, max_length=20)
+    icon: Optional[str] = None
+    logo: Optional[str] = None
+
+    _v_logo = field_validator("logo")(classmethod(lambda cls, v: _check_logo(v)))
+    _v_icon = field_validator("icon")(classmethod(lambda cls, v: _check_icon(v)))
 
 
 class InteractionIn(BaseModel):
@@ -128,6 +163,7 @@ async def list_groups(db: AsyncSession = Depends(get_db), current_user: User = D
         nxt = dated[0] if dated else None
         out.append({
             "id": g.id, "name": g.name, "description": g.description, "color": g.color,
+            "icon": g.icon, "logo": g.logo,
             "member_count": len(ms),
             "members_preview": [{"id": pid, "name": name} for pid, name, _ in ms[:4]],
             "engaged_30d": engaged,
@@ -148,6 +184,7 @@ async def create_group(data: GroupCreate, db: AsyncSession = Depends(get_db), cu
         id=str(uuid.uuid4()), institution_id=getattr(current_user, "institution_id", None),
         name=data.name.strip(), description=(data.description or "").strip() or None,
         color=data.color or GROUP_COLORS[count % len(GROUP_COLORS)], created_by=current_user.id,
+        icon=data.icon or None, logo=data.logo or None,
     )
     db.add(g)
     try:
@@ -269,6 +306,7 @@ async def get_group(group_id: str, db: AsyncSession = Depends(get_db), current_u
     owner = (await db.execute(select(User.name).where(User.id == g.created_by))).scalar() if g.created_by else None
     return {
         "id": g.id, "name": g.name, "description": g.description, "color": g.color,
+        "icon": g.icon, "logo": g.logo,
         "owner_name": owner, "created_at": g.created_at.isoformat() if g.created_at else None,
         "stats": {
             "members": len(members), "engaged_30d": engaged,
@@ -292,7 +330,10 @@ async def update_group(group_id: str, data: GroupUpdate, db: AsyncSession = Depe
     if data.name:
         await _ensure_unique_name(db, current_user, data.name, exclude_id=g.id)
     for k, v in data.model_dump(exclude_none=True).items():
-        setattr(g, k, v.strip() if isinstance(v, str) else v)
+        if k in ("icon", "logo"):
+            setattr(g, k, v or None)
+        else:
+            setattr(g, k, v.strip() if isinstance(v, str) else v)
     try:
         await db.commit()
     except IntegrityError:

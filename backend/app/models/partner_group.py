@@ -20,6 +20,10 @@ class PartnerGroup(Base):
     name: Mapped[str] = mapped_column(String(200), nullable=False)
     description: Mapped[str | None] = mapped_column(Text)
     color: Mapped[str | None] = mapped_column(String(20))
+    # One of the icon names the UI offers, drawn in `color` (migration 065).
+    icon: Mapped[str | None] = mapped_column(String(40))
+    # Small image as a data URL (data:image/png;base64,…), ≤ ~200 KB.
+    logo: Mapped[str | None] = mapped_column(Text)
     created_by: Mapped[str | None] = mapped_column(String, ForeignKey("users.id"))
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
     updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now(), onupdate=func.now())

@@ -11,7 +11,7 @@ import NewTaskModal from '@/components/crm/NewTaskModal';
 import TaskRow from '@/components/crm/TaskRow';
 import ConfirmModal from '@/components/ui/ConfirmModal';
 import {
-  Avatar, CrmTask, PriorityBars, Segmented, TagPill, btnOutline, btnPrimary, btnQuiet, card, initials, sinceLabel,
+  Avatar, CrmTask, GroupBadge, PriorityBars, Segmented, TagPill, btnOutline, btnPrimary, btnQuiet, card, sinceLabel,
 } from '@/components/crm/crmUi';
 
 interface Member {
@@ -21,6 +21,7 @@ interface Member {
 
 interface GroupDetail {
   id: string; name: string; description?: string | null; color?: string | null; owner_name?: string | null;
+  icon?: string | null; logo?: string | null;
   weekly: { touches: number; meetings: number }[];
   members: Member[];
   tasks: CrmTask[];
@@ -96,9 +97,9 @@ function GroupPage() {
           <ChevronLeft className="w-3 h-3" />Partners · Groups
         </Link>
         <div className="flex items-start gap-4 mt-3">
-          <div className="w-12 h-12 rounded-[var(--radius-lg)] flex items-center justify-center text-base font-semibold shrink-0" style={{ background: color, color: 'var(--ink-inverse)' }}>
-            {initials(g.name)}
-          </div>
+          <button type="button" onClick={() => setModal('edit')} title="Change the group’s logo, icon or color" className="shrink-0 rounded-[var(--radius-lg)]">
+            <GroupBadge group={g} size={48} />
+          </button>
           <div className="flex-1 min-w-0">
             <h1 className="text-[22px] font-semibold tracking-tight" style={{ color: 'var(--ink-primary)' }}>{g.name}</h1>
             <p className="text-sm mt-1 max-w-2xl leading-relaxed" style={{ color: g.description ? 'var(--ink-secondary)' : 'var(--ink-muted)' }}>

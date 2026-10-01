@@ -1,9 +1,14 @@
 'use client';
+import {
+  Activity, Baby, Banknote, BookOpen, Brain, Briefcase, Bug, Building2, Dna, FlaskConical, Globe,
+  GraduationCap, Handshake, HeartPulse, Hospital, Landmark, Laptop, Leaf, Lightbulb, Microscope,
+  Pill, Rocket, Scan, School, Star, Stethoscope, Syringe, Users,
+} from 'lucide-react';
 // Small shared pieces of the Partner CRM: avatars, priority bars, the 12-week
 // activity strip, due-date chips and group chips. Token colors only, except
 // group colors, which are data.
 
-export interface GroupRef { id: string; name: string; color?: string | null }
+export interface GroupRef { id: string; name: string; color?: string | null; icon?: string | null; logo?: string | null }
 
 export interface CrmTask {
   id: string;
@@ -225,5 +230,32 @@ export function Segmented<T extends string | number>({
         );
       })}
     </div>
+  );
+}
+
+/** Icons a group can use, keyed by the name stored on the group. */
+export const GROUP_ICONS = {
+  Users, Building2, Hospital, School, GraduationCap, Landmark, Globe, Handshake, Briefcase, Banknote,
+  Microscope, FlaskConical, Dna, Brain, Stethoscope, HeartPulse, Activity, Baby, Syringe, Pill,
+  Bug, Scan, Laptop, BookOpen, Lightbulb, Rocket, Leaf, Star,
+} as const;
+
+/** A group's mark: its logo if it has one, else its icon, else its initials,
+ *  on the group color. */
+export function GroupBadge({ group, size = 28 }: { group: Pick<GroupRef, 'name' | 'color' | 'icon' | 'logo'>; size?: number }) {
+  const radius = Math.max(4, Math.round(size * 0.22));
+  if (group.logo) {
+    return (
+      // eslint-disable-next-line @next/next/no-img-element -- inline data URL, nothing to optimize
+      <img src={group.logo} alt="" width={size} height={size} className="shrink-0 object-contain"
+        style={{ width: size, height: size, borderRadius: radius, background: 'var(--surface-base)', border: '1px solid var(--rule-subtle)' }} />
+    );
+  }
+  const Icon = group.icon ? GROUP_ICONS[group.icon as keyof typeof GROUP_ICONS] : undefined;
+  return (
+    <span aria-hidden className="shrink-0 flex items-center justify-center font-semibold"
+      style={{ width: size, height: size, borderRadius: radius, background: group.color || 'var(--ink-muted)', color: 'var(--ink-inverse)', fontSize: Math.round(size * 0.36) }}>
+      {Icon ? <Icon style={{ width: Math.round(size * 0.55), height: Math.round(size * 0.55) }} strokeWidth={2} /> : initials(group.name)}
+    </span>
   );
 }
