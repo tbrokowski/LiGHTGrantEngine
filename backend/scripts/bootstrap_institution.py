@@ -81,6 +81,26 @@ def main() -> None:
         if linked_count == 0:
             logger.info("All users already linked to an institution.")
 
+        # Every user's active institution needs a membership row.
+        from app.models.institution_membership import InstitutionMembership
+        have = {
+            (uid, iid) for uid, iid in db.execute(
+                select(InstitutionMembership.user_id, InstitutionMembership.institution_id)
+            ).all()
+        }
+        for user in users:
+            if user.institution_id and (user.id, user.institution_id) not in have:
+                db.add(InstitutionMembership(
+                    id=str(uuid.uuid4()),
+                    user_id=user.id,
+                    institution_id=user.institution_id,
+                    institution_role=user.institution_role or "member",
+                    role=user.role or "contributor",
+                    module_permissions=dict(user.module_permissions or {}),
+                    joined_via="backfill",
+                ))
+        db.commit()
+
         # ── 3. Fan out sources ────────────────────────────────────────────────
         linked_sources = fan_out_sources_to_institutions(db)
         logger.info("Institution-source links created: %d", linked_sources)

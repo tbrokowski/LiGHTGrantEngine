@@ -15,6 +15,8 @@ class Institution(Base):
     domain: Mapped[str | None] = mapped_column(String(200))  # e.g. "epfl.ch" for auto-join
     access_code: Mapped[str | None] = mapped_column(String(20))
     access_code_expires_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    # Role given to people who join with the access code (chosen by the admin who made it)
+    access_code_role: Mapped[str | None] = mapped_column(String(50))
     is_personal: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False, server_default="false", index=True)
     grant_profile: Mapped[dict] = mapped_column(JSON, default=dict)
     onboarding_complete: Mapped[bool] = mapped_column(Boolean, default=False, server_default="false", nullable=False)

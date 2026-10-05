@@ -62,6 +62,10 @@ export const auth = {
     api.post('/auth/forgot-password', { email }),
   resetPassword: (token: string, new_password: string) =>
     api.post('/auth/reset-password', { token, new_password }),
+  changePassword: (current_password: string, new_password: string) =>
+    api.post('/auth/change-password', { current_password, new_password }),
+  changeEmail: (new_email: string, current_password: string) =>
+    api.post('/auth/change-email', { new_email, current_password }),
 };
 
 // ── Users ────────────────────────────────────────────────────────────────────
@@ -76,6 +80,17 @@ export const userOnboarding = {
 };
 
 // ── Organizations ─────────────────────────────────────────────────────────────
+export interface MyOrganization {
+  institution_id: string;
+  name: string;
+  is_personal: boolean;
+  institution_role: string;
+  role: string;
+  is_active: boolean;
+  member_count: number;
+  joined_at: string | null;
+}
+
 export const organizations = {
   list: (q?: string) => api.get('/organizations/', { params: { q } }),
   get: (id: string) => api.get(`/organizations/${id}`),
@@ -103,10 +118,20 @@ export const organizations = {
     api.post(`/organizations/${orgId}/join-requests/${reqId}/approve`),
   rejectRequest: (orgId: string, reqId: string) =>
     api.post(`/organizations/${orgId}/join-requests/${reqId}/reject`),
-  generateAccessCode: (id: string) =>
-    api.post(`/organizations/${id}/access-code/generate`),
+  getAccessCode: (id: string) => api.get(`/organizations/${id}/access-code`),
+  generateAccessCode: (id: string, role: string) =>
+    api.post(`/organizations/${id}/access-code/generate`, { role }),
+  revokeAccessCode: (id: string) => api.delete(`/organizations/${id}/access-code`),
   joinByCode: (code: string) => api.post('/organizations/join-by-code', { code }),
-  invite: (orgId: string, data: { email: string; role: string }) =>
+  mine: () => api.get<MyOrganization[]>('/organizations/mine'),
+  switchTo: (id: string) => api.post(`/organizations/${id}/switch`),
+  leave: (id: string) => api.post(`/organizations/${id}/leave`),
+  invite: (orgId: string, data: {
+    email: string;
+    role: string;
+    institution_role?: string;
+    module_permissions?: Record<string, boolean>;
+  }) =>
     api.post(`/organizations/${orgId}/invite`, data),
   requestToJoin: (orgId: string, message?: string) =>
     api.post(`/organizations/${orgId}/join-requests`, { institution_id: orgId, message }),
@@ -133,6 +158,8 @@ export const users = {
   get: (id: string) => api.get(`/users/${id}`),
   update: (id: string, data: Record<string, unknown>) => api.patch(`/users/${id}`, data),
   deactivate: (id: string) => api.delete(`/users/${id}`),
+  deleteMe: (confirm: string, password?: string) =>
+    api.delete('/users/me', { data: { confirm, password } }),
   getGrantPreferences: () => api.get('/users/me/grant-preferences'),
   updateGrantPreferences: (data: Record<string, unknown>) =>
     api.patch('/users/me/grant-preferences', data),

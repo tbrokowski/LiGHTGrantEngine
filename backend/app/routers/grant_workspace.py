@@ -260,15 +260,18 @@ async def list_assignable_members(
         )
     )).scalars().all()
     existing_ids = {uid for uid in existing if uid}
+    from app.models.institution_membership import InstitutionMembership
     members = (await db.execute(
-        select(User).where(
-            User.institution_id == grant.institution_id,
+        select(User, InstitutionMembership.role)
+        .join(InstitutionMembership, InstitutionMembership.user_id == User.id)
+        .where(
+            InstitutionMembership.institution_id == grant.institution_id,
             User.is_active == True,  # noqa: E712
         )
-    )).scalars().all()
+    )).all()
     return [
-        {"id": u.id, "name": u.name, "email": u.email, "role": u.role}
-        for u in members
+        {"id": u.id, "name": u.name, "email": u.email, "role": role}
+        for u, role in members
         if u.id not in existing_ids
     ]
 

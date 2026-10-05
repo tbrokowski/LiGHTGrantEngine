@@ -61,8 +61,23 @@ export function InvitePanel({ institutionId }: { institutionId: string }) {
   const [inviteError, setInviteError] = useState('');
 
   const [accessCode, setAccessCode] = useState<string | null>(null);
+  const [codeRole, setCodeRole] = useState('contributor');
+  const [liveCodeRole, setLiveCodeRole] = useState<string | null>(null);
+  const [codeExpiresAt, setCodeExpiresAt] = useState<string | null>(null);
   const [codeLoading, setCodeLoading] = useState(false);
+  const [codeError, setCodeError] = useState('');
   const [copied, setCopied] = useState(false);
+
+  function applyCode(data: { code: string | null; role: string | null; expires_at: string | null }) {
+    setAccessCode(data.code);
+    setCodeExpiresAt(data.expires_at);
+    setLiveCodeRole(data.role);
+    if (data.role) setCodeRole(data.role);
+  }
+
+  useEffect(() => {
+    organizations.getAccessCode(institutionId).then(res => applyCode(res.data)).catch(() => {});
+  }, [institutionId]);
 
   async function handleInvite(e: React.FormEvent) {
     e.preventDefault();
@@ -92,11 +107,25 @@ export function InvitePanel({ institutionId }: { institutionId: string }) {
 
   async function generateCode() {
     setCodeLoading(true);
+    setCodeError('');
     try {
-      const res = await organizations.generateAccessCode(institutionId);
-      setAccessCode(res.data.code);
+      const res = await organizations.generateAccessCode(institutionId, codeRole);
+      applyCode(res.data);
     } catch {
-      alert('Failed to generate access code.');
+      setCodeError('Failed to generate access code.');
+    } finally {
+      setCodeLoading(false);
+    }
+  }
+
+  async function revokeCode() {
+    setCodeLoading(true);
+    setCodeError('');
+    try {
+      const res = await organizations.revokeAccessCode(institutionId);
+      applyCode(res.data);
+    } catch {
+      setCodeError('Failed to turn off the access code.');
     } finally {
       setCodeLoading(false);
     }
@@ -226,8 +255,25 @@ export function InvitePanel({ institutionId }: { institutionId: string }) {
       <div>
         <h3 className="text-sm font-semibold text-gray-900 mb-1">Access code</h3>
         <p className="text-xs text-gray-500 mb-4">
-          Generate a 6-character code valid for 72 hours. Anyone with this code can join the organization directly.
+          Anyone with an account can join directly by entering this code under Settings → Organizations.
+          Codes last 72 hours. Making a new code replaces the old one.
         </p>
+        <div className="flex items-center gap-2 mb-3 flex-wrap">
+          <label htmlFor="access-code-role" className="text-xs font-medium text-gray-700">Joins as</label>
+          <select
+            id="access-code-role"
+            value={codeRole}
+            onChange={e => setCodeRole(e.target.value)}
+            className="px-3 py-1.5 border border-gray-300 rounded-lg text-sm bg-white focus:outline-none focus:ring-2 focus:ring-gray-900"
+          >
+            {ROLES.map(r => (
+              <option key={r.value} value={r.value}>{r.label}</option>
+            ))}
+          </select>
+          {accessCode && liveCodeRole && codeRole !== liveCodeRole && (
+            <span className="text-xs text-gray-500">Make a new code to apply this role.</span>
+          )}
+        </div>
         <div className="flex items-center gap-3 flex-wrap">
           {accessCode ? (
             <>
@@ -247,7 +293,14 @@ export function InvitePanel({ institutionId }: { institutionId: string }) {
                 disabled={codeLoading}
                 className="px-3 py-2 text-sm text-gray-500 hover:text-gray-700 transition"
               >
-                Regenerate
+                New code
+              </button>
+              <button
+                onClick={revokeCode}
+                disabled={codeLoading}
+                className="px-3 py-2 text-sm text-red-600 hover:text-red-700 transition"
+              >
+                Turn off
               </button>
             </>
           ) : (
@@ -260,11 +313,14 @@ export function InvitePanel({ institutionId }: { institutionId: string }) {
             </button>
           )}
         </div>
-        {accessCode && (
+        {accessCode && codeExpiresAt && (
           <p className="mt-2 text-xs text-amber-600">
-            This code expires in 72 hours. Share it only with trusted people.
+            People who join get the {ROLES.find(r => r.value === liveCodeRole)?.label ?? liveCodeRole} role.
+            Expires {new Date(codeExpiresAt).toLocaleString(undefined, { dateStyle: 'medium', timeStyle: 'short' })}.
+            Share it only with trusted people.
           </p>
         )}
+        {codeError && <p className="mt-2 text-sm text-red-600">{codeError}</p>}
       </div>
     </div>
   );

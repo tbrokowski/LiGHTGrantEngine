@@ -47,6 +47,7 @@ from .shortlist_category import ShortlistCategory
 from .preseed_run import PreseedRun
 from .email_verification import EmailVerification
 from .org_join_request import OrgJoinRequest
+from .institution_membership import InstitutionMembership
 from .password_reset import PasswordResetToken
 from .feedback import Feedback
 from .user_api_key import UserApiKey
@@ -67,7 +68,7 @@ __all__ = [
     "GrantActivityLog", "GrantWritingConversation", "GrantCitation",
     "UserOpportunityState", "GrantMember", "SectionChunk",
     "OpportunityTask", "OpportunityNote", "OpportunityLink",
-    "InstitutionOpportunity", "InstitutionTasteProfile", "UserTasteProfile", "InstitutionSource", "PreseedRun", "FunderOrg",
+    "InstitutionOpportunity", "InstitutionMembership", "InstitutionTasteProfile", "UserTasteProfile", "InstitutionSource", "PreseedRun", "FunderOrg",
     "ShortlistCategory",
     "EmailVerification", "OrgJoinRequest", "PasswordResetToken", "Feedback",
     "UserApiKey", "LLMUsage",

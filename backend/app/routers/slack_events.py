@@ -87,8 +87,13 @@ async def slack_interactive(request: Request):
             return {"ok": True}
 
         # Resolve approver: first org admin or grant lead
+        from app.models.institution_membership import InstitutionMembership
         approver = db.execute(
-            select(User).where(User.institution_id == grant.institution_id).limit(1)
+            select(User)
+            .join(InstitutionMembership, InstitutionMembership.user_id == User.id)
+            .where(InstitutionMembership.institution_id == grant.institution_id, User.is_active.is_(True))
+            .order_by((InstitutionMembership.institution_role == "admin").desc())
+            .limit(1)
         ).scalar_one_or_none()
         approver_id = approver.id if approver else fr.requested_by_id
 

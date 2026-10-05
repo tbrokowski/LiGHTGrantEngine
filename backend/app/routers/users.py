@@ -7,8 +7,18 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 from app.database import get_db
 from app.models.user import User, UserRole
-from app.routers.auth import get_current_user, get_password_hash
+from app.models.institution_membership import InstitutionMembership
+from app.routers.auth import get_current_user, get_password_hash, verify_password
 from app.auth.permissions import require_org_admin, is_org_admin, invalidate_permission_cache, get_redis
+from app.services.account_deletion import delete_account
+from app.services.membership import (
+    add_membership,
+    get_membership,
+    is_last_admin_with_others,
+    list_memberships,
+    mirror_if_active,
+    remove_membership,
+)
 import redis.asyncio as aioredis
 
 router = APIRouter()
@@ -23,11 +33,17 @@ class UserCreate(BaseModel):
 
 class UserUpdate(BaseModel):
     name: Optional[str] = None
-    role: Optional[str] = None
+    role: Optional[str] = None  # admins only: the role in the admin's active org
     team: Optional[str] = None
-    is_active: Optional[bool] = None
     notification_preferences: Optional[dict] = None
     grant_preferences: Optional[dict] = None
+    # Email and password have their own endpoints (/auth/change-email,
+    # /auth/change-password) because both need the current password.
+
+
+class DeleteAccountBody(BaseModel):
+    confirm: str                    # must be "DELETE"
+    password: Optional[str] = None  # required when the account has a password
 
 
 class GrantPreferencesUpdate(BaseModel):
@@ -42,9 +58,13 @@ async def list_users(
     current_user: User = Depends(get_current_user),
 ):
     q = select(User).where(User.is_active == True)
-    # Scope to same institution
+    # Scope to members of the active institution
     if current_user.institution_id:
-        q = q.where(User.institution_id == current_user.institution_id)
+        q = q.join(InstitutionMembership, InstitutionMembership.user_id == User.id).where(
+            InstitutionMembership.institution_id == current_user.institution_id
+        )
+    else:
+        q = q.where(User.id == current_user.id)
     result = await db.execute(q)
     return [
         {
@@ -76,9 +96,11 @@ async def create_user(
         hashed_password=get_password_hash(data.password),
         role=data.role,
         team=data.team,
-        institution_id=current_user.institution_id,
     )
     db.add(user)
+    await db.flush()
+    if current_user.institution_id:
+        await add_membership(db, user, current_user.institution_id, role=data.role, joined_via="admin")
     await db.commit()
     return {"id": user.id}
 
@@ -91,22 +113,37 @@ async def update_user(
     current_user: User = Depends(get_current_user),
     redis: aioredis.Redis = Depends(get_redis),
 ):
-    if not is_org_admin(current_user) and current_user.id != user_id:
-        raise HTTPException(403, "You can only edit your own profile.")
-
-    result = await db.execute(select(User).where(User.id == user_id))
-    user = result.scalar_one_or_none()
-    if not user:
-        raise HTTPException(404, "User not found")
-
-    # Only org admins can change roles or active status
     updates = data.model_dump(exclude_none=True)
-    if not is_org_admin(current_user):
-        updates.pop("role", None)
-        updates.pop("is_active", None)
+    role = updates.pop("role", None)
 
+    if current_user.id == user_id:
+        user = current_user
+        if role is not None and not is_org_admin(current_user):
+            role = None  # members can't change their own role
+    else:
+        # Admins may edit people in their active org, and only their role there.
+        if not is_org_admin(current_user) or not current_user.institution_id:
+            raise HTTPException(403, "You can only edit your own profile.")
+        user = (await db.execute(select(User).where(User.id == user_id))).scalar_one_or_none()
+        m = await get_membership(db, user_id, current_user.institution_id) if user else None
+        if not user or not m:
+            raise HTTPException(404, "User not found")
+        updates = {}
+
+    if role is not None and current_user.institution_id:
+        try:
+            role = UserRole(role)
+        except ValueError:
+            raise HTTPException(400, f"Invalid role: {role}")
+        m = await get_membership(db, user.id, current_user.institution_id)
+        if m:
+            m.role = role
+            mirror_if_active(user, m)
+
+    if "name" in updates and not updates["name"].strip():
+        raise HTTPException(400, "Name can't be empty.")
     for k, v in updates.items():
-        setattr(user, k, v)
+        setattr(user, k, v.strip() if isinstance(v, str) else v)
     await db.commit()
     await invalidate_permission_cache(user_id, redis)
     return {"id": user.id}
@@ -171,6 +208,39 @@ async def complete_personal_onboarding(
     return {"onboarding_complete": True}
 
 
+@router.delete("/me", status_code=204)
+async def delete_my_account(
+    body: DeleteAccountBody,
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+    redis: aioredis.Redis = Depends(get_redis),
+):
+    """Delete your own account: personal data is scrubbed and every session ends.
+    The email is freed, so it can be used to sign up again."""
+    if body.confirm.strip().upper() != "DELETE":
+        raise HTTPException(400, 'Type DELETE to confirm.')
+    if current_user.hashed_password and not (
+        body.password and verify_password(body.password, current_user.hashed_password)
+    ):
+        raise HTTPException(400, "Password is incorrect.")
+
+    blocking = [
+        inst.name
+        for _, inst in await list_memberships(db, current_user)
+        if not inst.is_personal and await is_last_admin_with_others(db, current_user.id, inst.id)
+    ]
+    if blocking:
+        raise HTTPException(
+            400,
+            f"You're the only admin of {', '.join(blocking)}. Make someone else an admin first, "
+            "so the organization isn't left without one.",
+        )
+
+    await delete_account(db, current_user)
+    await db.commit()
+    await invalidate_permission_cache(current_user.id, redis)
+
+
 @router.delete("/{user_id}", status_code=204, dependencies=[Depends(require_org_admin())])
 async def delete_user(
     user_id: str,
@@ -178,12 +248,13 @@ async def delete_user(
     current_user: User = Depends(get_current_user),
     redis: aioredis.Redis = Depends(get_redis),
 ):
-    result = await db.execute(select(User).where(User.id == user_id))
-    user = result.scalar_one_or_none()
-    if not user:
+    """Remove someone from the admin's active organization. Their account (and
+    any other organizations they belong to) is untouched."""
+    if user_id == current_user.id:
+        raise HTTPException(400, "You cannot remove yourself.")
+    user = (await db.execute(select(User).where(User.id == user_id))).scalar_one_or_none()
+    if not user or not current_user.institution_id or not await get_membership(db, user_id, current_user.institution_id):
         raise HTTPException(404, "User not found")
-    if user.id == current_user.id:
-        raise HTTPException(400, "You cannot delete your own account.")
-    user.is_active = False
+    await remove_membership(db, user, current_user.institution_id)
     await db.commit()
     await invalidate_permission_cache(user_id, redis)

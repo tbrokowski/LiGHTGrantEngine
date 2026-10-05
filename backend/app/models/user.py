@@ -32,11 +32,14 @@ class User(Base):
     role: Mapped[str] = mapped_column(String(50), default=UserRole.REVIEWER)
     team: Mapped[str | None] = mapped_column(String(200))
     is_active: Mapped[bool] = mapped_column(Boolean, default=True)
+    # Bumped on password change/reset and account deletion; tokens carry it as
+    # "tv" and are rejected once it moves on, which signs out other sessions.
+    token_version: Mapped[int] = mapped_column(Integer, default=0, server_default="0", nullable=False)
     notification_preferences: Mapped[dict] = mapped_column(JSON, default=dict)
     grant_preferences: Mapped[dict] = mapped_column(JSON, default=dict)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
     last_login: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
-    # Institution membership
+    # Active organization — mirrors one row of institution_memberships (see app.services.membership)
     institution_id: Mapped[str | None] = mapped_column(String, ForeignKey("institutions.id"), index=True)
     institution_role: Mapped[str] = mapped_column(String(50), default=InstitutionRole.MEMBER)
     # Onboarding & verification

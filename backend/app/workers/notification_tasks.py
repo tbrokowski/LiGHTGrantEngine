@@ -234,7 +234,7 @@ def send_deadline_reminders():
             from app.models.institution_opportunity import InstitutionOpportunity
             from app.models.opportunity import Opportunity
             from app.models.user_opportunity_state import UserOpportunityState
-            from app.models.user import User
+            from app.models.institution_membership import InstitutionMembership
 
             OPP_TRACKED_STATUSES = ["potential_fit", "actively_pursuing"]
             for days_ahead in reminders.get("opportunity_deadline", [30, 14, 7, 3, 1]):
@@ -261,11 +261,14 @@ def send_deadline_reminders():
                         # personally shortlisted the opportunity.
                         recipient_ids.extend(db.execute(
                             select(UserOpportunityState.user_id)
-                            .join(User, User.id == UserOpportunityState.user_id)
+                            .join(
+                                InstitutionMembership,
+                                InstitutionMembership.user_id == UserOpportunityState.user_id,
+                            )
                             .where(
                                 UserOpportunityState.opportunity_id == opp.id,
                                 UserOpportunityState.saved_at.isnot(None),
-                                User.institution_id == io.institution_id,
+                                InstitutionMembership.institution_id == io.institution_id,
                             )
                         ).scalars().all())
 

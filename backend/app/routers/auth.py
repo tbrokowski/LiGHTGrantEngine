@@ -9,7 +9,7 @@ from fastapi.security import OAuth2PasswordBearer, OAuth2PasswordRequestForm
 from jose import JWTError, jwt
 from passlib.context import CryptContext
 from pydantic import BaseModel
-from sqlalchemy import select
+from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.config import get_settings
@@ -25,6 +25,7 @@ from app.services.organization_setup import (
     queue_org_scaffold,
 )
 from app.services.email import send_email
+from app.services.membership import add_membership
 
 router = APIRouter()
 settings = get_settings()
@@ -74,6 +75,20 @@ def create_access_token(data: dict) -> str:
     return jwt.encode({**data, "exp": expire}, settings.secret_key, algorithm=settings.algorithm)
 
 
+def user_access_token(user: User) -> str:
+    """A session token for the user. Carries token_version so changing the
+    password (or deleting the account) signs out every other session."""
+    return create_access_token({"sub": user.id, "role": user.role, "tv": user.token_version or 0})
+
+
+MIN_PASSWORD_LENGTH = 8
+
+
+def validate_new_password(password: str) -> None:
+    if len(password) < MIN_PASSWORD_LENGTH:
+        raise HTTPException(400, f"Password must be at least {MIN_PASSWORD_LENGTH} characters.")
+
+
 async def get_current_user(
     token: str = Depends(oauth2_scheme),
     db: AsyncSession = Depends(get_db),
@@ -95,6 +110,8 @@ async def get_current_user(
     user = result.scalar_one_or_none()
     if not user or not user.is_active:
         raise credentials_exc
+    if payload.get("tv", 0) != (user.token_version or 0):
+        raise credentials_exc
     return user
 
 
@@ -111,7 +128,7 @@ async def login(
     user.last_login = datetime.now(timezone.utc)
     await db.commit()
 
-    token = create_access_token({"sub": user.id, "role": user.role})
+    token = user_access_token(user)
     return Token(
         access_token=token,
         token_type="bearer",
@@ -199,6 +216,15 @@ async def register(
         gm.user_id = user.id
         gm.status = GrantMemberStatus.ACCEPTED
 
+    if institution_id:
+        await add_membership(
+            db, user, institution_id,
+            institution_role=institution_role,
+            role=user_role,
+            joined_via="signup",
+            make_active=True,
+        )
+
     if body.institution_id and account_status == "pending_approval":
         # Create OrgJoinRequest
         join_req = OrgJoinRequest(
@@ -221,7 +247,7 @@ async def register(
     import asyncio
     asyncio.create_task(_send_verification_email(user.id, user.email, user.name))
 
-    token = create_access_token({"sub": user.id, "role": user.role})
+    token = user_access_token(user)
     return Token(
         access_token=token,
         token_type="bearer",
@@ -304,11 +330,18 @@ async def accept_invite(
     # Check if user already exists
     existing_user = (await db.execute(select(User).where(User.email == email))).scalar_one_or_none()
     if existing_user:
-        existing_user.institution_id = institution_id
-        existing_user.institution_role = resolved_institution_role
-        existing_user.role = invited_member_role(role)
+        if not existing_user.is_active:
+            raise credentials_exc
+        # Already has an account: add this org alongside their others and switch to it.
+        await add_membership(
+            db, existing_user, institution_id,
+            institution_role=resolved_institution_role,
+            role=invited_member_role(role),
+            module_permissions=invited_module_permissions,
+            joined_via="invite",
+            make_active=True,
+        )
         existing_user.email_verified = True
-        existing_user.module_permissions = invited_module_permissions
         await db.commit()
         user = existing_user
     else:
@@ -326,6 +359,14 @@ async def accept_invite(
         )
         db.add(user)
         await db.flush()
+        await add_membership(
+            db, user, institution_id,
+            institution_role=resolved_institution_role,
+            role=invited_member_role(role),
+            module_permissions=invited_module_permissions,
+            joined_via="invite",
+            make_active=True,
+        )
         # Link any pending grant invitations addressed to this email.
         from app.models.grant_member import GrantMember, GrantMemberStatus
         pending = (await db.execute(
@@ -339,7 +380,7 @@ async def accept_invite(
             gm.status = GrantMemberStatus.ACCEPTED
         await db.commit()
 
-    token_str = create_access_token({"sub": user.id, "role": user.role})
+    token_str = user_access_token(user)
     return Token(
         access_token=token_str,
         token_type="bearer",
@@ -396,6 +437,8 @@ async def me(
         "google_access_token": "connected" if current_user.google_access_token else None,
         "module_permissions": effective_perms,
         "institution_is_personal": institution_is_personal,
+        "institution_name": inst.name if inst else None,
+        "has_password": bool(current_user.hashed_password),
     }
 
 
@@ -524,6 +567,9 @@ async def forgot_password(
     db: AsyncSession = Depends(get_db),
 ):
     """Request a password reset email. Always returns 200 to prevent user enumeration."""
+    from app.services.rate_limit import hit_rate_limit
+    if await hit_rate_limit(f"forgot_password:{body.email.strip().lower()}", limit=5, window_seconds=3600):
+        return {"message": "If that email is registered, a reset link has been sent."}
     result = await db.execute(select(User).where(User.email == body.email))
     user = result.scalar_one_or_none()
 
@@ -586,10 +632,103 @@ async def reset_password(
     if not user or not user.is_active:
         raise invalid_exc
 
+    validate_new_password(body.new_password)
     user.hashed_password = get_password_hash(body.new_password)
-    reset_token.used_at = datetime.now(timezone.utc)
+    user.token_version = (user.token_version or 0) + 1  # sign out every existing session
+    await _expire_reset_tokens(user.id, db)
     await db.commit()
     return {"message": "Password reset successfully"}
+
+
+async def _expire_reset_tokens(user_id: str, db: AsyncSession) -> None:
+    now = datetime.now(timezone.utc)
+    for t in (await db.execute(
+        select(PasswordResetToken).where(PasswordResetToken.user_id == user_id, PasswordResetToken.used_at.is_(None))
+    )).scalars().all():
+        t.used_at = now
+
+
+# ── Account: change password / email ───────────────────────────────────────────
+
+class ChangePasswordBody(BaseModel):
+    current_password: str
+    new_password: str
+
+
+class ChangeEmailBody(BaseModel):
+    new_email: str
+    current_password: str
+
+
+@router.post("/change-password", response_model=Token)
+async def change_password(
+    body: ChangePasswordBody,
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    """Change password. Signs out every other session; returns a fresh token for this one.
+
+    Accounts without a password (Google sign-in only) set one through the
+    forgot-password email instead."""
+    if not current_user.hashed_password:
+        raise HTTPException(400, "Your account has no password yet. Use the emailed link to set one.")
+    if not verify_password(body.current_password, current_user.hashed_password):
+        raise HTTPException(400, "Current password is incorrect.")
+    validate_new_password(body.new_password)
+    current_user.hashed_password = get_password_hash(body.new_password)
+    current_user.token_version = (current_user.token_version or 0) + 1
+    await _expire_reset_tokens(current_user.id, db)
+    await db.commit()
+    return _token_response(current_user)
+
+
+@router.post("/change-email")
+async def change_email(
+    body: ChangeEmailBody,
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    """Change the sign-in email. The new address must be verified again."""
+    if current_user.hashed_password and not verify_password(body.current_password, current_user.hashed_password):
+        raise HTTPException(400, "Current password is incorrect.")
+    new_email = body.new_email.strip()
+    if "@" not in new_email or "." not in new_email.split("@")[-1]:
+        raise HTTPException(400, "Enter a valid email address.")
+    if new_email.lower() == (current_user.email or "").lower():
+        raise HTTPException(400, "That's already your email address.")
+    taken = (await db.execute(select(User).where(func.lower(User.email) == new_email.lower()))).scalar_one_or_none()
+    if taken:
+        raise HTTPException(400, "That email is already used by another account.")
+
+    old_email = current_user.email
+    current_user.email = new_email
+    current_user.email_verified = False
+    await db.commit()
+
+    import asyncio
+    asyncio.create_task(_send_verification_email(current_user.id, new_email, current_user.name))
+    asyncio.create_task(send_email(
+        to=old_email,
+        subject="Your Grant Engine email was changed",
+        html=f"<p>Hi {current_user.name},</p><p>The email on your Grant Engine account was changed to "
+             f"<strong>{new_email}</strong>. If you didn't do this, reset your password right away.</p>",
+        text=f"The email on your Grant Engine account was changed to {new_email}.",
+    ))
+    return {"email": new_email, "email_verified": False}
+
+
+def _token_response(user: User) -> Token:
+    return Token(
+        access_token=user_access_token(user),
+        token_type="bearer",
+        user_id=user.id,
+        role=user.role,
+        name=user.name,
+        institution_id=user.institution_id,
+        institution_role=user.institution_role,
+        email_verified=user.email_verified,
+        onboarding_complete=user.onboarding_complete,
+    )
 
 
 # ── Google OAuth ───────────────────────────────────────────────────────────────

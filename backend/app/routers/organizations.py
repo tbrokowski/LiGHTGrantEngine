@@ -19,7 +19,20 @@ from app.models.org_join_request import OrgJoinRequest, JoinRequestStatus
 from app.models.user import User, UserRole, InstitutionRole
 from app.routers.auth import get_current_user, create_access_token
 from app.services.organization_setup import queue_org_scaffold
-from app.auth.permissions import require_org_admin, is_org_admin, invalidate_permission_cache, get_redis
+from app.auth.permissions import is_org_admin, invalidate_permission_cache, get_redis
+from app.models.institution_membership import InstitutionMembership
+from app.services.membership import (
+    add_membership,
+    activate,
+    get_membership,
+    is_last_admin_with_others,
+    list_memberships,
+    member_count,
+    mirror_if_active,
+    remove_membership,
+)
+from app.services.organization_setup import invited_member_role
+from app.services.rate_limit import hit_rate_limit
 import redis.asyncio as aioredis
 
 router = APIRouter()
@@ -39,6 +52,10 @@ class OrgCreate(BaseModel):
 
 class OrgJoinByCode(BaseModel):
     code: str
+
+
+class AccessCodeCreate(BaseModel):
+    role: str = UserRole.CONTRIBUTOR  # role given to everyone who joins with the code
 
 
 class JoinRequestCreate(BaseModel):
@@ -107,8 +124,44 @@ async def _get_institution_or_404(institution_id: str, db: AsyncSession) -> Inst
 
 
 async def _require_same_institution(current_user: User, institution_id: str) -> None:
-    if not is_org_admin(current_user) and current_user.institution_id != institution_id:
+    if current_user.institution_id != institution_id:
         raise HTTPException(403, "You do not belong to this organization.")
+
+
+async def require_admin_of_org(
+    institution_id: str,
+    current_user: User = Depends(get_current_user),
+) -> User:
+    """Org admin of *this* organization (the one in the path), which must be the
+    caller's active org. Being admin of some other org — everyone admins their
+    own personal workspace — is not enough."""
+    if current_user.institution_id != institution_id or not is_org_admin(current_user):
+        raise HTTPException(403, "Requires organization admin privileges.")
+    return current_user
+
+
+async def _membership_or_404(db: AsyncSession, user_id: str, institution_id: str) -> tuple[User, InstitutionMembership]:
+    user = (await db.execute(select(User).where(User.id == user_id, User.is_active.is_(True)))).scalar_one_or_none()
+    m = await get_membership(db, user_id, institution_id) if user else None
+    if user and m is None and user.institution_id == institution_id:
+        from app.services.membership import ensure_active_membership
+        m = await ensure_active_membership(db, user)
+    if not user or not m:
+        raise HTTPException(404, "Member not found in this organization.")
+    return user, m
+
+
+def _membership_payload(m: InstitutionMembership, inst: Institution, active_id: str | None, members: int) -> dict:
+    return {
+        "institution_id": inst.id,
+        "name": inst.name,
+        "is_personal": inst.is_personal,
+        "institution_role": m.institution_role,
+        "role": m.role,
+        "is_active": inst.id == active_id,
+        "member_count": members,
+        "joined_at": m.created_at.isoformat() if m.created_at else None,
+    }
 
 
 # ── Routes ────────────────────────────────────────────────────────────────────
@@ -127,6 +180,20 @@ async def list_organizations(
     return [{"id": i.id, "name": i.name, "domain": i.domain} for i in insts]
 
 
+@router.get("/mine")
+async def my_organizations(
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    """Every organization the current user belongs to; `is_active` marks the one in use."""
+    rows = await list_memberships(db, current_user)
+    await db.commit()  # persists a lazily created membership row, if any
+    return [
+        _membership_payload(m, inst, current_user.institution_id, await member_count(db, inst.id))
+        for m, inst in rows
+    ]
+
+
 @router.post("/", status_code=201)
 async def create_organization(
     body: OrgCreate,
@@ -134,10 +201,7 @@ async def create_organization(
     current_user: User = Depends(get_current_user),
     redis: aioredis.Redis = Depends(get_redis),
 ):
-    """Create a new organization. The caller becomes org_admin."""
-    if current_user.institution_id:
-        raise HTTPException(400, "You already belong to an organization. Leave it before creating a new one.")
-
+    """Create a new organization. The caller becomes org_admin and it becomes their active org."""
     inst = Institution(
         id=str(uuid.uuid4()),
         name=body.name.strip(),
@@ -147,9 +211,13 @@ async def create_organization(
     db.add(inst)
     await db.flush()
 
-    current_user.institution_id = inst.id
-    current_user.institution_role = InstitutionRole.ADMIN
-    current_user.role = UserRole.GRANT_LEAD
+    await add_membership(
+        db, current_user, inst.id,
+        institution_role=InstitutionRole.ADMIN,
+        role=UserRole.GRANT_LEAD,
+        joined_via="created",
+        make_active=True,
+    )
     await db.commit()
     await invalidate_permission_cache(current_user.id, redis)
 
@@ -177,25 +245,27 @@ async def list_members(
 ):
     """List all members of the organization. Requires org membership (admin sees all)."""
     await _require_same_institution(current_user, institution_id)
-    result = await db.execute(
-        select(User).where(User.institution_id == institution_id, User.is_active == True)
-    )
-    users = result.scalars().all()
+    rows = (await db.execute(
+        select(User, InstitutionMembership)
+        .join(InstitutionMembership, InstitutionMembership.user_id == User.id)
+        .where(InstitutionMembership.institution_id == institution_id, User.is_active.is_(True))
+        .order_by(User.name)
+    )).all()
     return [
         {
             "id": u.id,
             "name": u.name,
             "email": u.email,
-            "role": u.role,
-            "institution_role": u.institution_role,
-            "module_permissions": u.module_permissions or {},
-            "created_at": u.created_at.isoformat() if u.created_at else None,
+            "role": m.role,
+            "institution_role": m.institution_role,
+            "module_permissions": m.module_permissions or {},
+            "created_at": m.created_at.isoformat() if m.created_at else None,
         }
-        for u in users
+        for u, m in rows
     ]
 
 
-@router.patch("/{institution_id}/members/{user_id}", dependencies=[Depends(require_org_admin())])
+@router.patch("/{institution_id}/members/{user_id}", dependencies=[Depends(require_admin_of_org)])
 async def update_member_role(
     institution_id: str,
     user_id: str,
@@ -205,15 +275,10 @@ async def update_member_role(
     redis: aioredis.Redis = Depends(get_redis),
 ):
     """Change a member's role, institution_role, and/or module_permissions. Requires org_admin."""
-    result = await db.execute(
-        select(User).where(User.id == user_id, User.institution_id == institution_id)
-    )
-    user = result.scalar_one_or_none()
-    if not user:
-        raise HTTPException(404, "Member not found in this organization.")
+    user, m = await _membership_or_404(db, user_id, institution_id)
 
     try:
-        user.role = UserRole(body.role)
+        m.role = UserRole(body.role)
     except ValueError:
         raise HTTPException(400, f"Invalid role: {body.role}")
 
@@ -223,22 +288,23 @@ async def update_member_role(
         # Prevent the current user from demoting themselves
         if user_id == current_user.id and body.institution_role != "admin":
             raise HTTPException(400, "You cannot remove your own admin privileges.")
-        user.institution_role = body.institution_role
+        m.institution_role = body.institution_role
 
     if body.module_permissions is not None:
-        user.module_permissions = body.module_permissions
+        m.module_permissions = body.module_permissions
 
+    mirror_if_active(user, m)
     await db.commit()
     await invalidate_permission_cache(user_id, redis)
     return {
         "id": user.id,
-        "role": user.role,
-        "institution_role": user.institution_role,
-        "module_permissions": user.module_permissions,
+        "role": m.role,
+        "institution_role": m.institution_role,
+        "module_permissions": m.module_permissions,
     }
 
 
-@router.delete("/{institution_id}/members/{user_id}", status_code=204, dependencies=[Depends(require_org_admin())])
+@router.delete("/{institution_id}/members/{user_id}", status_code=204, dependencies=[Depends(require_admin_of_org)])
 async def remove_member(
     institution_id: str,
     user_id: str,
@@ -249,21 +315,15 @@ async def remove_member(
     """Remove a member from the organization. Requires org_admin."""
     if user_id == current_user.id:
         raise HTTPException(400, "You cannot remove yourself from the organization.")
-    result = await db.execute(
-        select(User).where(User.id == user_id, User.institution_id == institution_id)
-    )
-    user = result.scalar_one_or_none()
-    if not user:
-        raise HTTPException(404, "Member not found.")
-    user.institution_id = None
-    user.institution_role = InstitutionRole.MEMBER
+    user, _ = await _membership_or_404(db, user_id, institution_id)
+    await remove_membership(db, user, institution_id)
     await db.commit()
     await invalidate_permission_cache(user_id, redis)
 
 
 # ── Member grant access (org-admin) ───────────────────────────────────────────
 
-@router.get("/{institution_id}/grants", dependencies=[Depends(require_org_admin())])
+@router.get("/{institution_id}/grants", dependencies=[Depends(require_admin_of_org)])
 async def list_org_grants_for_admin(
     institution_id: str,
     db: AsyncSession = Depends(get_db),
@@ -294,7 +354,7 @@ class GrantMembershipUpdate(BaseModel):
     grant_ids: list[str]
 
 
-@router.get("/{institution_id}/members/{user_id}/grant-memberships", dependencies=[Depends(require_org_admin())])
+@router.get("/{institution_id}/members/{user_id}/grant-memberships", dependencies=[Depends(require_admin_of_org)])
 async def get_member_grant_memberships(
     institution_id: str,
     user_id: str,
@@ -327,7 +387,7 @@ async def get_member_grant_memberships(
     }
 
 
-@router.put("/{institution_id}/members/{user_id}/grant-memberships", dependencies=[Depends(require_org_admin())])
+@router.put("/{institution_id}/members/{user_id}/grant-memberships", dependencies=[Depends(require_admin_of_org)])
 async def set_member_grant_memberships(
     institution_id: str,
     user_id: str,
@@ -346,11 +406,7 @@ async def set_member_grant_memberships(
     from sqlalchemy import delete as sa_delete
 
     # Verify the user is in this institution
-    target = (await db.execute(
-        select(User).where(User.id == user_id, User.institution_id == institution_id)
-    )).scalar_one_or_none()
-    if not target:
-        raise HTTPException(404, "Member not found in this organization.")
+    await _membership_or_404(db, user_id, institution_id)
 
     # Limit to grants that actually belong to this institution
     org_grant_ids_result = await db.execute(
@@ -398,7 +454,7 @@ async def set_member_grant_memberships(
     return {"grant_ids": list(requested_ids)}
 
 
-@router.get("/{institution_id}/collaborators", dependencies=[Depends(require_org_admin())])
+@router.get("/{institution_id}/collaborators", dependencies=[Depends(require_admin_of_org)])
 async def list_org_collaborators(
     institution_id: str,
     db: AsyncSession = Depends(get_db),
@@ -428,13 +484,12 @@ async def list_org_collaborators(
     user_ids = [m.user_id for m in members if m.user_id]
     core_ids: set[str] = set()
     if user_ids:
-        core_rows = (await db.execute(
-            select(User.id, User.name).where(
-                User.id.in_(user_ids),
-                User.institution_id == institution_id,
+        core_ids = set((await db.execute(
+            select(InstitutionMembership.user_id).where(
+                InstitutionMembership.user_id.in_(user_ids),
+                InstitutionMembership.institution_id == institution_id,
             )
-        )).all()
-        core_ids = {r[0] for r in core_rows}
+        )).scalars().all())
     names = {}
     if user_ids:
         for r in (await db.execute(select(User.id, User.name).where(User.id.in_(user_ids)))).all():
@@ -461,7 +516,7 @@ async def list_org_collaborators(
     return list(guests.values())
 
 
-@router.post("/{institution_id}/collaborators/{user_id}/promote", dependencies=[Depends(require_org_admin())])
+@router.post("/{institution_id}/collaborators/{user_id}/promote", dependencies=[Depends(require_admin_of_org)])
 async def promote_collaborator(
     institution_id: str,
     user_id: str,
@@ -473,13 +528,17 @@ async def promote_collaborator(
 
     They keep their existing grant memberships (now as a core member) and gain
     normal org-member access. Requires a registered account (user_id)."""
-    target = (await db.execute(select(User).where(User.id == user_id))).scalar_one_or_none()
+    target = (await db.execute(select(User).where(User.id == user_id, User.is_active.is_(True)))).scalar_one_or_none()
     if not target:
         raise HTTPException(404, "User not found.")
-    if target.institution_id == institution_id:
+    if await get_membership(db, user_id, institution_id) or target.institution_id == institution_id:
         raise HTTPException(400, "This person is already a member of the organization.")
-    target.institution_id = institution_id
-    target.institution_role = InstitutionRole.MEMBER
+    await add_membership(
+        db, target, institution_id,
+        institution_role=InstitutionRole.MEMBER,
+        role=UserRole.CONTRIBUTOR,
+        joined_via="admin",
+    )
     await db.commit()
     await invalidate_permission_cache(user_id, redis)
     return {"id": target.id, "institution_id": target.institution_id}
@@ -495,7 +554,7 @@ async def request_to_join(
     current_user: User = Depends(get_current_user),
 ):
     """Submit a join request for an organization."""
-    if current_user.institution_id == institution_id:
+    if current_user.institution_id == institution_id or await get_membership(db, current_user.id, institution_id):
         raise HTTPException(400, "You are already a member of this organization.")
 
     await _get_institution_or_404(institution_id, db)
@@ -525,7 +584,7 @@ async def request_to_join(
     return {"id": req.id, "status": req.status}
 
 
-@router.get("/{institution_id}/join-requests", dependencies=[Depends(require_org_admin())])
+@router.get("/{institution_id}/join-requests", dependencies=[Depends(require_admin_of_org)])
 async def list_join_requests(
     institution_id: str,
     db: AsyncSession = Depends(get_db),
@@ -554,7 +613,7 @@ async def list_join_requests(
 
 @router.post(
     "/{institution_id}/join-requests/{request_id}/approve",
-    dependencies=[Depends(require_org_admin())],
+    dependencies=[Depends(require_admin_of_org)],
 )
 async def approve_join_request(
     institution_id: str,
@@ -581,10 +640,15 @@ async def approve_join_request(
 
     if req.user_id:
         user = (await db.execute(select(User).where(User.id == req.user_id))).scalar_one_or_none()
-        if user:
-            user.institution_id = institution_id
-            user.institution_role = InstitutionRole.MEMBER
-            user.role = UserRole.CONTRIBUTOR
+        if user and user.is_active:
+            # Adds the org alongside any they already have; only becomes active
+            # if they had none (e.g. signed up asking to join).
+            await add_membership(
+                db, user, institution_id,
+                institution_role=InstitutionRole.MEMBER,
+                role=UserRole.CONTRIBUTOR,
+                joined_via="request",
+            )
             await db.commit()
             await invalidate_permission_cache(req.user_id, redis)
             return {"status": "approved", "user_id": req.user_id}
@@ -595,7 +659,7 @@ async def approve_join_request(
 
 @router.post(
     "/{institution_id}/join-requests/{request_id}/reject",
-    dependencies=[Depends(require_org_admin())],
+    dependencies=[Depends(require_admin_of_org)],
 )
 async def reject_join_request(
     institution_id: str,
@@ -624,22 +688,67 @@ async def reject_join_request(
 
 # ── Access code ───────────────────────────────────────────────────────────────
 
-@router.post("/{institution_id}/access-code/generate", dependencies=[Depends(require_org_admin())])
+def _access_code_payload(inst: Institution) -> dict:
+    live = bool(inst.access_code and inst.access_code_expires_at and inst.access_code_expires_at > datetime.now(timezone.utc))
+    return {
+        "code": inst.access_code if live else None,
+        "role": (inst.access_code_role or UserRole.CONTRIBUTOR) if live else None,
+        "expires_at": inst.access_code_expires_at.isoformat() if live else None,
+    }
+
+
+@router.get("/{institution_id}/access-code", dependencies=[Depends(require_admin_of_org)])
+async def get_access_code(
+    institution_id: str,
+    db: AsyncSession = Depends(get_db),
+):
+    """The organization's current access code, if one is live."""
+    return _access_code_payload(await _get_institution_or_404(institution_id, db))
+
+
+@router.post("/{institution_id}/access-code/generate", dependencies=[Depends(require_admin_of_org)])
 async def generate_access_code(
     institution_id: str,
+    body: AccessCodeCreate | None = None,
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ):
-    """Generate a 6-character access code for quick joins. Valid for 72 hours."""
+    """Generate a 6-character access code for quick joins, valid for 72 hours.
+    Everyone who joins with it gets the role chosen here (never org admin).
+    Replaces any previous code."""
     inst = await _get_institution_or_404(institution_id, db)
-    code = _generate_access_code()
+    role = invited_member_role((body or AccessCodeCreate()).role)
+    now = datetime.now(timezone.utc)
+    for _ in range(10):
+        code = _generate_access_code()
+        clash = (await db.execute(
+            select(Institution.id).where(
+                Institution.access_code == code,
+                Institution.access_code_expires_at > now,
+                Institution.id != institution_id,
+            )
+        )).first()
+        if not clash:
+            break
     inst.access_code = code
-    inst.access_code_expires_at = datetime.now(timezone.utc) + timedelta(hours=_ACCESS_CODE_TTL_HOURS)
+    inst.access_code_role = role
+    inst.access_code_expires_at = now + timedelta(hours=_ACCESS_CODE_TTL_HOURS)
     await db.commit()
-    return {
-        "code": code,
-        "expires_at": inst.access_code_expires_at.isoformat(),
-    }
+    return _access_code_payload(inst)
+
+
+@router.delete("/{institution_id}/access-code", dependencies=[Depends(require_admin_of_org)])
+async def revoke_access_code(
+    institution_id: str,
+    db: AsyncSession = Depends(get_db),
+):
+    """Turn off the current access code."""
+    inst = await _get_institution_or_404(institution_id, db)
+    inst.access_code = None
+    inst.access_code_expires_at = None
+    inst.access_code_role = None
+    await db.commit()
+    return _access_code_payload(inst)
 
 
 @router.post("/join-by-code", status_code=200)
@@ -649,8 +758,11 @@ async def join_by_access_code(
     current_user: User = Depends(get_current_user),
     redis: aioredis.Redis = Depends(get_redis),
 ):
-    """Join an organization immediately using a valid access code."""
-    code = body.code.strip().upper()
+    """Join an organization with an access code. It's added alongside the
+    user's other organizations and becomes the active one."""
+    if await hit_rate_limit(f"join_code:{current_user.id}", limit=10, window_seconds=15 * 60):
+        raise HTTPException(429, "Too many attempts. Try again in 15 minutes.")
+    code = "".join(body.code.split()).upper()
     inst = (await db.execute(
         select(Institution).where(
             Institution.access_code == code,
@@ -661,13 +773,16 @@ async def join_by_access_code(
     if not inst:
         raise HTTPException(400, "Invalid or expired access code.")
 
-    if current_user.institution_id == inst.id:
-        raise HTTPException(400, "You are already a member of this organization.")
+    if current_user.institution_id == inst.id or await get_membership(db, current_user.id, inst.id):
+        raise HTTPException(409, f"You're already a member of {inst.name}.")
 
-    current_user.institution_id = inst.id
-    current_user.institution_role = InstitutionRole.MEMBER
-    current_user.role = UserRole.CONTRIBUTOR
-
+    await add_membership(
+        db, current_user, inst.id,
+        institution_role=InstitutionRole.MEMBER,
+        role=invited_member_role(inst.access_code_role),
+        joined_via="code",
+        make_active=True,
+    )
     await db.commit()
     await invalidate_permission_cache(current_user.id, redis)
     return {
@@ -677,9 +792,49 @@ async def join_by_access_code(
     }
 
 
+@router.post("/{institution_id}/switch")
+async def switch_organization(
+    institution_id: str,
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+    redis: aioredis.Redis = Depends(get_redis),
+):
+    """Make one of the user's organizations the active one."""
+    m = await get_membership(db, current_user.id, institution_id)
+    if not m:
+        raise HTTPException(404, "You're not a member of that organization.")
+    activate(current_user, m)
+    await db.commit()
+    await invalidate_permission_cache(current_user.id, redis)
+    return {"institution_id": institution_id}
+
+
+@router.post("/{institution_id}/leave")
+async def leave_organization(
+    institution_id: str,
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+    redis: aioredis.Redis = Depends(get_redis),
+):
+    """Leave an organization. Not allowed for your personal workspace, or when
+    you're the last admin of an org that still has other members."""
+    inst = await _get_institution_or_404(institution_id, db)
+    m = await get_membership(db, current_user.id, institution_id)
+    if not m and current_user.institution_id != institution_id:
+        raise HTTPException(404, "You're not a member of that organization.")
+    if inst.is_personal:
+        raise HTTPException(400, "You can't leave your personal workspace.")
+    if await is_last_admin_with_others(db, current_user.id, institution_id):
+        raise HTTPException(400, f"You're the only admin of {inst.name}. Make someone else an admin before leaving.")
+    await remove_membership(db, current_user, institution_id)
+    await db.commit()
+    await invalidate_permission_cache(current_user.id, redis)
+    return {"institution_id": current_user.institution_id}
+
+
 # ── Email invite ──────────────────────────────────────────────────────────────
 
-@router.post("/{institution_id}/invite", dependencies=[Depends(require_org_admin())])
+@router.post("/{institution_id}/invite", dependencies=[Depends(require_admin_of_org)])
 async def invite_member_by_email(
     institution_id: str,
     body: OrgInviteRequest,
@@ -735,7 +890,7 @@ async def get_grant_profile(
     return inst.grant_profile or {}
 
 
-@router.patch("/{institution_id}/grant-profile", dependencies=[Depends(require_org_admin())])
+@router.patch("/{institution_id}/grant-profile", dependencies=[Depends(require_admin_of_org)])
 async def update_grant_profile(
     institution_id: str,
     body: GrantProfileUpdate,
@@ -756,7 +911,7 @@ async def update_grant_profile(
     return profile
 
 
-@router.post("/{institution_id}/llm-rank", dependencies=[Depends(require_org_admin())])
+@router.post("/{institution_id}/llm-rank", dependencies=[Depends(require_admin_of_org)])
 async def trigger_llm_rank(
     institution_id: str,
     db: AsyncSession = Depends(get_db),

@@ -276,6 +276,23 @@ export default function Sidebar() {
               {user.email}
             </p>
           )}
+          {user.institution_name && (
+            <Link
+              href="/settings?tab=organizations"
+              title="Your organizations"
+              className="block hover:underline"
+              style={{
+                fontSize: '10px',
+                color: 'var(--sidebar-fg-muted)',
+                marginTop: '4px',
+                whiteSpace: 'nowrap',
+                overflow: 'hidden',
+                textOverflow: 'ellipsis',
+              }}
+            >
+              {user.institution_name} · Switch
+            </Link>
+          )}
         </div>
       )}
 

@@ -23,12 +23,14 @@ export interface AuthUser {
   institution_id: string | null;
   institution_role: string | null;
   institution_is_personal: boolean;
+  institution_name: string | null;
   email_verified: boolean;
   onboarding_complete: boolean;
   ai_usage_cents: number;
   ai_usage_limit_cents: number;
   google_access_token?: string | null;
   module_permissions: ModulePermissions;
+  has_password: boolean;
 }
 
 interface AuthContextValue {

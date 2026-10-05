@@ -11,6 +11,7 @@ import { FeedbackPanel } from '@/components/settings/FeedbackPanel';
 import { JoinRequestsPanel } from '@/components/settings/JoinRequestsPanel';
 import { InvitePanel } from '@/components/settings/InvitePanel';
 import { ProfilePanel } from '@/components/settings/ProfilePanel';
+import { OrganizationsPanel } from '@/components/settings/OrganizationsPanel';
 import { GrantFiltersPanel } from '@/components/settings/GrantFiltersPanel';
 import { FunderOrgsPanel } from '@/components/settings/FunderOrgsPanel';
 import { useAuth } from '@/lib/auth';
@@ -346,7 +347,7 @@ function ScraperConfigPanel({ sourceType, config, onChange }: ScraperConfigPanel
   return null;
 }
 
-type Tab = 'sources' | 'organization' | 'feedback' | 'models' | 'profile' | 'integrations' | 'usage';
+type Tab = 'sources' | 'organization' | 'organizations' | 'feedback' | 'models' | 'profile' | 'integrations' | 'usage';
 
 function UsageTab({ user }: { user: AuthUser | null }) {
   if (!user) return <p className="text-sm" style={{ color: 'var(--ink-faint)' }}>Loading…</p>;
@@ -537,6 +538,7 @@ function SettingsPageInner() {
     workers: string[];
     active_tasks: number;
     last_activity_at?: string | null;
+    queue_depths?: Record<string, number> | null;
   }
   const [workerStatus, setWorkerStatus] = useState<WorkerStatus | null>(null);
   // source_id -> what we are waiting on, so the Run now button reflects the real
@@ -962,11 +964,12 @@ function SettingsPageInner() {
     // Shown to all institution members; GrantFiltersPanel gates the admin-only sections internally
     { id: 'sources', label: isAdmin ? 'Data Sources' : 'Grant Preferences', show: hasInstitution },
     // Org management — admin only
-    { id: 'organization', label: 'Organization', show: isAdmin && hasInstitution },
+    { id: 'organization', label: 'Members & Invites', show: isAdmin && hasInstitution },
     // Feedback triage — admin only
     { id: 'feedback', label: 'Feedback', show: isAdmin },
     { id: 'models', label: 'Models & Keys', show: true },
     { id: 'profile', label: 'My Profile', show: true },
+    { id: 'organizations', label: 'Organizations', show: true },
     { id: 'integrations', label: 'Integrations', show: true },
     { id: 'usage', label: 'Usage', show: true },
   ];
@@ -1036,6 +1039,9 @@ function SettingsPageInner() {
       {/* Profile tab */}
       {activeTab === 'profile' && <ProfilePanel />}
 
+      {/* Organizations tab — every org the user belongs to, join by code */}
+      {activeTab === 'organizations' && <OrganizationsPanel />}
+
       {/* Integrations tab */}
       {activeTab === 'integrations' && (
         <div className="max-w-lg space-y-6">
@@ -1097,6 +1103,14 @@ function SettingsPageInner() {
             : state === 'busy'
               ? `Worker busy — too saturated to answer a health ping, but scans are executing${lastSeen ? ` (last run activity ${lastSeen})` : ''}.`
               : 'Worker offline — no scan activity and no response to a health ping. Check that the Celery worker and beat services are running.';
+        const depths = workerStatus.queue_depths ?? {};
+        const scansWaiting = (depths.scans ?? 0) + (depths.scan_now ?? 0);
+        const otherWaiting = Object.entries(depths)
+          .filter(([q]) => q !== 'scans' && q !== 'scan_now')
+          .reduce((n, [, d]) => n + d, 0);
+        const backlog = workerStatus.queue_depths
+          ? ` Waiting: ${scansWaiting.toLocaleString()} scan${scansWaiting !== 1 ? 's' : ''}, ${otherWaiting.toLocaleString()} other task${otherWaiting !== 1 ? 's' : ''}.`
+          : '';
         return (
           <div
             className="mb-4 flex items-center gap-2.5 px-4 py-2.5 rounded text-xs"
@@ -1110,7 +1124,7 @@ function SettingsPageInner() {
               className="inline-block w-2 h-2 rounded-full shrink-0"
               style={{ background: `var(--state-${tone})` }}
             />
-            {message}
+            {message}{backlog}
           </div>
         );
       })()}
