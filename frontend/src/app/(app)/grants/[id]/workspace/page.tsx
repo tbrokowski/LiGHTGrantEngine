@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useEffect, useCallback, Suspense } from 'react';
+import { useState, useEffect, useCallback, useRef, Suspense } from 'react';
 import dynamic from 'next/dynamic';
 import { useParams, useSearchParams, useRouter } from 'next/navigation';
 import Link from 'next/link';
@@ -8,7 +8,7 @@ import { grants } from '@/lib/api';
 import { useAuth } from '@/lib/auth';
 import StatusDropdown from '@/components/grant-workspace/StatusDropdown';
 import GrantColorPicker from '@/components/grants/GrantColorPicker';
-import FileLibrary from '@/components/grant-workspace/FileLibrary';
+import FilesPanel from '@/components/grant-workspace/FilesPanel';
 import BudgetPanel from '@/components/grant-workspace/BudgetPanel';
 import CollaboratorsPanel from '@/components/grant-workspace/CollaboratorsPanel';
 import ActiveGrantDashboard from '@/components/grant-workspace/ActiveGrantDashboard';
@@ -16,25 +16,28 @@ import MilestoneTracker from '@/components/grant-workspace/MilestoneTracker';
 import type {
   WorkspaceSummary,
   Task,
-  WorkspaceFile,
   BudgetTracker,
 } from '@/components/grant-workspace/types';
 
-const TasksHub = dynamic(() => import('@/components/grant-workspace/TasksHub'), {
-  loading: () => <div className="flex justify-center py-16 text-sm" style={{ color: 'var(--ink-faint)' }}>Loading tasks…</div>,
-  ssr: false,
-});
+const taskLoading = () => <div className="flex justify-center py-10 text-sm" style={{ color: 'var(--ink-faint)' }}>Loading tasks…</div>;
+const KanbanBoard = dynamic(() => import('@/components/grant-workspace/KanbanBoard'), { loading: taskLoading, ssr: false });
+const TaskManager = dynamic(() => import('@/components/grant-workspace/TaskManager'), { loading: taskLoading, ssr: false });
+const TaskTimeline = dynamic(() => import('@/components/grant-workspace/TaskTimeline'), { loading: taskLoading, ssr: false });
 
-type ActiveTab = 'overview' | 'tasks' | 'milestones' | 'budget' | 'files' | 'team';
+// Same shape as a proposal's workspace: a short tab bar, with tasks,
+// milestones, files and team stacked in one scrolling Overview instead of
+// a tab each.
+type ActiveTab = 'overview' | 'budget';
 
 const TABS: { id: ActiveTab; label: string }[] = [
   { id: 'overview', label: 'Overview' },
-  { id: 'tasks', label: 'Tasks' },
-  { id: 'milestones', label: 'Milestones' },
   { id: 'budget', label: 'Budget' },
-  { id: 'files', label: 'Files' },
-  { id: 'team', label: 'Team' },
 ];
+
+// Former tabs, now sections of the Overview. Links to them (old ?tab= URLs,
+// the dashboard's quick links) scroll to the section instead.
+type OverviewSection = 'tasks' | 'milestones' | 'files' | 'team';
+const OVERVIEW_SECTIONS: OverviewSection[] = ['tasks', 'milestones', 'files', 'team'];
 
 interface GrantDetail {
   id: string;
@@ -80,7 +83,8 @@ function ActiveGrantWorkspaceContent() {
     }
   }, [tabParam, id, router]);
 
-  const initialTab = tabParam && TABS.some(t => t.id === tabParam) ? (tabParam as ActiveTab) : 'overview';
+  const initialTab: ActiveTab = tabParam === 'budget' ? 'budget' : 'overview';
+  const initialSection = OVERVIEW_SECTIONS.find(s => s === tabParam) ?? null;
 
   const [grant, setGrant] = useState<GrantDetail | null>(null);
   const [loading, setLoading] = useState(true);
@@ -88,12 +92,13 @@ function ActiveGrantWorkspaceContent() {
   const [myGrantRole, setMyGrantRole] = useState<string | null>(null);
   const [showColorPicker, setShowColorPicker] = useState(false);
 
-  // Data per tab
   const [summary, setSummary] = useState<WorkspaceSummary | null>(null);
   const [taskList, setTaskList] = useState<Task[]>([]);
-  const [files, setFiles] = useState<WorkspaceFile[]>([]);
   const [budget, setBudget] = useState<BudgetTracker | null>(null);
-  const [loadedTabs, setLoadedTabs] = useState<Set<ActiveTab>>(new Set(['overview', 'tasks']));
+  const [budgetLoaded, setBudgetLoaded] = useState(false);
+  const [taskView, setTaskView] = useState<'board' | 'list' | 'timeline'>('board');
+  const scrollRef = useRef<HTMLDivElement>(null);
+  const pendingSection = useRef<OverviewSection | null>(initialSection);
 
   const fetchGrant = useCallback(() => {
     if (!id) return;
@@ -121,11 +126,6 @@ function ActiveGrantWorkspaceContent() {
     grants.listTasks(id).then(r => setTaskList(r.data)).catch(console.error);
   }, [id]);
 
-  const fetchFiles = useCallback(() => {
-    if (!id) return;
-    grants.listFiles(id).then(r => setFiles(r.data)).catch(console.error);
-  }, [id]);
-
   const fetchBudget = useCallback(() => {
     if (!id) return;
     grants.getBudget(id).then(r => setBudget(r.data)).catch(console.error);
@@ -147,12 +147,41 @@ function ActiveGrantWorkspaceContent() {
       .catch(() => {});
   }, [id, user]);
 
-  const handleTabChange = (tab: ActiveTab) => {
-    setActiveTab(tab);
-    if (loadedTabs.has(tab)) return;
-    setLoadedTabs(prev => new Set([...prev, tab]));
-    if (tab === 'files') fetchFiles();
-    if (tab === 'budget') fetchBudget();
+  useEffect(() => {
+    if (activeTab === 'budget' && !budgetLoaded) {
+      setBudgetLoaded(true);
+      fetchBudget();
+    }
+  }, [activeTab, budgetLoaded, fetchBudget]);
+
+  const scrollToSection = useCallback((section: OverviewSection) => {
+    const el = document.getElementById(`grant-section-${section}`);
+    if (el) el.scrollIntoView({ behavior: 'smooth', block: 'start' });
+  }, []);
+
+  // A deep link (?tab=files) or quick link lands on its section once the
+  // overview has rendered.
+  useEffect(() => {
+    if (activeTab !== 'overview' || !grant || !summary || !pendingSection.current) return;
+    const section = pendingSection.current;
+    pendingSection.current = null;
+    requestAnimationFrame(() => scrollToSection(section));
+  }, [activeTab, grant, summary, scrollToSection]);
+
+  const handleTabChange = (tab: string) => {
+    if (tab === 'budget' || tab === 'overview') {
+      setActiveTab(tab);
+      if (tab === 'overview') scrollRef.current?.scrollTo({ top: 0 });
+      return;
+    }
+    const section = OVERVIEW_SECTIONS.find(s => s === tab);
+    if (!section) return;
+    if (activeTab === 'overview') {
+      scrollToSection(section);
+    } else {
+      pendingSection.current = section;
+      setActiveTab('overview');
+    }
   };
 
   const refreshTasks = useCallback(() => {
@@ -202,7 +231,7 @@ function ActiveGrantWorkspaceContent() {
   const awardedDate = formatDate(grant.decision_at);
 
   return (
-    <div className="flex flex-col min-h-0">
+    <div className="h-full flex flex-col min-h-0">
 
       {/* ── Header ── */}
       <div
@@ -371,50 +400,94 @@ function ActiveGrantWorkspaceContent() {
       </div>
 
       {/* ── Tab content ── */}
-      <div className="flex-1 overflow-y-auto">
+      <div ref={scrollRef} className="flex-1 overflow-y-auto">
         <div className="max-w-7xl mx-auto">
 
-          {/* Overview */}
-          {activeTab === 'overview' && summary && (
-            <ActiveGrantDashboard
-              grant={{
-                id: grant.id,
-                title: grant.title,
-                funder: grant.funder,
-                pi_name: grant.pi_name,
-                award_amount: grant.award_amount,
-                currency: grant.currency,
-                external_deadline: grant.external_deadline,
-                decision_at: grant.decision_at,
-                color: grant.color,
-              }}
-              summary={summary}
-              tasks={taskList}
-              onTabChange={(tab) => handleTabChange(tab as ActiveTab)}
-              onDeadlineChange={isGrantEditor ? handleDeadlineChange : undefined}
-            />
-          )}
+          {/* Overview — one scroll: dashboard → milestones → tasks → files → team */}
           {activeTab === 'overview' && !summary && (
             <div className="flex justify-center py-16 text-sm" style={{ color: 'var(--ink-faint)' }}>Loading overview…</div>
           )}
+          {activeTab === 'overview' && summary && (
+            <div className="pb-10">
+              <ActiveGrantDashboard
+                grant={{
+                  id: grant.id,
+                  title: grant.title,
+                  funder: grant.funder,
+                  pi_name: grant.pi_name,
+                  award_amount: grant.award_amount,
+                  currency: grant.currency,
+                  external_deadline: grant.external_deadline,
+                  decision_at: grant.decision_at,
+                  color: grant.color,
+                }}
+                summary={summary}
+                tasks={taskList}
+                onTabChange={handleTabChange}
+                onDeadlineChange={isGrantEditor ? handleDeadlineChange : undefined}
+              />
 
-          {/* Tasks */}
-          {activeTab === 'tasks' && (
-            <TasksHub
-              grantId={id}
-              tasks={taskList}
-              onRefresh={refreshTasks}
-              grantColor={grant.color ?? undefined}
-            />
-          )}
+              <div className="px-4 space-y-6">
+                {/* Milestones & reporting (the tracker carries its own headings) */}
+                <section id="grant-section-milestones" className="scroll-mt-4 bg-white border border-gray-200 rounded-xl overflow-hidden">
+                  <MilestoneTracker grantId={id} allTasks={taskList} onTasksRefresh={refreshTasks} />
+                </section>
 
-          {/* Milestones + Reporting */}
-          {activeTab === 'milestones' && (
-            <MilestoneTracker
-              grantId={id}
-              allTasks={taskList}
-              onTasksRefresh={refreshTasks}
-            />
+                {/* Task list — board / list / timeline, as on a proposal */}
+                <section id="grant-section-tasks" className="scroll-mt-4 bg-white border border-gray-200 rounded-xl overflow-hidden">
+                  <div className="flex items-center justify-between gap-3 px-4 py-3 border-b border-gray-100">
+                    <h3 className="text-sm font-semibold text-gray-800">Task List</h3>
+                    <div className="flex items-center gap-2">
+                      <label htmlFor="active-task-view" className="text-xs text-gray-400">View</label>
+                      <select
+                        id="active-task-view"
+                        value={taskView}
+                        onChange={(e) => setTaskView(e.target.value as 'board' | 'list' | 'timeline')}
+                        className="text-xs text-gray-700 bg-white border border-gray-200 rounded-lg px-2.5 py-1.5 focus:border-indigo-400 focus:outline-none"
+                      >
+                        <option value="board">Board (Kanban)</option>
+                        <option value="list">List</option>
+                        <option value="timeline">Timeline</option>
+                      </select>
+                    </div>
+                  </div>
+                  {taskView === 'board' && (
+                    <KanbanBoard grantId={id} tasks={taskList} onRefresh={refreshTasks} />
+                  )}
+                  {taskView === 'list' && (
+                    <TaskManager grantId={id} tasks={taskList} onRefresh={refreshTasks} />
+                  )}
+                  {taskView === 'timeline' && (
+                    <div className="p-4">
+                      {taskList.length === 0 ? (
+                        <div className="text-center py-10 text-gray-400 text-sm">
+                          No tasks yet. Add tasks with dates to see them on the timeline.
+                        </div>
+                      ) : (
+                        <TaskTimeline
+                          tasks={taskList}
+                          compact={false}
+                          grantId={id}
+                          onRefresh={refreshTasks}
+                          grantColor={grant.color ?? undefined}
+                        />
+                      )}
+                    </div>
+                  )}
+                </section>
+
+                {/* Saved files — folders + tags */}
+                <section id="grant-section-files" className="scroll-mt-4">
+                  <FilesPanel grantId={id} canEdit={isGrantEditor} />
+                </section>
+
+                {/* Team */}
+                <section id="grant-section-team" className="scroll-mt-4">
+                  <h3 className="text-sm font-semibold text-gray-800 mb-2 px-1">Team</h3>
+                  <CollaboratorsPanel grantId={id} />
+                </section>
+              </div>
+            </div>
           )}
 
           {/* Budget */}
@@ -427,16 +500,6 @@ function ActiveGrantWorkspaceContent() {
                 grantTitle={grant.title}
               />
             </div>
-          )}
-
-          {/* Files */}
-          {activeTab === 'files' && (
-            <FileLibrary grantId={id} files={files} onRefresh={fetchFiles} />
-          )}
-
-          {/* Team */}
-          {activeTab === 'team' && (
-            <CollaboratorsPanel grantId={id} />
           )}
         </div>
       </div>
