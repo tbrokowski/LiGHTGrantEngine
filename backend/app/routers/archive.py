@@ -14,8 +14,7 @@ from app.models.section import ProposalSection
 from app.models.document import Document, DocumentType, ProcessingStatus
 from app.models.user import User
 from app.routers.auth import get_current_user
-from app.services.archive_ingestion import create_archive_with_files
-from app.workers.celery_app import celery_app
+from app.services.archive_ingestion import create_archive_with_files, queue_archive_indexing
 from app.config import get_settings
 from app.auth.permissions import require_archive_editor, has_module_permission
 
@@ -335,8 +334,14 @@ async def get_archive(
         {c.name: getattr(s, c.name) for c in s.__table__.columns if c.name != "embedding"}
         for s in sections
     ]
+    from app.services.storage import resolve_storage_key
     data["documents"] = [
-        {c.name: getattr(d, c.name) for c in d.__table__.columns if c.name != "embedding"}
+        {
+            **{c.name: getattr(d, c.name) for c in d.__table__.columns if c.name != "embedding"},
+            # stored = a file in storage the viewer can open; otherwise file_url
+            # may be an external link (e.g. Google Drive), or there's text only.
+            "has_file": bool(resolve_storage_key(d.notes)),
+        }
         for d in documents
     ]
     return data
@@ -375,6 +380,75 @@ async def get_archive_section(
         "section_text": section.section_text,
         "word_count": section.word_count,
     }
+
+
+@router.delete("/{archive_id}", status_code=204, dependencies=[Depends(require_archive_editor())])
+async def delete_archive(
+    archive_id: str,
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    """Delete an archive entry and everything indexed from it: its sections,
+    their retrieval chunks and reusable language, and the files uploaded to it.
+
+    Files that also belong to a grant's workspace stay with the grant — they
+    are only unlinked from the archive."""
+    from sqlalchemy import delete as sa_delete
+    from app.models.active_grant import ActiveGrant
+    from app.models.language import ReusableLanguageBlock
+    from app.models.section_chunk import SectionChunk
+    from app.services.storage import delete_file, resolve_storage_key
+
+    archive = (await db.execute(select(GrantArchive).where(GrantArchive.id == archive_id))).scalar_one_or_none()
+    if not archive:
+        raise HTTPException(404, "Archive entry not found")
+    if archive.grant_id:
+        grant = await db.get(ActiveGrant, archive.grant_id)
+        if grant and grant.institution_id and grant.institution_id != current_user.institution_id:
+            raise HTTPException(403, "This archive entry belongs to another organization.")
+
+    documents = (await db.execute(select(Document).where(Document.archive_id == archive_id))).scalars().all()
+    # The archive's own documents: its uploads, the files copied from a grant's
+    # workspace on submit, and the editor-text snapshot. Anything else linked
+    # here is a grant's document and only gets unlinked.
+    owned_docs = [d for d in documents if not d.grant_id or d.file_name == "workspace_proposal.txt"]
+    owned_ids = {d.id for d in owned_docs}
+    owned_doc_ids = [d.id for d in owned_docs]
+
+    section_filter = ProposalSection.archive_id == archive_id
+    if owned_doc_ids:
+        section_filter = or_(section_filter, ProposalSection.document_id.in_(owned_doc_ids))
+    section_ids = list((await db.execute(select(ProposalSection.id).where(section_filter))).scalars().all())
+
+    block_filter = ReusableLanguageBlock.archive_id == archive_id
+    if section_ids:
+        block_filter = or_(block_filter, ReusableLanguageBlock.source_section_id.in_(section_ids))
+        await db.execute(sa_delete(SectionChunk).where(SectionChunk.section_id.in_(section_ids)))
+    await db.execute(sa_delete(ReusableLanguageBlock).where(block_filter))
+    if section_ids:
+        await db.execute(sa_delete(ProposalSection).where(ProposalSection.id.in_(section_ids)))
+
+    storage_keys = {k for k in (resolve_storage_key(d.notes) for d in owned_docs) if k}
+    for d in documents:
+        if d.id in owned_ids:
+            await db.delete(d)
+        else:
+            d.archive_id = None
+    await db.flush()
+    await db.delete(archive)
+    await db.commit()
+
+    # Remove stored files no other document still points at (a file can be
+    # shared, e.g. a call document linked into a grant).
+    for key in storage_keys:
+        still_used = (await db.execute(
+            select(func.count()).select_from(Document).where(Document.notes.contains(key))
+        )).scalar_one()
+        if not still_used:
+            try:
+                delete_file(key)
+            except Exception:
+                pass
 
 
 @router.patch("/{archive_id}", dependencies=[Depends(require_archive_editor())])
@@ -427,7 +501,7 @@ async def ingest_archive(
         archive.indexing_status = "pending"
         archive.indexing_error = None
         await db.commit()
-        celery_app.send_task("app.workers.archive_tasks.index_archive", args=[archive_id])
+        queue_archive_indexing(archive_id)
         return {
             "archive_id": archive_id,
             "indexing_status": "pending",
@@ -449,7 +523,7 @@ async def ingest_archive(
     db.add(pseudo)
     archive.indexing_status = "pending"
     await db.commit()
-    celery_app.send_task("app.workers.archive_tasks.index_archive", args=[archive_id])
+    queue_archive_indexing(archive_id)
     return {
         "archive_id": archive_id,
         "indexing_status": "pending",
@@ -496,7 +570,7 @@ async def add_archive_document(
         archive.indexing_status = "pending"
         archive.indexing_error = None
         await db.commit()
-        celery_app.send_task("app.workers.archive_tasks.index_archive", args=[archive_id])
+        queue_archive_indexing(archive_id)
 
     return {"id": doc.id, "document_type": document_type, "file_name": doc.file_name}
 
@@ -529,7 +603,7 @@ async def reindex_archive_style_endpoint(
     archive.indexing_status = "pending"
     archive.indexing_error = None
     await db.commit()
-    celery_app.send_task("app.workers.archive_tasks.index_archive", args=[archive_id])
+    queue_archive_indexing(archive_id)
     return {
         "archive_id": archive_id,
         "indexing_status": "pending",

@@ -76,6 +76,20 @@ def _infer_section_type(title: str) -> str:
     return "other"
 
 
+# Archive indexing runs on the dedicated call_analysis queue (the same worker as
+# call analysis, which is user-facing and never backed up) rather than the
+# default "celery" queue, where it used to wait behind the bulk enrichment /
+# embedding / scoring backlog before it even started.
+ARCHIVE_INDEX_QUEUE = "call_analysis"
+
+
+def queue_archive_indexing(archive_id: str) -> None:
+    from app.workers.celery_app import celery_app
+    celery_app.send_task(
+        "app.workers.archive_tasks.index_archive", args=[archive_id], queue=ARCHIVE_INDEX_QUEUE
+    )
+
+
 def _queue_embedding_jobs(section_ids: list[str], language_block_ids: list[str]) -> None:
     from app.workers.celery_app import celery_app
     for sid in section_ids:
@@ -415,9 +429,7 @@ async def create_archive_with_files(
 
     await db.commit()
 
-    from app.workers.celery_app import celery_app
-
-    celery_app.send_task("app.workers.archive_tasks.index_archive", args=[archive_id])
+    queue_archive_indexing(archive_id)
 
     return {
         "id": archive_id,
@@ -445,11 +457,7 @@ async def run_archive_indexing(db: AsyncSession, archive_id: str) -> dict:
         select(Document).where(Document.archive_id == archive_id)
     )
     documents = list(docs_result.scalars().all())
-    proposal_doc = next(
-        (d for d in documents if d.document_type == DocumentType.FULL_PROPOSAL),
-        None,
-    )
-    if not proposal_doc:
+    if not any(d.document_type == DocumentType.FULL_PROPOSAL for d in documents):
         archive.indexing_status = "failed"
         archive.indexing_error = "No submitted proposal document found"
         await db.commit()
@@ -460,23 +468,45 @@ async def run_archive_indexing(db: AsyncSession, archive_id: str) -> dict:
     warnings: list[str] = []
 
     try:
+        # Parse stored files that have no text yet. Files parsed on an earlier
+        # run (or at upload) aren't downloaded and parsed again — re-index used
+        # to re-fetch every attachment from storage each time.
         for doc in documents:
+            if (doc.parsed_text or "").strip():
+                continue
             r2_key = resolve_storage_key(doc.notes)
             if not r2_key:
                 continue
-            content = download_file(r2_key)
-            parsed_text = _parse_archive_file_content(
-                content, doc.file_name or "file.pdf", doc.document_type
-            )
+            try:
+                content = download_file(r2_key)
+                parsed_text = _parse_archive_file_content(
+                    content, doc.file_name or "file.pdf", doc.document_type
+                )
+            except Exception as exc:
+                if doc.document_type == DocumentType.FULL_PROPOSAL:
+                    raise
+                warnings.append(f"Could not read {doc.file_name}: {exc}")
+                parsed_text = ""
             doc.parsed_text = parsed_text
             doc.processing_status = (
                 ProcessingStatus.PROCESSED if parsed_text.strip() else ProcessingStatus.FAILED
             )
-            if doc.id == proposal_doc.id and not parsed_text.strip():
-                raise ValueError(
-                    "Could not extract text from the submitted proposal. "
-                    "The PDF may be scanned/image-only — try a text-based PDF or DOCX."
-                )
+
+        # The proposal to index: an uploaded file (the version actually
+        # submitted) wins over the workspace text snapshot; either way it must
+        # have text.
+        proposals = [
+            d for d in documents
+            if d.document_type == DocumentType.FULL_PROPOSAL and (d.parsed_text or "").strip()
+        ]
+        proposals.sort(key=lambda d: d.uploaded_at or datetime.min.replace(tzinfo=timezone.utc), reverse=True)
+        proposals.sort(key=lambda d: not resolve_storage_key(d.notes))  # stable: newest upload first
+        if not proposals:
+            raise ValueError(
+                "Could not extract text from the submitted proposal. "
+                "The PDF may be scanned/image-only — try a text-based PDF or DOCX."
+            )
+        proposal_doc = proposals[0]
 
         if not (archive.reviewer_feedback or "").strip():
             feedback_doc = next(

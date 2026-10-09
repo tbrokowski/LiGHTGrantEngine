@@ -1,8 +1,8 @@
 'use client';
 import { useEffect, useState, useRef, useCallback, useMemo } from 'react';
-import { useParams } from 'next/navigation';
+import { useParams, useRouter } from 'next/navigation';
 import Link from 'next/link';
-import { ChevronDown, ChevronRight, Pencil, X } from 'lucide-react';
+import { ChevronDown, ChevronRight, Pencil, Trash2, X } from 'lucide-react';
 import { archive } from '@/lib/api';
 import { useAuth } from '@/lib/auth';
 import { usePdfViewer } from '@/contexts/PdfViewerContext';
@@ -26,6 +26,7 @@ interface ArchiveDocument {
   file_url?: string | null;
   file_format?: string | null;
   parsed_text?: string | null;
+  has_file?: boolean;
 }
 
 interface DocumentStructureItem {
@@ -79,10 +80,21 @@ const OUTCOME_STYLES: Record<string, string> = {
 
 const DOC_TYPE_LABEL: Record<string, string> = {
   call_document: 'Call / RFP',
+  guidance_notes: 'Guidance',
   full_proposal: 'Submitted proposal',
   budget: 'Budget',
+  budget_justification: 'Budget justification',
   review_feedback: 'Reviewer feedback',
+  partner_letter: 'Letter of support',
+  institutional_letter: 'Institutional document',
+  cv_biosketch: 'CV / biosketch',
+  submission_confirmation: 'Submission confirmation',
+  other: 'Document',
 };
+
+function isExternalLink(doc: ArchiveDocument) {
+  return !doc.has_file && Boolean(doc.file_url) && !/\/documents\/[^/]+\/content/.test(doc.file_url ?? '');
+}
 
 const DOC_STATUS_LABEL: Record<string, string> = {
   not_processed: 'Pending',
@@ -121,6 +133,10 @@ export default function ArchiveDetailPage() {
   const [textPreviewDoc, setTextPreviewDoc] = useState<ArchiveDocument | null>(null);
   const [openingDocId, setOpeningDocId] = useState<string | null>(null);
   const [showEdit, setShowEdit] = useState(false);
+  const [confirmDelete, setConfirmDelete] = useState(false);
+  const [deleting, setDeleting] = useState(false);
+  const [deleteError, setDeleteError] = useState('');
+  const router = useRouter();
   const { openPdfViewer } = usePdfViewer();
   const prevSectionCountRef = useRef(0);
 
@@ -182,6 +198,20 @@ export default function ArchiveDetailPage() {
     }
   }
 
+  async function handleDelete() {
+    if (!entry) return;
+    setDeleting(true);
+    setDeleteError('');
+    try {
+      await archive.delete(entry.id);
+      router.push('/archive');
+    } catch (err: unknown) {
+      const detail = (err as { response?: { data?: { detail?: string } } }).response?.data?.detail;
+      setDeleteError(typeof detail === 'string' ? detail : 'Could not delete this archive entry.');
+      setDeleting(false);
+    }
+  }
+
   async function handleOpenDocument(doc: ArchiveDocument) {
     setOpeningDocId(doc.id);
     await openPdfViewer(doc.id, doc.file_name ?? undefined);
@@ -226,14 +256,24 @@ export default function ArchiveDetailPage() {
           <span className="text-gray-600 truncate">{entry.title}</span>
         </div>
         {canEdit && (
-          <button
-            type="button"
-            onClick={() => setShowEdit(true)}
-            className="shrink-0 flex items-center gap-1.5 text-xs px-3 py-1.5 rounded-lg border border-gray-200 text-gray-600 hover:bg-gray-50 transition-colors"
-          >
-            <Pencil className="w-3.5 h-3.5" />
-            Edit
-          </button>
+          <div className="shrink-0 flex items-center gap-2">
+            <button
+              type="button"
+              onClick={() => setShowEdit(true)}
+              className="flex items-center gap-1.5 text-xs px-3 py-1.5 rounded-lg border border-gray-200 text-gray-600 hover:bg-gray-50 transition-colors"
+            >
+              <Pencil className="w-3.5 h-3.5" />
+              Edit
+            </button>
+            <button
+              type="button"
+              onClick={() => { setConfirmDelete(true); setDeleteError(''); }}
+              className="flex items-center gap-1.5 text-xs px-3 py-1.5 rounded-lg border border-red-200 text-red-600 hover:bg-red-50 transition-colors"
+            >
+              <Trash2 className="w-3.5 h-3.5" />
+              Delete
+            </button>
+          </div>
         )}
       </div>
 
@@ -334,14 +374,25 @@ export default function ArchiveDetailPage() {
                   <span className="text-xs text-gray-400">{DOC_STATUS_LABEL[doc.processing_status ?? ''] ?? doc.processing_status ?? '—'}</span>
                 </div>
                 <div className="flex items-center gap-2 shrink-0">
-                  <button
-                    type="button"
-                    onClick={() => handleOpenDocument(doc)}
-                    disabled={openingDocId === doc.id}
-                    className="text-xs px-3 py-1.5 rounded-lg border border-gray-200 text-gray-700 hover:bg-gray-50 disabled:opacity-50"
-                  >
-                    {openingDocId === doc.id ? 'Opening...' : 'View file'}
-                  </button>
+                  {isExternalLink(doc) ? (
+                    <a
+                      href={doc.file_url!}
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      className="text-xs px-3 py-1.5 rounded-lg border border-gray-200 text-gray-700 hover:bg-gray-50"
+                    >
+                      Open link
+                    </a>
+                  ) : doc.has_file !== false && (
+                    <button
+                      type="button"
+                      onClick={() => handleOpenDocument(doc)}
+                      disabled={openingDocId === doc.id}
+                      className="text-xs px-3 py-1.5 rounded-lg border border-gray-200 text-gray-700 hover:bg-gray-50 disabled:opacity-50"
+                    >
+                      {openingDocId === doc.id ? 'Opening...' : 'View file'}
+                    </button>
+                  )}
                   {doc.processing_status === 'processed' && doc.parsed_text && (
                     <button
                       type="button"
@@ -525,6 +576,39 @@ export default function ArchiveDetailPage() {
             load();
           }}
         />
+      )}
+
+      {/* Delete confirmation */}
+      {confirmDelete && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/40">
+          <div role="dialog" aria-modal="true" aria-labelledby="delete-archive-title" className="bg-white rounded-xl shadow-xl w-full max-w-md p-5">
+            <h3 id="delete-archive-title" className="text-sm font-semibold text-gray-900">Delete “{entry.title}”?</h3>
+            <p className="text-sm text-gray-600 mt-2">
+              This removes the archive entry, its indexed sections and its documents. The AI will no longer
+              draw on it. If it came from a grant, the grant and its workspace files are not affected.
+              This can&apos;t be undone.
+            </p>
+            {deleteError && <p role="alert" className="text-sm text-red-600 mt-3">{deleteError}</p>}
+            <div className="flex justify-end gap-2 mt-5">
+              <button
+                type="button"
+                onClick={() => setConfirmDelete(false)}
+                disabled={deleting}
+                className="text-sm px-3 py-1.5 rounded-lg border border-gray-200 text-gray-700 hover:bg-gray-50"
+              >
+                Cancel
+              </button>
+              <button
+                type="button"
+                onClick={handleDelete}
+                disabled={deleting}
+                className="text-sm px-3 py-1.5 rounded-lg bg-red-600 text-white hover:bg-red-700 disabled:opacity-50"
+              >
+                {deleting ? 'Deleting…' : 'Delete'}
+              </button>
+            </div>
+          </div>
+        </div>
       )}
 
       {/* Extracted text modal */}

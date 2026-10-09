@@ -547,6 +547,9 @@ export default function ArchivePage() {
   const [outcomeFilter, setOutcomeFilter] = useState('');
   const [showModal, setShowModal] = useState(false);
   const [successMessage, setSuccessMessage] = useState('');
+  const [confirmDeleteId, setConfirmDeleteId] = useState<string | null>(null);
+  const [deletingId, setDeletingId] = useState<string | null>(null);
+  const [deleteError, setDeleteError] = useState('');
 
   // ── View toggle ─────────────────────────────────────────────────────────────
   const [viewMode, setViewMode] = useState<'list' | 'graph'>('list');
@@ -623,6 +626,21 @@ export default function ArchivePage() {
   const allYears = [...new Set(entries.map(e => e.call_year).filter(Boolean) as number[])].sort((a, b) => b - a);
   const allThemes = [...new Set(entries.flatMap(e => e.themes ?? []))].sort();
 
+  async function handleDeleteEntry(id: string) {
+    setDeletingId(id);
+    setDeleteError('');
+    try {
+      await archive.delete(id);
+      setEntries(prev => prev.filter(e => e.id !== id));
+      setConfirmDeleteId(null);
+    } catch (err: unknown) {
+      const detail = (err as { response?: { data?: { detail?: string } } }).response?.data?.detail;
+      setDeleteError(typeof detail === 'string' ? detail : 'Could not delete that archive entry.');
+    } finally {
+      setDeletingId(null);
+    }
+  }
+
   function handleCreated(message?: string) {
     setShowModal(false);
     if (message) setSuccessMessage(message);
@@ -649,6 +667,17 @@ export default function ArchivePage() {
           onClose={() => setShowModal(false)}
           onCreated={handleCreated}
         />
+      )}
+
+      {deleteError && (
+        <div
+          role="alert"
+          className="mx-6 mt-4 flex items-center justify-between gap-3 px-4 py-3 text-sm shrink-0"
+          style={{ background: 'var(--state-danger-bg)', border: '1px solid var(--state-danger)', borderRadius: 'var(--radius-sm)', color: 'var(--state-danger)' }}
+        >
+          <span>{deleteError}</span>
+          <button type="button" onClick={() => setDeleteError('')} aria-label="Dismiss">×</button>
+        </div>
       )}
 
       {/* Success banner */}
@@ -798,18 +827,19 @@ export default function ArchivePage() {
                   <th className="text-right px-4 py-3 ledger-label hidden lg:table-cell">Amount</th>
                   <th className="text-left px-4 py-3 ledger-label hidden md:table-cell">AI</th>
                   <th className="text-left px-4 py-3 ledger-label">Outcome</th>
+                  {canUpload && <th className="px-2 py-3" aria-label="Actions" />}
                 </tr>
               </thead>
               <tbody>
                 {loading ? (
                   <tr>
-                    <td colSpan={7} className="px-5 py-14 text-center text-sm" style={{ color: 'var(--ink-faint)' }}>
+                    <td colSpan={canUpload ? 8 : 7} className="px-5 py-14 text-center text-sm" style={{ color: 'var(--ink-faint)' }}>
                       Loading…
                     </td>
                   </tr>
                 ) : filtered.length === 0 ? (
                   <tr>
-                    <td colSpan={7} className="px-5 py-14 text-center">
+                    <td colSpan={canUpload ? 8 : 7} className="px-5 py-14 text-center">
                       <p className="text-sm" style={{ color: 'var(--ink-faint)' }}>
                         {search ? 'No matches found.' : 'Archive is empty.'}
                       </p>
@@ -919,6 +949,46 @@ export default function ArchivePage() {
                           <span className="text-[11px]" style={{ color: 'var(--ink-faint)' }}>—</span>
                         )}
                       </td>
+                    {canUpload && (
+                        <td className="px-2 py-3.5 text-right whitespace-nowrap">
+                          {confirmDeleteId === entry.id ? (
+                            <span className="inline-flex items-center gap-2 text-xs">
+                              <button
+                                type="button"
+                                onClick={() => handleDeleteEntry(entry.id)}
+                                disabled={deletingId === entry.id}
+                                className="font-medium"
+                                style={{ color: 'var(--state-danger)' }}
+                              >
+                                {deletingId === entry.id ? 'Deleting…' : 'Delete?'}
+                              </button>
+                              <button
+                                type="button"
+                                onClick={() => setConfirmDeleteId(null)}
+                                style={{ color: 'var(--ink-faint)' }}
+                              >
+                                Cancel
+                              </button>
+                            </span>
+                          ) : (
+                            <button
+                              type="button"
+                              onClick={() => { setConfirmDeleteId(entry.id); setDeleteError(''); }}
+                              aria-label={`Delete ${entry.title}`}
+                              title="Delete"
+                              className="p-1 rounded-[var(--radius-xs)]"
+                              style={{ color: 'var(--ink-faint)' }}
+                              onMouseEnter={e => (e.currentTarget.style.color = 'var(--state-danger)')}
+                              onMouseLeave={e => (e.currentTarget.style.color = 'var(--ink-faint)')}
+                            >
+                              <svg className="w-3.5 h-3.5" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={1.8} strokeLinecap="round" strokeLinejoin="round" aria-hidden>
+                                <path d="M3 6h18M8 6V4h8v2M19 6l-1 14H6L5 6M10 11v6M14 11v6" />
+                              </svg>
+                            </button>
+                          )}
+                        </td>
+                      )}
+                    
                     </tr>
                   ))
                 )}

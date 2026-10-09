@@ -92,11 +92,9 @@ def _recover_stale_archives() -> list[str]:
                         {"id": archive_id},
                     )
                 conn.commit()
+                from app.services.archive_ingestion import queue_archive_indexing
                 for archive_id, prev_status in stale:
-                    celery_app.send_task(
-                        "app.workers.archive_tasks.index_archive",
-                        args=[archive_id],
-                    )
+                    queue_archive_indexing(archive_id)
                     recovered.append(archive_id)
                     logger.info(
                         "Recovered stuck archive %s (was '%s') — re-queued indexing",

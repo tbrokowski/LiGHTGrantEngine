@@ -1,5 +1,7 @@
 """Active grants workspace endpoints."""
+import re
 import uuid
+from html import unescape
 import logging
 from typing import Optional
 from datetime import date, datetime, timezone
@@ -12,6 +14,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.database import get_db
 from app.models.active_grant import ActiveGrant, ActiveGrantStatus
 from app.models.archive import GrantArchive
+from app.services.archive_ingestion import queue_archive_indexing
 from app.models.task import Task, TaskStatus, TaskPriority, TaskType
 from app.models.milestone import Milestone
 from app.models.gantt_item import GanttItem
@@ -27,7 +30,6 @@ from app.models.user import User, UserRole, InstitutionRole
 from app.models.grant_member import GrantMember, GrantMemberRole, GrantMemberStatus
 from app.routers.auth import get_current_user
 from app.ai.context.grant_context import strip_html
-from app.workers.celery_app import celery_app
 from app.auth.permissions import (
     grant_access,
     require_role,
@@ -551,53 +553,122 @@ async def _upsert_grant_archive(
     return archive
 
 
+# Workspace file category -> archive document type.
+_FILE_CATEGORY_TO_DOC_TYPE = {
+    "call_documents": DocumentType.CALL_DOCUMENT,
+    "guidance_documents": DocumentType.GUIDANCE_NOTES,
+    "final_proposal": DocumentType.FULL_PROPOSAL,
+    "budget": DocumentType.BUDGET,
+    "budget_justification": DocumentType.BUDGET_JUSTIFICATION,
+    "letters_of_support": DocumentType.PARTNER_LETTER,
+    "cvs_biosketches": DocumentType.CV_BIOSKETCH,
+    "institutional_documents": DocumentType.INSTITUTIONAL_LETTER,
+    "submission_confirmation": DocumentType.SUBMISSION_CONFIRMATION,
+}
+_DOCUMENT_CONTENT_URL = re.compile(r"/documents/([^/?#]+)/content")
+
+
+async def _attach_workspace_files(db: AsyncSession, grant: ActiveGrant, archive: GrantArchive) -> bool:
+    """Copy every file saved in the grant's workspace onto its archive entry.
+
+    Each becomes an archive-owned Document: uploads point at the same stored
+    file (and carry its extracted text), external links (Drive, the call URL)
+    are kept as links. The grant's own documents are left untouched, so
+    deleting the archive entry later never takes files away from the grant.
+    Files already copied on an earlier transition are skipped. Returns True
+    when anything new was attached."""
+    files = (await db.execute(
+        select(WorkspaceFile).where(WorkspaceFile.grant_id == grant.id).order_by(WorkspaceFile.uploaded_at)
+    )).scalars().all()
+    if not files:
+        return False
+    already = set((await db.execute(
+        select(Document.file_url).where(Document.archive_id == archive.id, Document.file_url.is_not(None))
+    )).scalars().all())
+
+    added = False
+    for f in files:
+        if not f.file_url or f.file_url in already:
+            continue
+        doc_type = _FILE_CATEGORY_TO_DOC_TYPE.get(f.file_category, DocumentType.OTHER)
+        source = None
+        m = _DOCUMENT_CONTENT_URL.search(f.file_url)
+        if m:
+            source = await db.get(Document, m.group(1))
+        db.add(Document(
+            id=str(uuid.uuid4()),
+            archive_id=archive.id,
+            document_type=doc_type,
+            file_name=f.file_name,
+            file_url=f.file_url,
+            file_format=(source.file_format if source else None) or f.file_type,
+            parsed_text=source.parsed_text if source else None,
+            processing_status=source.processing_status if source else ProcessingStatus.NOT_PROCESSED,
+            uploaded_by_id=(source.uploaded_by_id if source else None) or f.uploaded_by,
+            ai_retrieval_allowed=f.ai_retrieval_allowed,
+            notes=source.notes if source else None,  # storage key — shared with the grant's copy
+        ))
+        already.add(f.file_url)
+        added = True
+    return added
+
+
 async def _index_archive_from_grant(
     db: AsyncSession, grant: ActiveGrant, archive: GrantArchive
 ) -> None:
-    """Extract proposal text from the grant workspace, attach it to the archive, and queue indexing.
+    """Snapshot the grant onto its archive entry and queue indexing.
 
-    A grant reaches the archive more than once over its life (submitted, then
-    awarded or rejected), so the workspace snapshot is refreshed in place rather
-    than appended — otherwise every transition would leave another copy of the
-    same proposal in the retrieval corpus. When the text hasn't changed since
-    the last snapshot, indexing isn't re-queued at all.
+    Copies the workspace's saved files, and the proposal text written in the
+    editor as a text document. A grant reaches the archive more than once over
+    its life (submitted, then awarded or rejected), so the text snapshot is
+    refreshed in place rather than appended — otherwise every transition would
+    leave another copy of the same proposal in the retrieval corpus — and
+    indexing is only re-queued when something changed.
     """
-    proposal_text = _extract_grant_text(grant)
-    if not proposal_text.strip():
-        return
     try:
-        document = (
-            await db.execute(
-                select(Document).where(
-                    Document.archive_id == archive.id,
-                    Document.file_name == WORKSPACE_SNAPSHOT_FILENAME,
+        changed = await _attach_workspace_files(db, grant, archive)
+
+        proposal_text = _extract_grant_text(grant)
+        if proposal_text.strip():
+            document = (
+                await db.execute(
+                    select(Document).where(
+                        Document.archive_id == archive.id,
+                        Document.file_name == WORKSPACE_SNAPSHOT_FILENAME,
+                    )
                 )
-            )
-        ).scalars().first()
+            ).scalars().first()
+            if document is None:
+                db.add(Document(
+                    id=str(uuid.uuid4()),
+                    grant_id=grant.id,
+                    archive_id=archive.id,
+                    document_type=DocumentType.FULL_PROPOSAL,
+                    file_name=WORKSPACE_SNAPSHOT_FILENAME,
+                    parsed_text=proposal_text,
+                    processing_status=ProcessingStatus.PROCESSED,
+                ))
+                changed = True
+            elif document.parsed_text != proposal_text or archive.indexing_status == "failed":
+                document.parsed_text = proposal_text
+                document.processing_status = ProcessingStatus.PROCESSED
+                changed = True
 
-        if document is None:
-            document = Document(
-                id=str(uuid.uuid4()),
-                grant_id=grant.id,
-                archive_id=archive.id,
-                document_type=DocumentType.FULL_PROPOSAL,
-                file_name=WORKSPACE_SNAPSHOT_FILENAME,
-                parsed_text=proposal_text,
-                processing_status=ProcessingStatus.PROCESSED,
-            )
-            db.add(document)
-        elif (
-            document.parsed_text == proposal_text
-            and archive.indexing_status in ("pending", "processing", "complete")
-        ):
+        if not changed:
             return
-        else:
-            document.parsed_text = proposal_text
-            document.processing_status = ProcessingStatus.PROCESSED
-
-        archive.indexing_status = "pending"
+        await db.flush()
+        has_proposal = (await db.execute(
+            select(Document.id).where(
+                Document.archive_id == archive.id,
+                Document.document_type == DocumentType.FULL_PROPOSAL,
+            ).limit(1)
+        )).first() is not None
+        if has_proposal:
+            archive.indexing_status = "pending"
+            archive.indexing_error = None
         await db.commit()
-        celery_app.send_task("app.workers.archive_tasks.index_archive", args=[archive.id])
+        if has_proposal:
+            queue_archive_indexing(archive.id)
     except Exception as exc:
         await db.rollback()
         logger.warning("Archive ingest failed for grant %s: %s", grant.id, exc)
@@ -898,13 +969,26 @@ async def _get_grant_or_404(grant_id: str, db: AsyncSession) -> ActiveGrant:
     return g
 
 
+_HTML_BLOCK_END = re.compile(r"(?i)</(?:p|h[1-6]|li|div|tr|blockquote|pre)\s*>|<br\s*/?>")
+
+
+def _html_to_text(html: str) -> str:
+    """HTML to plain text that keeps one line per paragraph / heading / list
+    item. The archive's section splitter works on lines, so collapsing the
+    document onto a single line (as strip_html does) leaves it nothing to split."""
+    text = _HTML_BLOCK_END.sub("\n", html or "")
+    text = unescape(re.sub(r"<[^>]+>", " ", text))
+    lines = (re.sub(r"[ \t\xa0]+", " ", line).strip() for line in text.splitlines())
+    return "\n".join(line for line in lines if line)
+
+
 def _extract_grant_text(grant: ActiveGrant) -> str:
     if grant.editor_document:
-        return strip_html(grant.editor_document)
+        return _html_to_text(grant.editor_document)
     sections = grant.editor_sections or {}
     parts: list[str] = []
     for sec in sorted(sections.values(), key=lambda s: s.get("order", 0)):
-        text = sec.get("content_text") or strip_html(sec.get("content_html", ""))
+        text = sec.get("content_text") or _html_to_text(sec.get("content_html", ""))
         if text and text.strip():
             parts.append(text.strip())
     return "\n\n".join(parts)

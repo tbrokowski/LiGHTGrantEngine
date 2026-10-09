@@ -526,6 +526,7 @@ export const archive = {
       timeout: 90_000,
     }),
   update: (id: string, data: Record<string, unknown>) => api.patch(`/archive/${id}`, data),
+  delete: (id: string) => api.delete(`/archive/${id}`),
   uploadDocument: (archiveId: string, formData: FormData) =>
     api.post(`/archive/${archiveId}/documents`, formData, {
       headers: { 'Content-Type': 'multipart/form-data' },
