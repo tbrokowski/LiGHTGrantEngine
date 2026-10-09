@@ -248,6 +248,8 @@ export default function ArchiveDetailPage() {
   const allExpanded = sortedSections.length > 0 && sortedSections.every(s => expandedSections[s.id]);
 
   return (
+    // <main> doesn't scroll (each page owns its scroll area), so this one does.
+    <div className="h-full overflow-y-auto">
     <div className="px-8 py-8 max-w-4xl mx-auto">
       <div className="text-sm text-gray-400 mb-6 flex items-center justify-between gap-2">
         <div className="flex items-center gap-2 min-w-0">
@@ -636,6 +638,7 @@ export default function ArchiveDetailPage() {
           </div>
         </div>
       )}
+    </div>
     </div>
   );
 }
