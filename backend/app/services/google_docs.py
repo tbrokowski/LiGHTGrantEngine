@@ -209,6 +209,71 @@ def _get_list_glyph_type(doc_lists: dict, bullet: dict) -> str:
     return "ORDERED"
 
 
+_GDOCS_LIST_LEVEL = re.compile(r"^lst-kix_(.+)-(\d+)$")
+
+
+def _gdocs_list_key(el) -> tuple[str, int] | None:
+    """(list id, nesting level) from Google's `lst-kix_<id>-<level>` class."""
+    for cls in el.get("class") or []:
+        m = _GDOCS_LIST_LEVEL.match(cls)
+        if m:
+            return m.group(1), int(m.group(2))
+    return None
+
+
+def _nest_gdocs_lists(body: str) -> str:
+    """Rebuild nested lists from Google's export.
+
+    Google exports every nesting level as its own flat sibling <ul>/<ol> tagged
+    `lst-kix_<id>-<level>` and indented with margins. TipTap would load those as
+    separate top-level lists, so indent levels were lost on every pull. Fold each
+    run of consecutive Google lists back into real nested <ul>/<ol> markup.
+    """
+    if "lst-kix_" not in body:
+        return body
+    from bs4 import BeautifulSoup, Tag
+
+    soup = BeautifulSoup(body, "html.parser")
+    for first in soup.find_all(["ul", "ol"]):
+        if first.parent is None or _gdocs_list_key(first) is None:
+            continue  # already folded into an earlier run, or not a Google list
+        # stack[level] = list element currently receiving items at that level
+        stack: list[Tag] = [first]
+        sib = first.next_sibling
+        while sib is not None:
+            nxt = sib.next_sibling
+            if not isinstance(sib, Tag):
+                if str(sib).strip():
+                    break
+                sib = nxt
+                continue
+            key = _gdocs_list_key(sib) if sib.name in ("ul", "ol") else None
+            if key is None:
+                break
+            level = key[1]
+            sib.extract()
+            if level < len(stack):
+                # Same or shallower level: continue the list at that depth.
+                del stack[level + 1:]
+                for li in sib.find_all("li", recursive=False):
+                    stack[level].append(li.extract())
+            else:
+                # Deeper: attach under the last item of the deepest open list.
+                parent_items = stack[-1].find_all("li", recursive=False)
+                if not parent_items:
+                    stack[-1].append(sib)
+                else:
+                    parent_items[-1].append(sib)
+                # Fill any skipped levels with this list so indexing stays aligned.
+                while len(stack) <= level:
+                    stack.append(sib)
+            sib = nxt
+        for el in [first, *first.find_all(["ul", "ol"])]:
+            el.attrs.pop("class", None)
+            el.attrs.pop("start", None)
+    return str(soup)
+
+
 def _extract_body_for_tiptap(full_html: str) -> str:
     """Extract and lightly clean body content from Google Docs exported HTML.
 
@@ -224,6 +289,8 @@ def _extract_body_for_tiptap(full_html: str) -> str:
 
     # Remove empty spans (Google wraps single characters in spans for styling)
     body = re.sub(r"<span[^>]*>\s*</span>", "", body)
+
+    body = _nest_gdocs_lists(body)
 
     return body.strip()
 

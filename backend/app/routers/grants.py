@@ -36,6 +36,7 @@ from app.auth.permissions import (
     grant_access,
     require_role,
     is_org_admin,
+    is_admin_of,
     has_module_permission,
     get_redis,
     invalidate_permission_cache,
@@ -261,7 +262,9 @@ async def list_grants(
         elif not include_inactive:
             gq = gq.where(ActiveGrant.status.notin_(INACTIVE_STATUSES))
         for g in (await db.execute(gq)).scalars().all():
-            grants_out.append(_grant_summary(g))
+            # Shared from another organization — the Grants page lists these
+            # under "External".
+            grants_out.append({**_grant_summary(g), "is_external": True})
 
     return grants_out
 
@@ -420,7 +423,7 @@ async def delete_grant(
     if grant.is_personal:
         if grant.created_by_id != current_user.id:
             raise HTTPException(403, "Only the creator can delete a personal grant.")
-    elif not is_org_admin(current_user):
+    elif not is_admin_of(current_user, grant.institution_id):
         result = await db.execute(
             select(GrantMember).where(
                 GrantMember.grant_id == grant_id,
@@ -529,6 +532,7 @@ async def _upsert_grant_archive(
     archive = GrantArchive(
         id=str(uuid.uuid4()),
         grant_id=grant.id,
+        institution_id=grant.institution_id,
         opportunity_id=grant.opportunity_id,
         title=grant.title,
         funder=grant.funder,

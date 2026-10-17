@@ -161,6 +161,17 @@ body {
   line-height: 1.6;
 }
 
+/* Nested list markers cycle by depth (any mix of ul/ol counts as a level).
+   Must match the PDF export CSS in backend/app/services/doc_export.py. */
+.ProseMirror ul { list-style-type: disc; }
+.ProseMirror :is(ul, ol) ul { list-style-type: circle; }
+.ProseMirror :is(ul, ol) :is(ul, ol) ul { list-style-type: square; }
+.ProseMirror ol { list-style-type: decimal; }
+.ProseMirror :is(ul, ol) ol { list-style-type: lower-alpha; }
+.ProseMirror :is(ul, ol) :is(ul, ol) ol { list-style-type: lower-roman; }
+.ProseMirror li > :is(ul, ol) { margin-top: 0.25rem; margin-bottom: 0.25rem; }
+.ProseMirror li > p { margin-bottom: 0.125rem; }
+
 .ProseMirror blockquote {
   border-left: 2px solid var(--rule-accent);
   padding-left: 0.875rem;

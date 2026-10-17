@@ -26,6 +26,8 @@ export interface GrantSummary {
   tasks?: { status: string }[];
   color?: string | null;
   call_url?: string | null;
+  /** Shared with you from another organization (guest access). */
+  is_external?: boolean;
 }
 
 function daysUntil(dateStr: string | null): number | null {

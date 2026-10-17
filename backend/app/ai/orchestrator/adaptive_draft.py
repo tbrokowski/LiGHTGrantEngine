@@ -88,7 +88,8 @@ async def _persist_archive_citations(
     if not archive_markers:
         return
     section_ids = list({m["source_ref"] for m in archive_markers})
-    rows = await db.execute(select(ProposalSection).where(ProposalSection.id.in_(section_ids)))
+    from app.services.tenancy import section_org_filter
+    rows = await db.execute(select(ProposalSection).where(ProposalSection.id.in_(section_ids), section_org_filter()))
     sections_by_id = {s.id: s for s in rows.scalars().all()}
     for marker in archive_markers:
         section = sections_by_id.get(marker["source_ref"])

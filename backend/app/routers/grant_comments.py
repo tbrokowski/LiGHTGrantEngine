@@ -15,8 +15,11 @@ from app.models.active_grant import ActiveGrant
 from app.models.comment import Comment
 from app.models.user import User
 from app.routers.auth import get_current_user
+from app.auth.permissions import grant_access
 
-router = APIRouter()
+# Every route is under /grants/{grant_id}/…: members of the grant (or admins of
+# its organization) only.
+router = APIRouter(dependencies=[Depends(grant_access())])
 
 
 # ── Pydantic schemas ──────────────────────────────────────────────────────────

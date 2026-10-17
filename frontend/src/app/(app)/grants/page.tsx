@@ -18,11 +18,13 @@ function loadStarredIds(): Set<string> {
   } catch { return new Set(); }
 }
 
-type TabId = 'development' | 'active';
+type TabId = 'development' | 'active' | 'external';
 
 const TABS: { id: TabId; label: string; stages: string[]; emptyText: string }[] = [
   { id: 'development', label: 'Proposals in Development', stages: ['proposal'], emptyText: 'No proposals in progress. Create one or convert a shortlisted opportunity.' },
   { id: 'active', label: 'Active', stages: ['active', 'pending'], emptyText: 'No active or pending-review grants yet.' },
+  // Grants other organizations invited you to as a guest.
+  { id: 'external', label: 'External', stages: ['proposal', 'active', 'pending'], emptyText: 'Nothing has been shared with you from another organization yet.' },
 ];
 
 function SkeletonRow() {
@@ -292,7 +294,10 @@ export default function GrantsPage() {
       tasksApi.all().catch(() => ({ data: [] })),
     ])
       .then(([grantsRes, tasksRes]) => {
-        setAllGrants(grantsRes.data as GrantSummary[]);
+        const list = grantsRes.data as GrantSummary[];
+        setAllGrants(list);
+        // A guest with nothing of their own lands straight on what was shared.
+        if (list.length > 0 && list.every(g => g.is_external)) setTab('external');
         setAllTasks(tasksRes.data as TaskItem[]);
       })
       .catch(console.error)
@@ -340,7 +345,8 @@ export default function GrantsPage() {
 
   const currentTab = TABS.find(t => t.id === tab)!;
   const tabGrants = useMemo(() => {
-    let result = allGrants.filter(g => currentTab.stages.includes(g.grant_stage));
+    let result = allGrants.filter(g =>
+      currentTab.stages.includes(g.grant_stage) && !!g.is_external === (tab === 'external'));
     if (search.trim()) {
       const q = search.toLowerCase();
       result = result.filter(g =>
@@ -353,8 +359,9 @@ export default function GrantsPage() {
   }, [allGrants, tab, search, currentTab.stages]);
 
   const counts = useMemo(() => ({
-    development: allGrants.filter(g => g.grant_stage === 'proposal').length,
-    active: allGrants.filter(g => ['active', 'pending'].includes(g.grant_stage)).length,
+    development: allGrants.filter(g => !g.is_external && g.grant_stage === 'proposal').length,
+    active: allGrants.filter(g => !g.is_external && ['active', 'pending'].includes(g.grant_stage)).length,
+    external: allGrants.filter(g => g.is_external).length,
   }), [allGrants]);
 
   return (
@@ -380,7 +387,7 @@ export default function GrantsPage() {
       >
         {/* Tabs — ledger label style with bottom accent */}
         <div className="flex items-center gap-0">
-          {TABS.map(t => {
+          {TABS.filter(t => t.id !== 'external' || counts.external > 0 || tab === 'external').map(t => {
             const active = tab === t.id;
             return (
               <button
@@ -445,7 +452,7 @@ export default function GrantsPage() {
             </div>
           )}
 
-          {tab === 'active' ? (
+          {tab === 'external' ? null : tab === 'active' ? (
             <button
               onClick={() => setShowActiveModal(true)}
               className="flex items-center gap-1.5 px-3.5 py-1.5 text-sm font-medium transition-colors"

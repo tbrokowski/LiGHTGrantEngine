@@ -8,7 +8,7 @@ from datetime import datetime, timedelta, timezone
 from fastapi import APIRouter, Depends, HTTPException, BackgroundTasks, UploadFile, File
 from fastapi.responses import StreamingResponse
 from pydantic import BaseModel, Field
-from sqlalchemy import select, desc, or_, func, and_, cast, String
+from sqlalchemy import select, desc, or_, func, and_, cast, String, false
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.database import get_db
@@ -200,8 +200,15 @@ def _link_dict(lnk: PartnerGrantLink) -> dict:
     }
 
 
-async def _get_partner_or_404(partner_id: str, db: AsyncSession) -> Partner:
-    result = await db.execute(select(Partner).where(Partner.id == partner_id))
+def partner_org_filter(user: User):
+    """WHERE clause: partners of the user's active organization."""
+    if not getattr(user, "institution_id", None):
+        return false()
+    return Partner.institution_id == user.institution_id
+
+
+async def _get_partner_or_404(partner_id: str, db: AsyncSession, user: User) -> Partner:
+    result = await db.execute(select(Partner).where(Partner.id == partner_id, partner_org_filter(user)))
     p = result.scalar_one_or_none()
     if not p:
         raise HTTPException(404, "Partner not found")
@@ -239,6 +246,7 @@ async def partner_analytics(
     # Total partners by stage
     stage_counts_result = await db.execute(
         select(Partner.relationship_stage, func.count(Partner.id))
+        .where(partner_org_filter(current_user))
         .group_by(Partner.relationship_stage)
     )
     stage_counts = dict(stage_counts_result.all())
@@ -246,7 +254,8 @@ async def partner_analytics(
     # Interactions in last 30 days
     recent_interactions = (await db.execute(
         select(func.count(PartnerUpdate.id))
-        .where(PartnerUpdate.created_at >= thirty_days_ago)
+        .join(Partner, Partner.id == PartnerUpdate.partner_id)
+        .where(PartnerUpdate.created_at >= thirty_days_ago, partner_org_filter(current_user))
     )).scalar() or 0
 
     # Meetings in next 30 days
@@ -264,7 +273,9 @@ async def partner_analytics(
     # Overdue follow-ups
     overdue_count = (await db.execute(
         select(func.count(func.distinct(PartnerUpdate.partner_id)))
+        .join(Partner, Partner.id == PartnerUpdate.partner_id)
         .where(
+            partner_org_filter(current_user),
             and_(
                 PartnerUpdate.next_contact_date.isnot(None),
                 PartnerUpdate.next_contact_date < now,
@@ -280,6 +291,7 @@ async def partner_analytics(
     stale_count = (await db.execute(
         select(func.count(Partner.id))
         .where(
+            partner_org_filter(current_user),
             and_(
                 Partner.status == "active",
                 Partner.id.notin_(active_partner_ids) if active_partner_ids else True,
@@ -306,7 +318,7 @@ async def partners_home(
         raise HTTPException(status_code=403, detail="No access to partners.")
     from app.models.partner_group import PartnerGroup
 
-    people = (await db.execute(select(func.count(Partner.id)))).scalar() or 0
+    people = (await db.execute(select(func.count(Partner.id)).where(partner_org_filter(current_user)))).scalar() or 0
     inst = getattr(current_user, "institution_id", None)
     groups = (await db.execute(select(func.count(PartnerGroup.id)).where(
         PartnerGroup.institution_id == inst if inst else PartnerGroup.institution_id.is_(None)
@@ -340,6 +352,7 @@ async def upcoming_contacts(
     q = (
         select(Partner, subq.c.next_contact_date)
         .join(subq, Partner.id == subq.c.partner_id)
+        .where(partner_org_filter(current_user))
         .order_by(subq.c.next_contact_date)
     )
     rows = (await db.execute(q)).all()
@@ -377,6 +390,7 @@ async def get_pipeline(
     result = await db.execute(
         select(Partner, ncd_subq.c.next_contact_date)
         .outerjoin(ncd_subq, Partner.id == ncd_subq.c.partner_id)
+        .where(partner_org_filter(current_user))
         .order_by(desc(Partner.updated_at))
     )
     rows = result.all()
@@ -432,6 +446,7 @@ async def list_partners(
     stmt = (
         select(Partner, ncd_subq.c.next_contact_date)
         .outerjoin(ncd_subq, Partner.id == ncd_subq.c.partner_id)
+        .where(partner_org_filter(current_user))
     )
 
     if status:
@@ -575,7 +590,7 @@ async def create_partner_reminder(
     db: AsyncSession = Depends(get_db), current_user: User = Depends(get_current_user),
 ):
     from app.models.partner_reminder import PartnerReminder
-    await _get_partner_or_404(partner_id, db)
+    await _get_partner_or_404(partner_id, db, current_user)
     r = PartnerReminder(
         id=str(uuid.uuid4()), partner_id=partner_id, user_id=current_user.id,
         institution_id=getattr(current_user, "institution_id", None),
@@ -592,6 +607,7 @@ async def list_partner_reminders(
     partner_id: str, db: AsyncSession = Depends(get_db), current_user: User = Depends(get_current_user),
 ):
     from app.models.partner_reminder import PartnerReminder
+    await _get_partner_or_404(partner_id, db, current_user)
     rows = (await db.execute(
         select(PartnerReminder).where(
             PartnerReminder.partner_id == partner_id,
@@ -612,6 +628,7 @@ async def delete_partner_reminder(
 ):
     from sqlalchemy import delete as sa_delete
     from app.models.partner_reminder import PartnerReminder
+    await _get_partner_or_404(partner_id, db, current_user)
     await db.execute(sa_delete(PartnerReminder).where(
         PartnerReminder.id == reminder_id, PartnerReminder.partner_id == partner_id))
     await db.commit()
@@ -656,7 +673,7 @@ async def parse_email_list_preview(
     emails = [c.email for c in contacts]
     existing: dict[str, Partner] = {}
     if emails:
-        rows = (await db.execute(select(Partner).where(func.lower(Partner.email).in_(emails)))).scalars().all()
+        rows = (await db.execute(select(Partner).where(func.lower(Partner.email).in_(emails), partner_org_filter(current_user)))).scalars().all()
         existing = {(p.email or "").lower(): p for p in rows}
     me = (current_user.email or "").lower()
     out = []
@@ -685,7 +702,7 @@ async def bulk_create_from_emails(
     emails = [c.email.strip().lower() for c in data.contacts]
     existing: dict[str, Partner] = {}
     if emails:
-        rows = (await db.execute(select(Partner).where(func.lower(Partner.email).in_(emails)))).scalars().all()
+        rows = (await db.execute(select(Partner).where(func.lower(Partner.email).in_(emails), partner_org_filter(current_user)))).scalars().all()
         existing = {(p.email or "").lower(): p for p in rows}
 
     # Tags chosen on import go on everyone; de-duplicated case-insensitively.
@@ -751,7 +768,7 @@ async def research_status(
     """Progress for a batch of partners being researched."""
     if not data.ids:
         return []
-    rows = (await db.execute(select(Partner).where(Partner.id.in_(data.ids[:500])))).scalars().all()
+    rows = (await db.execute(select(Partner).where(Partner.id.in_(data.ids[:500]), partner_org_filter(current_user)))).scalars().all()
     return [{
         "id": p.id, "name": p.name, "email": p.email, "title": p.title,
         "organization": p.organization, "enrichment_status": p.enrichment_status,
@@ -816,7 +833,7 @@ async def get_partner(
     current_user: User = Depends(get_current_user),
 ):
     """Full partner detail including contact log, linked grants, meetings, and documents."""
-    partner = await _get_partner_or_404(partner_id, db)
+    partner = await _get_partner_or_404(partner_id, db, current_user)
 
     updates = (await db.execute(
         select(PartnerUpdate)
@@ -976,7 +993,7 @@ async def update_partner(
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ):
-    partner = await _get_partner_or_404(partner_id, db)
+    partner = await _get_partner_or_404(partner_id, db, current_user)
     for k, v in data.model_dump(exclude_none=True).items():
         setattr(partner, k, v)
     await db.commit()
@@ -994,7 +1011,7 @@ async def update_stage(
     valid_stages = {"prospect", "qualified", "engaged", "collaborating", "alumni"}
     if data.relationship_stage not in valid_stages:
         raise HTTPException(400, f"Invalid stage. Must be one of: {', '.join(valid_stages)}")
-    partner = await _get_partner_or_404(partner_id, db)
+    partner = await _get_partner_or_404(partner_id, db, current_user)
     partner.relationship_stage = data.relationship_stage
     await db.commit()
     return {"id": partner.id, "relationship_stage": data.relationship_stage}
@@ -1006,7 +1023,7 @@ async def delete_partner(
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ):
-    partner = await _get_partner_or_404(partner_id, db)
+    partner = await _get_partner_or_404(partner_id, db, current_user)
     await db.delete(partner)
     await db.commit()
 
@@ -1022,7 +1039,7 @@ async def enrich_partner(
 ):
     """Research this partner on the web (search, profile pages, OpenAlex) in the
     background and fill in empty fields, bio and expertise tags."""
-    partner = await _get_partner_or_404(partner_id, db)
+    partner = await _get_partner_or_404(partner_id, db, current_user)
     partner.enrichment_status = "pending"
     await db.commit()
 
@@ -1039,7 +1056,7 @@ async def get_partner_fit_scores(
     current_user: User = Depends(get_current_user),
 ):
     """Return open grants/opportunities and score how well this partner fits each."""
-    partner = await _get_partner_or_404(partner_id, db)
+    partner = await _get_partner_or_404(partner_id, db, current_user)
 
     from app.models.active_grant import ActiveGrant
     from app.models.opportunity import Opportunity
@@ -1090,7 +1107,7 @@ async def draft_outreach_email(
     current_user: User = Depends(get_current_user),
 ):
     """Generate a personalized outreach email draft using AI."""
-    partner = await _get_partner_or_404(partner_id, db)
+    partner = await _get_partner_or_404(partner_id, db, current_user)
 
     from app.ai.agents.outreach_draft_agent import draft_outreach_email as draft_fn
     from app.models.institution import Institution
@@ -1142,7 +1159,7 @@ async def list_partner_updates(
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ):
-    await _get_partner_or_404(partner_id, db)
+    await _get_partner_or_404(partner_id, db, current_user)
     updates = (await db.execute(
         select(PartnerUpdate)
         .where(PartnerUpdate.partner_id == partner_id)
@@ -1165,7 +1182,7 @@ async def add_partner_update(
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ):
-    await _get_partner_or_404(partner_id, db)
+    await _get_partner_or_404(partner_id, db, current_user)
     update = PartnerUpdate(
         id=str(uuid.uuid4()),
         partner_id=partner_id,
@@ -1186,7 +1203,7 @@ async def list_partner_links(
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ):
-    await _get_partner_or_404(partner_id, db)
+    await _get_partner_or_404(partner_id, db, current_user)
     q = (
         select(PartnerGrantLink)
         .where(PartnerGrantLink.partner_id == partner_id)
@@ -1203,7 +1220,7 @@ async def add_partner_link(
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ):
-    await _get_partner_or_404(partner_id, db)
+    await _get_partner_or_404(partner_id, db, current_user)
     link = PartnerGrantLink(
         id=str(uuid.uuid4()),
         partner_id=partner_id,
@@ -1223,7 +1240,7 @@ async def workspace_sync_status(
     current_user: User = Depends(get_current_user),
 ):
     """Check if this CRM partner matches any workspace partners by email."""
-    partner = await _get_partner_or_404(partner_id, db)
+    partner = await _get_partner_or_404(partner_id, db, current_user)
     if not partner.email:
         return {"matches": []}
 
@@ -1256,6 +1273,7 @@ async def delete_partner_link(
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ):
+    await _get_partner_or_404(partner_id, db, current_user)
     result = await db.execute(
         select(PartnerGrantLink).where(
             PartnerGrantLink.id == link_id,
@@ -1333,7 +1351,7 @@ async def export_partners(
     current_user: User = Depends(get_current_user),
 ):
     """Export partner list as CSV."""
-    stmt = select(Partner)
+    stmt = select(Partner).where(partner_org_filter(current_user))
     if status:
         stmt = stmt.where(Partner.status == status)
     if stage:
@@ -1378,7 +1396,7 @@ async def bulk_update_partners(
     """Bulk update stage / owner / status for a list of partner IDs."""
     if not data.ids:
         return {"updated": 0}
-    partners = (await db.execute(select(Partner).where(Partner.id.in_(data.ids)))).scalars().all()
+    partners = (await db.execute(select(Partner).where(Partner.id.in_(data.ids), partner_org_filter(current_user)))).scalars().all()
     fields = data.model_dump(exclude={"ids"}, exclude_none=True)
     for p in partners:
         for k, v in fields.items():
@@ -1396,7 +1414,7 @@ async def bulk_delete_partners(
     """Bulk delete partners by ID list."""
     if not data.ids:
         return {"deleted": 0}
-    partners = (await db.execute(select(Partner).where(Partner.id.in_(data.ids)))).scalars().all()
+    partners = (await db.execute(select(Partner).where(Partner.id.in_(data.ids), partner_org_filter(current_user)))).scalars().all()
     for p in partners:
         await db.delete(p)
     await db.commit()
@@ -1413,6 +1431,7 @@ async def edit_partner_update(
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ):
+    await _get_partner_or_404(partner_id, db, current_user)
     upd = (await db.execute(
         select(PartnerUpdate).where(PartnerUpdate.id == update_id, PartnerUpdate.partner_id == partner_id)
     )).scalar_one_or_none()
@@ -1431,6 +1450,7 @@ async def delete_partner_update(
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ):
+    await _get_partner_or_404(partner_id, db, current_user)
     upd = (await db.execute(
         select(PartnerUpdate).where(PartnerUpdate.id == update_id, PartnerUpdate.partner_id == partner_id)
     )).scalar_one_or_none()
@@ -1451,7 +1471,7 @@ async def get_partner_activity(
     current_user: User = Depends(get_current_user),
 ):
     """Unified activity feed merging updates, meetings, and documents."""
-    await _get_partner_or_404(partner_id, db)
+    await _get_partner_or_404(partner_id, db, current_user)
     from app.models.partner_meeting import PartnerMeeting
     from app.models.partner_document import PartnerDocument
 
@@ -1521,14 +1541,14 @@ async def find_possible_duplicates(
     current_user: User = Depends(get_current_user),
 ):
     """Find partners that may be duplicates based on email or name+org similarity."""
-    partner = await _get_partner_or_404(partner_id, db)
+    partner = await _get_partner_or_404(partner_id, db, current_user)
     candidates = []
 
     # Exact email match (excluding self)
     if partner.email:
         email_matches = (await db.execute(
             select(Partner)
-            .where(Partner.email == partner.email, Partner.id != partner_id)
+            .where(Partner.email == partner.email, Partner.id != partner_id, partner_org_filter(current_user))
         )).scalars().all()
         for m in email_matches:
             candidates.append({**_partner_summary(m), "match_reason": "same_email", "confidence": 0.95})
@@ -1543,6 +1563,7 @@ async def find_possible_duplicates(
                 select(Partner)
                 .where(
                     Partner.id != partner_id,
+                    partner_org_filter(current_user),
                     Partner.name.ilike(f"%{first}%"),
                     Partner.name.ilike(f"%{last}%"),
                 )
@@ -1577,8 +1598,8 @@ async def merge_partners(
     if not other_id:
         raise HTTPException(400, "other_id required")
 
-    primary = await _get_partner_or_404(partner_id, db)
-    other = await _get_partner_or_404(other_id, db)
+    primary = await _get_partner_or_404(partner_id, db, current_user)
+    other = await _get_partner_or_404(other_id, db, current_user)
 
     # Apply field choices
     mergeable = ["name", "email", "phone", "organization", "title", "department", "country", "city",

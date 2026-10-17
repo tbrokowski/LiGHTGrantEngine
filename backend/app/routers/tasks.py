@@ -121,10 +121,8 @@ async def _get_accessible_grant_ids(user: User, db: AsyncSession) -> list[str]:
     of (any org, incl. guest invites), or on the proposal team — never the whole
     org portfolio. Mirrors grants.list_grants so the dashboard matches the Grants tab.
     """
-    if is_org_admin(user):
-        q = select(ActiveGrant.id)
-        if user.institution_id:
-            q = q.where(ActiveGrant.institution_id == user.institution_id)
+    if is_org_admin(user) and user.institution_id:
+        q = select(ActiveGrant.id).where(ActiveGrant.institution_id == user.institution_id)
         return list((await db.execute(q)).scalars().all())
 
     member_subq = select(GrantMember.grant_id).where(

@@ -7,6 +7,10 @@ When provided, ProposalSection results are filtered to only include sections tha
   - come from a grant archive entry (archive_id IS NOT NULL) — org-wide
   - OR come from a document whose grant_id is NULL (not grant-specific)
   - OR come from a document whose grant_id is in accessible_grant_ids
+
+Every query is also limited to the active organization's archive and grants
+(app.services.tenancy — set per request / per task); with none set, nothing
+is returned.
 """
 from typing import Optional
 
@@ -20,6 +24,7 @@ from app.models.archive import GrantArchive
 from app.models.document import Document
 from app.models.section import ProposalSection
 from app.models.language import ReusableLanguageBlock
+from app.services.tenancy import archive_org_filter, language_block_org_filter, section_org_filter
 
 logger = structlog.get_logger()
 settings = get_settings()
@@ -134,6 +139,24 @@ def _grant_access_filter(accessible_grant_ids: Optional[list[str]]) -> Optional[
     )
 
 
+def _document_type_filter(document_types: Optional[list[str]]) -> Optional[object]:
+    """Restrict ProposalSection results to sections whose source document has one
+    of these document types (e.g. concept_note, full_proposal)."""
+    if not document_types:
+        return None
+    typed_doc_ids_subq = (
+        select(Document.id).where(Document.document_type.in_(document_types))
+    ).scalar_subquery()
+    return ProposalSection.document_id.in_(typed_doc_ids_subq)
+
+
+def _top_up(preferred: list[dict], fallback: list[dict], k: int) -> list[dict]:
+    """Keep the preferred (type-matched) results first, then fill up to k from the
+    unfiltered results so a sparse archive never starves the writer."""
+    seen = {r["id"] for r in preferred}
+    return (preferred + [r for r in fallback if r["id"] not in seen])[:k]
+
+
 async def _vector_candidates(
     db: AsyncSession,
     query_embedding: list[float],
@@ -146,7 +169,7 @@ async def _vector_candidates(
             ProposalSection,
             text(f"embedding <=> '{embedding_str}'::vector AS distance"),
         )
-        .where(ProposalSection.embedding.isnot(None))
+        .where(ProposalSection.embedding.isnot(None), section_org_filter())
     )
     if filters:
         vector_q = vector_q.where(and_(*filters))
@@ -186,7 +209,7 @@ async def _chunk_vector_candidates(
             text(f"section_chunks.embedding <=> '{embedding_str}'::vector AS distance"),
         )
         .join(SectionChunk, SectionChunk.section_id == ProposalSection.id)
-        .where(SectionChunk.embedding.isnot(None))
+        .where(SectionChunk.embedding.isnot(None), section_org_filter())
     )
     if filters:
         q = q.where(and_(*filters))
@@ -220,13 +243,31 @@ async def retrieve_style_exemplars(
     funder: Optional[str] = None,
     top_k: Optional[int] = None,
     accessible_grant_ids: Optional[list[str]] = None,
+    document_types: Optional[list[str]] = None,
+    _type_filter: Optional[list[str]] = None,
 ) -> list[dict]:
     """
     Metadata-first retrieval for writing voice and tone.
     Prefers awarded grants and archives with style fingerprints.
+
+    When `document_types` is given (the proposal-type style preference), sections
+    from documents of those types come first; the rest is topped up unfiltered.
     """
     rag_cfg = settings.rag
     k = top_k or rag_cfg.top_k
+
+    if document_types:
+        preferred = await retrieve_style_exemplars(
+            db, section_type=section_type, funder=funder, top_k=k,
+            accessible_grant_ids=accessible_grant_ids, _type_filter=document_types,
+        )
+        if len(preferred) >= k:
+            return preferred
+        fallback = await retrieve_style_exemplars(
+            db, section_type=section_type, funder=funder, top_k=k,
+            accessible_grant_ids=accessible_grant_ids,
+        )
+        return _top_up(preferred, fallback, k)
 
     filters = []
     if rag_cfg.enforce_ai_permissions:
@@ -238,6 +279,9 @@ async def retrieve_style_exemplars(
     grant_filter = _grant_access_filter(accessible_grant_ids)
     if grant_filter is not None:
         filters.append(grant_filter)
+    type_filter = _document_type_filter(_type_filter)
+    if type_filter is not None:
+        filters.append(type_filter)
 
     style_query = f"grant writing {section_type or 'proposal'} institutional voice"
     query_embedding = await get_embedding(style_query)
@@ -342,6 +386,8 @@ async def retrieve_content_exemplars(
     current_grant_id: Optional[str] = None,
     archive_ids: Optional[list[str]] = None,
     rerank: bool = True,
+    document_types: Optional[list[str]] = None,
+    _type_filter: Optional[list[str]] = None,
 ) -> list[dict]:
     """Topic-relevant retrieval for substantive content inspiration.
 
@@ -352,9 +398,25 @@ async def retrieve_content_exemplars(
     When `archive_ids` is provided, results are scoped to those specific archive
     entries only — used for "look up this named prior proposal" lookups (see
     retrieve_from_named_archive) rather than a generic archive-wide search.
+
+    When `document_types` is given (the proposal-type style preference), sections
+    from documents of those types come first; the rest is topped up unfiltered.
     """
     rag_cfg = settings.rag
     k = top_k or rag_cfg.top_k
+
+    if document_types:
+        common = dict(
+            query=query, db=db, section_type=section_type, funder=funder, themes=themes,
+            top_k=k, require_ai_retrieval=require_ai_retrieval,
+            accessible_grant_ids=accessible_grant_ids, current_grant_id=current_grant_id,
+            archive_ids=archive_ids, rerank=rerank,
+        )
+        preferred = await retrieve_content_exemplars(**common, _type_filter=document_types)
+        if len(preferred) >= k:
+            return preferred
+        fallback = await retrieve_content_exemplars(**common)
+        return _top_up(preferred, fallback, k)
 
     filters = []
     if require_ai_retrieval and rag_cfg.enforce_ai_permissions:
@@ -365,6 +427,9 @@ async def retrieve_content_exemplars(
         filters.append(ProposalSection.funder.ilike(f"%{funder}%"))
     if archive_ids:
         filters.append(ProposalSection.archive_id.in_(archive_ids))
+    type_filter = _document_type_filter(_type_filter)
+    if type_filter is not None:
+        filters.append(type_filter)
     grant_filter = _grant_access_filter(accessible_grant_ids)
     if grant_filter is not None:
         # Always include per-grant reference sections regardless of access filter
@@ -464,7 +529,9 @@ async def retrieve_from_named_archive(
     matches archive_name_query.
     """
     archive_rows = await db.execute(
-        select(GrantArchive).where(GrantArchive.title.ilike(f"%{archive_name_query}%")).limit(5)
+        select(GrantArchive).where(
+            archive_org_filter(), GrantArchive.title.ilike(f"%{archive_name_query}%")
+        ).limit(5)
     )
     archives = archive_rows.scalars().all()
     if not archives:
@@ -495,7 +562,7 @@ async def retrieve_document_structure(
     top_k: int = 3,
 ) -> list[dict]:
     """Retrieve structural templates from archived grants."""
-    q = select(GrantArchive).where(GrantArchive.document_structure.isnot(None))
+    q = select(GrantArchive).where(archive_org_filter(), GrantArchive.document_structure.isnot(None))
     if funder:
         q = q.where(GrantArchive.funder.ilike(f"%{funder}%"))
 
@@ -570,6 +637,7 @@ async def retrieve_reusable_language(
     filters = [
         ReusableLanguageBlock.approved_for_reuse == True,
         ReusableLanguageBlock.do_not_reuse == False,
+        language_block_org_filter(),
     ]
     if section_type:
         filters.append(ReusableLanguageBlock.section_type == section_type)
@@ -610,7 +678,7 @@ async def retrieve_archive_style_fingerprints(
     top_k: int = 3,
 ) -> list[dict]:
     """Load pre-computed style fingerprints from archived grants."""
-    q = select(GrantArchive).where(GrantArchive.style_fingerprint.isnot(None))
+    q = select(GrantArchive).where(archive_org_filter(), GrantArchive.style_fingerprint.isnot(None))
     if funder:
         q = q.where(GrantArchive.funder.ilike(f"%{funder}%"))
     result = await db.execute(q)
@@ -637,7 +705,7 @@ async def retrieve_archive_style_fingerprints(
 async def _keyword_fallback(query: str, db: AsyncSession, filters: list, k: int) -> list[dict]:
     """Keyword fallback when vector search fails."""
     words = query.split()[:5]
-    q = select(ProposalSection)
+    q = select(ProposalSection).where(section_org_filter())
     if filters:
         q = q.where(and_(*filters))
     for word in words:
@@ -717,7 +785,7 @@ async def retrieve_entity_mentions(
     """Literal text match in section body for acronyms/program names (MOOVE, DISCO)."""
     if not entity or len(entity) < 2:
         return []
-    filters = [ProposalSection.ai_retrieval_allowed == True]
+    filters = [ProposalSection.ai_retrieval_allowed == True, section_org_filter()]
     if funder:
         filters.append(ProposalSection.funder.ilike(f"%{funder}%"))
     grant_filter = _grant_access_filter(None)

@@ -8,12 +8,13 @@ from fastapi.responses import Response
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 from app.database import get_db
+from app.models.active_grant import ActiveGrant
 from app.models.document import Document, ProcessingStatus
 from app.models.grant_member import GrantMember, GrantMemberStatus
 from app.models.user import User
 from app.routers.auth import get_current_user
 from app.services import storage
-from app.auth.permissions import is_org_admin, get_redis, get_user_grant_ids
+from app.auth.permissions import is_admin_of, is_org_admin, get_redis, get_user_grant_ids
 import redis.asyncio as aioredis
 
 router = APIRouter()
@@ -34,15 +35,74 @@ async def _get_document_for_user(
     current_user: User,
     redis: aioredis.Redis,
 ) -> Document:
+    """The document, if the user may open it:
+    - an archive file: the archive entry is visible to them (their org's, or
+      shared with them) — this wins even when the file was copied from a grant;
+    - a grant file: they're a member of the grant, or an admin of its org;
+    - anything else: it was uploaded by someone in their active org (or by
+      the system, for opportunity documents).
+    Other organizations' documents are a 404."""
     result = await db.execute(select(Document).where(Document.id == doc_id))
     doc = result.scalar_one_or_none()
     if not doc:
         raise HTTPException(404, "Document not found")
-    if doc.grant_id and not is_org_admin(current_user):
-        accessible = await get_user_grant_ids(current_user, db, redis)
-        if doc.grant_id not in accessible:
-            raise HTTPException(403, "You do not have access to this document.")
-    return doc
+    if doc.archive_id and await _archive_visible(doc.archive_id, db, current_user):
+        return doc
+    if doc.grant_id:
+        if await _grant_accessible(doc.grant_id, db, current_user, redis):
+            return doc
+        raise HTTPException(403, "You do not have access to this document.")
+    if not doc.archive_id and await _uploaded_in_active_org(doc, db, current_user):
+        return doc
+    raise HTTPException(404, "Document not found")
+
+
+async def _archive_visible(archive_id: str, db: AsyncSession, user: User) -> bool:
+    from app.routers.archive import _get_archive_for
+    try:
+        await _get_archive_for(db, archive_id, user, allow_shared=True)
+        return True
+    except HTTPException:
+        return False
+
+
+async def _grant_accessible(grant_id: str, db: AsyncSession, user: User, redis: aioredis.Redis) -> bool:
+    """A grant member, or an admin of the organization that owns the grant."""
+    if is_org_admin(user) and user.institution_id:
+        org = (await db.execute(
+            select(ActiveGrant.institution_id).where(ActiveGrant.id == grant_id)
+        )).scalar_one_or_none()
+        if is_admin_of(user, org):
+            return True
+    return grant_id in await get_user_grant_ids(user, db, redis)
+
+
+async def _uploaded_in_active_org(doc: Document, db: AsyncSession, user: User) -> bool:
+    if not doc.uploaded_by_id:
+        # System-fetched call documents for the shared opportunity pool.
+        return bool(doc.opportunity_id)
+    if doc.uploaded_by_id == user.id:
+        return True
+    if not user.institution_id:
+        return False
+    from app.models.institution_membership import InstitutionMembership
+    return (await db.execute(select(InstitutionMembership.id).where(
+        InstitutionMembership.user_id == doc.uploaded_by_id,
+        InstitutionMembership.institution_id == user.institution_id,
+    ))).first() is not None
+
+
+async def _check_attach_targets(
+    db: AsyncSession, user: User, redis: aioredis.Redis,
+    grant_id: Optional[str], archive_id: Optional[str],
+) -> None:
+    """Uploads may only attach to grants and archive entries the user can reach
+    in their own organization."""
+    if grant_id and not await _grant_accessible(grant_id, db, user, redis):
+        raise HTTPException(403, "You do not have access to this grant.")
+    if archive_id:
+        from app.routers.archive import _get_archive_for
+        await _get_archive_for(db, archive_id, user)
 
 
 def _source_url_from_notes(notes: str | None) -> str | None:
@@ -67,11 +127,13 @@ async def list_documents(
     current_user: User = Depends(get_current_user),
     redis: aioredis.Redis = Depends(get_redis),
 ):
-    # Enforce grant membership when filtering by grant_id
-    if grant_id and not is_org_admin(current_user):
-        accessible = await get_user_grant_ids(current_user, db, redis)
-        if grant_id not in accessible:
-            raise HTTPException(403, "You do not have access to this grant's documents.")
+    # Always scoped to one thing the user can see — never every org's documents.
+    if not (opportunity_id or grant_id or archive_id):
+        raise HTTPException(400, "Filter by opportunity_id, grant_id or archive_id.")
+    if grant_id and not await _grant_accessible(grant_id, db, current_user, redis):
+        raise HTTPException(403, "You do not have access to this grant's documents.")
+    if archive_id and not await _archive_visible(archive_id, db, current_user):
+        raise HTTPException(404, "Archive entry not found")
 
     q = select(Document)
     if opportunity_id:
@@ -82,6 +144,9 @@ async def list_documents(
         q = q.where(Document.archive_id == archive_id)
     result = await db.execute(q)
     docs = result.scalars().all()
+    if not (grant_id or archive_id):
+        # Opportunity documents: system-fetched ones, plus this org's uploads.
+        docs = [d for d in docs if await _uploaded_in_active_org(d, db, current_user)]
     return [
         {c.name: getattr(d, c.name) for c in d.__table__.columns if c.name != "embedding"}
         for d in docs
@@ -99,7 +164,9 @@ async def link_document(
     ai_retrieval_allowed: bool = Form(True),
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(get_current_user),
+    redis: aioredis.Redis = Depends(get_redis),
 ):
+    await _check_attach_targets(db, current_user, redis, grant_id, archive_id)
     doc = Document(
         id=str(uuid.uuid4()),
         file_url=file_url,
@@ -122,11 +189,9 @@ async def parse_document(
     doc_id: str,
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(get_current_user),
+    redis: aioredis.Redis = Depends(get_redis),
 ):
-    result = await db.execute(select(Document).where(Document.id == doc_id))
-    doc = result.scalar_one_or_none()
-    if not doc:
-        raise HTTPException(404, "Document not found")
+    await _get_document_for_user(doc_id, db, current_user, redis)
     from app.workers.celery_app import celery_app
     celery_app.send_task("app.workers.embedding_tasks.parse_and_embed_document", args=[doc_id])
     return {"message": "Parsing queued", "document_id": doc_id}
@@ -214,7 +279,9 @@ async def upload_document(
     archive_id: Optional[str] = Form(None),
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(get_current_user),
+    redis: aioredis.Redis = Depends(get_redis),
 ):
+    await _check_attach_targets(db, current_user, redis, grant_id, archive_id)
     content = await file.read()
     if not content:
         raise HTTPException(400, "Empty file")

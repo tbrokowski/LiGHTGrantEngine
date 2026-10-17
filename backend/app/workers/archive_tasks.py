@@ -20,6 +20,17 @@ STALE_THRESHOLD_MINUTES = 20  # archives stuck in 'processing' longer than this 
 PENDING_STALE_THRESHOLD_MINUTES = 5
 
 
+def _archive_org(archive_id: str) -> str | None:
+    from sqlalchemy import text
+
+    from app.db_sync import get_sync_engine
+
+    with get_sync_engine().connect() as conn:
+        return conn.execute(
+            text("SELECT institution_id FROM grant_archives WHERE id = :id"), {"id": archive_id}
+        ).scalar()
+
+
 def _mark_failed(archive_id: str, error_msg: str) -> None:
     """Set indexing_status=failed using a sync session (safe to call from exception handlers)."""
     from sqlalchemy import text
@@ -175,11 +186,14 @@ def index_archive(self, archive_id: str) -> dict:
         result = asyncio.run(_run())
         # Trigger archive re-clustering after indexing succeeds. Delay 5 minutes
         # to give the embed_section Celery jobs time to populate section embeddings.
-        from app.workers.celery_app import celery_app as _app
-        _app.send_task(
-            "app.workers.archive_clustering_tasks.cluster_archives",
-            countdown=300,
-        )
+        org_id = _archive_org(archive_id)
+        if org_id:
+            from app.workers.celery_app import celery_app as _app
+            _app.send_task(
+                "app.workers.archive_clustering_tasks.cluster_archives",
+                kwargs={"institution_id": org_id},
+                countdown=300,
+            )
         return result
     except SoftTimeLimitExceeded:
         logger.error("index_archive timed out for %s", archive_id)

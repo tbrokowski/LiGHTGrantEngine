@@ -1,6 +1,6 @@
 # Celery worker image — same base as the API, different CMD per Railway service.
 # Railway service "worker" sets:
-#   Start Command: celery -A app.workers.celery_app worker --queues=celery,summaries --loglevel=info --concurrency=4 --hostname=worker@%h
+#   Start Command: celery -A app.workers.celery_app worker --queues=celery,summaries,scans,scan_now --loglevel=info --concurrency=4 --hostname=worker@%h
 #
 # Railway service "call-analysis-worker" sets:
 #   Start Command: celery -A app.workers.celery_app worker --queues=call_analysis --loglevel=info --concurrency=2 --hostname=call_analysis@%h

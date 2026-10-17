@@ -10,6 +10,7 @@ from .section import ProposalSection
 from .archive import GrantArchive
 from .archive_cluster import ArchiveCluster
 from .archive_edge import ArchiveEdge
+from .archive_share import ArchiveShare
 from .language import ReusableLanguageBlock
 from .notification import Notification
 from .ai_run import AIRun

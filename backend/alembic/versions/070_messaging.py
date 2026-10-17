@@ -7,8 +7,8 @@ the user who triggered them so the inbox can show who did what.
 from alembic import op
 import sqlalchemy as sa
 
-revision = "067_messaging"
-down_revision = "066_institution_memberships"
+revision = "070_messaging"
+down_revision = "069_super_admin"
 branch_labels = None
 depends_on = None
 

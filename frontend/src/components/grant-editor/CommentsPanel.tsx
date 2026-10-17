@@ -6,7 +6,6 @@ import {
   X, RotateCw, Loader2, AlertTriangle, WifiOff, Sparkles, Wand2,
 } from 'lucide-react';
 import { grantComments, grants, type GrantComment } from '@/lib/api';
-import { useWorkspace } from './WorkspaceContext';
 import type { CommentBridge } from './editor-extensions';
 
 interface Member { id: string; name: string }
@@ -18,6 +17,9 @@ interface CommentsPanelProps {
   onClose?: () => void;
   /** Pane-local bridge to the editor (highlight/locate). Only the draft editor sets it. */
   bridge?: React.MutableRefObject<CommentBridge>;
+  /** Current editor selection — becomes the anchor of a new comment. */
+  selectedText: string;
+  onSelectionChange: (text: string) => void;
 }
 
 const SEVERITY_COLOR: Record<string, string> = {
@@ -27,8 +29,9 @@ const SEVERITY_COLOR: Record<string, string> = {
   suggestion: '#2563eb',
 };
 
-export default function CommentsPanel({ grantId, documentId = 'draft', onClose, bridge }: CommentsPanelProps) {
-  const { selectedText, onSelectionChange } = useWorkspace();
+export default function CommentsPanel({
+  grantId, documentId = 'draft', onClose, bridge, selectedText, onSelectionChange,
+}: CommentsPanelProps) {
   const [comments, setComments] = useState<GrantComment[]>([]);
   const [newText, setNewText] = useState('');
   const [submitting, setSubmitting] = useState(false);

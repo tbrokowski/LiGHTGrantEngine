@@ -12,7 +12,7 @@ from app.database import get_db
 from app.models.funder_org import FunderOrg
 from app.models.user import User
 from app.routers.auth import get_current_user
-from app.auth.permissions import require_org_admin
+from app.auth.permissions import require_super_admin
 
 router = APIRouter()
 
@@ -70,7 +70,7 @@ async def get_funder_org(
     return _to_dict(f)
 
 
-@router.post("/", status_code=201, dependencies=[Depends(require_org_admin())])
+@router.post("/", status_code=201, dependencies=[Depends(require_super_admin())])
 async def create_funder_org(
     data: FunderOrgCreate,
     db: AsyncSession = Depends(get_db),
@@ -83,7 +83,7 @@ async def create_funder_org(
     return _to_dict(f)
 
 
-@router.patch("/{funder_org_id}", dependencies=[Depends(require_org_admin())])
+@router.patch("/{funder_org_id}", dependencies=[Depends(require_super_admin())])
 async def update_funder_org(
     funder_org_id: str,
     data: FunderOrgUpdate,
@@ -100,7 +100,7 @@ async def update_funder_org(
     return _to_dict(f)
 
 
-@router.delete("/{funder_org_id}", status_code=204, dependencies=[Depends(require_org_admin())])
+@router.delete("/{funder_org_id}", status_code=204, dependencies=[Depends(require_super_admin())])
 async def delete_funder_org(
     funder_org_id: str,
     db: AsyncSession = Depends(get_db),

@@ -92,13 +92,16 @@ def _get_funder_logo_url(funder_name: str) -> str | None:
     return None
 
 
-_SCAN_STAGGER_SECONDS = 15  # gap between each scan_source dispatch
-
-
 @celery_app.task(name="app.workers.discovery_tasks.scan_all_sources", bind=True, max_retries=2)
 def scan_all_sources(self):
     """Full scan of all non-paused sources. Includes broken/under_review so every
-    source gets a fresh attempt when triggered manually via Refresh Sources."""
+    source gets a fresh attempt when triggered manually via Refresh Sources.
+
+    Dispatched without countdowns: scan_source's rate limit already paces them.
+    Staggered countdowns (15s apart, so 80+ minutes for the full list) made the
+    worker pull every scan into memory as an unacked ETA task, and Redis
+    redelivers anything unacked for over an hour — so the tail of each fan-out
+    ran twice, and a worker restart dropped the rest until redelivery."""
     from sqlalchemy import select, create_engine
     from sqlalchemy.orm import Session
     from app.config import get_settings
@@ -111,14 +114,8 @@ def scan_all_sources(self):
         sources = db.execute(
             select(Source).where(Source.status.in_(["active", "broken", "under_review"]))
         ).scalars().all()
-        # Stagger dispatches to avoid simultaneous LLM call storms that
-        # exhaust the OpenAI rate limit (429s). AI-scraper sources cause
-        # the most load, so every task gets a countdown offset.
-        for i, source in enumerate(sources):
-            scan_source.apply_async(
-                args=[str(source.id)],
-                countdown=i * _SCAN_STAGGER_SECONDS,
-            )
+        for source in sources:
+            scan_source.delay(str(source.id))
     return {"queued": len(sources) if sources else 0}
 
 
@@ -136,11 +133,8 @@ def scan_high_priority_sources():
         sources = db.execute(
             select(Source).where(Source.status == "active", Source.is_high_priority == True)
         ).scalars().all()
-        for i, source in enumerate(sources):
-            scan_source.apply_async(
-                args=[str(source.id)],
-                countdown=i * _SCAN_STAGGER_SECONDS,
-            )
+        for source in sources:
+            scan_source.delay(str(source.id))
     return {"queued": len(sources) if sources else 0}
 
 
@@ -730,7 +724,7 @@ def discover_new_sources(self, n_queries: int | None = None):
         auto_threshold = cfg.auto_approve_confidence
         created_active = 0
         created_review = 0
-        scan_countdown = 0
+        to_scan: list[str] = []
 
         for portal in portals[:cfg.max_candidates_per_run]:
             confidence = portal.get("confidence", 0)
@@ -785,16 +779,16 @@ def discover_new_sources(self, n_queries: int | None = None):
 
             if status == "active":
                 created_active += 1
-                from app.workers.discovery_tasks import scan_source
-                scan_source.apply_async(
-                    args=[source.id],
-                    countdown=scan_countdown,
-                )
-                scan_countdown += 15
+                to_scan.append(source.id)
             else:
                 created_review += 1
 
         db.commit()
+
+    # After the commit, so a scan can't start before its source row exists.
+    # scan_source's rate limit paces them.
+    for source_id in to_scan:
+        scan_source.delay(source_id)
 
     log.info(
         "discover_new_sources: done",

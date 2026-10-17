@@ -2,11 +2,12 @@
 import { useEffect, useState, useRef, useCallback, useMemo } from 'react';
 import { useParams, useRouter } from 'next/navigation';
 import Link from 'next/link';
-import { ChevronDown, ChevronRight, Pencil, Trash2, X } from 'lucide-react';
+import { ChevronDown, ChevronRight, Pencil, Share2, Trash2, X } from 'lucide-react';
 import { archive } from '@/lib/api';
 import { useAuth } from '@/lib/auth';
 import { usePdfViewer } from '@/contexts/PdfViewerContext';
 import EditArchiveModal from '@/components/archive/EditArchiveModal';
+import ShareArchiveModal from '@/components/archive/ShareArchiveModal';
 
 interface ProposalSection {
   id: string;
@@ -133,6 +134,7 @@ export default function ArchiveDetailPage() {
   const [textPreviewDoc, setTextPreviewDoc] = useState<ArchiveDocument | null>(null);
   const [openingDocId, setOpeningDocId] = useState<string | null>(null);
   const [showEdit, setShowEdit] = useState(false);
+  const [showShare, setShowShare] = useState(false);
   const [confirmDelete, setConfirmDelete] = useState(false);
   const [deleting, setDeleting] = useState(false);
   const [deleteError, setDeleteError] = useState('');
@@ -257,8 +259,17 @@ export default function ArchiveDetailPage() {
           <span>/</span>
           <span className="text-gray-600 truncate">{entry.title}</span>
         </div>
+        <div className="shrink-0 flex items-center gap-2">
+          <button
+            type="button"
+            onClick={() => setShowShare(true)}
+            className="flex items-center gap-1.5 text-xs px-3 py-1.5 rounded-lg border border-gray-200 text-gray-600 hover:bg-gray-50 transition-colors"
+          >
+            <Share2 className="w-3.5 h-3.5" />
+            Share with…
+          </button>
         {canEdit && (
-          <div className="shrink-0 flex items-center gap-2">
+          <>
             <button
               type="button"
               onClick={() => setShowEdit(true)}
@@ -275,8 +286,9 @@ export default function ArchiveDetailPage() {
               <Trash2 className="w-3.5 h-3.5" />
               Delete
             </button>
-          </div>
+          </>
         )}
+        </div>
       </div>
 
       {/* Header */}
@@ -578,6 +590,10 @@ export default function ArchiveDetailPage() {
             load();
           }}
         />
+      )}
+
+      {showShare && (
+        <ShareArchiveModal archiveId={entry.id} title={entry.title} onClose={() => setShowShare(false)} />
       )}
 
       {/* Delete confirmation */}

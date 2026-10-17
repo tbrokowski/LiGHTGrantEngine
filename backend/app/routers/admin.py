@@ -11,16 +11,13 @@ router = APIRouter()
 settings = get_settings()
 
 def _require_admin(current_user: User):
-    if current_user.role != "admin":
-        raise HTTPException(403, "Admin access required")
+    """Platform maintenance touches every organization: super-admins only.
+    (Org roles, even role "admin", don't count — see is_super_admin.)"""
+    from app.auth.permissions import is_super_admin
+    if not is_super_admin(current_user):
+        raise HTTPException(403, "Super-admin access required")
 
-def _require_admin_or_org_admin(current_user: User):
-    """Allow platform admins or institution admins (institution_role=admin)."""
-    if current_user.role == "admin":
-        return
-    if current_user.institution_role == "admin":
-        return
-    raise HTTPException(403, "Admin access required")
+
 
 @router.get("/config")
 async def get_config(current_user: User = Depends(get_current_user)):
@@ -93,7 +90,7 @@ async def resync_feeds(
 @router.post("/trigger/discover-sources")
 async def trigger_discover_sources(current_user: User = Depends(get_current_user)):
     """Queue a discover_new_sources Celery task."""
-    _require_admin_or_org_admin(current_user)
+    _require_admin(current_user)
     from app.workers.celery_app import celery_app
     task = celery_app.send_task("app.workers.discovery_tasks.discover_new_sources")
     return {"message": "Source discovery task queued", "task_id": task.id}
@@ -102,7 +99,7 @@ async def trigger_discover_sources(current_user: User = Depends(get_current_user
 @router.post("/trigger/backfill-opportunity-types")
 async def trigger_backfill_types(current_user: User = Depends(get_current_user)):
     """Queue the opportunity_type backfill task for opportunities missing a type."""
-    _require_admin_or_org_admin(current_user)
+    _require_admin(current_user)
     from app.workers.celery_app import celery_app
     task = celery_app.send_task("app.workers.discovery_tasks.backfill_opportunity_types")
     return {"message": "Type backfill task queued", "task_id": task.id}

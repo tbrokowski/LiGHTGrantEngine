@@ -26,6 +26,10 @@ class GrantArchive(Base):
     id: Mapped[str] = mapped_column(String, primary_key=True, default=lambda: str(uuid.uuid4()))
     opportunity_id: Mapped[str | None] = mapped_column(String, ForeignKey("opportunities.id"))
     grant_id: Mapped[str | None] = mapped_column(String, ForeignKey("active_grants.id"))
+    # Owning organization; only its members see the entry (plus anyone it's shared with).
+    institution_id: Mapped[str | None] = mapped_column(
+        String, ForeignKey("institutions.id", ondelete="SET NULL"), nullable=True, index=True
+    )
 
     title: Mapped[str] = mapped_column(String(500), nullable=False)
     funder: Mapped[str | None] = mapped_column(String(300), index=True)

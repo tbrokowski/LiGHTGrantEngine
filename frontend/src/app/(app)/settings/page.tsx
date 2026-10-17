@@ -501,7 +501,7 @@ function SettingsPageInner() {
     // Honor explicit ?tab= param; otherwise default based on role (set after load)
     return (searchParams.get('tab') as Tab) ?? 'profile';
   });
-  const [currentUser, setCurrentUser] = useState<{ role?: string; institution_id?: string; institution_role?: string } | null>(null);
+  const [currentUser, setCurrentUser] = useState<{ role?: string; institution_id?: string; institution_role?: string; is_super_admin?: boolean } | null>(null);
   const [googleSuccess, setGoogleSuccess] = useState(Boolean(googleConnected));
 
   useEffect(() => {
@@ -521,7 +521,9 @@ function SettingsPageInner() {
     }
   }, []);
 
-  const isPlatformAdmin = currentUser?.role === 'admin';
+  // Super-admins manage what every organization shares (source catalog,
+  // funder orgs, maintenance jobs). An org role — even "admin" — doesn't count.
+  const isPlatformAdmin = currentUser?.is_super_admin === true;
   const isOrgAdmin = currentUser?.institution_role === 'admin';
   const isAdmin = isPlatformAdmin || isOrgAdmin;
   const hasInstitution = Boolean(currentUser?.institution_id);
@@ -1080,12 +1082,12 @@ function SettingsPageInner() {
       {activeTab === 'sources' && currentUser?.institution_id && (
       <div>
       {currentUser.institution_id && (
-        <GrantFiltersPanel institutionId={currentUser.institution_id} isOrgAdmin={isOrgAdmin} />
+        <GrantFiltersPanel institutionId={currentUser.institution_id} isOrgAdmin={isOrgAdmin} isSuperAdmin={isPlatformAdmin} />
       )}
 
       {(isPlatformAdmin || isOrgAdmin) && (
       <>
-      <FunderOrgsPanel />
+      {isPlatformAdmin && <FunderOrgsPanel />}
 
       {/* Worker health banner. Three states: a worker that is busy scanning runs
           single-threaded (--pool=solo) and cannot answer a Celery ping, so a
@@ -1318,6 +1320,8 @@ function SettingsPageInner() {
                 </>
               )}
             </button>
+            {isPlatformAdmin && (
+            <>
             <button
               onClick={handleDedup}
               disabled={deduplicating}
@@ -1375,6 +1379,8 @@ function SettingsPageInner() {
                 </>
               )}
             </button>
+            </>
+            )}
           </div>
           {rebuildResult && (
             <p className="text-xs" style={{ color: 'var(--ink-muted)' }}>{rebuildResult}</p>
@@ -1388,7 +1394,8 @@ function SettingsPageInner() {
         </div>
       </div>
 
-      {/* Data Sources section */}
+      {/* Data Sources section — the shared source catalog: super-admins only */}
+      {isPlatformAdmin && (
       <div className="mb-6">
         <div className="flex items-center justify-between mb-4">
           <div>
@@ -2405,6 +2412,7 @@ function SettingsPageInner() {
           </div>
         </div>
       </div>
+      )}
       </>
       )}
       </div>

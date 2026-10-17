@@ -53,6 +53,8 @@ interface GrantProfile {
 interface GrantFiltersPanelProps {
   institutionId: string;
   isOrgAdmin: boolean;
+  /** Scanning every source at once affects all organizations: super-admins only. */
+  isSuperAdmin?: boolean;
 }
 
 function ReadOnlyTagList({
@@ -190,7 +192,7 @@ function PriorityFunderGroupsEditor({
   );
 }
 
-export function GrantFiltersPanel({ institutionId, isOrgAdmin }: GrantFiltersPanelProps) {
+export function GrantFiltersPanel({ institutionId, isOrgAdmin, isSuperAdmin = false }: GrantFiltersPanelProps) {
   const [orgProfile, setOrgProfile] = useState<GrantProfile>({});
   const [personalKeywords, setPersonalKeywords] = useState<string[]>([]);
   const [personalExcluded, setPersonalExcluded] = useState<string[]>([]);
@@ -670,6 +672,7 @@ export function GrantFiltersPanel({ institutionId, isOrgAdmin }: GrantFiltersPan
           )}
 
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+            {isSuperAdmin && (
             <div className="border border-gray-100 rounded-lg p-4 bg-gray-50">
               <p className="text-xs font-semibold text-gray-700 mb-1">Refresh Sources</p>
               <p className="text-xs text-gray-400 mb-3">Re-scan all active grant sources and pull in new opportunities.</p>
@@ -684,6 +687,7 @@ export function GrantFiltersPanel({ institutionId, isOrgAdmin }: GrantFiltersPan
                 {refreshing ? 'Scanning…' : 'Refresh Sources'}
               </button>
             </div>
+            )}
 
             <div className="border border-gray-100 rounded-lg p-4 bg-gray-50">
               <p className="text-xs font-semibold text-gray-700 mb-1">Custom Rank</p>
