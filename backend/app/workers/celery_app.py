@@ -42,8 +42,18 @@ celery_app.conf.update(
         Queue("celery"),          # default — discovery, enrichment, scoring
         Queue("call_analysis"),   # dedicated — never starved by bulk tasks
         Queue("summaries"),       # low-priority — AI summaries (bulk, deferrable)
+        # Source scans. Their own queues so they never wait behind the
+        # enrichment/embedding/scoring backlog on "celery" — that backlog had
+        # grown faster than the single solo worker drained it, and scans sat
+        # queued indefinitely. A worker started without --queues consumes every
+        # declared queue, taking from them in turn.
+        Queue("scans"),           # scheduled weekly/daily fan-out
+        Queue("scan_now"),        # manual "Run now" — ahead of the fan-out
     ),
     task_routes={
+        "app.workers.discovery_tasks.scan_all_sources":           {"queue": "scans"},
+        "app.workers.discovery_tasks.scan_high_priority_sources": {"queue": "scans"},
+        "app.workers.discovery_tasks.scan_source":                {"queue": "scans"},
         "app.workers.grant_writing_tasks.analyze_grant_call":    {"queue": "call_analysis"},
         "app.workers.grant_writing_tasks.generate_skeleton_task": {"queue": "call_analysis"},
         "app.workers.grant_writing_tasks.generate_draft_task":        {"queue": "call_analysis"},
@@ -154,3 +164,8 @@ celery_app.conf.beat_schedule = {
         "schedule": crontab(hour=3, minute=0, day_of_week="2,5"),
     },
 }
+
+# Scope each task's archive/RAG reads to its grant's organization.
+from app.services.tenancy import connect_celery_signals  # noqa: E402
+
+connect_celery_signals()

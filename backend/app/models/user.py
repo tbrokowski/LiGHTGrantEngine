@@ -32,6 +32,9 @@ class User(Base):
     role: Mapped[str] = mapped_column(String(50), default=UserRole.REVIEWER)
     team: Mapped[str | None] = mapped_column(String(200))
     is_active: Mapped[bool] = mapped_column(Boolean, default=True)
+    # Platform-wide (not per-organization): manages data every org shares —
+    # sources, funder orgs, /admin. Only a super-admin can grant it.
+    is_super_admin: Mapped[bool] = mapped_column(Boolean, default=False, server_default="false", nullable=False)
     # Bumped on password change/reset and account deletion; tokens carry it as
     # "tv" and are rejected once it moves on, which signs out other sessions.
     token_version: Mapped[int] = mapped_column(Integer, default=0, server_default="0", nullable=False)

@@ -82,6 +82,34 @@ export interface CommentBridge {
 }
 
 
+// ── List indent (Tab / Shift+Tab) ───────────────────────────────────────────
+// StarterKit's list item already binds Tab → sink and Shift+Tab → lift, but when
+// the command can't run (e.g. Tab on the first item of a list) the key falls
+// through and the browser moves focus out of the editor. Inside a list we always
+// swallow the key so Tab only ever changes the indent level. Markers per level
+// (• ◦ ▪ / 1. a. i.) come from CSS in globals.css; nesting is plain <ul>/<ol>
+// markup, so it survives save/load and the PDF/DOCX/Google Docs exports.
+export const ListIndent = Extension.create({
+  name: 'listIndent',
+  // Run before the list item's own Tab bindings so we decide the fallthrough.
+  priority: 1000,
+  addKeyboardShortcuts() {
+    const inList = () => this.editor.isActive('listItem');
+    return {
+      Tab: () => {
+        if (!inList()) return false;
+        this.editor.commands.sinkListItem('listItem');
+        return true;
+      },
+      'Shift-Tab': () => {
+        if (!inList()) return false;
+        this.editor.commands.liftListItem('listItem');
+        return true;
+      },
+    };
+  },
+});
+
 // ── Inline font style extension ─────────────────────────────────────────────
 // Adds fontSize + fontFamily attributes to the textStyle mark so Google Docs
 // exported HTML (inline CSS) round-trips, and exposes set/unset commands the

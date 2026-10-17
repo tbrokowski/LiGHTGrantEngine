@@ -378,6 +378,8 @@ export const grants = {
     api.patch(`/grants/${grantId}/members/${memberId}`, data),
   removeMember: (grantId: string, memberId: string) =>
     api.delete(`/grants/${grantId}/members/${memberId}`),
+  resendInvite: (grantId: string, memberId: string) =>
+    api.post(`/grants/${grantId}/members/${memberId}/resend`),
 };
 
 // ── Grant Finance (active grants) ───────────────────────────────────────────
@@ -433,7 +435,10 @@ export const finance = {
 // ── Grant Writing Studio ─────────────────────────────────────────────────────
 export const grantWriting = {
   status: (grantId: string) => api.get(`/grants/${grantId}/writing/status`),
-  saveIdea: (grantId: string, data: { grant_idea: string; writing_phase?: string }) =>
+  saveIdea: (
+    grantId: string,
+    data: { grant_idea: string; writing_phase?: string; proposal_type?: 'concept_note' | 'eoi' | 'horizon' },
+  ) =>
     api.patch(`/grants/${grantId}/writing/idea`, data),
   uploadCall: (grantId: string, file: File) => {
     const form = new FormData();
@@ -482,7 +487,7 @@ export const grantWriting = {
     api.patch(`/grants/${grantId}/writing/skeleton-constraints`, data),
   previewDraftPlan: (grantId: string) =>
     api.post(`/grants/${grantId}/writing/preview-draft-plan`, null, { timeout: 60_000 }),
-  enqueueDraft: (grantId: string, body?: { flagged_sections?: string[] }) =>
+  enqueueDraft: (grantId: string, body?: { flagged_sections?: string[]; replan?: boolean }) =>
     api.post(`/grants/${grantId}/writing/generate-draft`, body ?? null),
   resetDraft: (grantId: string) =>
     api.post(`/grants/${grantId}/writing/reset-draft`),
@@ -538,6 +543,12 @@ export const archive = {
     api.post(`/archive/${archiveId}/reindex-style`, data || {}),
   graphData: (params?: Record<string, unknown>) =>
     api.get('/archive/graph-data', { params }),
+  // Sharing with partners / colleagues / any email
+  shareTargets: (q: string) => api.get('/archive/share-targets', { params: { q } }),
+  listShares: (archiveId: string) => api.get(`/archive/${archiveId}/shares`),
+  share: (archiveId: string, data: { email?: string; partner_id?: string; note?: string }) =>
+    api.post(`/archive/${archiveId}/shares`, data),
+  unshare: (archiveId: string, shareId: string) => api.delete(`/archive/${archiveId}/shares/${shareId}`),
 };
 
 // ── Sources ──────────────────────────────────────────────────────────────────

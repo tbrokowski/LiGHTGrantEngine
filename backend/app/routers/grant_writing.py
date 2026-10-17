@@ -14,6 +14,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.ai.context.grant_context import GrantContextManager
 from app.ai.orchestrator.grant_writing import GrantWritingOrchestrator
+from app.ai.proposal_types import PROPOSAL_TYPES
 from app.workers.celery_app import celery_app
 from app.database import get_db
 from app.models.active_grant import ActiveGrant
@@ -40,6 +41,8 @@ context_mgr = GrantContextManager()
 class IdeaUpdate(BaseModel):
     grant_idea: str
     writing_phase: Optional[str] = None
+    # Style preference: concept_note | eoi | horizon (see app.ai.proposal_types)
+    proposal_type: Optional[str] = None
 
 
 class SkeletonUpdate(BaseModel):
@@ -185,6 +188,11 @@ async def save_idea(
 ):
     grant = await _get_grant(grant_id, db)
     grant.grant_idea = data.grant_idea
+    if data.proposal_type is not None:
+        if data.proposal_type not in PROPOSAL_TYPES:
+            raise HTTPException(400, f"proposal_type must be one of: {', '.join(PROPOSAL_TYPES)}")
+        # Reassign (not mutate) so SQLAlchemy sees the JSON change.
+        grant.style_profile = {**(grant.style_profile or {}), "proposal_type": data.proposal_type}
     if data.writing_phase:
         grant.writing_phase = data.writing_phase
     elif not grant.writing_phase:
@@ -487,6 +495,9 @@ async def update_skeleton(
 
 class GenerateDraftRequest(BaseModel):
     flagged_sections: Optional[list[str]] = None
+    # Drop the saved structure so the lead architect re-plans from the idea, call
+    # and proposal type (the one-page editor always does this).
+    replan: bool = False
 
 
 
@@ -533,6 +544,8 @@ async def generate_draft(
 ):
     """Enqueue draft generation as a background Celery task."""
     grant = await _get_grant(grant_id, db)
+    if data and data.replan and getattr(grant, "draft_status", "idle") != "running":
+        grant.proposal_skeleton = {}
     skeleton = grant.proposal_skeleton or {}
     # One-shot: a skeleton is NO LONGER required. When there's no structure, the
     # LEAD ARCHITECT plans the full proposal from the idea + call analysis in the

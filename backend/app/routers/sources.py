@@ -1,4 +1,5 @@
 """Grant source management endpoints."""
+import asyncio
 import logging
 import uuid
 from datetime import datetime, timedelta, timezone
@@ -11,14 +12,14 @@ from app.database import get_db
 from app.models.source import Source, SourceRun
 from app.models.user import User
 from app.routers.auth import get_current_user
-from app.auth.permissions import require_org_admin
+from app.auth.permissions import is_super_admin, require_org_admin, require_super_admin
 
 logger = logging.getLogger(__name__)
 
 # How recently a source run must have started/finished for the worker to count
-# as alive when it is too busy to answer a Celery ping. The fan-out staggers
-# dispatches 15s apart and scan_source is rate-limited to 4/m, so a healthy
-# worker touches source_runs several times a minute; 15 minutes is generous.
+# as alive when it is too busy to answer a Celery ping. scan_source is
+# rate-limited to 4/m, so a worker working through a fan-out touches
+# source_runs several times a minute; 15 minutes is generous.
 _LIVENESS_WINDOW_MINUTES = 15
 
 router = APIRouter()
@@ -204,20 +205,7 @@ async def pipeline_health_report(
     return {"corpus": corpus, "broken_sources": broken, "sources": src_rows}
 
 
-@router.get("/{source_id}")
-async def get_source(
-    source_id: str,
-    db: AsyncSession = Depends(get_db),
-    current_user: User = Depends(get_current_user),
-):
-    result = await db.execute(select(Source).where(Source.id == source_id))
-    source = result.scalar_one_or_none()
-    if not source:
-        raise HTTPException(404, "Source not found")
-    return _source_to_dict(source)
-
-
-@router.post("/", status_code=201, dependencies=[Depends(require_org_admin())])
+@router.post("/", status_code=201, dependencies=[Depends(require_super_admin())])
 async def create_source(
     data: SourceCreate,
     db: AsyncSession = Depends(get_db),
@@ -241,7 +229,7 @@ async def get_worker_status(
     with ``--pool=solo``, which services task execution and the remote-control
     (pidbox) channel from the same thread, so a worker that is busy scanning
     cannot answer a ping and looks identical to a worker that is dead. Because
-    ``scan_source`` is rate-limited to 4/m and the fan-out staggers thousands of
+    ``scan_source`` is rate-limited to 4/m and the fan-out covers hundreds of
     sources, the worker is busy nearly all the time and the ping essentially
     always timed out -- reporting "offline" while scans were succeeding.
 
@@ -282,6 +270,15 @@ async def get_worker_status(
     except Exception as exc:  # pragma: no cover - diagnostics must never 500
         ping_error = ping_error or str(exc)
 
+    # Backlog per queue: a scan stuck on "Queued" with a deep queue in front of
+    # it is a backlog problem, not a dead worker.
+    queue_depths: dict[str, int] | None = None
+    try:
+        from app.workers.pipeline_tasks import queue_depths as _queue_depths
+        queue_depths = await asyncio.to_thread(_queue_depths)
+    except Exception as exc:
+        ping_error = ping_error or str(exc)
+
     recently_active = False
     if last_activity is not None:
         if last_activity.tzinfo is None:
@@ -306,11 +303,25 @@ async def get_worker_status(
         "active_tasks": ping_result["active_tasks"],
         "last_activity_at": last_activity.isoformat() if last_activity else None,
         "liveness_window_minutes": _LIVENESS_WINDOW_MINUTES,
+        "queue_depths": queue_depths,
         "error": ping_error,
     }
 
 
-@router.post("/run-all", dependencies=[Depends(require_org_admin())])
+@router.get("/{source_id}")
+async def get_source(
+    source_id: str,
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    result = await db.execute(select(Source).where(Source.id == source_id))
+    source = result.scalar_one_or_none()
+    if not source:
+        raise HTTPException(404, "Source not found")
+    return _source_to_dict(source)
+
+
+@router.post("/run-all", dependencies=[Depends(require_super_admin())])
 async def run_all_sources(
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(get_current_user),
@@ -388,7 +399,7 @@ async def rebuild_ranking(
     }
 
 
-@router.patch("/{source_id}", dependencies=[Depends(require_org_admin())])
+@router.patch("/{source_id}", dependencies=[Depends(require_super_admin())])
 async def update_source(
     source_id: str,
     data: SourceUpdate,
@@ -423,6 +434,15 @@ async def run_source_now(
     source = result.scalar_one_or_none()
     if not source:
         raise HTTPException(404, "Source not found")
+    if not is_super_admin(current_user):
+        # Org admins may scan only sources their own organization subscribes to.
+        from app.models.institution_source import InstitutionSource
+        subscribed = current_user.institution_id and (await db.execute(select(InstitutionSource.id).where(
+            InstitutionSource.source_id == source_id,
+            InstitutionSource.institution_id == current_user.institution_id,
+        ))).first()
+        if not subscribed:
+            raise HTTPException(403, "This source isn't enabled for your organization.")
     if source.status == "paused":
         raise HTTPException(409, f"{source.name} is paused. Resume it before scanning.")
 
@@ -430,8 +450,9 @@ async def run_source_now(
 
     def _enqueue() -> str:
         from app.workers.celery_app import celery_app
+        # Its own queue, so a manual scan isn't stuck behind the weekly fan-out.
         return celery_app.send_task(
-            "app.workers.discovery_tasks.scan_source", args=[source_id]
+            "app.workers.discovery_tasks.scan_source", args=[source_id], queue="scan_now"
         ).id
 
     try:
@@ -449,7 +470,7 @@ async def run_source_now(
     }
 
 
-@router.post("/{source_id}/toggle", dependencies=[Depends(require_org_admin())])
+@router.post("/{source_id}/toggle", dependencies=[Depends(require_super_admin())])
 async def toggle_source(
     source_id: str,
     db: AsyncSession = Depends(get_db),
@@ -465,7 +486,7 @@ async def toggle_source(
     return _source_to_dict(source)
 
 
-@router.delete("/{source_id}", status_code=204, dependencies=[Depends(require_org_admin())])
+@router.delete("/{source_id}", status_code=204, dependencies=[Depends(require_super_admin())])
 async def delete_source(
     source_id: str,
     db: AsyncSession = Depends(get_db),
@@ -512,7 +533,7 @@ async def get_source_runs(
     ]
 
 
-@router.post("/{source_id}/runs/{run_id}/diagnose", dependencies=[Depends(require_org_admin())])
+@router.post("/{source_id}/runs/{run_id}/diagnose", dependencies=[Depends(require_super_admin())])
 async def diagnose_run(
     source_id: str,
     run_id: str,

@@ -18,6 +18,32 @@ from app.workers.celery_app import celery_app
 logger = logging.getLogger(__name__)
 
 _BATCH = 200  # bound per run so a big backlog is drained over several ticks
+# Rows looked at per stage, so ones still in their cooldown don't fill the batch.
+_CANDIDATES = _BATCH * 10
+
+# Skip a reconcile tick while the default queue still holds more than this many
+# messages: the previous ticks' re-queues haven't been worked off yet, and
+# adding more only buries everything else on the queue.
+_MAX_DEFAULT_QUEUE_DEPTH = _BATCH
+
+# An opportunity re-queued for a stage isn't re-queued for it again within this
+# window. Some never leave their "stuck" state (a keyword score of exactly 0, an
+# opportunity no institution's filters surface), and re-queuing those every 30
+# minutes forever is what grew the backlog without bound.
+_REQUEUE_COOLDOWN_SECONDS = 24 * 3600
+
+
+def _redis():
+    import redis
+    from app.config import get_settings
+    return redis.Redis.from_url(get_settings().redis_url, socket_timeout=5)
+
+
+def queue_depths() -> dict[str, int]:
+    """Messages waiting on each declared Celery queue (not counting ones a
+    worker has already reserved)."""
+    r = _redis()
+    return {q.name: int(r.llen(q.name)) for q in celery_app.conf.task_queues}
 
 
 @celery_app.task(name="app.workers.pipeline_tasks.reconcile_pipeline")
@@ -25,6 +51,16 @@ def reconcile_pipeline() -> dict:
     """Re-queue opportunities stuck between pipeline stages. Bounded per run."""
     from app.models.opportunity import Opportunity
     from app.models.institution_opportunity import InstitutionOpportunity
+
+    r = _redis()
+    depth = int(r.llen("celery"))
+    if depth > _MAX_DEFAULT_QUEUE_DEPTH:
+        logger.info("reconcile_pipeline skipped: %s messages already queued", depth)
+        return {"skipped": True, "queue_depth": depth}
+
+    def _claim(stage: str, oid: str) -> bool:
+        """True the first time (stage, oid) is seen within the cooldown."""
+        return bool(r.set(f"reconcile:{stage}:{oid}", 1, nx=True, ex=_REQUEUE_COOLDOWN_SECONDS))
 
     engine = get_sync_engine()
     requeued = {"embed": 0, "score": 0, "surface": 0}
@@ -37,9 +73,13 @@ def reconcile_pipeline() -> dict:
                 Opportunity.parsed_text.isnot(None),
                 Opportunity.parsed_text != "[fetch_failed]",
                 Opportunity.embedding.is_(None),
-            ).limit(_BATCH)
+            ).limit(_CANDIDATES)
         ).scalars().all()
         for oid in rows:
+            if requeued["embed"] >= _BATCH:
+                break
+            if not _claim("embed", oid):
+                continue
             celery_app.send_task("app.workers.tagging_tasks.tag_and_embed_opportunity", args=[oid])
             requeued["embed"] += 1
 
@@ -49,9 +89,13 @@ def reconcile_pipeline() -> dict:
                 Opportunity.status != "duplicate",
                 Opportunity.embedding.isnot(None),
                 or_(Opportunity.fit_score.is_(None), Opportunity.fit_score == 0),
-            ).limit(_BATCH)
+            ).limit(_CANDIDATES)
         ).scalars().all()
         for oid in rows:
+            if requeued["score"] >= _BATCH:
+                break
+            if not _claim("score", oid):
+                continue
             celery_app.send_task("app.workers.discovery_tasks.score_opportunity", args=[oid])
             requeued["score"] += 1
 
@@ -62,9 +106,13 @@ def reconcile_pipeline() -> dict:
                 Opportunity.status != "duplicate",
                 Opportunity.fit_score.isnot(None),
                 Opportunity.id.notin_(select(surfaced_subq.c.opportunity_id)),
-            ).limit(_BATCH)
+            ).limit(_CANDIDATES)
         ).scalars().all()
         for oid in rows:
+            if requeued["surface"] >= _BATCH:
+                break
+            if not _claim("surface", oid):
+                continue
             celery_app.send_task("app.workers.surfacing_tasks.surface_opportunity_for_institutions", args=[oid])
             requeued["surface"] += 1
 

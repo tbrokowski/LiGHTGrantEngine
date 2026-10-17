@@ -23,6 +23,7 @@ from app.models.user import User
 from app.routers.auth import get_current_user
 from app.ai.rag.retriever import retrieve_similar_sections, retrieve_reusable_language
 from app.auth.permissions import get_user_grant_ids, is_org_admin, get_redis
+from app.services.tenancy import archive_org_filter
 from app.ai.billing import check_ai_limit, accumulate_ai_usage
 import redis.asyncio as aioredis
 
@@ -173,7 +174,7 @@ async def deep_review_opportunity_endpoint(
                 GrantArchive.institution_id == current_user.institution_id,
                 GrantArchive.outcome == "awarded",
             )
-            .order_by(GrantArchive.grant_year.desc())
+            .order_by(GrantArchive.call_year.desc().nulls_last())
             .limit(3)
         )
         awarded = archive_result.scalars().all()
@@ -182,7 +183,7 @@ async def deep_review_opportunity_endpoint(
             for a in awarded:
                 amt = f"${a.awarded_amount:,.0f}" if a.awarded_amount else "n/a"
                 lines.append(
-                    f"- {a.title} ({a.funder or 'Unknown funder'}, {a.grant_year or '?'}, {amt})"
+                    f"- {a.title} ({a.funder or 'Unknown funder'}, {a.call_year or '?'}, {amt})"
                 )
             archive_context = "\n".join(lines)
 
@@ -419,7 +420,9 @@ async def analyze_feedback(
     """Agent 9: Analyze reviewer feedback."""
     from app.ai.agents.feedback_analyzer import analyze_feedback as _analyze
 
-    result = await db.execute(select(GrantArchive).where(GrantArchive.id == req.archive_id))
+    result = await db.execute(select(GrantArchive).where(
+        GrantArchive.id == req.archive_id, archive_org_filter(current_user.institution_id),
+    ))
     archive = result.scalar_one_or_none()
     if not archive:
         raise HTTPException(404, "Archive entry not found")
@@ -453,7 +456,9 @@ async def process_for_memory(
     """Agent 10: Process a completed grant for institutional memory."""
     from app.ai.agents.memory_agent import process_completed_grant
 
-    result = await db.execute(select(GrantArchive).where(GrantArchive.id == req.archive_id))
+    result = await db.execute(select(GrantArchive).where(
+        GrantArchive.id == req.archive_id, archive_org_filter(current_user.institution_id),
+    ))
     archive = result.scalar_one_or_none()
     if not archive:
         raise HTTPException(404, "Archive entry not found")

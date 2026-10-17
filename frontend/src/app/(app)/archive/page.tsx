@@ -29,6 +29,7 @@ interface ArchiveEntry {
   style_indexed?: boolean;
   indexing_status?: string;
   indexing_error?: string | null;
+  shared_with_me?: boolean;
 }
 
 const OUTCOMES = [
@@ -875,6 +876,11 @@ export default function ArchivePage() {
                         >
                           {entry.title}
                         </Link>
+                        {entry.shared_with_me && (
+                          <span className="text-[10px] font-medium uppercase tracking-wide" style={{ color: 'var(--state-info)' }}>
+                            Shared with you
+                          </span>
+                        )}
                         {entry.themes?.length > 0 && (
                           <span className="mono-data text-[11px] mt-0.5 truncate block max-w-xs" style={{ color: 'var(--ink-faint)' }}>
                             {entry.themes.slice(0, 3).join('  ·  ')}

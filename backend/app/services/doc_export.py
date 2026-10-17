@@ -27,6 +27,14 @@ _PDF_TEMPLATE = """<!DOCTYPE html><html><head><meta charset="utf-8">
   th {{ background: #f9fafb; }}
   img {{ max-width: 100%; height: auto; }}
   a {{ color: #2563eb; }}
+  /* Nested list markers by depth — mirrors the editor (globals.css). */
+  ul {{ list-style-type: disc; }}
+  :is(ul, ol) ul {{ list-style-type: circle; }}
+  :is(ul, ol) :is(ul, ol) ul {{ list-style-type: square; }}
+  ol {{ list-style-type: decimal; }}
+  :is(ul, ol) ol {{ list-style-type: lower-alpha; }}
+  :is(ul, ol) :is(ul, ol) ol {{ list-style-type: lower-roman; }}
+  li > p {{ margin: 2px 0; }}
   div[data-type="page-break"] {{ page-break-after: always; border: 0; height: 0; visibility: hidden; }}
 </style></head><body>{body}</body></html>"""
 
@@ -123,12 +131,91 @@ def _add_table(doc, table_tag) -> None:
                 row[idx].text = cell.get_text(" ", strip=True)
 
 
+# Per-level list markers, matching the editor and the PDF export. The default
+# python-docx template's "List Bullet 2/3" styles all use the same glyph, so we
+# register our own multi-level numbering definitions instead.
+_BULLET_GLYPHS = ["\u2022", "\u25e6", "\u25aa"]  # • ◦ ▪
+_NUMBER_FORMATS = ["decimal", "lowerLetter", "lowerRoman"]
+_LIST_LEVELS = 9  # Word supports ilvl 0-8
+
+
+class _ListNumbering:
+    """Creates the bullet / ordered abstract numbering once per document and hands
+    out numIds: one shared id for bullets, a fresh restarting id per <ol>."""
+
+    def __init__(self, doc):
+        from docx.oxml import parse_xml
+        from docx.oxml.ns import nsdecls
+
+        self._numbering = doc.part.numbering_part.element
+        existing = [int(a) for a in self._numbering.xpath("./w:abstractNum/@w:abstractNumId")]
+        next_id = max(existing, default=0) + 1
+        self._abstract = {}
+        for kind in ("ul", "ol"):
+            levels = []
+            for i in range(_LIST_LEVELS):
+                if kind == "ul":
+                    fmt, text = "bullet", _BULLET_GLYPHS[i % len(_BULLET_GLYPHS)]
+                else:
+                    fmt, text = _NUMBER_FORMATS[i % len(_NUMBER_FORMATS)], f"%{i + 1}."
+                levels.append(
+                    f'<w:lvl w:ilvl="{i}"><w:start w:val="1"/><w:numFmt w:val="{fmt}"/>'
+                    f'<w:lvlText w:val="{text}"/><w:lvlJc w:val="left"/>'
+                    f'<w:pPr><w:ind w:left="{360 * (i + 2)}" w:hanging="360"/></w:pPr></w:lvl>'
+                )
+            el = parse_xml(
+                f'<w:abstractNum {nsdecls("w")} w:abstractNumId="{next_id}">'
+                f'<w:multiLevelType w:val="hybridMultilevel"/>{"".join(levels)}</w:abstractNum>'
+            )
+            # abstractNum elements must precede the num elements.
+            first_num = self._numbering.find("{%s}num" % el.nsmap["w"])
+            if first_num is not None:
+                first_num.addprevious(el)
+            else:
+                self._numbering.append(el)
+            self._abstract[kind] = next_id
+            next_id += 1
+        self._bullet_num = self._numbering.add_num(self._abstract["ul"]).numId
+
+    def num_id(self, list_tag: str, level: int) -> int:
+        if list_tag == "ul":
+            return self._bullet_num
+        num = self._numbering.add_num(self._abstract["ol"])
+        num.add_lvlOverride(ilvl=level).add_startOverride(1)
+        return num.numId
+
+
+def _add_list(doc, numbering: _ListNumbering, list_el, level: int = 0) -> None:
+    """Emit one paragraph per <li>, recursing into nested <ul>/<ol> one level deeper
+    so indentation and per-level markers survive the export."""
+    num_id = numbering.num_id(list_el.name, min(level, _LIST_LEVELS - 1))
+    for li in list_el.find_all("li", recursive=False):
+        # Detach nested lists so the item's own text doesn't swallow them.
+        nested = [c.extract() for c in li.find_all(["ul", "ol"], recursive=False)]
+        p = doc.add_paragraph(style="List Paragraph")
+        num_pr = p._p.get_or_add_pPr().get_or_add_numPr()
+        num_pr.get_or_add_ilvl().val = min(level, _LIST_LEVELS - 1)
+        num_pr.get_or_add_numId().val = num_id
+        paras = li.find_all("p", recursive=False)
+        if paras:
+            # TipTap wraps item text in <p>; extra paragraphs share the bullet.
+            for i, para in enumerate(paras):
+                if i:
+                    p.add_run().add_break()
+                _add_runs(p, para, style=para.get("style", "") or li.get("style", ""))
+        else:
+            _add_runs(p, li, style=li.get("style", ""))
+        for sub in nested:
+            _add_list(doc, numbering, sub, level + 1)
+
+
 def html_to_docx(content_html: str) -> bytes:
     """Convert TipTap HTML → DOCX bytes."""
     from docx import Document
 
     soup = BeautifulSoup(content_html or "", "html.parser")
     doc = Document()
+    numbering = _ListNumbering(doc)
     root = soup.body or soup
 
     def walk(container):
@@ -148,10 +235,7 @@ def html_to_docx(content_html: str) -> bytes:
                 p = doc.add_paragraph()
                 _add_runs(p, el, style=el.get("style", ""))
             elif name in ("ul", "ol"):
-                list_style = "List Bullet" if name == "ul" else "List Number"
-                for li in el.find_all("li", recursive=False):
-                    p = doc.add_paragraph(style=list_style)
-                    _add_runs(p, li, style=li.get("style", ""))
+                _add_list(doc, numbering, el)
             elif name == "blockquote":
                 p = doc.add_paragraph(style="Intense Quote")
                 _add_runs(p, el, style=el.get("style", ""))

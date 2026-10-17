@@ -41,6 +41,7 @@ from app.ai.agents.section_drafter_agentic import draft_section_agentic
 from app.ai.agents.meta_agent import evaluate_and_improve_section
 from app.ai.agents.section_ledger import build_ledger_entry, render_ledger_for_prompt
 from app.ai.context.grant_context import insert_section_content, skeleton_to_html
+from app.ai.proposal_types import archive_document_types, format_brief, get_proposal_type
 from app.ai.rag.retriever import (
     retrieve_content_exemplars,
     retrieve_style_exemplars,
@@ -119,7 +120,11 @@ async def run_draft_pipeline_stream(
         yield sse({"error": "Add a grant idea or run call analysis before generating a draft."})
         return
 
-    call_req = grant.call_requirements or ""
+    # Proposal-type style preference (concept note / EOI / Horizon): steers which
+    # archive documents RAG prefers and adds a format brief for planner + writers.
+    proposal_type = get_proposal_type(grant.style_profile)
+    doc_types = archive_document_types(proposal_type)
+    call_req = "\n\n".join(p for p in (format_brief(proposal_type), grant.call_requirements or "") if p)
     call_analysis = grant.call_analysis or {}
     eval_criteria = call_analysis.get("evaluation_criteria", [])
     call_narrative_brief = call_analysis.get("narrative_brief", "")
@@ -142,7 +147,10 @@ async def run_draft_pipeline_stream(
 
             structures, exemplars0 = await asyncio.gather(
                 retrieve_document_structure(db, funder, top_k=3),
-                retrieve_content_exemplars(query=f"{grant.title} {grant_idea[:200]}", db=db, funder=funder, top_k=6),
+                retrieve_content_exemplars(
+                    query=f"{grant.title} {grant_idea[:200]}", db=db, funder=funder, top_k=6,
+                    document_types=doc_types,
+                ),
             )
             plan = await build_proposal_plan(
                 grant_title=grant.title or "",
@@ -207,8 +215,13 @@ async def run_draft_pipeline_stream(
         # Ground once (reranked + contextual + verbatim archive, style, reusable).
         try:
             exemplars, style_ex, reusable = await asyncio.gather(
-                retrieve_content_exemplars(query=query, db=db, section_type=sec_type, funder=funder, top_k=4),
-                retrieve_style_exemplars(db=db, section_type=sec_type, funder=funder, top_k=2),
+                retrieve_content_exemplars(
+                    query=query, db=db, section_type=sec_type, funder=funder, top_k=4,
+                    document_types=doc_types,
+                ),
+                retrieve_style_exemplars(
+                    db=db, section_type=sec_type, funder=funder, top_k=2, document_types=doc_types,
+                ),
                 retrieve_reusable_language(query=query, db=db, section_type=sec_type, top_k=2),
             )
         except Exception:

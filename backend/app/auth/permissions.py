@@ -86,7 +86,26 @@ def _grant_role_rank(role: str) -> int:
 
 
 def is_org_admin(user: User) -> bool:
+    """Admin of the user's *active* organization. Never use this alone to grant
+    access to a record — check the record belongs to that organization too
+    (see is_admin_of)."""
     return user.role == UserRole.ADMIN or user.institution_role == "admin"
+
+
+def is_super_admin(user: User) -> bool:
+    """Platform super-admin (account-wide). Org roles — even role "admin" —
+    never confer this."""
+    return bool(getattr(user, "is_super_admin", False))
+
+
+def is_admin_of(user: User, institution_id: Optional[str]) -> bool:
+    """True only when the user is an admin of their active organization AND
+    `institution_id` (the record's owner) is that organization."""
+    return bool(institution_id) and institution_id == user.institution_id and is_org_admin(user)
+
+
+def _is_ops_of(user: User, institution_id: Optional[str]) -> bool:
+    return bool(institution_id) and institution_id == user.institution_id and is_ops_or_above(user)
 
 
 def is_ops_or_above(user: User) -> bool:
@@ -219,6 +238,18 @@ def require_org_admin() -> Callable:
     return _check
 
 
+def require_super_admin() -> Callable:
+    """For data shared by every organization (sources, funder orgs, /admin)."""
+    async def _check(current_user: User = Depends(get_current_user)) -> User:
+        if not is_super_admin(current_user):
+            raise HTTPException(
+                status_code=status.HTTP_403_FORBIDDEN,
+                detail="Requires super-admin privileges.",
+            )
+        return current_user
+    return _check
+
+
 def can_edit_archive(user: User) -> bool:
     """Grant lead (or higher) or organization admin may create/edit archive entries."""
     return _role_rank(user.role) >= _role_rank(UserRole.GRANT_LEAD) or is_org_admin(user)
@@ -279,7 +310,8 @@ async def _check_grant_access(
     """
     Core grant access check:
     - personal grants (is_personal=True) are fully accessible by their creator
-    - org admins and operations managers bypass grant-level checks (read-only for ops_manager)
+    - admins and operations managers of the grant's own organization bypass
+      grant-level checks (read-only for ops_manager); other orgs' admins don't
     - others must have an accepted GrantMember row for this grant
     - if require_editor=True, viewer role is rejected
     Returns the GrantMember row (or None for org admin / personal grant bypass).
@@ -293,11 +325,12 @@ async def _check_grant_access(
     if grant and grant.is_personal and grant.created_by_id == current_user.id:
         return None
 
-    if is_org_admin(current_user):
-        return None  # org admins see everything
+    grant_org = grant.institution_id if grant else None
+    if is_admin_of(current_user, grant_org):
+        return None  # admins see every grant of their own organization
 
-    if is_ops_or_above(current_user) and not require_editor:
-        return None  # ops managers get read access across org
+    if _is_ops_of(current_user, grant_org) and not require_editor:
+        return None  # ops managers get read access across their own organization
 
     grant_ids = await get_user_grant_ids(current_user, db, redis)
 

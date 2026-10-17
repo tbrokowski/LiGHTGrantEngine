@@ -8,7 +8,9 @@ import { setAuthSession } from '@/lib/auth-cookie';
 function LoginForm() {
   const router = useRouter();
   const searchParams = useSearchParams();
-  const next = searchParams.get('next') || '/dashboard';
+  // Only same-site paths — `next` arrives in emailed links.
+  const rawNext = searchParams.get('next') || '';
+  const next = rawNext.startsWith('/') && !rawNext.startsWith('//') ? rawNext : '/dashboard';
   const passwordReset = searchParams.get('reset') === '1';
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');

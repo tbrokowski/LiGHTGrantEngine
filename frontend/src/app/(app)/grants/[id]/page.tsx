@@ -476,7 +476,6 @@ function GrantDetailContent() {
               title: grant.title,
               funder: grant.funder ?? null,
               call_requirements: grant.call_requirements ?? null,
-              editor_sections: grant.editor_sections ?? {},
               editor_document: grant.editor_document,
               google_doc_id: grant.google_doc_id,
               google_doc_url: grant.google_doc_url,
@@ -484,10 +483,7 @@ function GrantDetailContent() {
               grant_idea: grant.grant_idea ?? null,
               call_analysis: grant.call_analysis ?? {},
               call_intelligence: grant.call_intelligence ?? null,
-              proposal_skeleton: grant.proposal_skeleton ?? {},
-              writing_phase: grant.writing_phase ?? null,
               style_profile: grant.style_profile ?? {},
-              last_review: grant.last_review ?? null,
             }}
             onGrantUpdate={fetchGrant}
             onHeadingsChange={() => {}}

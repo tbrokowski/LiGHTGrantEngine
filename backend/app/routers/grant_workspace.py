@@ -1,4 +1,5 @@
 """Grant Management Workspace sub-resource endpoints."""
+import asyncio
 import logging
 import uuid
 from typing import Optional
@@ -7,7 +8,7 @@ from datetime import date, datetime, timezone
 from fastapi import APIRouter, Depends, HTTPException, UploadFile, File
 from fastapi.responses import StreamingResponse
 from pydantic import BaseModel
-from sqlalchemy import select, desc, or_
+from sqlalchemy import select, desc, func, or_
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.database import get_db
@@ -24,6 +25,7 @@ from app.models.activity_log import GrantActivityLog
 from app.models.user import User
 from app.models.grant_member import GrantMember, GrantMemberRole, GrantMemberStatus
 from app.routers.auth import get_current_user
+from app.services.sharing import send_grant_invite_email
 from app.auth.permissions import grant_access, invalidate_permission_cache, get_redis
 import redis.asyncio as aioredis
 
@@ -308,8 +310,10 @@ async def invite_grant_member(
             raise HTTPException(404, "User not found")
         target_email = user.email
     elif data.email:
-        target_email = data.email.strip()
-        user_result = await db.execute(select(User).where(User.email == target_email))
+        target_email = data.email.strip().lower()
+        if "@" not in target_email:
+            raise HTTPException(400, "Enter a valid email address")
+        user_result = await db.execute(select(User).where(func.lower(User.email) == target_email))
         user = user_result.scalar_one_or_none()
     else:
         raise HTTPException(400, "Provide a user to add or an email to invite")
@@ -318,7 +322,7 @@ async def invite_grant_member(
     dup_q = select(GrantMember).where(
         GrantMember.grant_id == grant_id,
         or_(
-            GrantMember.email == target_email,
+            func.lower(GrantMember.email) == target_email.lower(),
             *( [GrantMember.user_id == user.id] if user else [] ),
         ),
     )
@@ -343,6 +347,14 @@ async def invite_grant_member(
     if user:
         await invalidate_permission_cache(user.id, redis)
 
+    # Email them a link: sign-in for existing accounts, sign-up otherwise. Sent
+    # in the background so a slow mail API never blocks the invite.
+    if user is None or user.id != current_user.id:
+        asyncio.create_task(send_grant_invite_email(
+            to=target_email, inviter_name=current_user.name, grant_title=grant.title,
+            grant_id=grant.id, has_account=user is not None,
+        ))
+
     return {
         "id": member.id,
         "grant_id": member.grant_id,
@@ -352,6 +364,28 @@ async def invite_grant_member(
         "status": member.status,
         "name": user.name if user else None,
     }
+
+
+@router.post("/{grant_id}/members/{member_id}/resend")
+async def resend_grant_invite(
+    grant_id: str,
+    member_id: str,
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+    _edit: None = Depends(grant_access(require_editor=True)),
+):
+    """Email the invite link again (e.g. a guest who never got or lost it)."""
+    grant = await _get_grant_or_404(grant_id, db)
+    member = (await db.execute(
+        select(GrantMember).where(GrantMember.id == member_id, GrantMember.grant_id == grant_id)
+    )).scalar_one_or_none()
+    if not member:
+        raise HTTPException(404, "Member not found")
+    await send_grant_invite_email(
+        to=member.email, inviter_name=current_user.name, grant_title=grant.title,
+        grant_id=grant.id, has_account=member.user_id is not None,
+    )
+    return {"message": f"Invite re-sent to {member.email}"}
 
 
 @router.patch("/{grant_id}/members/{member_id}")

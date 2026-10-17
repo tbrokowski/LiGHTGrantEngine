@@ -9,7 +9,7 @@ import uuid
 
 from fastapi import APIRouter, Depends, HTTPException, Request
 from pydantic import BaseModel, Field
-from sqlalchemy import desc, select
+from sqlalchemy import desc, or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.auth.permissions import is_org_admin
@@ -102,14 +102,25 @@ async def submit_feedback(
     return _dict(fb)
 
 
+def _org_member_ids(institution_id: str | None):
+    from app.models.institution_membership import InstitutionMembership
+    return select(InstitutionMembership.user_id).where(InstitutionMembership.institution_id == institution_id)
+
+
 @router.get("")
 async def list_feedback(
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ):
-    """Admins see all feedback (the log); everyone else sees their own."""
+    """Admins see the feedback log of their organization's members; everyone
+    else sees their own."""
     query = select(Feedback).order_by(desc(Feedback.created_at))
-    if not is_org_admin(current_user):
+    if is_org_admin(current_user) and current_user.institution_id:
+        query = query.where(or_(
+            Feedback.user_id == current_user.id,
+            Feedback.user_id.in_(_org_member_ids(current_user.institution_id)),
+        ))
+    else:
         query = query.where(Feedback.user_id == current_user.id)
     result = await db.execute(query)
     return [_dict(f) for f in result.scalars().all()]
@@ -131,7 +142,10 @@ async def update_feedback_status(
         raise HTTPException(403, "Requires organization admin privileges.")
     if data.status not in _VALID_STATUSES:
         raise HTTPException(400, f"Invalid status. Must be one of {sorted(_VALID_STATUSES)}.")
-    result = await db.execute(select(Feedback).where(Feedback.id == feedback_id))
+    result = await db.execute(select(Feedback).where(
+        Feedback.id == feedback_id,
+        Feedback.user_id.in_(_org_member_ids(current_user.institution_id)),
+    ))
     fb = result.scalar_one_or_none()
     if not fb:
         raise HTTPException(404, "Feedback not found.")

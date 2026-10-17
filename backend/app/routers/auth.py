@@ -112,6 +112,9 @@ async def get_current_user(
         raise credentials_exc
     if payload.get("tv", 0) != (user.token_version or 0):
         raise credentials_exc
+    # AI/RAG reads below this request are scoped to the active organization.
+    from app.services.tenancy import set_active_org
+    set_active_org(user.institution_id)
     return user
 
 
@@ -203,18 +206,11 @@ async def register(
     db.add(user)
     await db.flush()
 
-    # Link any pending grant invitations addressed to this email — an outside
-    # collaborator invited before they had an account now gains guest access.
-    from app.models.grant_member import GrantMember, GrantMemberStatus
-    pending = (await db.execute(
-        select(GrantMember).where(
-            GrantMember.email == user.email,
-            GrantMember.user_id.is_(None),
-        )
-    )).scalars().all()
-    for gm in pending:
-        gm.user_id = user.id
-        gm.status = GrantMemberStatus.ACCEPTED
+    # Link any pending grant invitations / archive shares addressed to this
+    # email — an outside collaborator invited before they had an account now
+    # gains guest access.
+    from app.services.sharing import link_pending_invites
+    await link_pending_invites(db, user)
 
     if institution_id:
         await add_membership(
@@ -367,17 +363,9 @@ async def accept_invite(
             joined_via="invite",
             make_active=True,
         )
-        # Link any pending grant invitations addressed to this email.
-        from app.models.grant_member import GrantMember, GrantMemberStatus
-        pending = (await db.execute(
-            select(GrantMember).where(
-                GrantMember.email == user.email,
-                GrantMember.user_id.is_(None),
-            )
-        )).scalars().all()
-        for gm in pending:
-            gm.user_id = user.id
-            gm.status = GrantMemberStatus.ACCEPTED
+        # Link any pending grant invitations / archive shares addressed to this email.
+        from app.services.sharing import link_pending_invites
+        await link_pending_invites(db, user)
         await db.commit()
 
     token_str = user_access_token(user)
@@ -430,6 +418,7 @@ async def me(
         "role": current_user.role,
         "institution_id": current_user.institution_id,
         "institution_role": current_user.institution_role,
+        "is_super_admin": bool(current_user.is_super_admin),
         "email_verified": current_user.email_verified,
         "onboarding_complete": current_user.onboarding_complete,
         "ai_usage_cents": current_user.ai_usage_cents,

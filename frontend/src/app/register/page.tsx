@@ -1,6 +1,6 @@
 'use client';
-import { useState, useEffect, useCallback } from 'react';
-import { useRouter } from 'next/navigation';
+import { useState, useEffect, useCallback, Suspense } from 'react';
+import { useRouter, useSearchParams } from 'next/navigation';
 import Link from 'next/link';
 import { auth } from '@/lib/api';
 import { setAuthSession } from '@/lib/auth-cookie';
@@ -14,11 +14,25 @@ interface Institution {
 }
 
 export default function RegisterPage() {
+  return (
+    <Suspense>
+      <RegisterForm />
+    </Suspense>
+  );
+}
+
+function RegisterForm() {
   const router = useRouter();
+  const searchParams = useSearchParams();
+  // Arriving from an invite email: the address is prefilled (shared items are
+  // linked by email) and we return to the shared grant afterwards.
+  const invited = searchParams.get('invite') === '1';
+  const rawNext = searchParams.get('next') || '';
+  const next = rawNext.startsWith('/') && !rawNext.startsWith('//') ? rawNext : '/dashboard';
   const [name, setName] = useState('');
-  const [email, setEmail] = useState('');
+  const [email, setEmail] = useState(searchParams.get('email') || '');
   const [password, setPassword] = useState('');
-  const [mode, setMode] = useState<InstitutionMode>('none');
+  const [mode, setMode] = useState<InstitutionMode>(invited ? 'create' : 'none');
   const [instSearch, setInstSearch] = useState('');
   const [instResults, setInstResults] = useState<Institution[]>([]);
   const [selectedInst, setSelectedInst] = useState<Institution | null>(null);
@@ -31,9 +45,9 @@ export default function RegisterPage() {
 
   useEffect(() => {
     if (typeof window !== 'undefined' && localStorage.getItem('access_token')) {
-      router.replace('/dashboard');
+      router.replace(next);
     }
-  }, [router]);
+  }, [router, next]);
 
   const searchInstitutions = useCallback(async (q: string) => {
     if (!q.trim()) { setInstResults([]); return; }
@@ -82,7 +96,7 @@ export default function RegisterPage() {
       if (res.data.account_status === 'pending_approval') {
         setPendingApproval(true);
       } else {
-        router.push('/dashboard');
+        router.push(next);
       }
     } catch (err: unknown) {
       const msg = (err as { response?: { data?: { detail?: string } } })?.response?.data?.detail;
@@ -148,10 +162,16 @@ export default function RegisterPage() {
             <div className="text-gray-900 text-2xl font-semibold mb-1">Create account</div>
             <div className="text-gray-500 text-sm">
               Already have an account?{' '}
-              <Link href="/login" className="text-gray-900 font-medium underline underline-offset-2">
+              <Link href={`/login?next=${encodeURIComponent(next)}`} className="text-gray-900 font-medium underline underline-offset-2">
                 Sign in
               </Link>
             </div>
+            {invited && (
+              <p className="mt-4 text-xs text-indigo-800 bg-indigo-50 border border-indigo-200 rounded-lg px-3 py-2 leading-relaxed">
+                You&apos;ve been invited to collaborate. Sign up with the email the invite was sent to, and set up your own
+                organization below — what was shared with you will show up as <strong>External</strong>.
+              </p>
+            )}
           </div>
 
           <form onSubmit={handleSubmit} className="space-y-4">

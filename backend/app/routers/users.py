@@ -9,7 +9,9 @@ from app.database import get_db
 from app.models.user import User, UserRole
 from app.models.institution_membership import InstitutionMembership
 from app.routers.auth import get_current_user, get_password_hash, verify_password
-from app.auth.permissions import require_org_admin, is_org_admin, invalidate_permission_cache, get_redis
+from app.auth.permissions import (
+    require_org_admin, require_super_admin, is_org_admin, invalidate_permission_cache, get_redis,
+)
 from app.services.account_deletion import delete_account
 from app.services.membership import (
     add_membership,
@@ -103,6 +105,43 @@ async def create_user(
         await add_membership(db, user, current_user.institution_id, role=data.role, joined_via="admin")
     await db.commit()
     return {"id": user.id}
+
+
+# ── Super-admins ──────────────────────────────────────────────────────────────
+# Account-wide, not per organization. Only a super-admin can grant or revoke it.
+
+class SuperAdminUpdate(BaseModel):
+    email: str
+    is_super_admin: bool
+
+
+@router.get("/super-admins", dependencies=[Depends(require_super_admin())])
+async def list_super_admins(db: AsyncSession = Depends(get_db)):
+    rows = (await db.execute(
+        select(User).where(User.is_super_admin.is_(True)).order_by(User.email)
+    )).scalars().all()
+    return [{"id": u.id, "name": u.name, "email": u.email} for u in rows]
+
+
+@router.put("/super-admins", dependencies=[Depends(require_super_admin())])
+async def set_super_admin(
+    body: SuperAdminUpdate,
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+    redis: aioredis.Redis = Depends(get_redis),
+):
+    from sqlalchemy import func
+    user = (await db.execute(
+        select(User).where(func.lower(User.email) == body.email.strip().lower())
+    )).scalar_one_or_none()
+    if not user:
+        raise HTTPException(404, "No account with that email.")
+    if user.id == current_user.id and not body.is_super_admin:
+        raise HTTPException(400, "You can't remove your own super-admin rights.")
+    user.is_super_admin = body.is_super_admin
+    await db.commit()
+    await invalidate_permission_cache(user.id, redis)
+    return {"id": user.id, "email": user.email, "is_super_admin": user.is_super_admin}
 
 
 @router.patch("/{user_id}")

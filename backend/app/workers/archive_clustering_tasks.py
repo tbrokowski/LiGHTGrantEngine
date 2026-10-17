@@ -4,7 +4,10 @@ kNN cosine-similarity graph built from weighted centroid embeddings derived from
 each archive's indexed ProposalSection embeddings.
 
 Algorithm pipeline:
-  1. Load all GrantArchive rows where indexing_status='complete'.
+  Runs once per organization, over that organization's archive only — clusters,
+  edges and the 2D layout never mix organizations.
+
+  1. Load the organization's GrantArchive rows where indexing_status='complete'.
   2. For each archive, load its ProposalSection embeddings (where embedding IS
      NOT NULL) and compute a weighted centroid:
        - High-signal sections (abstract, executive_summary) weight ×2.0
@@ -24,7 +27,7 @@ Algorithm pipeline:
      → Guarantees well-connected communities. (Traag et al. Sci Rep 2019)
   6. Reduce embeddings to 2D via UMAP (cosine, n_neighbors=min(10,n-1),
      min_dist=0.15) and normalise to [0,1].
-  7. Wipe archive_clusters and archive_edges, recreate with new values.
+  7. Wipe the organization's archive_clusters and archive_edges, recreate them.
   8. AI-label each community with 3–5 words (title+outcome+funder samples).
   9. Write cluster_id, umap_x, umap_y back to grant_archives.
 
@@ -69,13 +72,29 @@ from celery import shared_task
 
 
 @shared_task(name="app.workers.archive_clustering_tasks.cluster_archives")
-def cluster_archives() -> None:
-    """Re-cluster all indexed archives using Leiden + UMAP on centroid embeddings."""
+def cluster_archives(institution_id: str | None = None) -> None:
+    """Re-cluster indexed archives using Leiden + UMAP on centroid embeddings —
+    one organization's, or each organization's in turn when none is given."""
     import asyncio
-    asyncio.run(_cluster_archives_async())
+    asyncio.run(_cluster_all_async(institution_id))
 
 
-async def _cluster_archives_async() -> None:
+async def _cluster_all_async(institution_id: str | None) -> None:
+    if institution_id:
+        org_ids = [institution_id]
+    else:
+        from sqlalchemy import select
+        from app.database import AsyncSessionLocal
+        from app.models.archive import GrantArchive
+        async with AsyncSessionLocal() as db:
+            org_ids = list((await db.execute(
+                select(GrantArchive.institution_id).where(GrantArchive.institution_id.isnot(None)).distinct()
+            )).scalars().all())
+    for org_id in org_ids:
+        await _cluster_archives_async(org_id)
+
+
+async def _cluster_archives_async(institution_id: str) -> None:
     try:
         import numpy as np
     except ImportError:
@@ -102,7 +121,7 @@ async def _cluster_archives_async() -> None:
         logger.error("umap-learn not installed — cannot compute UMAP for archives")
         return
 
-    from sqlalchemy import select, update, delete
+    from sqlalchemy import select, update, delete, or_
     from app.database import AsyncSessionLocal
     from app.models.archive import GrantArchive
     from app.models.archive_cluster import ArchiveCluster
@@ -123,7 +142,10 @@ async def _cluster_archives_async() -> None:
                     GrantArchive.themes,
                     GrantArchive.call_year,
                 )
-                .where(GrantArchive.indexing_status == "complete")
+                .where(
+                    GrantArchive.indexing_status == "complete",
+                    GrantArchive.institution_id == institution_id,
+                )
             )
             archives = archives_result.all()
 
@@ -262,9 +284,12 @@ async def _cluster_archives_async() -> None:
             coords_norm = (coords_2d - coords_min) / coords_range
 
             # ── 6. Recreate clusters table ────────────────────────────────────
-            await db.execute(delete(ArchiveEdge))
+            org_archive_ids = select(GrantArchive.id).where(GrantArchive.institution_id == institution_id)
+            await db.execute(delete(ArchiveEdge).where(or_(
+                ArchiveEdge.source_id.in_(org_archive_ids), ArchiveEdge.target_id.in_(org_archive_ids),
+            )))
             existing_clusters = (
-                await db.execute(select(ArchiveCluster))
+                await db.execute(select(ArchiveCluster).where(ArchiveCluster.institution_id == institution_id))
             ).scalars().all()
             for c in existing_clusters:
                 await db.delete(c)
@@ -319,7 +344,7 @@ async def _cluster_archives_async() -> None:
                     label = f"Archive Cluster {comm_idx + 1}"
 
                 color = CLUSTER_COLORS[comm_idx % len(CLUSTER_COLORS)]
-                new_cluster = ArchiveCluster(label=label, color=color)
+                new_cluster = ArchiveCluster(label=label, color=color, institution_id=institution_id)
                 db.add(new_cluster)
                 await db.flush()
                 cluster_id_map[comm_idx] = new_cluster.id

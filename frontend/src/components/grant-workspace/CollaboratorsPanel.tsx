@@ -62,6 +62,7 @@ export default function CollaboratorsPanel({ grantId }: Props) {
   const [inviting, setInviting] = useState(false);
   const [error, setError] = useState('');
   const [success, setSuccess] = useState('');
+  const [resendingId, setResendingId] = useState<string | null>(null);
 
   const myMember = members.find(m => m.user_id === user?.id);
   const isGrantEditor = myMember?.role === 'editor' || myMember?.role === 'owner';
@@ -116,13 +117,26 @@ export default function CollaboratorsPanel({ grantId }: Props) {
     setInviting(true);
     try {
       await grants.inviteMember(grantId, { email: inviteEmail.trim(), role: inviteRole });
-      setSuccess(`Invited ${inviteEmail.trim()} as a guest on this grant.`);
+      setSuccess(`Invite emailed to ${inviteEmail.trim()}.`);
       setInviteEmail('');
       fetchMembers();
     } catch (err: unknown) {
       setError((err as { response?: { data?: { detail?: string } } })?.response?.data?.detail || 'Failed to invite collaborator.');
     } finally {
       setInviting(false);
+    }
+  }
+
+  async function handleResend(m: GrantMember) {
+    setError(''); setSuccess('');
+    setResendingId(m.id);
+    try {
+      await grants.resendInvite(grantId, m.id);
+      setSuccess(`Invite re-sent to ${m.email}.`);
+    } catch (err: unknown) {
+      setError((err as { response?: { data?: { detail?: string } } })?.response?.data?.detail || 'Failed to resend invite.');
+    } finally {
+      setResendingId(null);
     }
   }
 
@@ -231,7 +245,7 @@ export default function CollaboratorsPanel({ grantId }: Props) {
               </button>
             </div>
             <p className="text-xs text-gray-400 mt-2">
-              Guests get access to this grant only. They don’t join your organization; they’ll get access as soon as they sign up.
+              We email them a link. Guests get access to this grant only — they sign up (and can create their own organization), then find it under External on their Grants page.
             </p>
           </form>
 
@@ -272,6 +286,16 @@ export default function CollaboratorsPanel({ grantId }: Props) {
                     )}
                   </div>
                 </div>
+                {canManage && isGuest && m.user_id !== user?.id && (
+                  <button
+                    onClick={() => handleResend(m)}
+                    disabled={resendingId === m.id}
+                    className="shrink-0 text-xs text-indigo-600 hover:text-indigo-800 disabled:opacity-50"
+                    title="Email the invite link again"
+                  >
+                    {resendingId === m.id ? 'Sending…' : 'Resend invite'}
+                  </button>
+                )}
                 {canManage && m.user_id !== user?.id && m.role !== 'owner' && (
                   <button
                     onClick={() => handleRemove(m.id, m.email)}

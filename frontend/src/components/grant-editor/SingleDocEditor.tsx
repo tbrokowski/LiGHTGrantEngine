@@ -26,10 +26,10 @@ import { Color } from '@tiptap/extension-color';
 import {
   Bold, Italic, UnderlineIcon, List, ListOrdered,
   AlignLeft, AlignCenter, AlignRight, AlignJustify, Heading1, Heading2, Heading3, Quote, Scissors,
-  TableIcon, ImageIcon, Link2, Download,
+  TableIcon, ImageIcon, Link2, Download, IndentIncrease, IndentDecrease,
 } from 'lucide-react';
 import { api, grants } from '@/lib/api';
-import { InlineFontStyles, CommentMark, type CommentEditorApi } from './editor-extensions';
+import { InlineFontStyles, CommentMark, ListIndent, type CommentEditorApi } from './editor-extensions';
 import { FontFamilySelect, FontSizeSelect, ColorButton, HighlightButton } from './EditorFormatControls';
 
 // ── Page Break node ────────────────────────────────────────────────────────────
@@ -224,6 +224,7 @@ export default function SingleDocEditor({
       Color,
       InlineFontStyles,
       CommentMark,
+      ListIndent,
     ],
     content: documentHtml || '',
     editorProps: {
@@ -412,9 +413,12 @@ export default function SingleDocEditor({
   const wordCount = editor.storage.characterCount?.words() ?? 0;
 
   return (
-    <div className="flex flex-col flex-1 min-h-0 overflow-hidden bg-gray-100">
-      {/* Persistent formatting toolbar */}
-      <div className="flex-shrink-0 flex items-center gap-0.5 px-3 py-1.5 border-b border-gray-200 flex-wrap bg-white shadow-sm">
+    <div className="flex flex-col">
+      {/* Formatting toolbar — sticks to the top of the page's scroll container */}
+      <div
+        className="sticky top-0 z-20 flex items-center gap-0.5 px-3 py-1.5 flex-wrap rounded-t-[var(--radius-md)]"
+        style={{ background: 'var(--surface-raised)', borderBottom: '1px solid var(--rule-subtle)', boxShadow: 'var(--shadow-panel)' }}
+      >
         <ToolbarButton
           onClick={() => editor.chain().focus().toggleHeading({ level: 1 }).run()}
           active={editor.isActive('heading', { level: 1 })}
@@ -477,6 +481,20 @@ export default function SingleDocEditor({
           title="Numbered list"
         >
           <ListOrdered className="w-3.5 h-3.5" />
+        </ToolbarButton>
+        <ToolbarButton
+          onClick={() => editor.chain().focus().sinkListItem('listItem').run()}
+          active={false}
+          title="Indent list item (Tab)"
+        >
+          <IndentIncrease className="w-3.5 h-3.5" />
+        </ToolbarButton>
+        <ToolbarButton
+          onClick={() => editor.chain().focus().liftListItem('listItem').run()}
+          active={false}
+          title="Outdent list item (Shift+Tab)"
+        >
+          <IndentDecrease className="w-3.5 h-3.5" />
         </ToolbarButton>
         <ToolbarButton
           onClick={() => editor.chain().focus().toggleBlockquote().run()}
@@ -596,11 +614,12 @@ export default function SingleDocEditor({
         </div>
       </div>
 
-      {/* Document content area — centered paper card on gray background */}
-      <div className="flex-1 overflow-y-auto bg-gray-100 py-8">
-        <div className="w-full max-w-[800px] mx-auto bg-white shadow-sm rounded-sm px-14 py-12 min-h-[calc(100vh-12rem)]">
-          <EditorContent editor={editor} />
-        </div>
+      {/* Document paper */}
+      <div
+        className="w-full px-14 py-12 min-h-[60vh] rounded-b-[var(--radius-md)]"
+        style={{ background: 'var(--surface-base)', boxShadow: 'var(--shadow-panel)' }}
+      >
+        <EditorContent editor={editor} />
       </div>
     </div>
   );

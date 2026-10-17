@@ -5,7 +5,7 @@ from datetime import date
 
 from fastapi import APIRouter, Depends, File, Form, HTTPException, UploadFile
 from pydantic import BaseModel
-from sqlalchemy import select, or_, func
+from sqlalchemy import select, or_, func, false
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.database import get_db
@@ -80,6 +80,46 @@ def _archive_dict(archive: GrantArchive, section_count: int = 0) -> dict:
     return data
 
 
+# ── Organization scoping ──────────────────────────────────────────────────────
+# Archive entries belong to one organization (GrantArchive.institution_id).
+# Members of the active org with can_view_archive see its entries; anyone with
+# an ArchiveShare row for an entry may view that one entry, from any org.
+
+def _in_active_org(user: User):
+    """WHERE clause: entries owned by the user's active organization."""
+    if not user.institution_id:
+        return false()
+    return GrantArchive.institution_id == user.institution_id
+
+
+async def _shared_archive_ids(db: AsyncSession, user: User) -> set[str]:
+    from app.models.archive_share import ArchiveShare
+    return set((await db.execute(
+        select(ArchiveShare.archive_id).where(ArchiveShare.user_id == user.id)
+    )).scalars().all())
+
+
+def _owned_by_active_org(archive: GrantArchive, user: User) -> bool:
+    return bool(user.institution_id) and archive.institution_id == user.institution_id
+
+
+async def _get_archive_for(
+    db: AsyncSession, archive_id: str, user: User, *, allow_shared: bool = False
+) -> GrantArchive:
+    """The entry, if the user may see it; 404 otherwise (so other orgs' ids
+    don't leak). Without `allow_shared`, only the owning org's members pass —
+    use that for edits and share management."""
+    archive = (await db.execute(select(GrantArchive).where(GrantArchive.id == archive_id))).scalar_one_or_none()
+    if archive:
+        if _owned_by_active_org(archive, user) and (
+            not allow_shared or has_module_permission(user, "can_view_archive")
+        ):
+            return archive
+        if allow_shared and archive_id in await _shared_archive_ids(db, user):
+            return archive
+    raise HTTPException(404, "Archive entry not found")
+
+
 @router.get("/")
 async def list_archive(
     funder: Optional[str] = None,
@@ -88,10 +128,15 @@ async def list_archive(
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ):
-    if not has_module_permission(current_user, "can_view_archive"):
-        from fastapi import HTTPException as _HTTPException
-        raise _HTTPException(status_code=403, detail="You do not have access to the archive.")
+    shared_ids = await _shared_archive_ids(db, current_user)
     q = select(GrantArchive)
+    if has_module_permission(current_user, "can_view_archive"):
+        q = q.where(or_(_in_active_org(current_user), GrantArchive.id.in_(shared_ids)))
+    else:
+        # No archive access of their own: only what was shared with them.
+        if not shared_ids:
+            raise HTTPException(status_code=403, detail="You do not have access to the archive.")
+        q = q.where(GrantArchive.id.in_(shared_ids))
     if funder:
         q = q.where(GrantArchive.funder.ilike(f"%{funder}%"))
     if outcome:
@@ -111,7 +156,7 @@ async def list_archive(
         )
         counts = {row[0]: row[1] for row in count_result.all()}
 
-    return [_archive_dict(a, counts.get(a.id, 0)) for a in archives]
+    return [{**_archive_dict(a, counts.get(a.id, 0)), "shared_with_me": a.id in shared_ids} for a in archives]
 
 
 @router.get("/graph-data")
@@ -133,7 +178,9 @@ async def get_archive_graph_data(
     from app.models.archive_cluster import ArchiveCluster
     from app.models.archive_edge import ArchiveEdge
 
+    _require_archive_viewer(current_user)
     q = select(GrantArchive).where(
+        _in_active_org(current_user),
         GrantArchive.indexing_status == "complete",
         GrantArchive.umap_x.isnot(None),
     )
@@ -150,7 +197,10 @@ async def get_archive_graph_data(
     result = await db.execute(q)
     archives = result.scalars().all()
 
-    clusters_result = await db.execute(select(ArchiveCluster))
+    # Clustering runs over every org's entries; only return clusters this
+    # org's nodes are in, so other orgs' cluster labels don't show.
+    cluster_ids = {a.cluster_id for a in archives if a.cluster_id is not None}
+    clusters_result = await db.execute(select(ArchiveCluster).where(ArchiveCluster.id.in_(cluster_ids)))
     clusters = {
         c.id: {"id": c.id, "label": c.label, "color": c.color}
         for c in clusters_result.scalars().all()
@@ -205,7 +255,7 @@ async def create_archive_entry(
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ):
-    archive = GrantArchive(id=str(uuid.uuid4()), **data.model_dump())
+    archive = GrantArchive(id=str(uuid.uuid4()), institution_id=current_user.institution_id, **data.model_dump())
     db.add(archive)
     await db.commit()
     return {"id": archive.id}
@@ -292,6 +342,7 @@ async def create_archive_with_document(
         "notes": notes,
         "ai_retrieval_allowed": ai_retrieval_allowed,
         "text_reuse_allowed": text_reuse_allowed,
+        "institution_id": current_user.institution_id,
     }
 
     try:
@@ -315,16 +366,115 @@ async def create_archive_with_document(
         raise HTTPException(500, f"Failed to create archive entry: {e}") from e
 
 
+# ── Sharing ───────────────────────────────────────────────────────────────────
+# Share an archived grant with one person: someone from Partners, an org
+# colleague, or any email. Each recipient is tagged internal (already in the
+# sharer's organization) or external, and gets an email with a link.
+
+class ArchiveShareCreate(BaseModel):
+    email: Optional[str] = None
+    partner_id: Optional[str] = None
+    note: Optional[str] = None
+
+
+async def _internal_emails(db: AsyncSession, institution_id: Optional[str], emails: list[str]) -> dict[str, User]:
+    """Lower-cased email → user, for those of `emails` who belong to the org."""
+    if not institution_id or not emails:
+        return {}
+    from app.models.institution_membership import InstitutionMembership
+    rows = (await db.execute(
+        select(User)
+        .join(InstitutionMembership, InstitutionMembership.user_id == User.id)
+        .where(
+            InstitutionMembership.institution_id == institution_id,
+            func.lower(User.email).in_([e.lower() for e in emails]),
+        )
+    )).scalars().all()
+    return {u.email.lower(): u for u in rows}
+
+
+def _require_archive_viewer(user: User) -> None:
+    if not has_module_permission(user, "can_view_archive"):
+        raise HTTPException(403, "You do not have access to the archive.")
+
+
+@router.get("/share-targets")
+async def archive_share_targets(
+    q: str = "",
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    """People to share with: org colleagues and partners with an email, each
+    marked internal/external. With no matching person, `q` is classified as a
+    typed email address."""
+    _require_archive_viewer(current_user)
+    from app.models.institution_membership import InstitutionMembership
+    from app.models.partner import Partner
+
+    term = q.strip()
+    like = f"%{term}%"
+    out: list[dict] = []
+    seen: set[str] = set()
+
+    if current_user.institution_id:
+        mq = (
+            select(User)
+            .join(InstitutionMembership, InstitutionMembership.user_id == User.id)
+            .where(
+                InstitutionMembership.institution_id == current_user.institution_id,
+                User.is_active == True,  # noqa: E712
+                User.id != current_user.id,
+            )
+        )
+        if term:
+            mq = mq.where(or_(User.name.ilike(like), User.email.ilike(like)))
+        for u in (await db.execute(mq.limit(8))).scalars().all():
+            seen.add(u.email.lower())
+            out.append({"kind": "member", "email": u.email, "name": u.name, "organization": None,
+                        "partner_id": None, "is_internal": True})
+
+    from app.routers.partners import partner_org_filter
+    pq = select(Partner).where(partner_org_filter(current_user), Partner.email.is_not(None), Partner.email != "")
+    if term:
+        pq = pq.where(or_(Partner.name.ilike(like), Partner.email.ilike(like), Partner.organization.ilike(like)))
+    partners = [p for p in (await db.execute(pq.order_by(Partner.name).limit(12))).scalars().all()
+                if p.email.strip().lower() not in seen]
+    internal = await _internal_emails(db, current_user.institution_id, [p.email.strip() for p in partners])
+    for p in partners:
+        e = p.email.strip()
+        seen.add(e.lower())
+        out.append({"kind": "partner", "email": e, "name": p.name, "organization": p.organization,
+                    "partner_id": p.id, "is_internal": e.lower() in internal})
+
+    if "@" in term and term.lower() not in seen:
+        internal = await _internal_emails(db, current_user.institution_id, [term])
+        u = internal.get(term.lower())
+        out.insert(0, {"kind": "email", "email": term, "name": u.name if u else None, "organization": None,
+                       "partner_id": None, "is_internal": u is not None})
+    return out
+
+
+@router.get("/shared-with-me")
+async def archive_shared_with_me(
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    from app.models.archive_share import ArchiveShare
+    rows = (await db.execute(
+        select(GrantArchive, ArchiveShare)
+        .join(ArchiveShare, ArchiveShare.archive_id == GrantArchive.id)
+        .where(ArchiveShare.user_id == current_user.id)
+    )).all()
+    return [{**_archive_dict(a), "shared_with_me": True, "share_is_internal": sh.is_internal} for a, sh in rows]
+
+
 @router.get("/{archive_id}")
 async def get_archive(
     archive_id: str,
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ):
-    result = await db.execute(select(GrantArchive).where(GrantArchive.id == archive_id))
-    archive = result.scalar_one_or_none()
-    if not archive:
-        raise HTTPException(404, "Archive entry not found")
+    archive = await _get_archive_for(db, archive_id, current_user, allow_shared=True)
     sections_q = select(ProposalSection).where(ProposalSection.archive_id == archive_id)
     sections = (await db.execute(sections_q)).scalars().all()
     docs_q = select(Document).where(Document.archive_id == archive_id)
@@ -360,12 +510,14 @@ async def get_archive_section(
     if not section:
         raise HTTPException(404, "Archive section not found")
 
-    archive_title = None
-    if section.archive_id:
-        archive_result = await db.execute(
-            select(GrantArchive.title).where(GrantArchive.id == section.archive_id)
-        )
-        archive_title = archive_result.scalar_one_or_none()
+    if not section.archive_id:
+        # Not an archive section (e.g. a grant workspace reference doc).
+        raise HTTPException(404, "Archive section not found")
+    try:
+        archive = await _get_archive_for(db, section.archive_id, current_user, allow_shared=True)
+    except HTTPException:
+        raise HTTPException(404, "Archive section not found")
+    archive_title = archive.title
 
     return {
         "id": section.id,
@@ -394,18 +546,11 @@ async def delete_archive(
     Files that also belong to a grant's workspace stay with the grant — they
     are only unlinked from the archive."""
     from sqlalchemy import delete as sa_delete
-    from app.models.active_grant import ActiveGrant
     from app.models.language import ReusableLanguageBlock
     from app.models.section_chunk import SectionChunk
     from app.services.storage import delete_file, resolve_storage_key
 
-    archive = (await db.execute(select(GrantArchive).where(GrantArchive.id == archive_id))).scalar_one_or_none()
-    if not archive:
-        raise HTTPException(404, "Archive entry not found")
-    if archive.grant_id:
-        grant = await db.get(ActiveGrant, archive.grant_id)
-        if grant and grant.institution_id and grant.institution_id != current_user.institution_id:
-            raise HTTPException(403, "This archive entry belongs to another organization.")
+    archive = await _get_archive_for(db, archive_id, current_user)
 
     documents = (await db.execute(select(Document).where(Document.archive_id == archive_id))).scalars().all()
     # The archive's own documents: its uploads, the files copied from a grant's
@@ -458,10 +603,7 @@ async def update_archive(
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ):
-    result = await db.execute(select(GrantArchive).where(GrantArchive.id == archive_id))
-    archive = result.scalar_one_or_none()
-    if not archive:
-        raise HTTPException(404, "Archive entry not found")
+    archive = await _get_archive_for(db, archive_id, current_user)
     for k, v in data.model_dump(exclude_unset=True).items():
         if hasattr(archive, k):
             setattr(archive, k, v)
@@ -482,14 +624,13 @@ async def ingest_archive(
     current_user: User = Depends(get_current_user),
 ):
     """Re-index an existing archive entry into the RAG corpus."""
-    result = await db.execute(select(GrantArchive).where(GrantArchive.id == archive_id))
-    archive = result.scalar_one_or_none()
-    if not archive:
-        raise HTTPException(404, "Archive entry not found")
+    archive = await _get_archive_for(db, archive_id, current_user)
 
     doc = None
     if body.document_id:
-        doc_result = await db.execute(select(Document).where(Document.id == body.document_id))
+        doc_result = await db.execute(select(Document).where(
+            Document.id == body.document_id, Document.archive_id == archive_id,
+        ))
         doc = doc_result.scalar_one_or_none()
     if not doc:
         docs_result = await db.execute(
@@ -540,10 +681,7 @@ async def add_archive_document(
     current_user: User = Depends(get_current_user),
 ):
     """Upload an additional document to an existing archive entry."""
-    result = await db.execute(select(GrantArchive).where(GrantArchive.id == archive_id))
-    archive = result.scalar_one_or_none()
-    if not archive:
-        raise HTTPException(404, "Archive entry not found")
+    archive = await _get_archive_for(db, archive_id, current_user)
 
     valid_types = {"full_proposal", "call_document", "budget", "review_feedback"}
     if document_type not in valid_types:
@@ -583,14 +721,13 @@ async def reindex_archive_style_endpoint(
     current_user: User = Depends(get_current_user),
 ):
     """Force Phase 2 re-index: LLM section split, document structure, style fingerprint."""
-    result = await db.execute(select(GrantArchive).where(GrantArchive.id == archive_id))
-    archive = result.scalar_one_or_none()
-    if not archive:
-        raise HTTPException(404, "Archive entry not found")
+    archive = await _get_archive_for(db, archive_id, current_user)
 
     doc = None
     if body.document_id:
-        doc_result = await db.execute(select(Document).where(Document.id == body.document_id))
+        doc_result = await db.execute(select(Document).where(
+            Document.id == body.document_id, Document.archive_id == archive_id,
+        ))
         doc = doc_result.scalar_one_or_none()
     if not doc:
         docs_result = await db.execute(
@@ -609,3 +746,109 @@ async def reindex_archive_style_endpoint(
         "indexing_status": "pending",
         "message": "Re-index queued in the background",
     }
+
+
+def _share_dict(sh, user: Optional[User], sharer: Optional[User]) -> dict:
+    return {
+        "id": sh.id, "email": sh.email, "partner_id": sh.partner_id,
+        "is_internal": sh.is_internal, "note": sh.note,
+        "name": user.name if user else None, "has_account": user is not None,
+        "shared_by": sharer.name if sharer else None,
+        "created_at": str(sh.created_at) if sh.created_at else None,
+    }
+
+
+@router.get("/{archive_id}/shares")
+async def list_archive_shares(
+    archive_id: str,
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    _require_archive_viewer(current_user)
+    await _get_archive_for(db, archive_id, current_user)
+    from app.models.archive_share import ArchiveShare
+    shares = (await db.execute(
+        select(ArchiveShare).where(ArchiveShare.archive_id == archive_id).order_by(ArchiveShare.created_at)
+    )).scalars().all()
+    ids = {i for sh in shares for i in (sh.user_id, sh.shared_by_id) if i}
+    users = {u.id: u for u in (await db.execute(select(User).where(User.id.in_(ids)))).scalars().all()} if ids else {}
+    return [_share_dict(sh, users.get(sh.user_id), users.get(sh.shared_by_id)) for sh in shares]
+
+
+@router.post("/{archive_id}/shares", status_code=201)
+async def share_archive(
+    archive_id: str,
+    body: ArchiveShareCreate,
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    _require_archive_viewer(current_user)
+    from app.models.archive_share import ArchiveShare
+    from app.models.partner import Partner
+    from app.services.sharing import send_archive_share_email
+
+    archive = await _get_archive_for(db, archive_id, current_user)
+
+    partner = None
+    if body.partner_id:
+        from app.routers.partners import partner_org_filter
+        partner = (await db.execute(select(Partner).where(
+            Partner.id == body.partner_id, partner_org_filter(current_user),
+        ))).scalar_one_or_none()
+        if not partner or not partner.email:
+            raise HTTPException(400, "That partner has no email address on file")
+        email = partner.email.strip()
+    else:
+        email = (body.email or "").strip()
+    if "@" not in email:
+        raise HTTPException(400, "Enter a valid email address")
+    if email.lower() == (current_user.email or "").lower():
+        raise HTTPException(400, "You can't share with yourself")
+
+    dup = (await db.execute(select(ArchiveShare).where(
+        ArchiveShare.archive_id == archive_id, func.lower(ArchiveShare.email) == email.lower(),
+    ))).scalar_one_or_none()
+    if dup:
+        raise HTTPException(400, f"Already shared with {email}")
+
+    recipient = (await db.execute(select(User).where(func.lower(User.email) == email.lower()))).scalar_one_or_none()
+    internal = await _internal_emails(db, current_user.institution_id, [email])
+    share = ArchiveShare(
+        id=str(uuid.uuid4()),
+        archive_id=archive_id,
+        email=email,
+        user_id=recipient.id if recipient else None,
+        partner_id=partner.id if partner else None,
+        institution_id=current_user.institution_id,
+        is_internal=email.lower() in internal,
+        note=(body.note or "").strip() or None,
+        shared_by_id=current_user.id,
+    )
+    db.add(share)
+    await db.commit()
+
+    import asyncio
+    asyncio.create_task(send_archive_share_email(
+        to=email, sharer_name=current_user.name, archive_title=archive.title,
+        archive_id=archive_id, has_account=recipient is not None, note=share.note,
+    ))
+    return _share_dict(share, recipient, current_user)
+
+
+@router.delete("/{archive_id}/shares/{share_id}", status_code=204)
+async def unshare_archive(
+    archive_id: str,
+    share_id: str,
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    _require_archive_viewer(current_user)
+    await _get_archive_for(db, archive_id, current_user)
+    from app.models.archive_share import ArchiveShare
+    share = (await db.execute(select(ArchiveShare).where(
+        ArchiveShare.id == share_id, ArchiveShare.archive_id == archive_id,
+    ))).scalar_one_or_none()
+    if not share:
+        raise HTTPException(404, "Share not found")
+    await db.delete(share)
+    await db.commit()

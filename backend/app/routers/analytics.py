@@ -1,12 +1,13 @@
 """Analytics and reporting endpoints — scoped to the current user's institution."""
 from datetime import date, timedelta
 from fastapi import APIRouter, Depends
-from sqlalchemy import select, func, and_
+from sqlalchemy import select, func, and_, false
 from sqlalchemy.ext.asyncio import AsyncSession
 from app.database import get_db
 from app.models.active_grant import ActiveGrant
 from app.models.task import Task
 from app.models.archive import GrantArchive
+from app.services.tenancy import archive_org_filter
 from app.models.grant_member import GrantMember, GrantMemberStatus
 from app.models.user import User
 from app.routers.auth import get_current_user
@@ -40,7 +41,7 @@ async def dashboard_stats(db: AsyncSession = Depends(get_db), current_user: User
         )).scalars().all()
         grant_filter = ActiveGrant.id.in_(member_grant_ids)
     else:
-        grant_filter = ActiveGrant.institution_id == inst_id if inst_id else True
+        grant_filter = ActiveGrant.institution_id == inst_id if inst_id else false()
 
     # Proposals in development (proposal stage).
     proposals_in_development = (await db.execute(
@@ -76,7 +77,9 @@ async def dashboard_stats(db: AsyncSession = Depends(get_db), current_user: User
         ))
     )).scalar()
 
-    archived_count = (await db.execute(select(func.count()).select_from(GrantArchive))).scalar()
+    archived_count = (await db.execute(select(func.count()).select_from(GrantArchive).where(
+        archive_org_filter(current_user.institution_id)
+    ))).scalar()
 
     return {
         "new_opportunities_this_week": new_this_week,
@@ -91,16 +94,18 @@ async def dashboard_stats(db: AsyncSession = Depends(get_db), current_user: User
 @router.get("/pipeline")
 async def pipeline_report(db: AsyncSession = Depends(get_db), current_user: User = Depends(get_current_user)):
     inst_id = current_user.institution_id
-    q = select(ActiveGrant.status, func.count()).group_by(ActiveGrant.status)
-    if inst_id:
-        q = q.where(ActiveGrant.institution_id == inst_id)
+    if not inst_id:
+        return {"by_status": {}}
+    q = select(ActiveGrant.status, func.count()).where(ActiveGrant.institution_id == inst_id).group_by(ActiveGrant.status)
     status_counts = (await db.execute(q)).all()
     return {"by_status": {s: c for s, c in status_counts}}
 
 @router.get("/success-rate")
 async def success_rate(db: AsyncSession = Depends(get_db), current_user: User = Depends(get_current_user)):
     by_funder = (await db.execute(
-        select(GrantArchive.funder, GrantArchive.outcome, func.count()).group_by(GrantArchive.funder, GrantArchive.outcome)
+        select(GrantArchive.funder, GrantArchive.outcome, func.count())
+        .where(archive_org_filter(current_user.institution_id))
+        .group_by(GrantArchive.funder, GrantArchive.outcome)
     )).all()
     results = {}
     for funder, outcome, count in by_funder:
