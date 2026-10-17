@@ -9,7 +9,7 @@ from typing import Optional
 
 from fastapi import APIRouter, Depends, HTTPException, status
 from pydantic import BaseModel
-from sqlalchemy import select
+from sqlalchemy import select, func
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.config import get_settings
@@ -18,6 +18,8 @@ from app.models.institution import Institution
 from app.models.org_join_request import OrgJoinRequest, JoinRequestStatus
 from app.models.user import User, UserRole, InstitutionRole
 from app.routers.auth import get_current_user, create_access_token
+from app.models.notification import NotificationType
+from app.services.notify import notify
 from app.services.organization_setup import queue_org_scaffold
 from app.auth.permissions import is_org_admin, invalidate_permission_cache, get_redis
 from app.models.institution_membership import InstitutionMembership
@@ -580,6 +582,17 @@ async def request_to_join(
         status=JoinRequestStatus.PENDING,
     )
     db.add(req)
+    admin_ids = (await db.execute(
+        select(InstitutionMembership.user_id).where(
+            InstitutionMembership.institution_id == institution_id,
+            InstitutionMembership.institution_role == "admin",
+        )
+    )).scalars().all()
+    await notify(
+        db, admin_ids, NotificationType.ORG_JOIN_REQUEST.value,
+        f"{current_user.name} asked to join your organization",
+        entity_type="organization", entity_id=institution_id, actor_id=current_user.id,
+    )
     await db.commit()
     return {"id": req.id, "status": req.status}
 
@@ -873,6 +886,18 @@ async def invite_member_by_email(
         <p>This link expires in 48 hours.</p>
         """,
     ))
+
+    # Someone who already has an account also sees the invite in their inbox.
+    invitee_id = (await db.execute(
+        select(User.id).where(func.lower(User.email) == body.email.strip().lower())
+    )).scalar_one_or_none()
+    if invitee_id:
+        await notify(
+            db, [invitee_id], NotificationType.ORG_INVITATION.value,
+            f"{current_user.name} invited you to join {inst.name}",
+            entity_type="org_invite", entity_id=token, actor_id=current_user.id,
+        )
+        await db.commit()
 
     return {"message": f"Invite sent to {body.email}", "invite_url": invite_url}
 

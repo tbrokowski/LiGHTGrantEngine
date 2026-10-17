@@ -24,6 +24,8 @@ from app.models.activity_log import GrantActivityLog
 from app.models.user import User
 from app.models.grant_member import GrantMember, GrantMemberRole, GrantMemberStatus
 from app.routers.auth import get_current_user
+from app.models.notification import NotificationType
+from app.services.notify import notify
 from app.auth.permissions import grant_access, invalidate_permission_cache, get_redis
 import redis.asyncio as aioredis
 
@@ -166,11 +168,27 @@ async def update_task(
     if not task:
         raise HTTPException(404, "Task not found")
     updates = data.model_dump(exclude_none=True)
+    was_complete = task.status == TaskStatus.COMPLETE
+    previously_assigned = {task.owner_id, *(task.assignee_ids or [])}
     for k, v in updates.items():
         setattr(task, k, v)
     if updates.get("status") == TaskStatus.COMPLETE and not task.completed_at:
         task.completed_at = datetime.now(timezone.utc)
     await log_activity(db, grant_id, "task_updated", current_user.id, "task", task_id, f"Task updated: {task.title}")
+    if task.status == TaskStatus.COMPLETE and not was_complete:
+        await notify(
+            db, [task.owner_id, task.reviewer_id, task.created_by_id, *(task.assignee_ids or [])],
+            NotificationType.TASK_COMPLETED.value,
+            f"{current_user.name} completed a task: {task.title}",
+            entity_type="task", entity_id=task.id, actor_id=current_user.id,
+        )
+    newly_assigned = {task.owner_id, *(task.assignee_ids or [])} - previously_assigned
+    if newly_assigned:
+        await notify(
+            db, newly_assigned, NotificationType.TASK_ASSIGNED.value,
+            f"{current_user.name} assigned you a task: {task.title}",
+            entity_type="task", entity_id=task.id, actor_id=current_user.id,
+        )
     await db.commit()
     return _task_dict(task)
 
@@ -339,6 +357,13 @@ async def invite_grant_member(
         db, grant_id, "member_invited", current_user.id, "grant_member", member.id,
         f"Invited {target_email} as {data.role}"
     )
+    if user:
+        grant_title = (await db.execute(select(ActiveGrant.title).where(ActiveGrant.id == grant_id))).scalar_one_or_none()
+        await notify(
+            db, [user.id], NotificationType.GRANT_INVITATION.value,
+            f"{current_user.name} added you to {grant_title or 'a grant'} as {data.role}",
+            entity_type="grant", entity_id=grant_id, actor_id=current_user.id,
+        )
     await db.commit()
     if user:
         await invalidate_permission_cache(user.id, redis)

@@ -119,7 +119,8 @@ Proposal sections and documents are embedded using the Qwen embeddings endpoint 
 | `ai.embeddings` | Embeddings config | Separate endpoint if needed |
 | `fit_scoring.team_themes` | Theme list | Used by Qwen scorer |
 | `fit_scoring.tiers` | Score thresholds | Customize tier boundaries |
-| `discovery.default_schedule` | weekly/daily | How often to scan sources |
+| `discovery.default_schedule` | weekly/daily | How often to scan all sources (`daily` keeps the dashboard's daily picks fresh) |
+| `discovery.daily_picks_hour` | 0–23 (UTC) | When the dashboard's "Today's Opportunities" list turns over |
 | `rag.top_k` | int | Results per retrieval query |
 | `notifications.email.enabled` | bool | Enable email reminders |
 

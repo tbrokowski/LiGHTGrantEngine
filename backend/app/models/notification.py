@@ -27,6 +27,11 @@ class NotificationType(str, Enum):
     FINANCE_OVERSPEND_WARNING = "finance_overspend_warning"
     FINANCE_OVERSPEND_CRITICAL = "finance_overspend_critical"
     FUND_REQUEST_PENDING = "fund_request_pending"
+    TASK_COMPLETED = "task_completed"
+    NEW_MESSAGE = "new_message"
+    GRANT_INVITATION = "grant_invitation"
+    ORG_INVITATION = "org_invitation"
+    ORG_JOIN_REQUEST = "org_join_request"
 
 
 class NotificationChannel(str, Enum):
@@ -52,6 +57,8 @@ class Notification(Base):
     entity_type: Mapped[str | None] = mapped_column(String(50))
     entity_id: Mapped[str | None] = mapped_column(String)
     message: Mapped[str] = mapped_column(Text)
+    # Who caused it (null for system notices like deadline reminders).
+    actor_id: Mapped[str | None] = mapped_column(String, ForeignKey("users.id", ondelete="SET NULL"))
     channel: Mapped[str] = mapped_column(String(50), default=NotificationChannel.IN_APP)
     status: Mapped[str] = mapped_column(String(50), default=NotificationStatus.PENDING)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())

@@ -6,6 +6,7 @@ import { useEffect, useCallback, useState } from 'react';
 import { useAuth, hasModulePermission, ModulePermissions } from '@/lib/auth';
 import { opportunities } from '@/lib/api';
 import { onOpportunitiesChanged } from '@/lib/opportunities-events';
+import { useInboxCounts } from '@/lib/inbox';
 import FeedbackWidget from '@/components/FeedbackWidget';
 
 interface NavItem {
@@ -16,6 +17,7 @@ interface NavItem {
 
 const NAV: NavItem[] = [
   { href: '/dashboard',     label: 'Dashboard' },
+  { href: '/messages',      label: 'Messages' },
   { href: '/opportunities', label: 'Opportunities' },
   // Everyone gets the Grants tab (write/create their own); can_view_grants only
   // governs whether the shared org portfolio is included (handled server-side).
@@ -29,6 +31,10 @@ export default function Sidebar() {
   const path = usePathname();
   const { user } = useAuth();
   const [queueCount, setQueueCount] = useState<number | null>(null);
+  const inbox = useInboxCounts();
+  // Unread conversations already raise a notification each, so the
+  // notification count alone is the inbox total.
+  const inboxCount = inbox.notifications;
 
   const refreshCount = useCallback(() => {
     opportunities.newOpportunitiesCounts()
@@ -180,6 +186,7 @@ export default function Sidebar() {
           {visibleNav.map(({ href, label }) => {
             const active = path === href || path.startsWith(href + '/');
             const isOpportunities = href === '/opportunities';
+            const badge = isOpportunities ? queueCount : href === '/messages' ? inboxCount : null;
 
             return (
               <Link
@@ -210,7 +217,7 @@ export default function Sidebar() {
                 <span className="pl-1">{label}</span>
 
                 {/* Unread badge */}
-                {isOpportunities && queueCount != null && queueCount > 0 && (
+                {badge != null && badge > 0 && (
                   <span
                     style={{
                       background: active ? 'rgba(255,255,255,0.25)' : 'rgba(255,255,255,0.12)',
@@ -225,7 +232,7 @@ export default function Sidebar() {
                       textAlign: 'center',
                     }}
                   >
-                    {queueCount > 99 ? '99+' : queueCount}
+                    {badge > 99 ? '99+' : badge}
                   </span>
                 )}
               </Link>

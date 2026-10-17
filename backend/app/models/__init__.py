@@ -52,6 +52,7 @@ from .password_reset import PasswordResetToken
 from .feedback import Feedback
 from .user_api_key import UserApiKey
 from .llm_usage import LLMUsage
+from .message import Conversation, ConversationMember, Message
 
 __all__ = [
     "Institution", "User", "Source", "SourceRun", "Opportunity", "OpportunityReview",
@@ -72,4 +73,5 @@ __all__ = [
     "ShortlistCategory",
     "EmailVerification", "OrgJoinRequest", "PasswordResetToken", "Feedback",
     "UserApiKey", "LLMUsage",
+    "Conversation", "ConversationMember", "Message",
 ]

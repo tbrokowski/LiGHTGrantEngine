@@ -59,10 +59,19 @@ hour = disc.get("weekly_scan_hour", 5)
 day = disc.get("weekly_scan_day", "monday")
 day_map = {"monday": 1, "tuesday": 2, "wednesday": 3, "thursday": 4, "friday": 5, "saturday": 6, "sunday": 0}
 
+daily_full_scan = disc.get("default_schedule", "weekly") == "daily"
+
 celery_app.conf.beat_schedule = {
-    "weekly-source-scan": {
+    # discovery.default_schedule: "daily" scans every source each morning so the
+    # dashboard's daily picks have fresh grants to draw on; "weekly" keeps the
+    # full scan to one day and only high-priority sources run daily.
+    "full-source-scan": {
         "task": "app.workers.discovery_tasks.scan_all_sources",
-        "schedule": crontab(hour=hour, minute=0, day_of_week=day_map.get(day, 1)),
+        "schedule": (
+            crontab(hour=disc.get("daily_scan_hour", 6), minute=0)
+            if daily_full_scan
+            else crontab(hour=hour, minute=0, day_of_week=day_map.get(day, 1))
+        ),
     },
     "weekly-web-opportunity-search": {
         "task": "app.workers.web_opportunity_search_tasks.search_opportunities_all",
@@ -70,10 +79,12 @@ celery_app.conf.beat_schedule = {
         # don't collide; finds one-off grants/conferences with no scrapeable portal.
         "schedule": crontab(hour=hour, minute=0, day_of_week=(day_map.get(day, 1) + 2) % 7),
     },
-    "daily-high-priority-scan": {
-        "task": "app.workers.discovery_tasks.scan_high_priority_sources",
-        "schedule": crontab(hour=disc.get("daily_scan_hour", 6), minute=0),
-    },
+    **({} if daily_full_scan else {
+        "daily-high-priority-scan": {
+            "task": "app.workers.discovery_tasks.scan_high_priority_sources",
+            "schedule": crontab(hour=disc.get("daily_scan_hour", 6), minute=0),
+        },
+    }),
     "deadline-reminders": {
         "task": "app.workers.notification_tasks.send_deadline_reminders",
         "schedule": crontab(hour=7, minute=0),

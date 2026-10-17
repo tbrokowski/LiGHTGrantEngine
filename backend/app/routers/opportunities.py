@@ -944,6 +944,105 @@ async def new_opportunities_shortlist(
     }
 
 
+@router.get("/daily-picks")
+async def daily_picks(
+    limit: int = Query(10, ge=1, le=25),
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+    redis: aioredis.Redis = Depends(get_redis),
+):
+    """Today's opportunities: a fixed per-user list that turns over once a day.
+
+    See app.services.daily_picks for the selection rules. The day's ids are
+    cached in Redis so the list stays stable until the next rollover, and the
+    ids featured over the last two weeks are remembered to avoid repeats."""
+    from app.services import daily_picks as dp
+
+    picks_hour = int(settings.discovery.get("daily_picks_hour", dp.DEFAULT_PICKS_HOUR))
+    now = datetime.now(timezone.utc)
+    day = dp.picks_day(now, picks_hour)
+    scope = f"{current_user.id}:{current_user.institution_id or '-'}"
+    day_key = f"daily_picks:{scope}:{day.isoformat()}:{limit}"
+    seen_key = f"daily_picks_seen:{scope}"
+
+    items, read_map, io_map = await _fetch_new_opportunities_pool(db, current_user)
+    by_id = {o.id: o for o in items}
+
+    ids: list[str] | None = None
+    try:
+        cached = await redis.get(day_key)
+        if cached:
+            ids = [i for i in _json.loads(cached) if i in by_id]
+    except Exception:
+        cached = None
+
+    if ids is None:
+        day_start = datetime.combine(day, datetime.min.time(), tzinfo=timezone.utc) + timedelta(hours=picks_hour)
+        read_before_today = set()
+        if items:
+            rows = await db.execute(
+                select(UserOpportunityState.opportunity_id).where(
+                    UserOpportunityState.user_id == current_user.id,
+                    UserOpportunityState.opportunity_id.in_([o.id for o in items]),
+                    UserOpportunityState.read_at.isnot(None),
+                    UserOpportunityState.read_at < day_start,
+                )
+            )
+            read_before_today = {r[0] for r in rows.all()}
+
+        recently_featured: set[str] = set()
+        try:
+            min_score = (day - timedelta(days=dp.REPEAT_WINDOW_DAYS)).toordinal()
+            recently_featured = set(await redis.zrangebyscore(seen_key, min_score, day.toordinal() - 1))
+        except Exception:
+            pass
+
+        candidates = []
+        for o in items:
+            io = io_map.get(o.id)
+            if o.id in read_before_today:
+                continue
+            if io and (io.status in dp.EXCLUDED_STATUSES or io.outcome):
+                continue
+            candidates.append(dp.Candidate(
+                id=o.id,
+                funder=o.funder,
+                opportunity_type=o.opportunity_type,
+                fit_score=io.fit_score if io else o.fit_score,
+                surfaced_at=io.surfaced_at if io else o.date_discovered,
+                deadline=o.deadline,
+            ))
+        ids = dp.select_daily_picks(
+            candidates, day=day, now=now, seed=scope,
+            recently_featured=recently_featured, n=limit,
+        )
+        try:
+            await redis.setex(day_key, 3 * 86400, _json.dumps(ids))
+            if ids:
+                await redis.zadd(seen_key, {i: day.toordinal() for i in ids})
+                await redis.zremrangebyscore(seen_key, 0, day.toordinal() - dp.REPEAT_WINDOW_DAYS - 1)
+                await redis.expire(seen_key, (dp.REPEAT_WINDOW_DAYS + 2) * 86400)
+        except Exception:
+            pass
+
+    picked = [by_id[i] for i in ids]
+    personal_map = await _load_personal_shortlist_map(db, current_user.id, ids)
+    out = []
+    for o in picked:
+        io = io_map.get(o.id)
+        surfaced = io.surfaced_at if io else o.date_discovered
+        d = _opp_summary(o, is_read=read_map.get(o.id, False), io=io,
+                         is_personal_shortlisted=personal_map.get(o.id, False))
+        d["is_new"] = bool(surfaced and now - surfaced <= timedelta(days=2))
+        out.append(d)
+    return {
+        "date": day.isoformat(),
+        "next_refresh": dp.next_refresh(now, picks_hour).isoformat(),
+        "funder_count": len({(o.funder or "").strip().lower() for o in picked if o.funder}),
+        "items": out,
+    }
+
+
 @router.get("/new-opportunities/counts")
 async def new_opportunities_counts(
     db: AsyncSession = Depends(get_db),

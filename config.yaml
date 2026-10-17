@@ -115,7 +115,8 @@ database:
 redis:
   url: redis://localhost:6379/0
 discovery:
-  default_schedule: weekly
+  default_schedule: daily
+  daily_picks_hour: 8
   daily_scan_hour: 6
   weekly_scan_day: monday
   weekly_scan_hour: 5

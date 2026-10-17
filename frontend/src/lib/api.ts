@@ -172,6 +172,7 @@ export const opportunities = {
   newOpportunities: (params?: { unread_only?: boolean; limit?: number; offset?: number }) =>
     api.get('/opportunities/new-opportunities', { params }),
   newOpportunitiesCounts: () => api.get('/opportunities/new-opportunities/counts'),
+  dailyPicks: (params?: { limit?: number }) => api.get('/opportunities/daily-picks', { params }),
   queue: (params?: { unread_only?: boolean; limit?: number; offset?: number }) => api.get('/opportunities/queue', { params }),
   queueCounts: () => api.get('/opportunities/queue/counts'),
   shortlist: (params?: Record<string, unknown>) => api.get('/opportunities/shortlist', { params }),
@@ -611,8 +612,26 @@ export const feedback = {
 
 // ── Notifications ────────────────────────────────────────────────────────────
 export const notifications = {
-  list: () => api.get('/notifications/'),
+  list: (params?: { unread_only?: boolean; limit?: number }) => api.get('/notifications/', { params }),
+  unreadCount: () => api.get('/notifications/unread-count'),
   markRead: (id: string) => api.post(`/notifications/${id}/read`),
+  markAllRead: () => api.post('/notifications/read-all'),
+};
+
+// ── Messages ─────────────────────────────────────────────────────────────────
+export const messages = {
+  people: () => api.get('/messages/people'),
+  conversations: () => api.get('/messages/conversations'),
+  unreadCount: () => api.get('/messages/unread-count'),
+  createConversation: (data: { member_ids: string[]; title?: string; body?: string }) =>
+    api.post('/messages/conversations', data),
+  updateConversation: (id: string, data: { title?: string; add_member_ids?: string[] }) =>
+    api.patch(`/messages/conversations/${id}`, data),
+  leave: (id: string) => api.delete(`/messages/conversations/${id}/members/me`),
+  list: (id: string, params?: { before?: string; after?: string; limit?: number }) =>
+    api.get(`/messages/conversations/${id}/messages`, { params }),
+  send: (id: string, body: string) => api.post(`/messages/conversations/${id}/messages`, { body }),
+  markRead: (id: string) => api.post(`/messages/conversations/${id}/read`),
 };
 
 // ── Partners (CRM) ───────────────────────────────────────────────────────────

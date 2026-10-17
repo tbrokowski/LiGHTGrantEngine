@@ -29,6 +29,8 @@ from app.models.document import Document, DocumentType, ProcessingStatus
 from app.models.user import User, UserRole, InstitutionRole
 from app.models.grant_member import GrantMember, GrantMemberRole, GrantMemberStatus
 from app.routers.auth import get_current_user
+from app.models.notification import NotificationType
+from app.services.notify import notify
 from app.ai.context.grant_context import strip_html
 from app.auth.permissions import (
     grant_access,
@@ -779,6 +781,12 @@ async def _apply_stage_side_effects(
     return archive
 
 
+_STAGE_LABELS = {
+    "proposal": "Proposal", "pending": "Submitted", "active": "Awarded",
+    "rejected": "Not funded", "archived": "Archived",
+}
+
+
 @router.patch("/{grant_id}/stage")
 async def transition_stage(
     grant_id: str,
@@ -806,6 +814,18 @@ async def transition_stage(
     grant.grant_stage = effective_stage
     if data.notes:
         grant.stage_notes = data.notes
+
+    member_ids = (await db.execute(
+        select(GrantMember.user_id).where(
+            GrantMember.grant_id == grant.id,
+            GrantMember.status == GrantMemberStatus.ACCEPTED,
+        )
+    )).scalars().all()
+    await notify(
+        db, member_ids, NotificationType.GRANT_STATUS_CHANGED.value,
+        f"{current_user.name} moved {grant.title} to {_STAGE_LABELS.get(new_stage, new_stage)}",
+        entity_type="grant", entity_id=grant.id, actor_id=current_user.id,
+    )
 
     if new_stage == "pending":
         # Submitted: snapshot the proposal into the archive (outcome=pending, grant stays live)
@@ -867,6 +887,11 @@ async def create_task(
     await _get_grant_or_404(grant_id, db)
     task = Task(id=str(uuid.uuid4()), grant_id=grant_id, created_by_id=current_user.id, **data.model_dump())
     db.add(task)
+    await notify(
+        db, [task.owner_id, *(task.assignee_ids or [])], NotificationType.TASK_ASSIGNED.value,
+        f"{current_user.name} assigned you a task: {task.title}",
+        entity_type="task", entity_id=task.id, actor_id=current_user.id,
+    )
     await db.commit()
     return {"id": task.id}
 
