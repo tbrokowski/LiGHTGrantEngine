@@ -11,8 +11,6 @@ interface Pick {
   funder: string | null;
   opportunity_type: string | null;
   deadline: string | null;
-  fit_score: number | null;
-  priority: string | null;
   award_max: number | null;
   currency: string | null;
   is_read?: boolean;
@@ -25,22 +23,6 @@ interface PicksResponse {
   funder_count: number;
   items: Pick[];
 }
-
-const PRIORITY_COLOR: Record<string, { bg: string; color: string }> = {
-  high:           { bg: 'var(--state-success-bg)', color: 'var(--state-success)' },
-  medium:         { bg: 'var(--state-warning-bg)', color: 'var(--state-warning)' },
-  low:            { bg: 'var(--surface-sunken)',   color: 'var(--ink-muted)' },
-  high_priority:  { bg: 'var(--state-success-bg)', color: 'var(--state-success)' },
-  worth_reviewing:{ bg: 'var(--state-warning-bg)', color: 'var(--state-warning)' },
-  watchlist:      { bg: 'var(--state-info-bg)',    color: 'var(--state-info)' },
-  low_fit:        { bg: 'var(--surface-sunken)',   color: 'var(--ink-muted)' },
-};
-
-const PRIORITY_LABEL: Record<string, string> = {
-  high: 'High Fit', medium: 'Medium Fit', low: 'Low Fit',
-  high_priority: 'High Fit', worth_reviewing: 'Medium Fit',
-  watchlist: 'Low Fit', low_fit: 'Low Fit',
-};
 
 function formatDate(d?: string | null) {
   if (!d) return null;
@@ -126,7 +108,6 @@ export default function DailyPicks() {
       ) : (
         <div className="grid grid-cols-1 xl:grid-cols-2">
           {items.map(opp => {
-            const pc = opp.priority ? (PRIORITY_COLOR[opp.priority] ?? PRIORITY_COLOR.low) : null;
             const meta = [opp.funder, opp.deadline ? `Due ${formatDate(opp.deadline)}` : 'Rolling', formatAward(opp.award_max, opp.currency)]
               .filter(Boolean).join('  ·  ');
             return (
@@ -162,14 +143,6 @@ export default function DailyPicks() {
                       </span>
                     )}
                     <OpportunityTypeBadge type={opp.opportunity_type} size="xs" />
-                    {pc && opp.priority && (
-                      <span
-                        className="text-[10px] font-medium px-1.5 py-0.5 rounded-[var(--radius-xs)] mono-data"
-                        style={{ background: pc.bg, color: pc.color }}
-                      >
-                        {PRIORITY_LABEL[opp.priority] ?? opp.priority}
-                      </span>
-                    )}
                   </div>
                 </div>
               </Link>
