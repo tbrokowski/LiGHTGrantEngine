@@ -75,10 +75,14 @@ Budget workbooks (.xlsx / .xlsm uploaded on a grant's Budget tab) are co-edited
 in an OnlyOffice Document Server, which edits Excel files natively so
 formatting, formulas and VBA macros survive. It needs its own Railway service:
 
-1. Add a service from the Docker image `onlyoffice/documentserver:8.3`. Give it
-   at least 4 GB RAM (it runs its own Postgres, RabbitMQ and converters).
-2. Set on it: `JWT_ENABLED=true`, `JWT_SECRET=<long random string>`. Expose
-   port 80 with a public domain (browsers load the editor straight from it).
+1. Add a service from this repo with **root directory `onlyoffice`** (Railway
+   builds `onlyoffice/Dockerfile`). Don't use the stock
+   `onlyoffice/documentserver` image directly: on Railway its nginx fails to
+   start ("duplicate default server for [::]:80") and every request is a 502.
+   Give it at least 4 GB RAM and 1 replica (live sessions live in one instance).
+2. Set on it `JWT_SECRET=<long random string>`. Expose port 80 with a public
+   domain (browsers load the editor straight from it). Healthy when
+   `https://<domain>/healthcheck` returns `true`.
 3. Set on the `web` service:
    - `ONLYOFFICE_URL=https://<documentserver public domain>`
    - `ONLYOFFICE_JWT_SECRET=<same secret>`

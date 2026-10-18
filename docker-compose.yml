@@ -149,10 +149,10 @@ services:
   # files from and posts saves to the backend; JWT secret must match
   # ONLYOFFICE_JWT_SECRET on the backend.
   onlyoffice:
-    image: onlyoffice/documentserver:8.3
+    build:
+      context: ./onlyoffice
     container_name: light_onlyoffice
     environment:
-      JWT_ENABLED: "true"
       JWT_SECRET: ${ONLYOFFICE_JWT_SECRET:-local-onlyoffice-secret}
       ALLOW_PRIVATE_IP_ADDRESS: "true"
     extra_hosts:
