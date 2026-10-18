@@ -1,17 +1,17 @@
 # OnlyOffice Document Server for co-editing budget workbooks (.xlsx / .xlsm).
 #
-# The stock image's nginx fails to start on Railway (every request is a 502):
-# with IPv6 present, Debian's default site and OnlyOffice's ds.conf both claim
-# `[::]:80 default_server`, and the stock script only strips its IPv6 listener
-# when IPv6 is missing. Railway's proxy and private network both reach the
-# container over IPv4, so serve on IPv4 only and drop the unused default site.
+# On Railway the stock image never serves OnlyOffice: an Ubuntu default nginx
+# site turns up in sites-enabled at runtime and also claims
+# `[::]:80 default_server`. With OnlyOffice's own IPv6 listener nginx refuses
+# to start (502s); without it the default site answers Railway's proxy, which
+# connects over IPv6, with 404s. OnlyOffice only uses conf.d, so stop nginx
+# reading sites-enabled at all.
 FROM onlyoffice/documentserver:8.3
 
 RUN rm -f /etc/nginx/sites-enabled/default \
- && tmpl=/etc/onlyoffice/documentserver/nginx/ds.conf.tmpl \
- && grep -q 'listen' "$tmpl" \
- && sed -i '/listen\s\+\[::[0-9]*\]/d' "$tmpl" \
- && ! grep -q '\[::' "$tmpl"
+ && sed -i '/include\s\+\/etc\/nginx\/sites-enabled/d' /etc/nginx/nginx.conf \
+ && ! grep -q 'sites-enabled' /etc/nginx/nginx.conf \
+ && grep -q 'conf.d' /etc/nginx/nginx.conf
 
 COPY start.sh /app/light-start.sh
 RUN chmod +x /app/light-start.sh

@@ -13,6 +13,8 @@
   else
     echo "[light] nginx is running"
   fi
+  # Which config files nginx loaded and what each listens on.
+  nginx -T 2>/dev/null | grep -E '^# configuration file|^\s*listen\s' | sed 's/^/[light] /'
 ) &
 
 exec /app/ds/run-document-server.sh "$@"
