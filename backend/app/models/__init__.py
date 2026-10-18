@@ -55,6 +55,7 @@ from .user_api_key import UserApiKey
 from .llm_usage import LLMUsage
 from .message import Conversation, ConversationMember, Message
 from .grant_spreadsheet import GrantSpreadsheet, GrantSpreadsheetVersion
+from .grant_writing_doc import GrantWritingDoc
 
 __all__ = [
     "Institution", "User", "Source", "SourceRun", "Opportunity", "OpportunityReview",
@@ -76,5 +77,5 @@ __all__ = [
     "EmailVerification", "OrgJoinRequest", "PasswordResetToken", "Feedback",
     "UserApiKey", "LLMUsage",
     "Conversation", "ConversationMember", "Message",
-    "GrantSpreadsheet", "GrantSpreadsheetVersion",
+    "GrantSpreadsheet", "GrantSpreadsheetVersion", "GrantWritingDoc",
 ]

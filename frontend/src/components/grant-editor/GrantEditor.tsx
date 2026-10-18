@@ -1,7 +1,7 @@
 'use client';
 import { useState, useCallback, useRef, useEffect } from 'react';
 import { toast } from 'sonner';
-import { AlertCircle, AlertTriangle, MessageCircle, Quote, Sparkles, X } from 'lucide-react';
+import { AlertCircle, AlertTriangle, Loader2, MessageCircle, Quote, Sparkles, X } from 'lucide-react';
 import { grants, grantWriting } from '@/lib/api';
 import {
   isMarkedAnalyzing,
@@ -26,9 +26,8 @@ import GoogleDocsControl, { type SyncState } from './GoogleDocsControl';
 import AIChatPanel from './AIChatPanel';
 import CitationsPanel from './CitationsPanel';
 import CommentsPanel from './CommentsPanel';
-import ReferencePanel, {
-  ReferencePicker, sameReference, type ReferenceItem, type ReferencePanelState,
-} from './ReferencePanel';
+import OpenInTabMenu, { openArchiveSourceInNewTab } from './OpenInTabMenu';
+import DocumentTabs, { PROPOSAL_DOC_ID, type WritingDoc } from './DocumentTabs';
 import type { CommentBridge } from './editor-extensions';
 
 interface GrantDetail {
@@ -56,19 +55,6 @@ type Citation = InsertableCitation & { claim_text?: string };
 type ArchiveSourceMeta = { sectionId: string; archiveId?: string; grantTitle?: string; sectionType?: string };
 type SidebarTab = 'assistant' | 'citations' | 'comments';
 
-const MAX_REFERENCE_PANELS = 3;
-const DEFAULT_PANEL_WIDTH = 480;
-
-function loadReferencePanels(grantId: string): ReferencePanelState[] {
-  try {
-    const raw = localStorage.getItem(`referencePanels:${grantId}`);
-    const parsed = raw ? (JSON.parse(raw) as ReferencePanelState[]) : [];
-    return Array.isArray(parsed) ? parsed.slice(0, MAX_REFERENCE_PANELS) : [];
-  } catch {
-    return [];
-  }
-}
-
 function readProposalType(styleProfile?: Record<string, unknown> | null): ProposalType | null {
   const v = styleProfile?.proposal_type;
   return PROPOSAL_TYPES.some((t) => t.value === v) ? (v as ProposalType) : null;
@@ -80,9 +66,10 @@ function errorMessage(e: unknown): string {
 }
 
 /**
- * The proposal editor: one page. The inputs (blurb, call document, proposal
- * type) sit at the top; below them is the single document where the proposal is
- * generated and edited. Assistant, citations and comments open in a side panel.
+ * The proposal editor. The inputs (blurb, call document, proposal type) sit at
+ * the top; below them, tabs switch between the proposal — generated and edited
+ * here — and any other writing documents the grant needs. Assistant, citations
+ * and comments open in a side panel; files open in a new browser tab.
  */
 export default function GrantEditor({ grant, onGrantUpdate, onHeadingsChange }: GrantEditorProps) {
   // ── Inputs ──────────────────────────────────────────────────────────────────
@@ -97,6 +84,14 @@ export default function GrantEditor({ grant, onGrantUpdate, onHeadingsChange }: 
   const [documentHtml, setDocumentHtml] = useState(grant.editor_document || '');
   const [selectedText, setSelectedText] = useState('');
   const [activeSection, setActiveSection] = useState('');
+  // Other writing documents, each its own tab beside the proposal.
+  const [docs, setDocs] = useState<WritingDoc[]>([]);
+  const [activeDocId, setActiveDocId] = useState<string>(() => {
+    if (typeof window === 'undefined') return PROPOSAL_DOC_ID;
+    try { return localStorage.getItem(`activeWritingDoc:${grant.id}`) || PROPOSAL_DOC_ID; } catch { return PROPOSAL_DOC_ID; }
+  });
+  const [docsBusy, setDocsBusy] = useState(false);
+  const docSaveTimers = useRef<Record<string, ReturnType<typeof setTimeout>>>({});
 
   // ── Generation ──────────────────────────────────────────────────────────────
   const [generating, setGenerating] = useState(false);
@@ -105,8 +100,6 @@ export default function GrantEditor({ grant, onGrantUpdate, onHeadingsChange }: 
 
   // ── Side panel ──────────────────────────────────────────────────────────────
   const [sidebar, setSidebar] = useState<SidebarTab | null>(null);
-  // Documents open beside the editor (call document, analysis, files, archive sources).
-  const [panels, setPanels] = useState<ReferencePanelState[]>(() => loadReferencePanels(grant.id));
   const [citations, setCitations] = useState<Citation[]>([]);
   const [sidebarWidth, setSidebarWidth] = useState<number>(() => {
     if (typeof window === 'undefined') return 340;
@@ -199,6 +192,12 @@ export default function GrantEditor({ grant, onGrantUpdate, onHeadingsChange }: 
 
     grantWriting.listCitations(grant.id).then((res) => setCitations(res.data)).catch(() => {});
 
+    grants.listWritingDocs(grant.id).then((res) => {
+      const list = (res.data ?? []) as WritingDoc[];
+      setDocs(list);
+      setActiveDocId((cur) => (cur === PROPOSAL_DOC_ID || list.some((d) => d.id === cur) ? cur : PROPOSAL_DOC_ID));
+    }).catch(() => setActiveDocId(PROPOSAL_DOC_ID));
+
     return () => {
       isMountedRef.current = false;
       if (googlePushTimer.current) { clearTimeout(googlePushTimer.current); googlePushTimer.current = null; }
@@ -287,22 +286,78 @@ export default function GrantEditor({ grant, onGrantUpdate, onHeadingsChange }: 
     }, 3000);
   }, [grant.id, onHeadingsChange]);
 
-  const insertIntoSection = (text: string) => {
-    setDocumentHtml((prev) => insertParagraphIntoSection(prev, activeSection, `<p>${text}</p>`));
+  // ── Other writing documents ─────────────────────────────────────────────────
+  const isProposal = activeDocId === PROPOSAL_DOC_ID;
+  const activeDoc = isProposal ? null : docs.find((d) => d.id === activeDocId) ?? null;
+  const activeHtml = activeDoc ? activeDoc.content_html : documentHtml;
+
+  useEffect(() => {
+    try { localStorage.setItem(`activeWritingDoc:${grant.id}`, activeDocId); } catch { /* ignore */ }
+  }, [grant.id, activeDocId]);
+
+  const saveWritingDoc = useCallback((id: string, html: string) => {
+    setDocs((prev) => prev.map((d) => (d.id === id ? { ...d, content_html: html } : d)));
+    clearTimeout(docSaveTimers.current[id]);
+    docSaveTimers.current[id] = setTimeout(() => {
+      grants.updateWritingDoc(grant.id, id, { content_html: html }).catch(() => toast.error('Could not save the document.'));
+    }, 1500);
+  }, [grant.id]);
+
+  const handleWritingDocChange = useCallback(
+    (html: string) => { if (activeDocId !== PROPOSAL_DOC_ID) saveWritingDoc(activeDocId, html); },
+    [activeDocId, saveWritingDoc],
+  );
+
+  const addWritingDoc = async (create: () => Promise<{ data: WritingDoc }>) => {
+    setDocsBusy(true);
+    try {
+      const { data } = await create();
+      setDocs((prev) => [...prev, data]);
+      setActiveDocId(data.id);
+    } catch (e) {
+      toast.error(errorMessage(e));
+    } finally {
+      setDocsBusy(false);
+    }
   };
+
+  const renameWritingDoc = (id: string, title: string) => {
+    setDocs((prev) => prev.map((d) => (d.id === id ? { ...d, title } : d)));
+    grants.updateWritingDoc(grant.id, id, { title }).catch(() => toast.error('Could not rename the document.'));
+  };
+
+  const deleteWritingDoc = async (id: string) => {
+    try {
+      clearTimeout(docSaveTimers.current[id]);
+      await grants.deleteWritingDoc(grant.id, id);
+      setDocs((prev) => prev.filter((d) => d.id !== id));
+      if (activeDocId === id) setActiveDocId(PROPOSAL_DOC_ID);
+    } catch (e) {
+      toast.error(errorMessage(e));
+    }
+  };
+
+  /** Apply an edit (AI insert, citation) to whichever document is open. */
+  const editActiveDoc = (edit: (html: string) => string) => {
+    if (activeDoc) saveWritingDoc(activeDoc.id, edit(activeDoc.content_html));
+    else setDocumentHtml(edit);
+  };
+
+  const insertIntoSection = (text: string) =>
+    editActiveDoc((prev) => insertParagraphIntoSection(prev, activeSection, `<p>${text}</p>`));
 
   const handleInsertCitation = (citation: Citation) => {
     const mla = formatMlaCitation(citation);
     const dedupeKey = citation.id || citation.url || mla.slice(0, 60);
-    setDocumentHtml((prev) => {
+    editActiveDoc((prev) => {
       const withInline = insertParagraphIntoSection(prev, activeSection, `<p>${formatInlineCitation(citation)}</p>`);
       return ensureBibliographyAndAppend(withInline, mla, dedupeKey);
     });
   };
 
   const getDocumentContext = useCallback(
-    () => documentHtml.replace(/<[^>]+>/g, ' ').trim() || grantIdea,
-    [documentHtml, grantIdea],
+    () => activeHtml.replace(/<[^>]+>/g, ' ').trim() || grantIdea,
+    [activeHtml, grantIdea],
   );
 
   // ── Google Docs actions ─────────────────────────────────────────────────────
@@ -336,46 +391,7 @@ export default function GrantEditor({ grant, onGrantUpdate, onHeadingsChange }: 
     }
   };
 
-  // ── Reference panels beside the editor ──────────────────────────────────────
-  useEffect(() => {
-    try { localStorage.setItem(`referencePanels:${grant.id}`, JSON.stringify(panels)); } catch { /* ignore */ }
-  }, [grant.id, panels]);
-
-  const openReference = (item: ReferenceItem) => {
-    setPanels((prev) => {
-      if (prev.some((p) => sameReference(p.item, item))) return prev; // already open
-      const panel = { id: `panel-${Date.now()}`, item, width: DEFAULT_PANEL_WIDTH };
-      // At the limit, the newest panel's content is replaced.
-      return prev.length < MAX_REFERENCE_PANELS ? [...prev, panel] : [...prev.slice(0, -1), panel];
-    });
-  };
-
-  const replaceReference = (id: string, item: ReferenceItem) =>
-    setPanels((prev) => prev.map((p) => (p.id === id ? { ...p, item } : p)));
-
-  const closeReference = (id: string) => setPanels((prev) => prev.filter((p) => p.id !== id));
-
-  const handlePanelResize = (e: React.MouseEvent, id: string) => {
-    e.preventDefault();
-    const startX = e.clientX;
-    const startWidth = panels.find((p) => p.id === id)?.width ?? DEFAULT_PANEL_WIDTH;
-    const onMove = (ev: MouseEvent) => {
-      const width = Math.max(280, Math.min(1000, startWidth + ev.clientX - startX));
-      setPanels((prev) => prev.map((p) => (p.id === id ? { ...p, width } : p)));
-    };
-    const onUp = () => {
-      document.removeEventListener('mousemove', onMove);
-      document.removeEventListener('mouseup', onUp);
-    };
-    document.addEventListener('mousemove', onMove);
-    document.addEventListener('mouseup', onUp);
-  };
-
-  const openArchiveSource = (meta: ArchiveSourceMeta) => openReference({
-    kind: 'archive',
-    sectionId: meta.sectionId,
-    label: `${meta.grantTitle || 'Archive source'}${meta.sectionType ? ` — ${meta.sectionType}` : ''}`,
-  });
+  const openArchiveSource = (meta: ArchiveSourceMeta) => openArchiveSourceInNewTab(meta.sectionId, meta.archiveId);
 
   // ── Side panel ──────────────────────────────────────────────────────────────
   const toggleSidebar = (tab: SidebarTab) => setSidebar((cur) => (cur === tab ? null : tab));
@@ -428,12 +444,8 @@ export default function GrantEditor({ grant, onGrantUpdate, onHeadingsChange }: 
           )}
         </div>
         <div className="flex items-center gap-3 flex-shrink-0">
-          <ReferencePicker
-            grantId={grant.id}
-            onPick={openReference}
-            variant="button"
-          />
-          <GoogleDocsControl
+          <OpenInTabMenu grantId={grant.id} />
+          {isProposal && <GoogleDocsControl
             grantId={grant.id}
             docLinked={docLinked}
             docUrl={docUrl}
@@ -442,7 +454,7 @@ export default function GrantEditor({ grant, onGrantUpdate, onHeadingsChange }: 
             onUnlink={() => { setDocLinked(false); setDocUrl(''); onGrantUpdate(); }}
             onPushToDoc={handlePushToDoc}
             onPullFromDoc={handlePullFromDoc}
-          />
+          />}
           <div className="flex items-center gap-1">
             {sidebarButton('comments', 'Comments', MessageCircle)}
             {sidebarButton('citations', 'Citations', Quote)}
@@ -471,30 +483,9 @@ export default function GrantEditor({ grant, onGrantUpdate, onHeadingsChange }: 
 
       {/* ── Page: inputs, then the document ─────────────────────────────────── */}
       <div className="flex flex-1 overflow-hidden">
-        {panels.map((panel) => (
-          // Panels shrink (down to 260px) before the editor gives up its minimum width.
-          <div key={panel.id} className="flex overflow-hidden" style={{ flex: `0 1 ${panel.width}px`, minWidth: 260 }}>
-            <ReferencePanel
-              grantId={grant.id}
-              item={panel.item}
-              onReplace={(item) => replaceReference(panel.id, item)}
-              onClose={() => closeReference(panel.id)}
-              callAnalysis={callAnalysis}
-              callRequirements={callRequirements}
-              callIntelligence={callIntelligence}
-              callAnalysisStatus={callAnalysisStatus}
-            />
-            <div
-              onMouseDown={(e) => handlePanelResize(e, panel.id)}
-              className="w-1 flex-shrink-0 cursor-col-resize select-none"
-              style={{ background: 'var(--rule-subtle)' }}
-              title="Drag to resize"
-            />
-          </div>
-        ))}
         <div className="flex-1 min-w-[380px] overflow-y-auto grant-editor-scroll">
           <div className="max-w-[880px] mx-auto px-6 py-6 space-y-6">
-            <ProposalInputs
+            {isProposal && <ProposalInputs
               grantId={grant.id}
               grantIdea={grantIdea}
               onIdeaChange={handleIdeaChange}
@@ -512,16 +503,36 @@ export default function GrantEditor({ grant, onGrantUpdate, onHeadingsChange }: 
               draftError={draftError}
               hasDocument={!!documentHtml.replace(/<[^>]+>/g, '').trim()}
               onGenerate={handleGenerate}
-            />
-            <SingleDocEditor
-              documentHtml={documentHtml}
-              onDocumentChange={handleDocumentChange}
-              onSelectionChange={setSelectedText}
-              onActiveSectionChange={setActiveSection}
-              grantId={grant.id}
-              onEditorApi={(apiRef) => { commentBridge.current.editor = apiRef; }}
-              onAnchorClick={(id) => { setSidebar('comments'); commentBridge.current.focusCard?.(id); }}
-            />
+            />}
+            <div>
+              <DocumentTabs
+                docs={docs}
+                activeId={activeDocId}
+                onSelect={setActiveDocId}
+                onCreate={() => addWritingDoc(() => grants.createWritingDoc(grant.id, { title: 'Untitled document' }))}
+                onImport={(file) => addWritingDoc(() => grants.importWritingDoc(grant.id, file))}
+                onRename={renameWritingDoc}
+                onDelete={deleteWritingDoc}
+                busy={docsBusy}
+              />
+              {isProposal || activeDoc ? (
+                <SingleDocEditor
+                  key={activeDocId}
+                  documentHtml={activeHtml}
+                  onDocumentChange={isProposal ? handleDocumentChange : handleWritingDocChange}
+                  exportDocId={activeDoc?.id}
+                  onSelectionChange={setSelectedText}
+                  onActiveSectionChange={setActiveSection}
+                  grantId={grant.id}
+                  onEditorApi={(apiRef) => { commentBridge.current.editor = apiRef; }}
+                  onAnchorClick={(id) => { setSidebar('comments'); commentBridge.current.focusCard?.(id); }}
+                />
+              ) : (
+                <div className="flex items-center justify-center gap-2 py-16 text-sm" style={{ color: 'var(--ink-muted)' }}>
+                  <Loader2 className="w-4 h-4 animate-spin" /> Loading document…
+                </div>
+              )}
+            </div>
           </div>
         </div>
 
@@ -539,13 +550,13 @@ export default function GrantEditor({ grant, onGrantUpdate, onHeadingsChange }: 
                   grantId={grant.id}
                   selectedText={selectedText}
                   activeSection={activeSection}
-                  writingPhase={documentHtml ? 'editor' : 'idea'}
+                  writingPhase={activeHtml ? 'editor' : 'idea'}
                   getDocumentContext={getDocumentContext}
                   onInsertText={insertIntoSection}
                   callRequirements={callRequirements}
                   useWritingStudio
-                  googleDocUrl={docLinked ? docUrl : null}
-                  activeDocLabel="Draft"
+                  googleDocUrl={isProposal && docLinked ? docUrl : null}
+                  activeDocLabel={activeDoc?.title ?? 'Draft'}
                   onOpenArchiveSection={openArchiveSource}
                 />
               )}
@@ -561,8 +572,9 @@ export default function GrantEditor({ grant, onGrantUpdate, onHeadingsChange }: 
               )}
               {sidebar === 'comments' && (
                 <CommentsPanel
+                  key={activeDocId}
                   grantId={grant.id}
-                  documentId="draft"
+                  documentId={activeDocId}
                   onClose={() => setSidebar(null)}
                   bridge={commentBridge}
                   selectedText={selectedText}

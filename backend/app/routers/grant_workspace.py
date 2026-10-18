@@ -1646,12 +1646,13 @@ async def save_editor_document(
 async def export_editor_document(
     grant_id: str,
     format: str = "pdf",
+    doc_id: str | None = None,
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ):
-    """Download the grant document as PDF or DOCX, preserving the editor's
-    formatting (fonts, colours, tables). PDF is rendered in headless Chromium;
-    DOCX is rebuilt with python-docx."""
+    """Download the grant document — or, with `doc_id`, one of its other writing
+    docs — as PDF or DOCX, preserving the editor's formatting (fonts, colours,
+    tables). PDF is rendered in headless Chromium; DOCX is rebuilt with python-docx."""
     import asyncio
     import re as _re
     from fastapi import HTTPException
@@ -1663,7 +1664,14 @@ async def export_editor_document(
 
     grant = await _get_grant_or_404(grant_id, db)
     html = grant.editor_document or ""
-    safe = _re.sub(r"[^A-Za-z0-9]+", "_", (grant.title or "grant")).strip("_") or "grant"
+    title = grant.title or "grant"
+    if doc_id:
+        from app.models.grant_writing_doc import GrantWritingDoc
+        wdoc = await db.get(GrantWritingDoc, doc_id)
+        if not wdoc or wdoc.grant_id != grant_id:
+            raise HTTPException(404, "Document not found")
+        html, title = wdoc.content_html or "", wdoc.title
+    safe = _re.sub(r"[^A-Za-z0-9]+", "_", title).strip("_") or "grant"
 
     try:
         if format == "pdf":

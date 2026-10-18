@@ -94,6 +94,8 @@ interface SingleDocEditorProps {
   onEditorApi?: (api: CommentEditorApi | null) => void;
   /** Fired when a highlighted comment anchor is clicked in the document. */
   onAnchorClick?: (commentId: string) => void;
+  /** Download this writing doc instead of the main proposal. */
+  exportDocId?: string;
 }
 
 const DEBOUNCE_MS = 600;
@@ -153,6 +155,7 @@ export default function SingleDocEditor({
   grantId,
   onEditorApi,
   onAnchorClick,
+  exportDocId,
 }: SingleDocEditorProps) {
   const changeTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const lastHtml = useRef(documentHtml);
@@ -172,7 +175,7 @@ export default function SingleDocEditor({
     setDownloadOpen(false);
     setDownloading(true);
     try {
-      const res = await grants.exportDocument(grantId, format);
+      const res = await grants.exportDocument(grantId, format, exportDocId);
       const url = URL.createObjectURL(res.data as Blob);
       const a = document.createElement('a');
       a.href = url;
@@ -186,7 +189,7 @@ export default function SingleDocEditor({
     } finally {
       setDownloading(false);
     }
-  }, [grantId]);
+  }, [grantId, exportDocId]);
 
   const editor = useEditor({
     extensions: [

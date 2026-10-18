@@ -359,8 +359,23 @@ export const grants = {
   // Unified editor document
   saveDocument: (grantId: string, contentHtml: string, syncSections = true) =>
     api.patch(`/grants/${grantId}/editor-document`, { content_html: contentHtml, sync_sections: syncSections }),
-  exportDocument: (grantId: string, format: 'pdf' | 'docx') =>
-    api.get(`/grants/${grantId}/editor-document/export`, { params: { format }, responseType: 'blob' }),
+  exportDocument: (grantId: string, format: 'pdf' | 'docx', docId?: string) =>
+    api.get(`/grants/${grantId}/editor-document/export`, { params: { format, doc_id: docId }, responseType: 'blob' }),
+  // Extra writing documents (tabs beside the main proposal)
+  listWritingDocs: (grantId: string) => api.get(`/grants/${grantId}/writing-docs`),
+  createWritingDoc: (grantId: string, data: { title?: string; content_html?: string }) =>
+    api.post(`/grants/${grantId}/writing-docs`, data),
+  updateWritingDoc: (grantId: string, docId: string, data: { title?: string; content_html?: string }) =>
+    api.patch(`/grants/${grantId}/writing-docs/${docId}`, data),
+  importWritingDoc: (grantId: string, file: File) => {
+    const form = new FormData();
+    form.append('file', file);
+    return api.post(`/grants/${grantId}/writing-docs/import`, form, {
+      headers: { 'Content-Type': 'multipart/form-data' },
+    });
+  },
+  deleteWritingDoc: (grantId: string, docId: string) =>
+    api.delete(`/grants/${grantId}/writing-docs/${docId}`),
   // Google Docs sync
   getDocsStatus: (grantId: string) =>
     api.get(`/grants/${grantId}/docs/status`),
