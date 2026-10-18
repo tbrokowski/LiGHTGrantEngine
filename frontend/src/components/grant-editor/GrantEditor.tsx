@@ -26,7 +26,9 @@ import GoogleDocsControl, { type SyncState } from './GoogleDocsControl';
 import AIChatPanel from './AIChatPanel';
 import CitationsPanel from './CitationsPanel';
 import CommentsPanel from './CommentsPanel';
-import ArchiveSourcePane from './ArchiveSourcePane';
+import ReferencePanel, {
+  ReferencePicker, sameReference, type ReferenceItem, type ReferencePanelState,
+} from './ReferencePanel';
 import type { CommentBridge } from './editor-extensions';
 
 interface GrantDetail {
@@ -52,7 +54,20 @@ interface GrantEditorProps {
 
 type Citation = InsertableCitation & { claim_text?: string };
 type ArchiveSourceMeta = { sectionId: string; archiveId?: string; grantTitle?: string; sectionType?: string };
-type SidebarTab = 'assistant' | 'citations' | 'comments' | 'source';
+type SidebarTab = 'assistant' | 'citations' | 'comments';
+
+const MAX_REFERENCE_PANELS = 3;
+const DEFAULT_PANEL_WIDTH = 480;
+
+function loadReferencePanels(grantId: string): ReferencePanelState[] {
+  try {
+    const raw = localStorage.getItem(`referencePanels:${grantId}`);
+    const parsed = raw ? (JSON.parse(raw) as ReferencePanelState[]) : [];
+    return Array.isArray(parsed) ? parsed.slice(0, MAX_REFERENCE_PANELS) : [];
+  } catch {
+    return [];
+  }
+}
 
 function readProposalType(styleProfile?: Record<string, unknown> | null): ProposalType | null {
   const v = styleProfile?.proposal_type;
@@ -90,7 +105,8 @@ export default function GrantEditor({ grant, onGrantUpdate, onHeadingsChange }: 
 
   // ── Side panel ──────────────────────────────────────────────────────────────
   const [sidebar, setSidebar] = useState<SidebarTab | null>(null);
-  const [sourceMeta, setSourceMeta] = useState<ArchiveSourceMeta | null>(null);
+  // Documents open beside the editor (call document, analysis, files, archive sources).
+  const [panels, setPanels] = useState<ReferencePanelState[]>(() => loadReferencePanels(grant.id));
   const [citations, setCitations] = useState<Citation[]>([]);
   const [sidebarWidth, setSidebarWidth] = useState<number>(() => {
     if (typeof window === 'undefined') return 340;
@@ -320,13 +336,49 @@ export default function GrantEditor({ grant, onGrantUpdate, onHeadingsChange }: 
     }
   };
 
+  // ── Reference panels beside the editor ──────────────────────────────────────
+  useEffect(() => {
+    try { localStorage.setItem(`referencePanels:${grant.id}`, JSON.stringify(panels)); } catch { /* ignore */ }
+  }, [grant.id, panels]);
+
+  const openReference = (item: ReferenceItem) => {
+    setPanels((prev) => {
+      if (prev.some((p) => sameReference(p.item, item))) return prev; // already open
+      const panel = { id: `panel-${Date.now()}`, item, width: DEFAULT_PANEL_WIDTH };
+      // At the limit, the newest panel's content is replaced.
+      return prev.length < MAX_REFERENCE_PANELS ? [...prev, panel] : [...prev.slice(0, -1), panel];
+    });
+  };
+
+  const replaceReference = (id: string, item: ReferenceItem) =>
+    setPanels((prev) => prev.map((p) => (p.id === id ? { ...p, item } : p)));
+
+  const closeReference = (id: string) => setPanels((prev) => prev.filter((p) => p.id !== id));
+
+  const handlePanelResize = (e: React.MouseEvent, id: string) => {
+    e.preventDefault();
+    const startX = e.clientX;
+    const startWidth = panels.find((p) => p.id === id)?.width ?? DEFAULT_PANEL_WIDTH;
+    const onMove = (ev: MouseEvent) => {
+      const width = Math.max(280, Math.min(1000, startWidth + ev.clientX - startX));
+      setPanels((prev) => prev.map((p) => (p.id === id ? { ...p, width } : p)));
+    };
+    const onUp = () => {
+      document.removeEventListener('mousemove', onMove);
+      document.removeEventListener('mouseup', onUp);
+    };
+    document.addEventListener('mousemove', onMove);
+    document.addEventListener('mouseup', onUp);
+  };
+
+  const openArchiveSource = (meta: ArchiveSourceMeta) => openReference({
+    kind: 'archive',
+    sectionId: meta.sectionId,
+    label: `${meta.grantTitle || 'Archive source'}${meta.sectionType ? ` — ${meta.sectionType}` : ''}`,
+  });
+
   // ── Side panel ──────────────────────────────────────────────────────────────
   const toggleSidebar = (tab: SidebarTab) => setSidebar((cur) => (cur === tab ? null : tab));
-
-  const openArchiveSource = (meta: ArchiveSourceMeta) => {
-    setSourceMeta(meta);
-    setSidebar('source');
-  };
 
   const handleSidebarResize = (e: React.MouseEvent) => {
     e.preventDefault();
@@ -376,6 +428,11 @@ export default function GrantEditor({ grant, onGrantUpdate, onHeadingsChange }: 
           )}
         </div>
         <div className="flex items-center gap-3 flex-shrink-0">
+          <ReferencePicker
+            grantId={grant.id}
+            onPick={openReference}
+            variant="button"
+          />
           <GoogleDocsControl
             grantId={grant.id}
             docLinked={docLinked}
@@ -414,7 +471,28 @@ export default function GrantEditor({ grant, onGrantUpdate, onHeadingsChange }: 
 
       {/* ── Page: inputs, then the document ─────────────────────────────────── */}
       <div className="flex flex-1 overflow-hidden">
-        <div className="flex-1 min-w-0 overflow-y-auto grant-editor-scroll">
+        {panels.map((panel) => (
+          // Panels shrink (down to 260px) before the editor gives up its minimum width.
+          <div key={panel.id} className="flex overflow-hidden" style={{ flex: `0 1 ${panel.width}px`, minWidth: 260 }}>
+            <ReferencePanel
+              grantId={grant.id}
+              item={panel.item}
+              onReplace={(item) => replaceReference(panel.id, item)}
+              onClose={() => closeReference(panel.id)}
+              callAnalysis={callAnalysis}
+              callRequirements={callRequirements}
+              callIntelligence={callIntelligence}
+              callAnalysisStatus={callAnalysisStatus}
+            />
+            <div
+              onMouseDown={(e) => handlePanelResize(e, panel.id)}
+              className="w-1 flex-shrink-0 cursor-col-resize select-none"
+              style={{ background: 'var(--rule-subtle)' }}
+              title="Drag to resize"
+            />
+          </div>
+        ))}
+        <div className="flex-1 min-w-[380px] overflow-y-auto grant-editor-scroll">
           <div className="max-w-[880px] mx-auto px-6 py-6 space-y-6">
             <ProposalInputs
               grantId={grant.id}
@@ -490,18 +568,6 @@ export default function GrantEditor({ grant, onGrantUpdate, onHeadingsChange }: 
                   selectedText={selectedText}
                   onSelectionChange={setSelectedText}
                 />
-              )}
-              {sidebar === 'source' && sourceMeta && (
-                <>
-                  <div className="flex items-center justify-between px-3 py-2 text-xs"
-                    style={{ borderBottom: '1px solid var(--rule-subtle)', color: 'var(--ink-muted)' }}>
-                    <span className="truncate">
-                      {sourceMeta.grantTitle || 'Archive source'}{sourceMeta.sectionType ? ` — ${sourceMeta.sectionType}` : ''}
-                    </span>
-                    <button onClick={() => setSidebar(null)} title="Close"><X className="w-3.5 h-3.5" /></button>
-                  </div>
-                  <ArchiveSourcePane key={sourceMeta.sectionId} sectionId={sourceMeta.sectionId} />
-                </>
               )}
             </div>
           </div>
