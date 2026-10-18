@@ -19,6 +19,7 @@ from app.routers import grant_workspace
 from app.routers import grant_writing
 from app.routers import grant_comments
 from app.routers import grant_finance
+from app.routers import grant_spreadsheets
 from app.routers import finance_portfolio
 from app.routers import slack_events
 from app.routers import browser_sessions
@@ -130,6 +131,8 @@ app.include_router(organizations.router,     prefix=f"{API}/organizations",  tag
 app.include_router(browser_sessions.router,  prefix=f"{API}/browser/session", tags=["browser"])
 app.include_router(grant_comments.router,    prefix=f"{API}/grants",          tags=["grant-comments"])
 app.include_router(grant_finance.router,     prefix=f"{API}/grants",          tags=["grant-finance"])
+app.include_router(grant_spreadsheets.router,        prefix=f"{API}/grants",       tags=["grant-spreadsheets"])
+app.include_router(grant_spreadsheets.server_router, prefix=f"{API}/spreadsheets", tags=["grant-spreadsheets"])
 app.include_router(finance_portfolio.router, prefix=f"{API}/finance",         tags=["finance"])
 app.include_router(slack_events.router,    prefix=f"{API}/slack",           tags=["slack"])
 app.include_router(feedback.router,        prefix=f"{API}/feedback",        tags=["feedback"])

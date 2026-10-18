@@ -334,6 +334,25 @@ export const grants = {
   },
   generateBudgetLineItems: (grantId: string) =>
     api.post(`/grants/${grantId}/budget/generate-line-items`),
+  // Budget workbooks (.xlsx / .xlsm, co-edited in OnlyOffice)
+  listSpreadsheets: (grantId: string) => api.get(`/grants/${grantId}/spreadsheets`),
+  uploadSpreadsheet: (grantId: string, file: File) => {
+    const form = new FormData();
+    form.append('file', file);
+    return api.post(`/grants/${grantId}/spreadsheets`, form, {
+      headers: { 'Content-Type': 'multipart/form-data' },
+    });
+  },
+  getSpreadsheetEditor: (grantId: string, sheetId: string) =>
+    api.get(`/grants/${grantId}/spreadsheets/${sheetId}/editor`),
+  downloadSpreadsheet: (grantId: string, sheetId: string) =>
+    api.get(`/grants/${grantId}/spreadsheets/${sheetId}/download`, { responseType: 'blob' }),
+  listSpreadsheetVersions: (grantId: string, sheetId: string) =>
+    api.get(`/grants/${grantId}/spreadsheets/${sheetId}/versions`),
+  downloadSpreadsheetVersion: (grantId: string, sheetId: string, version: number) =>
+    api.get(`/grants/${grantId}/spreadsheets/${sheetId}/versions/${version}/download`, { responseType: 'blob' }),
+  deleteSpreadsheet: (grantId: string, sheetId: string) =>
+    api.delete(`/grants/${grantId}/spreadsheets/${sheetId}`),
   // Google Drive
   createDriveFolder: (grantId: string) =>
     api.post(`/grants/${grantId}/drive/create-folder`),

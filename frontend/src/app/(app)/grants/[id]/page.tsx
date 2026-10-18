@@ -624,6 +624,7 @@ function GrantDetailContent() {
                   budget={budget}
                   onRefresh={fetchBudget}
                   grantTitle={grant.title}
+                  canEdit={isGrantEditor}
                 />
               </div>
             )}

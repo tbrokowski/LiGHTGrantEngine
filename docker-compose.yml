@@ -41,6 +41,10 @@ services:
     environment:
       DATABASE_URL: postgresql://light:light@db:5432/light_grants
       REDIS_URL: redis://redis:6379/0
+      ONLYOFFICE_URL: http://localhost:8080
+      ONLYOFFICE_INTERNAL_URL: http://onlyoffice
+      ONLYOFFICE_BACKEND_URL: http://backend:8000
+      ONLYOFFICE_JWT_SECRET: ${ONLYOFFICE_JWT_SECRET:-local-onlyoffice-secret}
     extra_hosts:
       - "host.docker.internal:host-gateway"
     volumes:
@@ -138,6 +142,23 @@ services:
       - "3001:3000"   # Steel REST API (backend calls this internally)
       - "5173:5173"   # Steel session viewer / WebRTC stream (browser accesses this)
     shm_size: "2gb"
+    restart: unless-stopped
+
+  # ── OnlyOffice Document Server (co-editing budget workbooks) ──
+  # Edits .xlsx/.xlsm natively so formatting and VBA macros survive. Fetches
+  # files from and posts saves to the backend; JWT secret must match
+  # ONLYOFFICE_JWT_SECRET on the backend.
+  onlyoffice:
+    image: onlyoffice/documentserver:8.3
+    container_name: light_onlyoffice
+    environment:
+      JWT_ENABLED: "true"
+      JWT_SECRET: ${ONLYOFFICE_JWT_SECRET:-local-onlyoffice-secret}
+      ALLOW_PRIVATE_IP_ADDRESS: "true"
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+    ports:
+      - "8080:80"
     restart: unless-stopped
 
   # ── Frontend ──────────────────────────────────────────────

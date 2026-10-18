@@ -68,3 +68,25 @@ side prepared statements that break under transaction pooling:
 
 The code-level pool caps above are the primary fix; PgBouncer is only needed if
 you scale to many services or a very low-connection Postgres plan.
+
+## OnlyOffice Document Server (budget workbooks)
+
+Budget workbooks (.xlsx / .xlsm uploaded on a grant's Budget tab) are co-edited
+in an OnlyOffice Document Server, which edits Excel files natively so
+formatting, formulas and VBA macros survive. It needs its own Railway service:
+
+1. Add a service from the Docker image `onlyoffice/documentserver:8.3`. Give it
+   at least 4 GB RAM (it runs its own Postgres, RabbitMQ and converters).
+2. Set on it: `JWT_ENABLED=true`, `JWT_SECRET=<long random string>`. Expose
+   port 80 with a public domain (browsers load the editor straight from it).
+3. Set on the `web` service:
+   - `ONLYOFFICE_URL=https://<documentserver public domain>`
+   - `ONLYOFFICE_JWT_SECRET=<same secret>`
+   - `ONLYOFFICE_BACKEND_URL` only if the Document Server should reach the API
+     at something other than `API_URL` (e.g. Railway private networking).
+4. Saves arrive at `POST /api/v1/spreadsheets/{id}/callback`; the Document
+   Server must be able to reach the backend URL it's given.
+
+The community edition allows 20 simultaneous editing connections; beyond that
+OnlyOffice needs a commercial licence. Without these variables the Budget tab
+still lists, uploads and downloads workbooks — only the editor is unavailable.

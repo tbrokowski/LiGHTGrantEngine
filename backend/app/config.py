@@ -175,6 +175,16 @@ class Settings(BaseSettings):
     r2_secret_access_key: Optional[str] = None
     r2_bucket_name: str = "grantengine"
 
+    # OnlyOffice Document Server — collaborative editing of budget workbooks
+    # (.xlsx / .xlsm). onlyoffice_url is what browsers load the editor from;
+    # onlyoffice_internal_url is how this backend reaches it (defaults to the
+    # public URL); onlyoffice_backend_url is how the Document Server reaches
+    # this backend to fetch files and post saves (defaults to api_url).
+    onlyoffice_url: Optional[str] = None
+    onlyoffice_internal_url: Optional[str] = None
+    onlyoffice_backend_url: Optional[str] = None
+    onlyoffice_jwt_secret: Optional[str] = None
+
     # Email (Resend HTTP API)
     resend_api_key: Optional[str] = None
     smtp_from: str = "onboarding@resend.dev"

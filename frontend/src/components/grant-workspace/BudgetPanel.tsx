@@ -4,6 +4,7 @@ import { useRef, useState, useCallback } from 'react';
 import { AlertTriangle, BarChart2 } from 'lucide-react';
 import { BudgetTracker, BudgetLineItem, BUDGET_STATUSES, getStatusStyle, getStatusLabel } from './types';
 import { grants } from '@/lib/api';
+import BudgetWorkbooks from './BudgetWorkbooks';
 
 function exportBudgetCSV(items: BudgetLineItem[], currency: string, grantTitle?: string) {
   const esc = (v: unknown) => `"${String(v ?? '').replace(/"/g, '""')}"`;
@@ -32,6 +33,7 @@ interface Props {
   budget: BudgetTracker | null;
   onRefresh: () => void;
   grantTitle?: string;
+  canEdit?: boolean;
 }
 
 const BUDGET_CHECKLIST = [
@@ -47,7 +49,7 @@ const BUDGET_CHECKLIST = [
   'Final budget approved',
 ];
 
-export default function BudgetPanel({ grantId, budget, onRefresh, grantTitle }: Props) {
+export default function BudgetPanel({ grantId, budget, onRefresh, grantTitle, canEdit = true }: Props) {
   const [editing, setEditing] = useState(false);
   const [saving, setSaving] = useState(false);
   const [form, setForm] = useState<Partial<BudgetTracker>>({});
@@ -129,6 +131,8 @@ export default function BudgetPanel({ grantId, budget, onRefresh, grantTitle }: 
           {budget ? 'Edit' : 'Set Up Budget'}
         </button>
       </div>
+
+      <BudgetWorkbooks grantId={grantId} canEdit={canEdit} />
 
       {editing ? (
         <form onSubmit={handleSave} className="bg-indigo-50 rounded-xl border border-indigo-100 p-4 space-y-3">
