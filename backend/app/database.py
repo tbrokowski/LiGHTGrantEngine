@@ -38,7 +38,11 @@ AsyncSessionLocal = async_sessionmaker(
 
 
 class Base(DeclarativeBase):
-    pass
+    # Read database-generated values (updated_at = now() on UPDATE) back in the
+    # same statement via RETURNING. Without this they're expired after flush,
+    # and serializing the row afterwards triggers a lazy load that fails in an
+    # async session (MissingGreenlet → 500).
+    __mapper_args__ = {"eager_defaults": True}
 
 
 async def get_db():
