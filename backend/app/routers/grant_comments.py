@@ -62,7 +62,6 @@ class CommentUpdate(BaseModel):
 
 async def _get_grant(grant_id: str, db: AsyncSession) -> ActiveGrant:
     result = await db.execute(select(ActiveGrant).where(ActiveGrant.id == grant_id))
-    grant = result.scalar_one_or_none()
     if grant := result.scalar_one_or_none():
         return grant
     raise HTTPException(404, "Grant not found")
