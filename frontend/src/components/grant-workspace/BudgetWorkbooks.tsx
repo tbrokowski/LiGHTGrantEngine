@@ -65,6 +65,9 @@ export default function BudgetWorkbooks({ grantId, canEdit }: { grantId: string;
     setUploading(true);
     try {
       const res = await grants.uploadSpreadsheet(grantId, file);
+      if (res.data.protection_removed) {
+        toast.success('Sheet protection removed so the team can edit. The original file is kept as version 1.');
+      }
       refresh();
       setOpenId(res.data.id);
     } catch (err: any) { // eslint-disable-line @typescript-eslint/no-explicit-any

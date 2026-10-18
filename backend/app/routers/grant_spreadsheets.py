@@ -39,6 +39,7 @@ from app.models.grant_spreadsheet import GrantSpreadsheet, GrantSpreadsheetVersi
 from app.models.user import User
 from app.routers.auth import get_current_user
 from app.services import storage
+from app.services.xlsx_protection import strip_protection
 
 log = structlog.get_logger()
 settings = get_settings()
@@ -69,6 +70,8 @@ class SpreadsheetOut(BaseModel):
     last_edited_by_name: Optional[str] = None
     created_at: datetime
     updated_at: datetime
+    # Set on upload: sheet/workbook protections removed from the original.
+    protection_removed: int = 0
 
 
 class VersionOut(BaseModel):
@@ -230,23 +233,31 @@ async def upload_spreadsheet(
     data = await file.read()
     _validate_workbook(data, ext)
 
+    # Funder templates often password-protect every sheet, which leaves them
+    # read-only in the editor. Keep the original as version 1 and edit an
+    # unprotected copy (version 2); macros that re-protect sheets still work.
+    unprotected, removed = await asyncio.to_thread(strip_protection, data)
+    files = [data] + ([unprotected] if removed else [])
+
     sheet = GrantSpreadsheet(
         id=str(uuid.uuid4()), grant_id=grant_id, file_name=file_name, file_ext=ext,
-        size_bytes=len(data), version=1, uploaded_by=current_user.id,
-        last_edited_by=current_user.id, storage_key="",
+        uploaded_by=current_user.id, last_edited_by=current_user.id, storage_key="",
     )
     sheet.doc_key = _new_doc_key(sheet.id)
-    sheet.storage_key = _storage_key(sheet, 1)
-    await asyncio.to_thread(storage.upload_file, sheet.storage_key, data, CONTENT_TYPES[ext])
-
     db.add(sheet)
-    db.add(GrantSpreadsheetVersion(
-        spreadsheet_id=sheet.id, version=1, storage_key=sheet.storage_key,
-        size_bytes=len(data), created_by=current_user.id,
-    ))
+    for version, content in enumerate(files, start=1):
+        key = _storage_key(sheet, version)
+        await asyncio.to_thread(storage.upload_file, key, content, CONTENT_TYPES[ext])
+        db.add(GrantSpreadsheetVersion(
+            spreadsheet_id=sheet.id, version=version, storage_key=key,
+            size_bytes=len(content), created_by=current_user.id,
+        ))
+        sheet.version, sheet.storage_key, sheet.size_bytes = version, key, len(content)
     await db.commit()
     await db.refresh(sheet)
-    return (await _to_out(db, [sheet]))[0]
+    out = (await _to_out(db, [sheet]))[0]
+    out.protection_removed = removed
+    return out
 
 
 @router.get("/{grant_id}/spreadsheets/{spreadsheet_id}/editor")
