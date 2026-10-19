@@ -170,6 +170,14 @@ function PdfView({ docId, fileName }: { docId: string; fileName: string }) {
 
 // ── File viewer ──────────────────────────────────────────────────────────────
 
+function looksLikePdf(url: string) {
+  try {
+    return new URL(url, window.location.href).pathname.toLowerCase().endsWith('.pdf');
+  } catch {
+    return url.toLowerCase().includes('.pdf');
+  }
+}
+
 function FileView({ fileName, fileUrl }: { fileName: string; fileUrl: string }) {
   const docId = fileUrl ? extractDocId(fileUrl) : null;
   const isPdf = fileName.toLowerCase().endsWith('.pdf');
@@ -193,7 +201,11 @@ function FileView({ fileName, fileUrl }: { fileName: string; fileUrl: string }) 
       .catch(() => setError('Could not load file — it may have been deleted or moved.'));
   }, [fileUrl, needsResolve]);
 
-  if (isPdf && docId) return <PdfView docId={docId} fileName={fileName} />;
+  // Names often lack the extension (the add-file form strips it), so also go
+  // by where the file actually lives.
+  if (docId && (isPdf || (resolved && looksLikePdf(resolved)))) {
+    return <PdfView docId={docId} fileName={fileName} />;
+  }
 
   if (error) {
     return (
@@ -213,13 +225,17 @@ function FileView({ fileName, fileUrl }: { fileName: string; fileUrl: string }) 
 
   const src = resolved ?? fileUrl;
   if (!src) return <div className="flex-1 flex items-center justify-center text-sm" style={muted}>No file URL available.</div>;
-  if (isPdf || src.toLowerCase().includes('.pdf')) {
+  if (isPdf || looksLikePdf(src)) {
+    // External PDF: the browser's viewer shows it inline unless the site
+    // forbids embedding, so keep a way out to a new tab.
     return (
-      <div className="flex-1 flex flex-col items-center justify-center gap-3 px-6 text-center text-sm" style={muted}>
-        This PDF can only be opened in a new tab.
-        <a href={src} target="_blank" rel="noopener noreferrer" className="flex items-center gap-1 underline">
-          <ExternalLink className="w-3 h-3" /> Open PDF
-        </a>
+      <div className="flex-1 flex flex-col min-h-0">
+        <div className="flex-shrink-0 flex items-center justify-end px-3 py-1 text-xs" style={{ ...muted, borderBottom: '1px solid var(--rule-subtle)' }}>
+          <a href={src} target="_blank" rel="noopener noreferrer" className="flex items-center gap-1 hover:underline">
+            Not showing? Open in a new tab <ExternalLink className="w-3 h-3" />
+          </a>
+        </div>
+        <iframe src={src} className="flex-1 w-full border-0" title={fileName} />
       </div>
     );
   }
