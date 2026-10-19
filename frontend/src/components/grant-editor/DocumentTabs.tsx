@@ -100,10 +100,13 @@ export default function DocumentTabs({
   };
 
   return (
-    <div className="flex items-end gap-0.5 overflow-x-auto" style={{ borderBottom: '1px solid var(--rule-subtle)' }}>
-      {tab(PROPOSAL_DOC_ID, 'Proposal', false)}
-      {docs.map((d) => tab(d.id, d.title, true))}
-      <div ref={menuRef} className="relative ml-1 mb-1">
+    // Only the tabs scroll: an overflow container would clip the "New document" menu.
+    <div className="flex items-end" style={{ borderBottom: '1px solid var(--rule-subtle)' }}>
+      <div className="flex items-end gap-0.5 min-w-0 overflow-x-auto">
+        {tab(PROPOSAL_DOC_ID, 'Proposal', false)}
+        {docs.map((d) => tab(d.id, d.title, true))}
+      </div>
+      <div ref={menuRef} className="relative shrink-0 ml-1 mb-1">
         <button
           onClick={() => setMenuOpen((v) => !v)}
           disabled={busy}

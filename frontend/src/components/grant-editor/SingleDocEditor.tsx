@@ -26,11 +26,12 @@ import { Color } from '@tiptap/extension-color';
 import {
   Bold, Italic, UnderlineIcon, List, ListOrdered,
   AlignLeft, AlignCenter, AlignRight, AlignJustify, Heading1, Heading2, Heading3, Quote, Scissors,
-  TableIcon, ImageIcon, Link2, Download, IndentIncrease, IndentDecrease,
+  ImageIcon, Link2, Download, IndentIncrease, IndentDecrease,
 } from 'lucide-react';
 import { api, grants } from '@/lib/api';
 import { InlineFontStyles, CommentMark, ListIndent, type CommentEditorApi } from './editor-extensions';
 import { FontFamilySelect, FontSizeSelect, ColorButton, HighlightButton } from './EditorFormatControls';
+import { TableInsertButton, TableContextBar } from './TableControls';
 
 // ── Page Break node ────────────────────────────────────────────────────────────
 // Renders as a dashed divider with a label. atom:true means it is selected and
@@ -544,13 +545,7 @@ export default function SingleDocEditor({
           <Scissors className="w-3.5 h-3.5" />
         </ToolbarButton>
         <div className="w-px h-4 bg-gray-200 mx-0.5" />
-        <ToolbarButton
-          onClick={() => editor.chain().focus().insertTable({ rows: 3, cols: 3, withHeaderRow: true }).run()}
-          active={editor.isActive('table')}
-          title="Insert table"
-        >
-          <TableIcon className="w-3.5 h-3.5" />
-        </ToolbarButton>
+        <TableInsertButton editor={editor} />
         <ToolbarButton
           onClick={() => {
             const url = window.prompt('Image URL:');
@@ -615,6 +610,7 @@ export default function SingleDocEditor({
             </span>
           )}
         </div>
+        <TableContextBar editor={editor} />
       </div>
 
       {/* Document paper */}

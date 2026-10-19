@@ -304,3 +304,28 @@ body {
   background: rgba(250, 204, 21, 0.75);
   box-shadow: 0 0 0 2px rgba(202, 138, 4, 0.45);
 }
+
+/* ── Tables (grant editor) ──────────────────────────────────────────────────
+   prosemirror-tables marks selected cells (.selectedCell) and draws a
+   .column-resize-handle while dragging a column edge. */
+.ProseMirror .tableWrapper { overflow-x: auto; }
+.ProseMirror table { table-layout: fixed; width: 100%; }
+.ProseMirror td,
+.ProseMirror th { position: relative; vertical-align: top; min-width: 2em; }
+.ProseMirror .selectedCell::after {
+  content: '';
+  position: absolute;
+  inset: 0;
+  background: var(--accent-secondary);
+  pointer-events: none;
+}
+.ProseMirror .column-resize-handle {
+  position: absolute;
+  right: -2px;
+  top: 0;
+  bottom: -2px;
+  width: 4px;
+  background: var(--rule-strong);
+  pointer-events: none;
+}
+.ProseMirror.resize-cursor { cursor: col-resize; }
