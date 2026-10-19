@@ -16,7 +16,6 @@ import MilestoneTracker from '@/components/grant-workspace/MilestoneTracker';
 import type {
   WorkspaceSummary,
   Task,
-  BudgetTracker,
 } from '@/components/grant-workspace/types';
 
 const taskLoading = () => <div className="flex justify-center py-10 text-sm" style={{ color: 'var(--ink-faint)' }}>Loading tasks…</div>;
@@ -94,8 +93,6 @@ function ActiveGrantWorkspaceContent() {
 
   const [summary, setSummary] = useState<WorkspaceSummary | null>(null);
   const [taskList, setTaskList] = useState<Task[]>([]);
-  const [budget, setBudget] = useState<BudgetTracker | null>(null);
-  const [budgetLoaded, setBudgetLoaded] = useState(false);
   const [taskView, setTaskView] = useState<'board' | 'list' | 'timeline'>('board');
   const scrollRef = useRef<HTMLDivElement>(null);
   const pendingSection = useRef<OverviewSection | null>(initialSection);
@@ -126,11 +123,6 @@ function ActiveGrantWorkspaceContent() {
     grants.listTasks(id).then(r => setTaskList(r.data)).catch(console.error);
   }, [id]);
 
-  const fetchBudget = useCallback(() => {
-    if (!id) return;
-    grants.getBudget(id).then(r => setBudget(r.data)).catch(console.error);
-  }, [id]);
-
   useEffect(() => {
     fetchGrant();
     fetchSummary();
@@ -146,13 +138,6 @@ function ActiveGrantWorkspaceContent() {
       })
       .catch(() => {});
   }, [id, user]);
-
-  useEffect(() => {
-    if (activeTab === 'budget' && !budgetLoaded) {
-      setBudgetLoaded(true);
-      fetchBudget();
-    }
-  }, [activeTab, budgetLoaded, fetchBudget]);
 
   const scrollToSection = useCallback((section: OverviewSection) => {
     const el = document.getElementById(`grant-section-${section}`);
@@ -492,14 +477,7 @@ function ActiveGrantWorkspaceContent() {
 
           {/* Budget */}
           {activeTab === 'budget' && (
-            <div className="p-4">
-              <BudgetPanel
-                grantId={id}
-                budget={budget}
-                onRefresh={fetchBudget}
-                grantTitle={grant.title}
-              />
-            </div>
+            <BudgetPanel grantId={id} canEdit={isGrantEditor} />
           )}
         </div>
       </div>

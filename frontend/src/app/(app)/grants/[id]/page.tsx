@@ -17,7 +17,6 @@ import StatusDropdown from '@/components/grant-workspace/StatusDropdown';
 import type {
   WorkspaceSummary,
   Task,
-  BudgetTracker,
 } from '@/components/grant-workspace/types';
 
 const GrantEditor = dynamic(() => import('@/components/grant-editor/GrantEditor'), {
@@ -157,7 +156,6 @@ function GrantDetailContent() {
   // Workspace data
   const [summary, setSummary] = useState<WorkspaceSummary | null>(null);
   const [taskList, setTaskList] = useState<Task[]>([]);
-  const [budget, setBudget] = useState<BudgetTracker | null>(null);
 
   // Editable header drafts (name / deadline / notes) — save on blur
   const [titleDraft, setTitleDraft] = useState('');
@@ -215,11 +213,6 @@ function GrantDetailContent() {
     grants.listTasks(id).then((r) => setTaskList(r.data)).catch(console.error);
   }, [id]);
 
-  const fetchBudget = useCallback(() => {
-    if (!id) return;
-    grants.getBudget(id).then((r) => setBudget(r.data)).catch(console.error);
-  }, [id]);
-
   // Load grant member role for the current user
   useEffect(() => {
     if (!id || !user) return;
@@ -251,7 +244,6 @@ function GrantDetailContent() {
     setActiveTab(tab);
     if (loadedTabs.has(tab)) return;
     setLoadedTabs((prev) => new Set([...prev, tab]));
-    if (tab === 'budget') fetchBudget();
   };
 
   const savePatch = useCallback(async (patch: Record<string, unknown>) => {
@@ -618,15 +610,7 @@ function GrantDetailContent() {
 
             {/* Budget */}
             {activeTab === 'budget' && (
-              <div className="p-4">
-                <BudgetPanel
-                  grantId={id}
-                  budget={budget}
-                  onRefresh={fetchBudget}
-                  grantTitle={grant.title}
-                  canEdit={isGrantEditor}
-                />
-              </div>
+              <BudgetPanel grantId={id} canEdit={isGrantEditor} />
             )}
 
             {/* More */}

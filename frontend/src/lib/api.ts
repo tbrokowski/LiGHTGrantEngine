@@ -343,6 +343,10 @@ export const grants = {
       headers: { 'Content-Type': 'multipart/form-data' },
     });
   },
+  createBlankSpreadsheet: (grantId: string, data: { name: string; folder_id?: string | null }) =>
+    api.post(`/grants/${grantId}/spreadsheets/blank`, data),
+  updateSpreadsheet: (grantId: string, sheetId: string, data: { file_name?: string; folder_id?: string | null }) =>
+    api.patch(`/grants/${grantId}/spreadsheets/${sheetId}`, data),
   getSpreadsheetEditor: (grantId: string, sheetId: string) =>
     api.get(`/grants/${grantId}/spreadsheets/${sheetId}/editor`),
   downloadSpreadsheet: (grantId: string, sheetId: string) =>

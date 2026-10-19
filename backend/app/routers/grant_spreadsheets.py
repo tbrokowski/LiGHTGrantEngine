@@ -37,6 +37,7 @@ from app.config import get_settings
 from app.database import get_db
 from app.models.grant_spreadsheet import GrantSpreadsheet, GrantSpreadsheetVersion
 from app.models.user import User
+from app.models.workspace_file import WorkspaceFolder
 from app.routers.auth import get_current_user
 from app.services import storage
 from app.services.xlsx_protection import strip_protection
@@ -60,6 +61,7 @@ _LINK_PURPOSE = "oo-spreadsheet"
 class SpreadsheetOut(BaseModel):
     id: str
     grant_id: str
+    folder_id: Optional[str] = None
     file_name: str
     file_ext: str
     size_bytes: int
@@ -72,6 +74,16 @@ class SpreadsheetOut(BaseModel):
     updated_at: datetime
     # Set on upload: sheet/workbook protections removed from the original.
     protection_removed: int = 0
+
+
+class BlankSpreadsheetIn(BaseModel):
+    name: str = "Budget"
+    folder_id: Optional[str] = None
+
+
+class SpreadsheetUpdate(BaseModel):
+    file_name: Optional[str] = None
+    folder_id: Optional[str] = None
 
 
 class VersionOut(BaseModel):
@@ -145,7 +157,7 @@ async def _to_out(db: AsyncSession, sheets: list[GrantSpreadsheet]) -> list[Spre
     names = await _user_names(db, {s.uploaded_by for s in sheets} | {s.last_edited_by for s in sheets})
     return [
         SpreadsheetOut(
-            id=s.id, grant_id=s.grant_id, file_name=s.file_name, file_ext=s.file_ext,
+            id=s.id, grant_id=s.grant_id, folder_id=s.folder_id, file_name=s.file_name, file_ext=s.file_ext,
             size_bytes=s.size_bytes or 0, version=s.version,
             uploaded_by=s.uploaded_by, uploaded_by_name=names.get(s.uploaded_by or ""),
             last_edited_by=s.last_edited_by, last_edited_by_name=names.get(s.last_edited_by or ""),
@@ -206,6 +218,50 @@ async def _request_forcesave(doc_key: str) -> bool:
         return False
 
 
+def _blank_xlsx() -> bytes:
+    from openpyxl import Workbook
+
+    wb = Workbook()
+    wb.active.title = "Budget"
+    buf = io.BytesIO()
+    wb.save(buf)
+    return buf.getvalue()
+
+
+async def _check_folder(db: AsyncSession, grant_id: str, folder_id: Optional[str]) -> Optional[str]:
+    if not folder_id:
+        return None
+    folder = await db.get(WorkspaceFolder, folder_id)
+    if not folder or folder.grant_id != grant_id:
+        raise HTTPException(400, "Folder not found")
+    return folder_id
+
+
+async def _create_workbook(
+    db: AsyncSession, grant_id: str, file_name: str, ext: str, contents: list[bytes],
+    user: User, folder_id: Optional[str] = None,
+) -> SpreadsheetOut:
+    """Store a new workbook; each entry in `contents` becomes a version and the
+    last one is what the editor opens."""
+    sheet = GrantSpreadsheet(
+        id=str(uuid.uuid4()), grant_id=grant_id, folder_id=folder_id, file_name=file_name,
+        file_ext=ext, uploaded_by=user.id, last_edited_by=user.id, storage_key="",
+    )
+    sheet.doc_key = _new_doc_key(sheet.id)
+    db.add(sheet)
+    for version, content in enumerate(contents, start=1):
+        key = _storage_key(sheet, version)
+        await asyncio.to_thread(storage.upload_file, key, content, CONTENT_TYPES[ext])
+        db.add(GrantSpreadsheetVersion(
+            spreadsheet_id=sheet.id, version=version, storage_key=key,
+            size_bytes=len(content), created_by=user.id,
+        ))
+        sheet.version, sheet.storage_key, sheet.size_bytes = version, key, len(content)
+    await db.commit()
+    await db.refresh(sheet)
+    return (await _to_out(db, [sheet]))[0]
+
+
 # ── App routes ────────────────────────────────────────────────────────────────
 
 @router.get("/{grant_id}/spreadsheets", response_model=list[SpreadsheetOut])
@@ -237,27 +293,48 @@ async def upload_spreadsheet(
     # read-only in the editor. Keep the original as version 1 and edit an
     # unprotected copy (version 2); macros that re-protect sheets still work.
     unprotected, removed = await asyncio.to_thread(strip_protection, data)
-    files = [data] + ([unprotected] if removed else [])
-
-    sheet = GrantSpreadsheet(
-        id=str(uuid.uuid4()), grant_id=grant_id, file_name=file_name, file_ext=ext,
-        uploaded_by=current_user.id, last_edited_by=current_user.id, storage_key="",
+    out = await _create_workbook(
+        db, grant_id, file_name, ext, [data] + ([unprotected] if removed else []), current_user,
     )
-    sheet.doc_key = _new_doc_key(sheet.id)
-    db.add(sheet)
-    for version, content in enumerate(files, start=1):
-        key = _storage_key(sheet, version)
-        await asyncio.to_thread(storage.upload_file, key, content, CONTENT_TYPES[ext])
-        db.add(GrantSpreadsheetVersion(
-            spreadsheet_id=sheet.id, version=version, storage_key=key,
-            size_bytes=len(content), created_by=current_user.id,
-        ))
-        sheet.version, sheet.storage_key, sheet.size_bytes = version, key, len(content)
-    await db.commit()
-    await db.refresh(sheet)
-    out = (await _to_out(db, [sheet]))[0]
     out.protection_removed = removed
     return out
+
+
+@router.post("/{grant_id}/spreadsheets/blank", response_model=SpreadsheetOut,
+             dependencies=[Depends(grant_access(require_editor=True))])
+async def create_blank_spreadsheet(
+    grant_id: str,
+    body: BlankSpreadsheetIn,
+    current_user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+):
+    """Start a budget from an empty .xlsx workbook."""
+    folder_id = await _check_folder(db, grant_id, body.folder_id)
+    stem = (body.name or "Budget").strip().removesuffix(".xlsx") or "Budget"
+    data = await asyncio.to_thread(_blank_xlsx)
+    return await _create_workbook(db, grant_id, f"{stem}.xlsx", "xlsx", [data], current_user, folder_id)
+
+
+@router.patch("/{grant_id}/spreadsheets/{spreadsheet_id}", response_model=SpreadsheetOut,
+              dependencies=[Depends(grant_access(require_editor=True))])
+async def update_spreadsheet(
+    grant_id: str,
+    spreadsheet_id: str,
+    body: SpreadsheetUpdate,
+    db: AsyncSession = Depends(get_db),
+):
+    """Rename a workbook or move it into / out of a workspace folder."""
+    sheet = await _get_sheet(db, grant_id, spreadsheet_id)
+    if "folder_id" in body.model_fields_set:
+        sheet.folder_id = await _check_folder(db, grant_id, body.folder_id)
+    if body.file_name and body.file_name.strip():
+        stem = body.file_name.strip()
+        if stem.lower().endswith(f".{sheet.file_ext}"):
+            stem = stem[: -len(sheet.file_ext) - 1]
+        sheet.file_name = f"{stem}.{sheet.file_ext}"  # the format never changes
+    await db.commit()
+    await db.refresh(sheet)
+    return (await _to_out(db, [sheet]))[0]
 
 
 @router.get("/{grant_id}/spreadsheets/{spreadsheet_id}/editor")
