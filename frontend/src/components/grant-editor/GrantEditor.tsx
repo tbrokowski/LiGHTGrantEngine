@@ -604,7 +604,12 @@ export default function GrantEditor({ grant, onGrantUpdate, onHeadingsChange }: 
                   onActiveSectionChange={setActiveSection}
                   grantId={grant.id}
                   onEditorApi={(apiRef) => { commentBridge.current.editor = apiRef; }}
-                  onAnchorClick={(id) => { setSidebar('comments'); commentBridge.current.focusCard?.(id); }}
+                  onAnchorClick={(id) => {
+                    // If the comments panel is closed, it focuses this card once it loads.
+                    if (commentBridge.current.focusCard) commentBridge.current.focusCard(id);
+                    else commentBridge.current.pendingFocusId = id;
+                    setSidebar('comments');
+                  }}
                 />
               ) : (
                 <div className="flex items-center justify-center gap-2 py-16 text-sm" style={{ color: 'var(--ink-muted)' }}>

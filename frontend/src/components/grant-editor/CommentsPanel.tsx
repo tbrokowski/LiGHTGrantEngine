@@ -119,10 +119,8 @@ export default function CommentsPanel({
       .catch(() => {});
   }, [grantId, isDraft]);
 
-  // Focus textarea when text is selected
-  useEffect(() => {
-    if (selectedText && textareaRef.current) textareaRef.current.focus();
-  }, [selectedText]);
+  // (No auto-focus of the comment box on selection: taking focus mid-drag cut
+  // the user's selection short. They click the box when they're ready.)
 
   // Register the panel's focus-card handler so clicking a highlight in the doc
   // scrolls the matching comment card into view.
@@ -130,12 +128,20 @@ export default function CommentsPanel({
     if (!bridge) return;
     bridge.current.focusCard = (id: string) => {
       const el = cardRefs.current[id];
-      if (el) el.scrollIntoView({ behavior: 'smooth', block: 'center' });
+      if (el) el.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
       setHighlightId(id);
       window.setTimeout(() => setHighlightId((cur) => (cur === id ? null : cur)), 1600);
     };
     return () => { if (bridge.current) bridge.current.focusCard = undefined; };
   }, [bridge]);
+
+  // A highlight clicked while this panel was closed: focus its card once loaded.
+  useEffect(() => {
+    const id = bridge?.current.pendingFocusId;
+    if (!id || !comments.some((c) => c.id === id)) return;
+    bridge.current.pendingFocusId = null;
+    window.setTimeout(() => bridge.current.focusCard?.(id), 50);
+  }, [comments, bridge]);
 
   // Best-effort: highlight anchored comments in the document (esp. AI comments,
   // which are created server-side with a verbatim anchor but no editor mark yet).
@@ -164,20 +170,26 @@ export default function CommentsPanel({
     if (!newText.trim()) return;
     setSubmitting(true);
     setSubmissionError('');
+    // Anchor to exactly what the editor will highlight, not the panel's copy.
+    const anchor = bridge?.current.editor?.getSelectionAnchor() || selectedText;
     try {
       const res = await grantComments.add(grantId, {
         text: newText.trim(),
-        anchor_text: selectedText || undefined,
+        anchor_text: anchor || undefined,
         document_id: documentId,
         mentions: Array.from(pendingMentions.current),
       });
       setComments((prev) => [...prev, res.data]);
-      // Highlight the anchored passage in the document.
-      if (selectedText) bridge?.current.editor?.applyCommentMark(res.data.id);
+      // Highlight the anchored passage in the document (fall back to searching
+      // for it if the selection was lost, e.g. the document reloaded).
+      if (anchor) {
+        const editorApi = bridge?.current.editor;
+        if (editorApi && !editorApi.applyCommentMark(res.data.id)) editorApi.locateAndMark(res.data.id, anchor);
+      }
       setNewText('');
       pendingMentions.current.clear();
       setMentionOpen(false);
-      if (selectedText) onSelectionChange('');
+      if (anchor) onSelectionChange('');
     } catch (e: unknown) {
       const msg =
         (e as { response?: { data?: { detail?: string } } }).response?.data?.detail ||
@@ -222,7 +234,11 @@ export default function CommentsPanel({
   };
 
   const focusInDoc = (c: GrantComment) => {
-    if (c.anchor_text) bridge?.current.editor?.focusComment(c.id);
+    if (!c.anchor_text) return;
+    setHighlightId(c.id);
+    window.setTimeout(() => setHighlightId((cur) => (cur === c.id ? null : cur)), 2000);
+    const found = bridge?.current.editor?.focusComment(c.id, c.anchor_text);
+    if (found === false) setSubmissionError('That passage is no longer in the document.');
   };
 
   // ── Expert review ──────────────────────────────────────────────────────────
@@ -485,7 +501,7 @@ export default function CommentsPanel({
             <div className="flex-1 text-[10px] text-indigo-600 italic border-l-2 border-indigo-300 pl-2 truncate">
               Commenting on: &ldquo;{selectedText.slice(0, 80)}{selectedText.length > 80 ? '…' : ''}&rdquo;
             </div>
-            <button onClick={() => onSelectionChange('')} className="text-gray-400 hover:text-gray-600 transition-colors flex-shrink-0 mt-0.5" title="Clear selection">
+            <button onClick={() => { bridge?.current.editor?.clearSelectionAnchor(); onSelectionChange(''); }} className="text-gray-400 hover:text-gray-600 transition-colors flex-shrink-0 mt-0.5" title="Clear selection">
               <X className="w-3 h-3" />
             </button>
           </div>

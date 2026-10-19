@@ -1,4 +1,7 @@
 import { Extension, Mark, mergeAttributes } from '@tiptap/core';
+import type { Node as PMNode } from '@tiptap/pm/model';
+import { Plugin, PluginKey } from '@tiptap/pm/state';
+import { Decoration, DecorationSet } from '@tiptap/pm/view';
 
 // Command types for the font-family / font-size setters below.
 declare module '@tiptap/core' {
@@ -65,12 +68,17 @@ export const CommentMark = Mark.create({
 
 /** Imperative handle the CommentsPanel uses to drive the editor. */
 export interface CommentEditorApi {
-  /** Mark the last non-empty selection with this comment id. */
-  applyCommentMark: (id: string) => void;
-  /** Remove the comment mark carrying this id. */
+  /** Text of the selection a new comment would anchor to ('' if none). */
+  getSelectionAnchor: () => string;
+  /** Forget that selection (the user dismissed it in the comments panel). */
+  clearSelectionAnchor: () => void;
+  /** Mark the pending selection with this comment id. Returns false if there was none. */
+  applyCommentMark: (id: string) => boolean;
+  /** Remove the comment mark carrying this id (other comments' marks are kept). */
   removeCommentMark: (id: string) => void;
-  /** Scroll the highlight for this id into view and flash it. */
-  focusComment: (id: string) => void;
+  /** Scroll the page to this comment's highlight and flash it; marks `anchorText`
+   *  first if the highlight is missing. Returns false if it can't be found. */
+  focusComment: (id: string, anchorText?: string | null) => boolean;
   /** Find `anchorText` in the doc and mark it with this id. Returns true if found. */
   locateAndMark: (id: string, anchorText: string) => boolean;
 }
@@ -79,7 +87,112 @@ export interface CommentEditorApi {
 export interface CommentBridge {
   editor?: CommentEditorApi | null;
   focusCard?: (id: string) => void;
+  /** A highlight was clicked while the comments panel was closed: focus this card once it loads. */
+  pendingFocusId?: string | null;
 }
+
+// ── Comment anchors ─────────────────────────────────────────────────────────
+
+/** Doc range [from, to) covered by the comment mark with this id, or null. */
+export function findCommentRange(doc: PMNode, id: string): { from: number; to: number } | null {
+  let from = -1;
+  let to = -1;
+  doc.descendants((node, pos) => {
+    if (node.isText && node.marks.some((m) => m.type.name === 'comment' && m.attrs.commentId === id)) {
+      if (from < 0) from = pos;
+      to = pos + node.nodeSize;
+    }
+    return true;
+  });
+  return from < 0 ? null : { from, to };
+}
+
+/**
+ * Locate a comment's anchor text in the doc. Matches across formatting (bold,
+ * links…) and across paragraph breaks — selections are captured with blocks
+ * joined by a space, so the doc is searched the same way — and ignores
+ * whitespace differences. If the passage was edited since, falls back to the
+ * longest matching prefix (at least 3 words).
+ */
+export function findAnchorRange(doc: PMNode, anchor: string): { from: number; to: number } | null {
+  const norm = (anchor || '').replace(/\s+/g, ' ').trim();
+  if (!norm) return null;
+
+  // The doc's text, whitespace collapsed, with the doc position of each char
+  // (-1 for the space standing in for a block boundary).
+  let text = '';
+  const pos: number[] = [];
+  const push = (ch: string, at: number) => {
+    if (ch === ' ' && (text === '' || text.endsWith(' '))) return;
+    text += ch;
+    pos.push(at);
+  };
+  doc.descendants((node, nodePos) => {
+    if (node.isTextblock) {
+      push(' ', -1);
+      return true;
+    }
+    if (node.isText && node.text) {
+      for (let i = 0; i < node.text.length; i++) push(/\s/.test(node.text[i]) ? ' ' : node.text[i], nodePos + i);
+    } else if (node.isLeaf) {
+      push(' ', -1); // line breaks, images
+    }
+    return true;
+  });
+
+  const search = (q: string) => {
+    const i = text.indexOf(q);
+    if (i < 0) return null;
+    // Trim to real characters at both ends (skip block-boundary spaces).
+    let a = i;
+    let b = i + q.length - 1;
+    while (a <= b && pos[a] < 0) a++;
+    while (b >= a && pos[b] < 0) b--;
+    return a <= b ? { from: pos[a], to: pos[b] + 1 } : null;
+  };
+  const exact = search(norm);
+  if (exact) return exact;
+  const words = norm.split(' ');
+  for (let n = words.length - 1; n >= 3; n--) {
+    const hit = search(words.slice(0, n).join(' '));
+    if (hit) return hit;
+  }
+  return null;
+}
+
+// ── Active comment flash ────────────────────────────────────────────────────
+// The focused comment's highlight is drawn as a decoration — mutating the
+// editor's DOM directly makes ProseMirror redraw it (and cancels any scroll).
+export const activeCommentKey = new PluginKey<string | null>('activeComment');
+
+export const ActiveComment = Extension.create({
+  name: 'activeComment',
+  addProseMirrorPlugins() {
+    return [
+      new Plugin<string | null>({
+        key: activeCommentKey,
+        state: {
+          init: () => null,
+          apply: (tr, value) => {
+            const meta = tr.getMeta(activeCommentKey);
+            return meta === undefined ? value : (meta as string | null);
+          },
+        },
+        props: {
+          decorations(state) {
+            const id = activeCommentKey.getState(state);
+            if (!id) return null;
+            const range = findCommentRange(state.doc, id);
+            if (!range) return null;
+            return DecorationSet.create(state.doc, [
+              Decoration.inline(range.from, range.to, { class: 'comment-highlight--active' }),
+            ]);
+          },
+        },
+      }),
+    ];
+  },
+});
 
 
 // ── List indent (Tab / Shift+Tab) ───────────────────────────────────────────

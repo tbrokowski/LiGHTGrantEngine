@@ -29,7 +29,10 @@ import {
   ImageIcon, Link2, Download, IndentIncrease, IndentDecrease,
 } from 'lucide-react';
 import { api, grants } from '@/lib/api';
-import { InlineFontStyles, CommentMark, ListIndent, type CommentEditorApi } from './editor-extensions';
+import {
+  InlineFontStyles, CommentMark, ListIndent, ActiveComment, activeCommentKey,
+  findAnchorRange, findCommentRange, type CommentEditorApi,
+} from './editor-extensions';
 import { FontFamilySelect, FontSizeSelect, ColorButton, HighlightButton } from './EditorFormatControls';
 import { TableInsertButton, TableContextBar } from './TableControls';
 
@@ -101,23 +104,13 @@ interface SingleDocEditorProps {
 
 const DEBOUNCE_MS = 600;
 
-/** Find the first single-text-node occurrence of `query`; returns doc positions. */
-function findTextRange(
-  editor: NonNullable<ReturnType<typeof useEditor>>,
-  query: string,
-): { from: number; to: number } | null {
-  const q = (query || '').trim();
-  if (!q) return null;
-  let found: { from: number; to: number } | null = null;
-  editor.state.doc.descendants((node, pos) => {
-    if (found) return false;
-    if (node.isText && node.text) {
-      const i = node.text.indexOf(q);
-      if (i >= 0) { found = { from: pos + i, to: pos + i + q.length }; return false; }
-    }
-    return true;
-  });
-  return found;
+/** Nearest scrollable ancestor (the page scrolls, not the editor). */
+function scrollParent(el: HTMLElement): HTMLElement | null {
+  for (let p = el.parentElement; p; p = p.parentElement) {
+    const oy = getComputedStyle(p).overflowY;
+    if ((oy === 'auto' || oy === 'scroll') && p.scrollHeight > p.clientHeight) return p;
+  }
+  return null;
 }
 
 function extractHeadings(editor: ReturnType<typeof useEditor>): string[] {
@@ -160,9 +153,11 @@ export default function SingleDocEditor({
 }: SingleDocEditorProps) {
   const changeTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const lastHtml = useRef(documentHtml);
-  // Last non-empty selection range — used to anchor a new comment mark even after
-  // focus moves to the comment box (which doesn't change ProseMirror's selection).
+  // The selection a new comment will anchor to. Kept while focus moves to the
+  // comment box (that doesn't change ProseMirror's selection), cleared when the
+  // user collapses the selection, and mapped through edits so it stays accurate.
   const lastSelRange = useRef<{ from: number; to: number } | null>(null);
+  const activeTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const onAnchorClickRef = useRef(onAnchorClick);
   useEffect(() => { onAnchorClickRef.current = onAnchorClick; }, [onAnchorClick]);
   const [selectionStats, setSelectionStats] = useState<{ words: number; chars: number } | null>(null);
@@ -228,6 +223,7 @@ export default function SingleDocEditor({
       Color,
       InlineFontStyles,
       CommentMark,
+      ActiveComment,
       ListIndent,
     ],
     content: documentHtml || '',
@@ -315,8 +311,17 @@ export default function SingleDocEditor({
         onDocumentChange(html, words, heads);
       }, DEBOUNCE_MS);
     },
+    onTransaction: ({ transaction }) => {
+      const r = lastSelRange.current;
+      if (r && transaction.docChanged) {
+        const from = transaction.mapping.map(r.from, 1);
+        const to = transaction.mapping.map(r.to, -1);
+        lastSelRange.current = from < to ? { from, to } : null;
+      }
+    },
     onSelectionUpdate: ({ editor: ed }) => {
       const { from, to } = ed.state.selection;
+      if (from === to) lastSelRange.current = null;
       if (from !== to) {
         lastSelRange.current = { from, to };
         const selected = ed.state.doc.textBetween(from, to, ' ');
@@ -346,48 +351,89 @@ export default function SingleDocEditor({
   }, [documentHtml, editor]);
 
   useEffect(() => {
-    return () => { if (changeTimer.current) clearTimeout(changeTimer.current); };
+    return () => {
+      if (changeTimer.current) clearTimeout(changeTimer.current);
+      if (activeTimer.current) clearTimeout(activeTimer.current);
+    };
   }, []);
 
   // Imperative comment API for the CommentsPanel (highlight / locate / focus).
-  const commentApi = useMemo<CommentEditorApi>(() => ({
-    applyCommentMark: (id) => {
-      const range = lastSelRange.current;
-      if (!editor || !range || range.from === range.to) return;
-      editor.chain().setTextSelection(range).setMark('comment', { commentId: id }).run();
-    },
-    removeCommentMark: (id) => {
+  // Marks are added/removed with plain transactions so the user's cursor and
+  // selection are never moved by background re-highlighting.
+  const commentApi = useMemo<CommentEditorApi>(() => {
+    const addMark = (id: string, range: { from: number; to: number }, history: boolean) => {
       if (!editor) return;
-      const ranges: { from: number; to: number }[] = [];
-      editor.state.doc.descendants((node, pos) => {
-        if (node.isText && node.marks.some((m) => m.type.name === 'comment' && m.attrs.commentId === id)) {
-          ranges.push({ from: pos, to: pos + node.nodeSize });
-        }
+      const tr = editor.state.tr.addMark(range.from, range.to, editor.schema.marks.comment.create({ commentId: id }));
+      if (!history) tr.setMeta('addToHistory', false);
+      editor.view.dispatch(tr);
+    };
+    const setActive = (id: string | null) => {
+      if (!editor || editor.isDestroyed) return;
+      editor.view.dispatch(editor.state.tr.setMeta(activeCommentKey, id).setMeta('addToHistory', false));
+    };
+    return {
+      getSelectionAnchor: () => {
+        const r = lastSelRange.current;
+        return editor && r ? editor.state.doc.textBetween(r.from, r.to, ' ') : '';
+      },
+      clearSelectionAnchor: () => {
+        lastSelRange.current = null;
+        setSelectionStats(null);
+      },
+      applyCommentMark: (id) => {
+        const range = lastSelRange.current;
+        if (!editor || !range || range.from === range.to) return false;
+        addMark(id, range, true);
+        lastSelRange.current = null;
+        // Collapse the selection so the toolbar's "selected" count resets.
+        editor.commands.setTextSelection(range.to);
+        setSelectionStats(null);
         return true;
-      });
-      if (!ranges.length) return;
-      let chain = editor.chain();
-      for (const r of ranges) chain = chain.setTextSelection(r).unsetMark('comment');
-      chain.run();
-    },
-    focusComment: (id) => {
-      if (!editor) return;
-      const el = editor.view.dom.querySelector(`span[data-comment-id="${id}"]`) as HTMLElement | null;
-      if (!el) return;
-      el.scrollIntoView({ behavior: 'smooth', block: 'center' });
-      el.classList.add('comment-highlight--active');
-      window.setTimeout(() => el.classList.remove('comment-highlight--active'), 1600);
-    },
-    locateAndMark: (id, anchorText) => {
-      if (!editor) return false;
-      // Already marked? just succeed.
-      if (editor.view.dom.querySelector(`span[data-comment-id="${id}"]`)) return true;
-      const range = findTextRange(editor, anchorText);
-      if (!range) return false;
-      editor.chain().setTextSelection(range).setMark('comment', { commentId: id }).setTextSelection(range.to).run();
-      return true;
-    },
-  }), [editor]);
+      },
+      removeCommentMark: (id) => {
+        if (!editor) return;
+        const tr = editor.state.tr;
+        editor.state.doc.descendants((node, pos) => {
+          const mark = node.isText ? node.marks.find((m) => m.type.name === 'comment' && m.attrs.commentId === id) : null;
+          if (mark) tr.removeMark(pos, pos + node.nodeSize, mark);
+          return true;
+        });
+        if (tr.docChanged) editor.view.dispatch(tr);
+      },
+      focusComment: (id, anchorText) => {
+        if (!editor) return false;
+        let range = findCommentRange(editor.state.doc, id);
+        if (!range && anchorText) {
+          const found = findAnchorRange(editor.state.doc, anchorText);
+          if (found) { addMark(id, found, false); range = found; }
+        }
+        if (!range) return false;
+        // Scroll the page's own scroll container (scrollIntoView gets cancelled
+        // when the highlight redraws) so the passage sits mid-screen.
+        const container = scrollParent(editor.view.dom as HTMLElement);
+        const coords = editor.view.coordsAtPos(range.from);
+        if (container) {
+          const box = container.getBoundingClientRect();
+          container.scrollTo({
+            top: container.scrollTop + coords.top - box.top - container.clientHeight / 2,
+            behavior: 'smooth',
+          });
+        }
+        setActive(id);
+        if (activeTimer.current) clearTimeout(activeTimer.current);
+        activeTimer.current = setTimeout(() => setActive(null), 2000);
+        return true;
+      },
+      locateAndMark: (id, anchorText) => {
+        if (!editor) return false;
+        if (findCommentRange(editor.state.doc, id)) return true; // already marked
+        const range = findAnchorRange(editor.state.doc, anchorText);
+        if (!range) return false;
+        addMark(id, range, false);
+        return true;
+      },
+    };
+  }, [editor]);
 
   useEffect(() => {
     if (!editor || !onEditorApi) return;
