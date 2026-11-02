@@ -380,7 +380,7 @@ export function MembersPanel({ institutionId }: { institutionId: string }) {
   }
 
   async function handleRemove(userId: string, name: string) {
-    if (!confirm(`Remove ${name} from the organization?`)) return;
+    if (!confirm(`Remove ${name} from the organization? They'll also lose their access to its grants.`)) return;
     try {
       await organizations.removeMember(institutionId, userId);
       setMembers(prev => prev.filter(m => m.id !== userId));

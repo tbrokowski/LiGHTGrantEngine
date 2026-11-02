@@ -329,7 +329,9 @@ export function OrganizationsPanel() {
 
                   {confirming && (
                     <div className="flex items-center gap-2 shrink-0">
-                      <span className="text-xs" style={{ color: 'var(--ink-secondary)' }}>Leave {org.name}?</span>
+                      <span className="text-xs" style={{ color: 'var(--ink-secondary)' }}>
+                        Leave {org.name}? You&apos;ll lose access to its grants.
+                      </span>
                       <button
                         type="button"
                         disabled={busy}

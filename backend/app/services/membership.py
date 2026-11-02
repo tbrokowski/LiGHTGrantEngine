@@ -4,16 +4,19 @@
 `users` (institution_id, institution_role, role, module_permissions) are a copy
 of the active membership, which is what the rest of the app reads. Every change
 goes through here so the two never drift; callers commit and then clear the
-user's permission cache.
+user's permission cache. Leaving an organization also drops the user's roles
+on that organization's grants.
 """
 from __future__ import annotations
 
 import uuid
 from typing import Optional
 
-from sqlalchemy import func, select
+from sqlalchemy import delete, func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.models.active_grant import ActiveGrant
+from app.models.grant_member import GrantMember
 from app.models.institution import Institution
 from app.models.institution_membership import InstitutionMembership
 from app.models.user import User, UserRole, InstitutionRole
@@ -138,13 +141,24 @@ async def is_last_admin_with_others(db: AsyncSession, user_id: str, institution_
     return bool(others) and not other_admins
 
 
+def delete_grant_roles_in_org(user_id: str, institution_id: str):
+    """Statement deleting the user's roles on the organization's grants."""
+    return delete(GrantMember).where(
+        GrantMember.user_id == user_id,
+        GrantMember.grant_id.in_(select(ActiveGrant.id).where(ActiveGrant.institution_id == institution_id)),
+    )
+
+
 async def remove_membership(db: AsyncSession, user: User, institution_id: str) -> None:
-    """Take the user out of an organization. If it was their active one, fall
-    back to another of their organizations (personal workspace first), or none."""
+    """Take the user out of an organization, along with their roles on its
+    grants — otherwise those would carry on as guest access. If it was their
+    active org, fall back to another of their organizations (personal
+    workspace first), or none."""
     m = await get_membership(db, user.id, institution_id)
     if m is not None:
         await db.delete(m)
-        await db.flush()
+    await db.execute(delete_grant_roles_in_org(user.id, institution_id))
+    await db.flush()
     if user.institution_id != institution_id:
         return
     remaining = await _membership_rows(db, user.id)

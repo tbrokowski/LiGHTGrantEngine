@@ -69,3 +69,14 @@ def test_scrub_frees_the_email_and_ends_sessions():
     assert user.token_version == 1
     assert user.institution_id is None
     assert user.grant_preferences == {} and user.team is None
+
+
+def test_leaving_drops_grant_roles_in_that_org_only():
+    from sqlalchemy.dialects import postgresql
+    from app.services.membership import delete_grant_roles_in_org
+
+    sql = str(delete_grant_roles_in_org("u1", "org-b").compile(
+        dialect=postgresql.dialect(), compile_kwargs={"literal_binds": True}))
+    assert sql.startswith("DELETE FROM grant_members")
+    assert "grant_members.user_id = 'u1'" in sql
+    assert "active_grants.institution_id = 'org-b'" in sql

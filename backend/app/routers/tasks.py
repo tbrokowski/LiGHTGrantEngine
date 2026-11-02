@@ -2,7 +2,7 @@
 from typing import Optional
 from datetime import date, timedelta
 from fastapi import APIRouter, Depends
-from sqlalchemy import select, and_, or_, String
+from sqlalchemy import select, and_, or_, false, String
 from sqlalchemy.ext.asyncio import AsyncSession
 from app.database import get_db
 from app.models.task import Task
@@ -130,14 +130,22 @@ async def _get_accessible_grant_ids(user: User, db: AsyncSession) -> list[str]:
         GrantMember.user_id == user.id,
         GrantMember.status == GrantMemberStatus.ACCEPTED,
     )
+    # Leading, creating or being on the proposal team only counts inside the
+    # active org (or a personal draft); after leaving an org those links stay
+    # on its grants but no longer reach them. Guest invites come via membership.
+    in_active_org = ActiveGrant.institution_id == user.institution_id if user.institution_id else false()
     q = select(ActiveGrant.id).where(
         or_(
-            ActiveGrant.internal_lead_id == user.id,
-            ActiveGrant.created_by_id == user.id,
-            ActiveGrant.id.in_(member_subq),
-            ActiveGrant.proposal_team.cast(String).contains(user.id),
-        ),
-        reachable_grant_filter(user),
+            and_(
+                or_(
+                    ActiveGrant.internal_lead_id == user.id,
+                    ActiveGrant.created_by_id == user.id,
+                    ActiveGrant.proposal_team.cast(String).contains(user.id),
+                ),
+                or_(in_active_org, ActiveGrant.institution_id.is_(None)),
+            ),
+            and_(ActiveGrant.id.in_(member_subq), reachable_grant_filter(user)),
+        )
     )
     return list((await db.execute(q)).scalars().all())
 
