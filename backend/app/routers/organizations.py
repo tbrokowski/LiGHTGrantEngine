@@ -43,6 +43,7 @@ settings = get_settings()
 _ACCESS_CODE_CHARS = string.ascii_uppercase + string.digits
 _ACCESS_CODE_LEN = 6
 _ACCESS_CODE_TTL_HOURS = 72
+_ORG_NAME_MAX_LEN = 120
 
 
 # ── Request / response models ─────────────────────────────────────────────────
@@ -204,9 +205,17 @@ async def create_organization(
     redis: aioredis.Redis = Depends(get_redis),
 ):
     """Create a new organization. The caller becomes org_admin and it becomes their active org."""
+    name = " ".join(body.name.split())
+    if not name:
+        raise HTTPException(400, "Organization name is required.")
+    if len(name) > _ORG_NAME_MAX_LEN:
+        raise HTTPException(400, f"Organization names can be at most {_ORG_NAME_MAX_LEN} characters.")
+    if await hit_rate_limit(f"create_org:{current_user.id}", limit=5, window_seconds=60 * 60):
+        raise HTTPException(429, "You've created several organizations recently. Try again in an hour.")
+
     inst = Institution(
         id=str(uuid.uuid4()),
-        name=body.name.strip(),
+        name=name,
         domain=body.domain,
         is_personal=False,
     )

@@ -2,8 +2,9 @@
 import { useEffect, useRef, useState } from 'react';
 import { organizations, MyOrganization } from '@/lib/api';
 
-// Every organization the user belongs to: switch between them, leave one, or
-// join another with an access code from that organization's admin.
+// Every organization the user belongs to: switch between them, leave one,
+// join another with an access code from that organization's admin, or create
+// a new one (the creator becomes its admin).
 
 const ROLE_LABELS: Record<string, string> = {
   admin: 'Admin',
@@ -42,6 +43,14 @@ const primaryButtonStyle: React.CSSProperties = {
   padding: '6px 14px',
 };
 
+const secondaryButtonStyle: React.CSSProperties = {
+  ...buttonStyle,
+  fontSize: '13px',
+  padding: '6px 14px',
+};
+
+const ORG_NAME_MAX_LEN = 120;
+
 export function OrganizationsPanel() {
   const [orgs, setOrgs] = useState<MyOrganization[] | null>(null);
   const [loadError, setLoadError] = useState('');
@@ -49,11 +58,16 @@ export function OrganizationsPanel() {
   const [rowError, setRowError] = useState<{ id: string; message: string } | null>(null);
   const [confirmLeaveId, setConfirmLeaveId] = useState<string | null>(null);
 
-  const [joining, setJoining] = useState(false);
+  const [mode, setMode] = useState<'join' | 'create' | null>(null);
   const [code, setCode] = useState('');
   const [joinError, setJoinError] = useState('');
   const [joinBusy, setJoinBusy] = useState(false);
   const codeInput = useRef<HTMLInputElement>(null);
+
+  const [newName, setNewName] = useState('');
+  const [createError, setCreateError] = useState('');
+  const [createBusy, setCreateBusy] = useState(false);
+  const nameInput = useRef<HTMLInputElement>(null);
 
   useEffect(() => {
     organizations.mine()
@@ -62,8 +76,17 @@ export function OrganizationsPanel() {
   }, []);
 
   useEffect(() => {
-    if (joining) codeInput.current?.focus();
-  }, [joining]);
+    if (mode === 'join') codeInput.current?.focus();
+    if (mode === 'create') nameInput.current?.focus();
+  }, [mode]);
+
+  function closeForms() {
+    setMode(null);
+    setCode('');
+    setJoinError('');
+    setNewName('');
+    setCreateError('');
+  }
 
   async function handleSwitch(id: string) {
     setBusyId(id);
@@ -108,23 +131,94 @@ export function OrganizationsPanel() {
     }
   }
 
+  async function handleCreate(e: React.FormEvent) {
+    e.preventDefault();
+    const name = newName.trim().replace(/\s+/g, ' ');
+    if (!name) {
+      setCreateError('Give the organization a name.');
+      return;
+    }
+    setCreateBusy(true);
+    setCreateError('');
+    try {
+      await organizations.create({ name });
+      reloadInto();
+    } catch (err) {
+      setCreateError(errorDetail(err, 'Could not create the organization.'));
+      setCreateBusy(false);
+    }
+  }
+
   return (
     <div className="max-w-2xl">
-      <div className="flex items-end justify-between gap-4 mb-4">
+      <div className="flex items-end justify-between gap-4 flex-wrap mb-4">
         <div>
           <h3 className="text-sm font-semibold" style={{ color: 'var(--ink-primary)' }}>Your organizations</h3>
           <p className="text-xs mt-1" style={{ color: 'var(--ink-muted)' }}>
             You see one organization at a time. Switch to work in another.
           </p>
         </div>
-        {!joining && (
-          <button type="button" onClick={() => setJoining(true)} style={primaryButtonStyle}>
-            Join an organization
-          </button>
+        {!mode && (
+          <div className="flex items-center gap-2 shrink-0">
+            <button type="button" onClick={() => setMode('create')} style={secondaryButtonStyle}>
+              Create organization
+            </button>
+            <button type="button" onClick={() => setMode('join')} style={primaryButtonStyle}>
+              Join an organization
+            </button>
+          </div>
         )}
       </div>
 
-      {joining && (
+      {mode === 'create' && (
+        <form
+          onSubmit={handleCreate}
+          className="mb-6 py-4"
+          style={{ borderTop: '1px solid var(--rule-subtle)', borderBottom: '1px solid var(--rule-subtle)' }}
+        >
+          <label htmlFor="new-org-name" className="ledger-label block mb-2">Organization name</label>
+          <p className="text-xs mb-3" style={{ color: 'var(--ink-muted)' }}>
+            You&apos;ll be its admin, and it becomes your active organization. Invite people from Members &amp; Invites.
+          </p>
+          <div className="flex items-center gap-2 flex-wrap">
+            <input
+              id="new-org-name"
+              ref={nameInput}
+              value={newName}
+              onChange={e => setNewName(e.target.value.slice(0, ORG_NAME_MAX_LEN))}
+              placeholder="e.g. Global Health Lab"
+              autoComplete="organization"
+              aria-invalid={Boolean(createError)}
+              style={{
+                flex: '1 1 16rem',
+                minWidth: 0,
+                border: '1px solid var(--rule-strong)',
+                borderRadius: 'var(--radius-sm)',
+                background: 'var(--surface-sunken)',
+                color: 'var(--ink-primary)',
+                fontSize: '14px',
+                padding: '6px 10px',
+                outline: 'none',
+              }}
+            />
+            <button
+              type="submit"
+              disabled={createBusy || !newName.trim()}
+              style={{ ...primaryButtonStyle, opacity: createBusy || !newName.trim() ? 0.5 : 1 }}
+            >
+              {createBusy ? 'Creating…' : 'Create'}
+            </button>
+            <button type="button" onClick={closeForms} className="text-xs px-2 py-1" style={{ color: 'var(--ink-muted)' }}>
+              Cancel
+            </button>
+          </div>
+          {createError && (
+            <p role="alert" className="text-xs mt-2" style={{ color: 'var(--state-danger)' }}>{createError}</p>
+          )}
+        </form>
+      )}
+
+      {mode === 'join' && (
         <form
           onSubmit={handleJoin}
           className="mb-6 py-4"
@@ -159,12 +253,7 @@ export function OrganizationsPanel() {
             <button type="submit" disabled={joinBusy || code.length !== 6} style={{ ...primaryButtonStyle, opacity: joinBusy || code.length !== 6 ? 0.5 : 1 }}>
               {joinBusy ? 'Joining…' : 'Join'}
             </button>
-            <button
-              type="button"
-              onClick={() => { setJoining(false); setCode(''); setJoinError(''); }}
-              className="text-xs px-2 py-1"
-              style={{ color: 'var(--ink-muted)' }}
-            >
+            <button type="button" onClick={closeForms} className="text-xs px-2 py-1" style={{ color: 'var(--ink-muted)' }}>
               Cancel
             </button>
           </div>
@@ -178,7 +267,7 @@ export function OrganizationsPanel() {
       {!orgs && !loadError && <p className="text-sm" style={{ color: 'var(--ink-muted)' }}>Loading…</p>}
       {orgs && orgs.length === 0 && (
         <p className="text-sm py-3" style={{ color: 'var(--ink-muted)', borderTop: '1px solid var(--rule-subtle)' }}>
-          You&apos;re not in any organization yet. Join one with an access code.
+          You&apos;re not in any organization yet. Join one with an access code, or create your own.
         </p>
       )}
 

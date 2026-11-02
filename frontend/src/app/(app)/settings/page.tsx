@@ -1041,7 +1041,7 @@ function SettingsPageInner() {
       {/* Profile tab */}
       {activeTab === 'profile' && <ProfilePanel />}
 
-      {/* Organizations tab — every org the user belongs to, join by code */}
+      {/* Organizations tab — every org the user belongs to; join by code or create one */}
       {activeTab === 'organizations' && <OrganizationsPanel />}
 
       {/* Integrations tab */}
