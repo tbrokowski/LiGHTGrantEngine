@@ -229,13 +229,16 @@ def test_is_admin_of_requires_matching_org():
     assert not is_admin_of(_user(institution_role="admin", institution_id=None), None)
 
 
-def _grant_check(grant, user, monkeypatch, require_editor=False):
+def _grant_check(grant, user, monkeypatch, require_editor=False, member_of_grant_org=None):
+    """`member_of_grant_org` is the name of the grant's org when the user
+    belongs to it (answers the switch-hint lookup)."""
     from app.auth import permissions
 
     async def no_membership(*_a, **_k):
         return []
     monkeypatch.setattr(permissions, "get_user_grant_ids", no_membership)
-    return asyncio.run(_check_grant_access("g1", user, _SeqDb([[grant]]), None, require_editor))
+    answers = [[grant], [member_of_grant_org] if member_of_grant_org else []]
+    return asyncio.run(_check_grant_access("g1", user, _SeqDb(answers), None, require_editor))
 
 
 def test_admin_reaches_own_org_grant(monkeypatch):
@@ -254,6 +257,60 @@ def test_ops_manager_of_other_org_is_refused_grant(monkeypatch):
     grant = ActiveGrant(id="g1", title="G", institution_id="org-b", is_personal=False)
     with pytest.raises(HTTPException):
         _grant_check(grant, _user(role="operations_manager"), monkeypatch)
+
+
+# ── Grant roles count only inside the grant's organization ───────────────────
+
+from app.auth.permissions import get_user_grant_ids, reachable_grant_filter
+
+
+def test_grant_of_another_own_org_asks_to_switch(monkeypatch):
+    grant = ActiveGrant(id="g1", title="G", institution_id="org-b", is_personal=False)
+    with pytest.raises(HTTPException) as e:
+        _grant_check(grant, _user(), monkeypatch, member_of_grant_org="Org B")
+    assert e.value.status_code == 403
+    assert "Switch to that organization" in e.value.detail
+
+
+def test_reachable_grants_exclude_the_users_other_orgs():
+    sql = _sql(reachable_grant_filter(_user()))
+    assert "active_grants.institution_id = 'org-a'" in sql
+    # Any other org the user belongs to is excluded; orgs they don't belong
+    # to (guest invites) and personal drafts stay reachable.
+    assert "active_grants.institution_id NOT IN (SELECT institution_memberships.institution_id" in sql
+    assert "institution_memberships.user_id = 'u1'" in sql
+    assert "active_grants.institution_id IS NULL" in sql
+
+
+def test_reachable_grants_without_active_org():
+    sql = _sql(reachable_grant_filter(_user(institution_id=None)))
+    assert "active_grants.institution_id = " not in sql
+
+
+class _FakeRedis:
+    def __init__(self, cached):
+        self.cached = cached
+
+    async def hgetall(self, _key):
+        return self.cached
+
+    async def hset(self, _key, mapping):
+        self.cached = mapping
+
+    async def expire(self, _key, _ttl):
+        pass
+
+
+def test_grant_id_cache_from_another_org_is_ignored():
+    redis = _FakeRedis({"institution_id": "org-a", "grant_ids": "g-a"})
+    user = _user(institution_id="org-b")
+    assert asyncio.run(get_user_grant_ids(user, _SeqDb([["g-b"]]), redis)) == ["g-b"]
+    assert redis.cached["institution_id"] == "org-b"
+
+
+def test_grant_id_cache_for_active_org_is_used():
+    redis = _FakeRedis({"institution_id": "org-a", "grant_ids": "g-a"})
+    assert asyncio.run(get_user_grant_ids(_user(), _SeqDb([]), redis)) == ["g-a"]
 
 
 # ── Super-admins manage shared data; org roles never confer it ───────────────

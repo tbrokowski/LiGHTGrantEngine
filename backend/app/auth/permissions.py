@@ -13,7 +13,8 @@ Redis cache schema (per user):
     role            → e.g. "grant_lead"
     institution_id  → e.g. "abc-123" (empty string if none)
     institution_role → e.g. "admin"
-    grant_ids       → comma-separated accepted grant IDs
+    grant_ids       → comma-separated accepted grant IDs reachable from the
+                      active organization (see reachable_grant_filter)
 """
 from __future__ import annotations
 
@@ -22,13 +23,15 @@ from typing import Callable, Optional
 
 import redis.asyncio as aioredis
 from fastapi import Depends, HTTPException, status
-from sqlalchemy import select
+from sqlalchemy import or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.config import get_settings
 from app.database import get_db
 from app.models.active_grant import ActiveGrant
 from app.models.grant_member import GrantMember, GrantMemberRole, GrantMemberStatus
+from app.models.institution import Institution
+from app.models.institution_membership import InstitutionMembership
 from app.models.user import User, UserRole
 from app.routers.auth import get_current_user
 
@@ -187,17 +190,35 @@ async def invalidate_permission_cache(user_id: str, redis: aioredis.Redis) -> No
     await redis.delete(_perm_key(user_id))
 
 
+def reachable_grant_filter(user: User):
+    """Grants the user may reach from their active organization: that org's
+    grants, grants of orgs they don't belong to (a guest invite to a single
+    grant), and personal drafts. Grants of the user's *other* organizations
+    stay there — a role on one of them only counts once the user switches."""
+    my_orgs = select(InstitutionMembership.institution_id).where(InstitutionMembership.user_id == user.id)
+    conds = [ActiveGrant.institution_id.is_(None), ActiveGrant.institution_id.notin_(my_orgs)]
+    if user.institution_id:
+        conds.append(ActiveGrant.institution_id == user.institution_id)
+    return or_(*conds)
+
+
 async def get_user_grant_ids(user: User, db: AsyncSession, redis: aioredis.Redis) -> list[str]:
-    """Return list of grant IDs the user has accepted membership in, with Redis caching."""
+    """Return the grant IDs the user has accepted membership in and can reach
+    from their active organization, with Redis caching."""
     cached = await get_permission_cache(user.id, redis)
-    if cached is not None:
+    # A cache written while another org was active is stale, even if a switch
+    # somewhere forgot to invalidate it.
+    if cached is not None and cached.get("institution_id", "") == (user.institution_id or ""):
         raw = cached.get("grant_ids", "")
         return [g for g in raw.split(",") if g]
 
     result = await db.execute(
-        select(GrantMember.grant_id).where(
+        select(GrantMember.grant_id)
+        .join(ActiveGrant, ActiveGrant.id == GrantMember.grant_id)
+        .where(
             GrantMember.user_id == user.id,
             GrantMember.status == GrantMemberStatus.ACCEPTED,
+            reachable_grant_filter(user),
         )
     )
     grant_ids = list(result.scalars().all())
@@ -335,6 +356,17 @@ async def _check_grant_access(
     grant_ids = await get_user_grant_ids(current_user, db, redis)
 
     if grant_id not in grant_ids:
+        if grant_org and grant_org != current_user.institution_id:
+            other = (await db.execute(
+                select(Institution.name)
+                .join(InstitutionMembership, InstitutionMembership.institution_id == Institution.id)
+                .where(Institution.id == grant_org, InstitutionMembership.user_id == current_user.id)
+            )).scalar_one_or_none()
+            if other:
+                raise HTTPException(
+                    status_code=status.HTTP_403_FORBIDDEN,
+                    detail=f"This grant belongs to {other}. Switch to that organization to open it.",
+                )
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN,
             detail="You do not have access to this grant.",

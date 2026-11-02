@@ -1063,7 +1063,11 @@ async def get_partner_fit_scores(
 
     grants_res = await db.execute(
         select(ActiveGrant)
-        .where(ActiveGrant.status.in_(["submitted", "shortlisted", "active", "in_preparation"]))
+        .where(
+            ActiveGrant.status.in_(["submitted", "shortlisted", "active", "in_preparation"]),
+            ActiveGrant.institution_id == current_user.institution_id if current_user.institution_id else false(),
+            ActiveGrant.is_personal.is_(False),
+        )
         .order_by(desc(ActiveGrant.updated_at))
         .limit(20)
     )
@@ -1306,7 +1310,11 @@ async def entity_search(
     # Search active grants
     grant_rows = (await db.execute(
         select(ActiveGrant)
-        .where(or_(ActiveGrant.title.ilike(like), ActiveGrant.funder_name.ilike(like)))
+        .where(
+            or_(ActiveGrant.title.ilike(like), ActiveGrant.funder_name.ilike(like)),
+            ActiveGrant.institution_id == current_user.institution_id if current_user.institution_id else false(),
+            ActiveGrant.is_personal.is_(False),
+        )
         .order_by(desc(ActiveGrant.updated_at))
         .limit(limit // 2 + 5)
     )).scalars().all()

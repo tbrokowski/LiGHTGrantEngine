@@ -12,7 +12,7 @@ from app.models.grant_member import GrantMember, GrantMemberStatus
 from app.models.user import User
 from app.routers.auth import get_current_user
 from app.routers.opportunities import get_shortlist_stats
-from app.auth.permissions import is_org_admin
+from app.auth.permissions import is_org_admin, reachable_grant_filter
 
 router = APIRouter()
 
@@ -39,7 +39,7 @@ async def dashboard_stats(db: AsyncSession = Depends(get_db), current_user: User
                 GrantMember.status == GrantMemberStatus.ACCEPTED,
             )
         )).scalars().all()
-        grant_filter = ActiveGrant.id.in_(member_grant_ids)
+        grant_filter = and_(ActiveGrant.id.in_(member_grant_ids), reachable_grant_filter(current_user))
     else:
         grant_filter = ActiveGrant.institution_id == inst_id if inst_id else false()
 

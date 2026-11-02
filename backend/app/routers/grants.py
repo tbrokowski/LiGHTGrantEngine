@@ -41,6 +41,7 @@ from app.auth.permissions import (
     get_redis,
     invalidate_permission_cache,
     get_user_grant_ids,
+    reachable_grant_filter,
     _grant_role_rank,
 )
 import redis.asyncio as aioredis
@@ -242,8 +243,9 @@ async def list_grants(
         for g in result.scalars().all():
             grants_out.append(_grant_summary(g))
 
-    # ── Guest access: grants the user is an accepted member of in ANY org ──
-    # (a collaborator invited to a single grant outside their own institution).
+    # ── Guest access: grants of orgs the user doesn't belong to, where they
+    # were invited to that one grant. Grants of the user's other orgs only
+    # show once they switch to that org.
     seen_ids = {g["id"] for g in grants_out}
     guest_ids_q = select(GrantMember.grant_id).where(
         GrantMember.user_id == current_user.id,
@@ -254,6 +256,7 @@ async def list_grants(
         gq = select(ActiveGrant).where(
             ActiveGrant.id.in_(guest_ids),
             ActiveGrant.is_personal.is_(False),
+            reachable_grant_filter(current_user),
         )
         if stage:
             gq = gq.where(ActiveGrant.grant_stage == stage)

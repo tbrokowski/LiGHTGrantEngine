@@ -10,7 +10,7 @@ from app.models.active_grant import ActiveGrant
 from app.models.grant_member import GrantMember, GrantMemberStatus
 from app.models.user import User
 from app.routers.auth import get_current_user
-from app.auth.permissions import is_org_admin
+from app.auth.permissions import is_org_admin, reachable_grant_filter
 
 router = APIRouter()
 
@@ -118,8 +118,9 @@ async def _get_accessible_grant_ids(user: User, db: AsyncSession) -> list[str]:
 
     Org admins see every grant in their institution. Everyone else sees ONLY the
     grants they're explicitly included in — leading, created, an accepted member
-    of (any org, incl. guest invites), or on the proposal team — never the whole
-    org portfolio. Mirrors grants.list_grants so the dashboard matches the Grants tab.
+    of (incl. guest invites), or on the proposal team — never the whole org
+    portfolio, and never grants of their other organizations. Mirrors
+    grants.list_grants so the dashboard matches the Grants tab.
     """
     if is_org_admin(user) and user.institution_id:
         q = select(ActiveGrant.id).where(ActiveGrant.institution_id == user.institution_id)
@@ -135,7 +136,8 @@ async def _get_accessible_grant_ids(user: User, db: AsyncSession) -> list[str]:
             ActiveGrant.created_by_id == user.id,
             ActiveGrant.id.in_(member_subq),
             ActiveGrant.proposal_team.cast(String).contains(user.id),
-        )
+        ),
+        reachable_grant_filter(user),
     )
     return list((await db.execute(q)).scalars().all())
 
