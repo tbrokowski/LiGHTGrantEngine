@@ -344,3 +344,13 @@ def test_super_admin_cannot_revoke_self():
             SuperAdminUpdate(email=boss.email, is_super_admin=False), _SeqDb([[boss]]), boss, None,
         ))
     assert e.value.status_code == 400
+
+
+def test_feed_cache_is_per_org_and_cleared_per_user():
+    from app.routers import opportunities as opp
+
+    opp._feed_cache.clear()
+    opp._feed_cache.update({"u1:org-a": (0.0, ()), "u1:org-b": (0.0, ()), "u2:org-a": (0.0, ())})
+    opp.invalidate_feed_cache("u1")
+    assert set(opp._feed_cache) == {"u2:org-a"}
+    opp._feed_cache.clear()

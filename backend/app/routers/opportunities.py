@@ -971,8 +971,9 @@ async def daily_picks(
     ids: list[str] | None = None
     try:
         cached = await redis.get(day_key)
-        if cached:
-            ids = [i for i in _json.loads(cached) if i in by_id]
+        pinned = _json.loads(cached) if cached else []
+        if len(pinned) >= limit:  # an older short/empty pin is recomputed (see below)
+            ids = [i for i in pinned if i in by_id]
     except Exception:
         cached = None
 
@@ -1017,7 +1018,13 @@ async def daily_picks(
             recently_featured=recently_featured, n=limit,
         )
         try:
-            await redis.setex(day_key, 3 * 86400, _json.dumps(ids))
+            # Pin only a full list. A new org's feed fills in over its first
+            # minutes (preseed task), and pinning the empty or short list it
+            # starts with would hold it until the next rollover. Selection is
+            # deterministic per user and day, so recomputing a short list is
+            # stable until the pool itself grows.
+            if len(ids) >= limit:
+                await redis.setex(day_key, 3 * 86400, _json.dumps(ids))
             if ids:
                 await redis.zadd(seen_key, {i: day.toordinal() for i in ids})
                 await redis.zremrangebyscore(seen_key, 0, day.toordinal() - dp.REPEAT_WINDOW_DAYS - 1)
@@ -2811,7 +2818,8 @@ _feed_locks: dict[str, asyncio.Lock] = {}
 
 
 def invalidate_feed_cache(user_id: str) -> None:
-    _feed_cache.pop(user_id, None)
+    for key in [k for k in _feed_cache if k.startswith(f"{user_id}:")]:
+        _feed_cache.pop(key, None)
 
 
 async def _fetch_new_opportunities_pool(
@@ -2821,8 +2829,9 @@ async def _fetch_new_opportunities_pool(
     """All institution-surfaced grants ranked by org relevance (for shortlist).
 
     Short-TTL, lock-coalesced so the dashboard's concurrent consumers share one
-    computation instead of each scanning the whole feed."""
-    key = user.id
+    computation instead of each scanning the whole feed. Keyed by org too, so
+    switching orgs never serves the previous org's feed."""
+    key = f"{user.id}:{user.institution_id or '-'}"
     hit = _feed_cache.get(key)
     if hit and (time.monotonic() - hit[0]) < _FEED_CACHE_TTL:
         return hit[1]
