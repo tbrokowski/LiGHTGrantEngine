@@ -5,7 +5,6 @@ import { DragDropContext, Droppable, Draggable, DropResult, type DraggableProvid
 import FunderLogo from './FunderLogo';
 import OpportunityActions, { type OpportunityActionHandlers } from './OpportunityActions';
 import OpportunityTypeBadge from './OpportunityTypeBadge';
-import { MatchScorePill } from './OpportunityRow';
 import { formatDate, type Opportunity, type ShortlistCategory } from './types';
 import { opportunities } from '@/lib/api';
 
@@ -53,7 +52,6 @@ function Card({
         onClick={open}
       >
         <div className="flex items-start gap-1.5 mb-1">
-          <span className="mt-0.5 shrink-0"><MatchScorePill priority={opp.priority} fitScore={opp.fit_score} /></span>
           <span className="text-sm leading-snug line-clamp-2" style={{ color: 'var(--ink-primary)', fontWeight: 500 }}>
             {opp.title}
           </span>

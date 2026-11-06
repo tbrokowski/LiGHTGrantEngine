@@ -197,23 +197,6 @@ export default function OpportunityFiltersSidebar({ filters, filterOptions, prio
 
       <Divider />
 
-      {/* Fit score */}
-      <div className="mb-3">
-        <SectionLabel>Fit level</SectionLabel>
-        <select
-          value={filters.priority}
-          onChange={e => onChange('priority', e.target.value)}
-          className="w-full border border-gray-200 rounded-lg px-2.5 py-1.5 text-sm text-gray-700 bg-white focus:outline-none focus:ring-1 focus:ring-gray-400"
-        >
-          <option value="">All</option>
-          <option value="high">High fit</option>
-          <option value="medium">Medium fit</option>
-          <option value="low">Low fit</option>
-        </select>
-      </div>
-
-      <Divider />
-
       {/* Geography */}
       {filterOptions?.geographies && filterOptions.geographies.length > 0 && (
         <div className="mb-3">

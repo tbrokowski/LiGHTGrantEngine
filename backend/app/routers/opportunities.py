@@ -52,6 +52,11 @@ PRIORITY_GROUPS: dict[str, list[str]] = {
 _SEMANTIC_CANDIDATE_LIMIT = 200
 _SEMANTIC_CACHE_TTL = 3600  # 1 hour
 
+# Set while the embeddings API is failing (e.g. the account is out of credits),
+# so the feed skips the slow failing calls and uses the fit ranking for a while.
+_EMBEDDINGS_DOWN_KEY = "intent_feed:embeddings_down"
+_EMBEDDINGS_DOWN_TTL = 300
+
 
 async def _get_semantic_candidate_ids(
     db: AsyncSession,
@@ -184,11 +189,26 @@ async def _compute_intent_ranking(db, user, redis_client=None) -> dict[str, floa
             kw_facets.append(f)
     kw_facets = kw_facets[:20]
 
+    if kw_facets and redis_client is not None:
+        try:
+            if await redis_client.get(_EMBEDDINGS_DOWN_KEY):
+                return None
+        except Exception:
+            pass
+
     best: dict[str, float] = {}
     for kw in kw_facets:
         emb = await _embed_query_cached(kw, redis_client)
         if not emb:
-            continue
+            # The embeddings API is failing. Ranking on whichever facets were still
+            # cached (or only the saved grants) shrinks the feed to a handful of
+            # grants out of thousands, so fall back to the fit ranking instead.
+            if redis_client is not None:
+                try:
+                    await redis_client.set(_EMBEDDINGS_DOWN_KEY, "1", ex=_EMBEDDINGS_DOWN_TTL)
+                except Exception:
+                    pass
+            return None
         for oid, d in await _knn_by_embedding(db, emb):
             if oid not in best or d < best[oid]:
                 best[oid] = d
@@ -713,12 +733,14 @@ async def list_opportunities(
             pool = (await db.execute(pool_q)).all()
             _has_neg = personalize and user_neg_emb is not None
             # Plain tuples so the CPU-bound rank/diversify can run off the event loop.
-            # (oid, org_fit, skey, upfirst, pdist, ndist)
+            # (oid, org_fit, skey, upfirst, pdist, ndist). A grant with no embedding
+            # yet (stored while embeddings were failing) has no distance: treat it
+            # as dissimilar rather than failing the whole feed.
             pool_data = [
                 (
                     r.oid, float(r.org_fit or 0), r.skey or "?", int(r.upfirst or 0),
-                    float(r.pdist) if personalize else 0.0,
-                    float(r.ndist) if _has_neg else 1.0,
+                    (float(r.pdist) if r.pdist is not None else 1.0) if personalize else 0.0,
+                    (float(r.ndist) if r.ndist is not None else 1.0) if _has_neg else 1.0,
                 )
                 for r in pool
             ]

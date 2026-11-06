@@ -135,27 +135,6 @@ export const PRIORITY_COLORS: Record<string, string> = {
   low_fit: 'bg-gray-100 text-gray-500',
 };
 
-// Map a 0–100 score to the three-tier vocabulary (mirrors the backend
-// keyword_scorer.tier_from_score). Used so the personalized score drives the
-// same color/label cues the org priority used to.
-export function tierFromScore(score: number): 'high' | 'medium' | 'low' {
-  if (score >= 75) return 'high';
-  if (score >= 45) return 'medium';
-  return 'low';
-}
-
-// The score to display for an opportunity: prefer the personalized "relevance to
-// you" score so the number always matches the feed's sort order.
-export function effectiveFit(opp: Opportunity): number | null {
-  return opp.personal_fit != null ? opp.personal_fit : opp.fit_score;
-}
-
-// The tier that should drive color/label cues, derived from the personalized
-// score when present, otherwise the org priority.
-export function effectivePriority(opp: Opportunity): string | null {
-  return opp.personal_fit != null ? tierFromScore(opp.personal_fit) : opp.priority;
-}
-
 export const THEME_OPTIONS = [
   'AI for health',
   'clinical AI',

@@ -79,28 +79,6 @@ interface DeepReviewResult {
   recommended_sections: string[];
 }
 
-const PRIORITY_LABELS: Record<string, string> = {
-  high: 'High Fit',
-  medium: 'Medium Fit',
-  low: 'Low Fit',
-  // legacy fallbacks
-  high_priority: 'High Fit',
-  worth_reviewing: 'Medium Fit',
-  watchlist: 'Low Fit',
-  low_fit: 'Low Fit',
-};
-
-const PRIORITY_STYLES: Record<string, string> = {
-  high: 'text-emerald-700 bg-emerald-50 border-emerald-100',
-  medium: 'text-amber-700 bg-amber-50 border-amber-100',
-  low: 'text-gray-500 bg-gray-100 border-gray-200',
-  // legacy fallbacks
-  high_priority: 'text-emerald-700 bg-emerald-50 border-emerald-100',
-  worth_reviewing: 'text-amber-700 bg-amber-50 border-amber-100',
-  watchlist: 'text-sky-700 bg-sky-50 border-sky-100',
-  low_fit: 'text-gray-500 bg-gray-100 border-gray-200',
-};
-
 function formatDate(d?: string | null) {
   if (!d) return null;
   try {
@@ -658,13 +636,6 @@ export default function OpportunityDetailPage() {
               </>
             )}
           </div>
-          <div className="shrink-0 flex flex-col items-end gap-2">
-            {opp.priority && (
-              <span className={`text-xs px-2.5 py-1 rounded border font-medium ${PRIORITY_STYLES[opp.priority] ?? 'text-gray-500 bg-gray-100 border-gray-200'}`}>
-                {PRIORITY_LABELS[opp.priority] ?? opp.priority.replace(/_/g, ' ')}
-              </span>
-            )}
-          </div>
         </div>
 
         {/* Metadata grid */}
@@ -1020,9 +991,6 @@ export default function OpportunityDetailPage() {
                       : 'bg-red-600 text-white'
                   }`}>
                     {deepReview.go_no_go}
-                  </span>
-                  <span className={`text-xs font-medium px-2.5 py-1 rounded border ${PRIORITY_STYLES[deepReview.priority] ?? 'text-gray-500 bg-gray-100 border-gray-200'}`}>
-                    {PRIORITY_LABELS[deepReview.priority] ?? deepReview.priority}
                   </span>
                 </div>
                 <p className="text-sm font-medium text-gray-800 mt-1">{deepReview.verdict}</p>

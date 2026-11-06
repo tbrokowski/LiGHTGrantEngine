@@ -1,7 +1,6 @@
 'use client';
 import Link from 'next/link';
 import dynamic from 'next/dynamic';
-import ScoreBadge from './ScoreBadge';
 import FunderLogo from './FunderLogo';
 import OpportunityTypeBadge from './OpportunityTypeBadge';
 import { formatDate, formatAward, PRIORITY_COLORS, PRIORITY_LABELS, type Opportunity } from './types';
@@ -43,7 +42,6 @@ export default function OpportunityCard({ opp, onClick, selected, variant = 'def
             </div>
           </div>
         </div>
-        <ScoreBadge priority={opp.priority} fitScore={opp.fit_score} personalFit={opp.personal_fit} />
       </div>
 
       {variant === 'focus' ? (

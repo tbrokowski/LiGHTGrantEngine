@@ -1,11 +1,10 @@
 'use client';
 
-export type ColorMode = 'community' | 'thematic' | 'fit_score' | 'deadline';
+export type ColorMode = 'community' | 'thematic' | 'deadline';
 
 const MODES: { id: ColorMode; label: string; description: string }[] = [
   { id: 'community', label: 'Community', description: 'Leiden community assignment' },
   { id: 'thematic', label: 'Theme', description: 'Primary thematic area' },
-  { id: 'fit_score', label: 'Fit Score', description: 'Low → high score gradient' },
   { id: 'deadline', label: 'Deadline', description: 'Urgency: green → amber → red' },
 ];
 

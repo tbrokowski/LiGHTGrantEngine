@@ -551,7 +551,7 @@ export default function OpportunitiesPage() {
                   ))}
                 </div>
 
-                {/* Sort control — defaults to Fit score */}
+                {/* Sort control — defaults to best match (fit-ranked, score not shown) */}
                 <div
                   className="flex items-center gap-1.5 px-2 py-1"
                   style={{ border: '1px solid var(--rule-subtle)', borderRadius: 'var(--radius-sm)' }}
@@ -563,7 +563,7 @@ export default function OpportunitiesPage() {
                     className="text-xs bg-transparent focus:outline-none"
                     style={{ color: 'var(--ink-primary)' }}
                   >
-                    <option value="relevance">Fit score</option>
+                    <option value="relevance">Best match</option>
                     <option value="deadline">Deadline</option>
                     <option value="award">Award</option>
                   </select>
@@ -660,7 +660,7 @@ export default function OpportunitiesPage() {
                       <ColHead className="hidden lg:table-cell">Deadline</ColHead>
                       <ColHead className="hidden lg:table-cell text-right">Award</ColHead>
                       <ColHead className="w-16 text-right">
-                        <span className="sr-only">Match score</span>
+                        <span className="sr-only">Actions</span>
                       </ColHead>
                     </tr>
                   </thead>

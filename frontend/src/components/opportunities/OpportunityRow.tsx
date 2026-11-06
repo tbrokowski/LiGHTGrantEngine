@@ -4,51 +4,13 @@ import Link from 'next/link';
 import FunderLogo from './FunderLogo';
 import OpportunityActions, { type OpportunityActionHandlers } from './OpportunityActions';
 import OpportunityTypeBadge from './OpportunityTypeBadge';
-import { formatDate, formatAward, effectiveFit, effectivePriority, type Opportunity } from './types';
+import { formatDate, formatAward, type Opportunity } from './types';
 
 interface OpportunityRowProps extends OpportunityActionHandlers {
   opp: Opportunity;
   index: number;
   mode?: 'queue' | 'shortlist' | 'org-shortlist' | 'awarded';
   onNavigate?: (id: string) => void;
-}
-
-// Fit-tier left-border accent — replaces the visible "Score" badge with a
-// subtle color cue so fit doesn't compete visually with the title/summary.
-// Exported so the shortlist board can reuse the same tier→color mapping.
-export const TIER_ACCENT: Record<string, string> = {
-  high: 'var(--state-success)',
-  high_priority: 'var(--state-success)',
-  medium: 'var(--state-warning)',
-  worth_reviewing: 'var(--state-warning)',
-  low: 'var(--rule-strong)',
-  low_fit: 'var(--rule-strong)',
-  watchlist: 'var(--state-info)',
-};
-
-// Compact match-score pill shown to the left of the title.
-const TIER_PILL: Record<string, { bg: string; fg: string }> = {
-  high: { bg: 'var(--state-success-bg)', fg: 'var(--state-success)' },
-  high_priority: { bg: 'var(--state-success-bg)', fg: 'var(--state-success)' },
-  medium: { bg: 'var(--state-warning-bg)', fg: 'var(--state-warning)' },
-  worth_reviewing: { bg: 'var(--state-warning-bg)', fg: 'var(--state-warning)' },
-  watchlist: { bg: 'var(--state-info-bg)', fg: 'var(--state-info)' },
-  low: { bg: 'var(--surface-sunken)', fg: 'var(--ink-muted)' },
-  low_fit: { bg: 'var(--surface-sunken)', fg: 'var(--ink-muted)' },
-};
-
-export function MatchScorePill({ priority, fitScore }: { priority: string | null; fitScore?: number | null }) {
-  if (fitScore == null) return null;
-  const pill = TIER_PILL[priority ?? ''] ?? { bg: 'var(--surface-sunken)', fg: 'var(--ink-muted)' };
-  return (
-    <span
-      className="mono-data shrink-0 inline-flex items-center justify-center rounded text-[10px] font-semibold px-1.5 h-5"
-      style={{ background: pill.bg, color: pill.fg }}
-      title="Match score"
-    >
-      {Math.round(fitScore)}
-    </span>
-  );
 }
 
 // Standalone read/unread toggle (the blue button). Kept outside the title <Link>
@@ -105,7 +67,6 @@ export default function OpportunityRow({
   const unread = !opp.is_read;
   const shortlisted = opp.is_personal_shortlisted || opp.is_on_org_shortlist;
   const prominent = unread || shortlisted;
-  const tierAccent = TIER_ACCENT[effectivePriority(opp) ?? ''] ?? 'transparent';
   // Read toggle moves to the left; everything else (view link, etc.) stays right.
   const { onToggleRead, ...restHandlers } = handlers;
 
@@ -116,7 +77,7 @@ export default function OpportunityRow({
       onMouseEnter={e => (e.currentTarget.style.background = 'var(--selection-bg)')}
       onMouseLeave={e => (e.currentTarget.style.background = 'transparent')}
     >
-      <td className="py-3 pr-5" style={{ borderLeft: `3px solid ${tierAccent}`, paddingLeft: '17px' }}>
+      <td className="py-3 pr-5 pl-5">
         <div className="flex items-start gap-2">
           <span className="mt-0.5 shrink-0">
             <ReadToggleButton opp={opp} onToggleRead={onToggleRead} />
@@ -184,7 +145,6 @@ export default function OpportunityRow({
       </td>
       <td className="px-3 py-3 text-right w-16">
         <div className="flex items-center justify-end gap-2">
-          <MatchScorePill priority={effectivePriority(opp)} fitScore={effectiveFit(opp)} />
           <OpportunityActions opp={opp} mode={mode} {...restHandlers} />
         </div>
       </td>

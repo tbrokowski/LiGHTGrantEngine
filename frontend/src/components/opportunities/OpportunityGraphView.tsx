@@ -78,17 +78,6 @@ function daysUntil(d: string | null): number | null {
   return Math.ceil((new Date(d).getTime() - Date.now()) / 86400000);
 }
 
-/** Map fit_score [0, 100] → a hex color (blue → green gradient). */
-function fitScoreColor(score: number | null): string {
-  const s = score ?? 50;
-  const t = Math.max(0, Math.min(1, s / 100));
-  // Interpolate: low → #60a5fa (blue-400), high → #10b981 (emerald-500)
-  const r = Math.round(96 + (16 - 96) * t);
-  const g = Math.round(165 + (185 - 165) * t);
-  const b = Math.round(250 + (129 - 250) * t);
-  return `rgb(${r},${g},${b})`;
-}
-
 /** Map deadline urgency → color. */
 function deadlineColor(deadline: string | null): string {
   const days = daysUntil(deadline);
@@ -162,8 +151,6 @@ export default function OpportunityGraphView({ nodes, clusters, edges }: Props) 
         if (theme && themeColorMap.has(theme)) return themeColorMap.get(theme)!;
         return '#9ca3af';
       }
-      case 'fit_score':
-        return fitScoreColor(node.fit_score);
       case 'deadline':
         return deadlineColor(node.deadline);
     }
@@ -260,12 +247,6 @@ export default function OpportunityGraphView({ nodes, clusters, edges }: Props) 
         });
         return items.slice(0, 15);
       }
-      case 'fit_score':
-        return [
-          { color: fitScoreColor(90), label: 'High fit (≥ 70)' },
-          { color: fitScoreColor(50), label: 'Medium fit (40–70)' },
-          { color: fitScoreColor(20), label: 'Low fit (< 40)' },
-        ];
       case 'deadline':
         return [
           { color: '#10b981', label: '> 60 days' },
@@ -385,21 +366,6 @@ export default function OpportunityGraphView({ nodes, clusters, edges }: Props) 
                       : ' · past deadline')}
                 </span>
               </div>
-            )}
-            {hoveredNode.priority && (
-              <span
-                className="text-xs font-medium px-1.5 py-0.5 rounded-full"
-                style={{
-                  backgroundColor: fitScoreColor(hoveredNode.fit_score) + '22',
-                  color: fitScoreColor(hoveredNode.fit_score),
-                }}
-              >
-                {hoveredNode.priority === 'high' || hoveredNode.priority === 'high_priority'
-                  ? 'High Fit'
-                  : hoveredNode.priority === 'medium' || hoveredNode.priority === 'worth_reviewing'
-                  ? 'Medium Fit'
-                  : 'Low Fit'}
-              </span>
             )}
             {hoveredNode.ai_summary && (
               <p className="text-xs text-gray-400 mt-1.5 line-clamp-2">
