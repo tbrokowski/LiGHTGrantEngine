@@ -1,7 +1,7 @@
 'use client';
 
 import { useEffect, useRef, useState } from 'react';
-import { FilePlus, FileText, FileType2, FileUp, Loader2, Plus, X } from 'lucide-react';
+import { FilePlus, FileText, FileType2, FileUp, Loader2, Plus, Sparkles, Star, X } from 'lucide-react';
 
 export interface WritingDoc {
   id: string;
@@ -9,6 +9,8 @@ export interface WritingDoc {
   content_html: string;
   /** Set for an imported .docx, which opens in the Word editor. */
   document_id?: string | null;
+  /** The grant's main document (the team's own proposal): it leads the tabs. */
+  is_main?: boolean;
 }
 
 /** The main proposal's tab id — also its comments `document_id`. */
@@ -22,12 +24,20 @@ interface DocumentTabsProps {
   onImport: (file: File) => void;
   onRename: (id: string, title: string) => void;
   onDelete: (id: string) => void;
+  /** Make a document the grant's main document, or stop it being main. */
+  onSetMain: (id: string, main: boolean) => void;
+  /** Whether the AI-drafted proposal has a tab (hidden while an uploaded main
+   *  document leads and no proposal has been started). */
+  showProposal: boolean;
+  /** Start an AI-drafted proposal: shows its tab with the start flow. */
+  onStartProposal: () => void;
   busy?: boolean;
 }
 
-/** Tabs above the editor: the proposal, then any other writing documents. */
+/** Tabs above the editor: the main document (the team's own, or the AI-drafted
+ *  proposal), then the other writing documents. */
 export default function DocumentTabs({
-  docs, activeId, onSelect, onCreate, onImport, onRename, onDelete, busy,
+  docs, activeId, onSelect, onCreate, onImport, onRename, onDelete, onSetMain, showProposal, onStartProposal, busy,
 }: DocumentTabsProps) {
   const [menuOpen, setMenuOpen] = useState(false);
   const [editingId, setEditingId] = useState<string | null>(null);
@@ -42,13 +52,15 @@ export default function DocumentTabs({
     return () => document.removeEventListener('mousedown', onDown);
   }, [menuOpen]);
 
+  const mainDoc = docs.find((d) => d.is_main) ?? null;
+
   const commitRename = () => {
     const title = draftTitle.trim();
     if (editingId && title) onRename(editingId, title);
     setEditingId(null);
   };
 
-  const tab = (id: string, title: string, removable: boolean, word = false) => {
+  const tab = (id: string, title: string, removable: boolean, word = false, main = false) => {
     const active = id === activeId;
     return (
       <div
@@ -67,6 +79,17 @@ export default function DocumentTabs({
         title={removable ? `${title}${word ? ' (Word document)' : ''} — double-click to rename` : title}
       >
         {word ? <FileType2 className="w-3.5 h-3.5 shrink-0" style={{ color: 'var(--accent-cool)' }} /> : <FileText className="w-3.5 h-3.5 shrink-0" />}
+        {removable && editingId !== id && (
+          // Filled on the main document; on the others it shows on hover.
+          <button
+            onClick={(e) => { e.stopPropagation(); onSetMain(id, !main); }}
+            title={main ? 'Main document — click to stop leading with it' : 'Make this the main document'}
+            className={main ? '' : 'opacity-0 group-hover:opacity-100 transition-opacity'}
+            style={{ color: main ? 'var(--state-warning)' : 'var(--ink-faint)' }}
+          >
+            <Star className="w-3 h-3" fill={main ? 'currentColor' : 'none'} />
+          </button>
+        )}
         {editingId === id ? (
           <input
             autoFocus
@@ -106,8 +129,9 @@ export default function DocumentTabs({
     // Only the tabs scroll: an overflow container would clip the "New document" menu.
     <div className="flex items-end" style={{ borderBottom: '1px solid var(--rule-subtle)' }}>
       <div className="flex items-end gap-0.5 min-w-0 overflow-x-auto">
-        {tab(PROPOSAL_DOC_ID, 'Proposal', false)}
-        {docs.map((d) => tab(d.id, d.title, true, !!d.document_id))}
+        {mainDoc && tab(mainDoc.id, mainDoc.title, true, !!mainDoc.document_id, true)}
+        {showProposal && tab(PROPOSAL_DOC_ID, mainDoc ? 'AI proposal' : 'Proposal', false)}
+        {docs.filter((d) => d !== mainDoc).map((d) => tab(d.id, d.title, true, !!d.document_id))}
       </div>
       <div ref={menuRef} className="relative shrink-0 ml-1 mb-1">
         <button
@@ -138,6 +162,15 @@ export default function DocumentTabs({
             >
               <FileUp className="w-3.5 h-3.5" /> Import file (.docx, .md, .txt)
             </button>
+            {!showProposal && (
+              <button
+                onClick={() => { setMenuOpen(false); onStartProposal(); }}
+                className="w-full flex items-center gap-2 px-3 py-1.5 text-left text-xs hover:bg-[var(--selection-bg)]"
+                style={{ color: 'var(--ink-secondary)' }}
+              >
+                <Sparkles className="w-3.5 h-3.5" /> AI-drafted proposal
+              </button>
+            )}
           </div>
         )}
         <input

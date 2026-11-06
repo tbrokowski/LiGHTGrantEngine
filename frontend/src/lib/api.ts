@@ -369,11 +369,13 @@ export const grants = {
   listWritingDocs: (grantId: string) => api.get(`/grants/${grantId}/writing-docs`),
   createWritingDoc: (grantId: string, data: { title?: string; content_html?: string }) =>
     api.post(`/grants/${grantId}/writing-docs`, data),
-  updateWritingDoc: (grantId: string, docId: string, data: { title?: string; content_html?: string }) =>
+  updateWritingDoc: (grantId: string, docId: string, data: { title?: string; content_html?: string; is_main?: boolean }) =>
     api.patch(`/grants/${grantId}/writing-docs/${docId}`, data),
-  importWritingDoc: (grantId: string, file: File) => {
+  /** `main` makes the file the grant's main document (the team's own proposal). */
+  importWritingDoc: (grantId: string, file: File, main = false) => {
     const form = new FormData();
     form.append('file', file);
+    if (main) form.append('main', 'true');
     return api.post(`/grants/${grantId}/writing-docs/import`, form, {
       headers: { 'Content-Type': 'multipart/form-data' },
     });

@@ -111,6 +111,9 @@ export default function GrantEditor({ grant, onGrantUpdate, onHeadingsChange }: 
     try { return localStorage.getItem(`activeWritingDoc:${grant.id}`) || PROPOSAL_DOC_ID; } catch { return PROPOSAL_DOC_ID; }
   });
   const [docsBusy, setDocsBusy] = useState(false);
+  const [docsLoaded, setDocsLoaded] = useState(false);
+  // Someone chose "AI-drafted proposal" while an uploaded main document leads.
+  const [proposalStarted, setProposalStarted] = useState(false);
   const docSaveTimers = useRef<Record<string, ReturnType<typeof setTimeout>>>({});
 
   // ── Generation ──────────────────────────────────────────────────────────────
@@ -218,7 +221,7 @@ export default function GrantEditor({ grant, onGrantUpdate, onHeadingsChange }: 
       const list = (res.data ?? []) as WritingDoc[];
       setDocs(list);
       setActiveDocId((cur) => (cur === PROPOSAL_DOC_ID || list.some((d) => d.id === cur) ? cur : PROPOSAL_DOC_ID));
-    }).catch(() => setActiveDocId(PROPOSAL_DOC_ID));
+    }).catch(() => setActiveDocId(PROPOSAL_DOC_ID)).finally(() => setDocsLoaded(true));
 
     return () => {
       isMountedRef.current = false;
@@ -309,6 +312,19 @@ export default function GrantEditor({ grant, onGrantUpdate, onHeadingsChange }: 
   }, [grant.id, onHeadingsChange]);
 
   // ── Other writing documents ─────────────────────────────────────────────────
+  // A team that writes its own proposal uploads it as the main document: it
+  // leads the tabs, and the AI-drafted proposal (with its start flow) only shows
+  // once it has text or someone starts one.
+  const mainDoc = docs.find((d) => d.is_main) ?? null;
+  const proposalHasText = !!documentHtml.replace(/<[^>]+>/g, '').trim();
+  const showProposal = !mainDoc || proposalHasText || generating || proposalStarted;
+  const aiFlowStarted = proposalHasText || generating || !!grantIdea.trim()
+    || Object.keys(callAnalysis).length > 0 || !!callRequirements.trim();
+
+  useEffect(() => {
+    if (docsLoaded && !showProposal && mainDoc && activeDocId === PROPOSAL_DOC_ID) setActiveDocId(mainDoc.id);
+  }, [docsLoaded, showProposal, mainDoc, activeDocId]);
+
   const isProposal = activeDocId === PROPOSAL_DOC_ID;
   const activeDoc = isProposal ? null : docs.find((d) => d.id === activeDocId) ?? null;
   const activeHtml = activeDoc ? activeDoc.content_html : documentHtml;
@@ -330,17 +346,50 @@ export default function GrantEditor({ grant, onGrantUpdate, onHeadingsChange }: 
     [activeDocId, saveWritingDoc],
   );
 
-  const addWritingDoc = async (create: () => Promise<{ data: WritingDoc }>) => {
+  const addWritingDoc = async (create: () => Promise<{ data: WritingDoc }>): Promise<WritingDoc | null> => {
     setDocsBusy(true);
     try {
       const { data } = await create();
-      setDocs((prev) => [...prev, data]);
+      setDocs((prev) => [...prev.map((d) => (data.is_main ? { ...d, is_main: false } : d)), data]);
       setActiveDocId(data.id);
+      return data;
     } catch (e) {
       toast.error(errorMessage(e));
+      return null;
     } finally {
       setDocsBusy(false);
     }
+  };
+
+  const setMainDoc = (id: string, main: boolean) => {
+    setDocs((prev) => prev.map((d) => ({ ...d, is_main: d.id === id ? main : main ? false : d.is_main })));
+    if (main) setActiveDocId(id);
+    grants.updateWritingDoc(grant.id, id, { is_main: main }).catch(() => {
+      toast.error('Could not change the main document.');
+      grants.listWritingDocs(grant.id).then((res) => setDocs(res.data ?? [])).catch(() => {});
+    });
+  };
+
+  /** Import a file as a tab. Before anyone has started the AI-drafted proposal,
+   *  an uploaded file is the team's own proposal: it becomes the main document. */
+  const importDocument = async (file: File, asMain?: boolean) => {
+    const main = asMain ?? (!mainDoc && !aiFlowStarted);
+    const data = await addWritingDoc(() => grants.importWritingDoc(grant.id, file, main));
+    if (!data) return;
+    if (data.is_main) {
+      toast.success(`"${data.title}" is now the main document.`, {
+        action: { label: 'Undo', onClick: () => setMainDoc(data.id, false) },
+      });
+    } else if (!mainDoc) {
+      toast.message(`Added "${data.title}".`, {
+        action: { label: 'Make it the main document', onClick: () => setMainDoc(data.id, true) },
+      });
+    }
+  };
+
+  const startProposal = () => {
+    setProposalStarted(true);
+    setActiveDocId(PROPOSAL_DOC_ID);
   };
 
   const renameWritingDoc = (id: string, title: string) => {
@@ -472,8 +521,9 @@ export default function GrantEditor({ grant, onGrantUpdate, onHeadingsChange }: 
 
   /** The proposal and the other writing documents, for the panel pickers. */
   const grantDocuments: GrantDocumentRef[] = [
-    { id: PROPOSAL_DOC_ID, title: 'Proposal' },
-    ...docs.map((d) => ({ id: d.id, title: d.title, documentId: d.document_id })),
+    ...(mainDoc ? [{ id: mainDoc.id, title: mainDoc.title, documentId: mainDoc.document_id }] : []),
+    ...(showProposal ? [{ id: PROPOSAL_DOC_ID, title: mainDoc ? 'AI proposal' : 'Proposal' }] : []),
+    ...docs.filter((d) => d !== mainDoc).map((d) => ({ id: d.id, title: d.title, documentId: d.document_id })),
   ];
   const writingHtml = (id: string) =>
     id === PROPOSAL_DOC_ID ? documentHtml : docs.find((d) => d.id === id)?.content_html ?? null;
@@ -583,7 +633,7 @@ export default function GrantEditor({ grant, onGrantUpdate, onHeadingsChange }: 
               item={panel.item}
               documents={grantDocuments}
               getWritingHtml={writingHtml}
-              onEditDocument={setActiveDocId}
+              onEditDocument={(id) => (id === PROPOSAL_DOC_ID ? startProposal() : setActiveDocId(id))}
               onReplace={(item) => replaceReference(panel.id, item)}
               onClose={() => closeReference(panel.id)}
               callAnalysis={callAnalysis}
@@ -601,7 +651,7 @@ export default function GrantEditor({ grant, onGrantUpdate, onHeadingsChange }: 
         ))}
         <div className="flex-1 min-w-[380px] overflow-y-auto grant-editor-scroll">
           <div className={`${activeDoc?.document_id ? 'max-w-[1240px]' : 'max-w-[880px]'} mx-auto px-6 py-6 space-y-6`}>
-            {isProposal && <ProposalInputs
+            {isProposal && docsLoaded && <ProposalInputs
               grantId={grant.id}
               grantIdea={grantIdea}
               onIdeaChange={handleIdeaChange}
@@ -617,8 +667,9 @@ export default function GrantEditor({ grant, onGrantUpdate, onHeadingsChange }: 
               generating={generating}
               draftSteps={draftSteps}
               draftError={draftError}
-              hasDocument={!!documentHtml.replace(/<[^>]+>/g, '').trim()}
+              hasDocument={proposalHasText}
               onGenerate={handleGenerate}
+              onUploadOwn={mainDoc ? undefined : (file) => importDocument(file, true)}
             />}
             <div>
               <DocumentTabs
@@ -626,12 +677,19 @@ export default function GrantEditor({ grant, onGrantUpdate, onHeadingsChange }: 
                 activeId={activeDocId}
                 onSelect={setActiveDocId}
                 onCreate={() => addWritingDoc(() => grants.createWritingDoc(grant.id, { title: 'Untitled document' }))}
-                onImport={(file) => addWritingDoc(() => grants.importWritingDoc(grant.id, file))}
+                onImport={(file) => importDocument(file)}
                 onRename={renameWritingDoc}
                 onDelete={deleteWritingDoc}
+                onSetMain={setMainDoc}
+                showProposal={showProposal}
+                onStartProposal={startProposal}
                 busy={docsBusy}
               />
-              {activeDoc?.document_id ? (
+              {!docsLoaded ? (
+                <div className="flex items-center justify-center gap-2 py-16 text-sm" style={{ color: 'var(--ink-muted)' }}>
+                  <Loader2 className="w-4 h-4 animate-spin" /> Loading document…
+                </div>
+              ) : activeDoc?.document_id ? (
                 <WordDocEditor
                   key={activeDocId}
                   grantId={grant.id}

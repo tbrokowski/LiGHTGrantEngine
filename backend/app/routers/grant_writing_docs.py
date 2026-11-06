@@ -1,9 +1,13 @@
 """Grant writing docs — extra documents written in the grant editor.
 
-The main proposal stays in `active_grants.editor_document`; these are the other
-pieces (cover letter, abstract, notes…) a grant needs, each its own editor tab.
-An imported .docx keeps its original file and opens in OnlyOffice (see
+The AI-drafted proposal stays in `active_grants.editor_document`; these are the
+other pieces (cover letter, abstract, notes…) a grant needs, each its own editor
+tab. An imported .docx keeps its original file and opens in OnlyOffice (see
 grant_word_docs.py); other imports become rich text.
+
+A team that writes its own proposal uploads it as the grant's *main* document
+(`is_main`): it leads the tabs, and the AI-drafted proposal only appears when
+someone starts one.
 """
 from __future__ import annotations
 
@@ -12,9 +16,9 @@ import uuid
 from datetime import datetime
 from typing import Optional
 
-from fastapi import APIRouter, Depends, File, HTTPException, UploadFile
+from fastapi import APIRouter, Depends, File, Form, HTTPException, UploadFile
 from pydantic import BaseModel, Field
-from sqlalchemy import delete, func, select
+from sqlalchemy import delete, func, select, update
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.auth.permissions import grant_access
@@ -41,6 +45,8 @@ class WritingDocOut(BaseModel):
     content_html: str
     # Set for an imported Word file, which opens in the Word editor.
     document_id: Optional[str] = None
+    # The grant's main document, shown first in place of the AI-drafted proposal.
+    is_main: bool = False
     position: int
     created_at: datetime
     updated_at: datetime
@@ -56,6 +62,7 @@ class WritingDocCreate(BaseModel):
 class WritingDocUpdate(BaseModel):
     title: Optional[str] = Field(None, min_length=1, max_length=300)
     content_html: Optional[str] = None
+    is_main: Optional[bool] = None
 
 
 async def _get_doc(grant_id: str, doc_id: str, db: AsyncSession) -> GrantWritingDoc:
@@ -70,15 +77,28 @@ async def list_writing_docs(grant_id: str, db: AsyncSession = Depends(get_db)):
     rows = await db.scalars(
         select(GrantWritingDoc)
         .where(GrantWritingDoc.grant_id == grant_id)
-        .order_by(GrantWritingDoc.position, GrantWritingDoc.created_at)
+        .order_by(GrantWritingDoc.is_main.desc(), GrantWritingDoc.position, GrantWritingDoc.created_at)
     )
     return list(rows)
+
+
+async def _clear_main(grant_id: str, db: AsyncSession) -> None:
+    """Unmark the grant's current main document (one per grant)."""
+    await db.execute(
+        update(GrantWritingDoc)
+        .where(GrantWritingDoc.grant_id == grant_id, GrantWritingDoc.is_main.is_(True))
+        .values(is_main=False)
+    )
+    await db.flush()
 
 
 async def _add_doc(
     grant_id: str, title: str, content_html: str, user: User, db: AsyncSession,
     document_id: Optional[str] = None,
+    main: bool = False,
 ) -> GrantWritingDoc:
+    if main:
+        await _clear_main(grant_id, db)
     last = await db.scalar(
         select(func.max(GrantWritingDoc.position)).where(GrantWritingDoc.grant_id == grant_id)
     )
@@ -87,6 +107,7 @@ async def _add_doc(
         title=title.strip()[:300] or "Untitled document",
         content_html=content_html,
         document_id=document_id,
+        is_main=main,
         position=(last or 0) + 1,
         created_by=user.id,
     )
@@ -110,10 +131,12 @@ async def create_writing_doc(
 async def import_writing_doc(
     grant_id: str,
     file: UploadFile = File(...),
+    main: bool = Form(False),
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ):
-    """Create a writing doc from an uploaded .docx, .html, .md or .txt file."""
+    """Create a writing doc from an uploaded .docx, .html, .md or .txt file.
+    `main` makes it the grant's main document (the team's own proposal)."""
     name = file.filename or "Imported document"
     ext = name.rsplit(".", 1)[-1].lower() if "." in name else ""
     if ext not in IMPORTABLE_EXTENSIONS:
@@ -125,12 +148,12 @@ async def import_writing_doc(
     if ext == "docx":
         validate_docx(data)
         word = await _store_word_file(grant_id, name, data, current_user, db)
-        return await _add_doc(grant_id, title, "", current_user, db, document_id=word.id)
+        return await _add_doc(grant_id, title, "", current_user, db, document_id=word.id, main=main)
     try:
         html = file_to_html(name, data)
     except Exception:  # noqa: BLE001 — malformed upload
         raise HTTPException(400, "Could not read that file")
-    return await _add_doc(grant_id, title, html, current_user, db)
+    return await _add_doc(grant_id, title, html, current_user, db, main=main)
 
 
 async def _store_word_file(grant_id: str, name: str, data: bytes, user: User, db: AsyncSession) -> Document:
@@ -169,6 +192,10 @@ async def update_writing_doc(
                 word.file_name = f"{doc.title}.docx"
     if body.content_html is not None and not doc.document_id:
         doc.content_html = body.content_html
+    if body.is_main is not None and body.is_main != doc.is_main:
+        if body.is_main:
+            await _clear_main(grant_id, db)
+        doc.is_main = body.is_main
     await db.commit()
     await db.refresh(doc)
     return doc

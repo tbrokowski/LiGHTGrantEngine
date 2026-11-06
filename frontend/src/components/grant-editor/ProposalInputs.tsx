@@ -2,7 +2,7 @@
 
 import { useCallback, useEffect, useRef, useState } from 'react';
 import {
-  Upload, Loader2, Sparkles, CheckCircle2, ChevronDown, ExternalLink, RefreshCw,
+  Upload, Loader2, Sparkles, CheckCircle2, ChevronDown, ExternalLink, RefreshCw, FileUp,
 } from 'lucide-react';
 import { grantWriting } from '@/lib/api';
 import {
@@ -49,6 +49,8 @@ interface ProposalInputsProps {
   draftError: string | null;
   hasDocument: boolean;
   onGenerate: () => void;
+  /** Use the team's own proposal instead: it becomes the grant's main document. */
+  onUploadOwn?: (file: File) => void;
 }
 
 const labelStyle = { color: 'var(--ink-muted)' };
@@ -71,6 +73,7 @@ export default function ProposalInputs({
   draftError,
   hasDocument,
   onGenerate,
+  onUploadOwn,
 }: ProposalInputsProps) {
   // Collapsed to a one-line summary once there's a document to work on.
   const [open, setOpen] = useState(!hasDocument);
@@ -83,6 +86,7 @@ export default function ProposalInputs({
   const [softTimeout, setSoftTimeout] = useState(false);
   const [analysisSteps, setAnalysisSteps] = useState<AIThinkingStepData[] | undefined>(undefined);
   const fileRef = useRef<HTMLInputElement>(null);
+  const ownFileRef = useRef<HTMLInputElement>(null);
   const resumeStarted = useRef(false);
 
   const isAnalyzing = uploading || reanalyzing || callAnalysisStatus === 'running';
@@ -315,8 +319,32 @@ export default function ProposalInputs({
             </div>
           </div>
 
-          {/* Generate */}
+          {/* Generate — or bring the team's own proposal instead */}
           <div className="px-5 py-3 flex items-center justify-end gap-3">
+            {onUploadOwn && !hasDocument && !generating && (
+              <>
+                <input
+                  ref={ownFileRef}
+                  type="file"
+                  accept=".docx,.html,.htm,.md,.txt"
+                  className="hidden"
+                  onChange={(e) => {
+                    const f = e.target.files?.[0];
+                    e.target.value = '';
+                    if (f) onUploadOwn(f);
+                  }}
+                />
+                <button
+                  type="button"
+                  onClick={() => ownFileRef.current?.click()}
+                  className="mr-auto flex items-center gap-1.5 text-xs hover:underline"
+                  style={labelStyle}
+                  title="Your file becomes the main document, edited here with comments and tracked changes"
+                >
+                  <FileUp className="w-3.5 h-3.5" /> Writing your own? Upload your proposal
+                </button>
+              </>
+            )}
             {hasDocument && !generating && (
               <span className="text-xs" style={labelStyle}>Regenerating replaces the current document.</span>
             )}

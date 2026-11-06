@@ -1,7 +1,7 @@
 import uuid
 from datetime import datetime
 
-from sqlalchemy import String, DateTime, Integer, Text, ForeignKey, func
+from sqlalchemy import Boolean, String, DateTime, Integer, Text, ForeignKey, false, func
 from sqlalchemy.orm import Mapped, mapped_column
 
 from app.database import Base
@@ -14,6 +14,10 @@ class GrantWritingDoc(Base):
 
     With `document_id` set the tab is an imported Word file: the original .docx
     lives on that Document and opens in OnlyOffice; `content_html` stays empty.
+
+    `is_main` marks the grant's main document — the team's own uploaded proposal —
+    which then leads the tabs in place of the AI-drafted proposal (at most one
+    per grant).
     """
     __tablename__ = "grant_writing_docs"
 
@@ -23,6 +27,7 @@ class GrantWritingDoc(Base):
     content_html: Mapped[str] = mapped_column(Text, nullable=False, default="")
     document_id: Mapped[str | None] = mapped_column(String, ForeignKey("documents.id", ondelete="CASCADE"), index=True)
     position: Mapped[int] = mapped_column(Integer, default=0)
+    is_main: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False, server_default=false())
     created_by: Mapped[str | None] = mapped_column(String, ForeignKey("users.id", ondelete="SET NULL"))
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
     updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now(), onupdate=func.now())
