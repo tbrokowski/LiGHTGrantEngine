@@ -2,9 +2,13 @@
 
 The main proposal stays in `active_grants.editor_document`; these are the other
 pieces (cover letter, abstract, notes…) a grant needs, each its own editor tab.
+An imported .docx keeps its original file and opens in OnlyOffice (see
+grant_word_docs.py); other imports become rich text.
 """
 from __future__ import annotations
 
+import asyncio
+import uuid
 from datetime import datetime
 from typing import Optional
 
@@ -14,11 +18,15 @@ from sqlalchemy import delete, func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.auth.permissions import grant_access
+from app.config import get_settings
 from app.database import get_db
 from app.models.comment import Comment
+from app.models.document import Document, DocumentVersion, ProcessingStatus
 from app.models.grant_writing_doc import GrantWritingDoc
 from app.models.user import User
 from app.routers.auth import get_current_user
+from app.routers.grant_word_docs import DOCX_TYPE, validate_docx
+from app.services import storage
 from app.services.doc_import import IMPORTABLE_EXTENSIONS, file_to_html
 
 router = APIRouter(dependencies=[Depends(grant_access())])
@@ -31,6 +39,8 @@ class WritingDocOut(BaseModel):
     grant_id: str
     title: str
     content_html: str
+    # Set for an imported Word file, which opens in the Word editor.
+    document_id: Optional[str] = None
     position: int
     created_at: datetime
     updated_at: datetime
@@ -65,7 +75,10 @@ async def list_writing_docs(grant_id: str, db: AsyncSession = Depends(get_db)):
     return list(rows)
 
 
-async def _add_doc(grant_id: str, title: str, content_html: str, user: User, db: AsyncSession) -> GrantWritingDoc:
+async def _add_doc(
+    grant_id: str, title: str, content_html: str, user: User, db: AsyncSession,
+    document_id: Optional[str] = None,
+) -> GrantWritingDoc:
     last = await db.scalar(
         select(func.max(GrantWritingDoc.position)).where(GrantWritingDoc.grant_id == grant_id)
     )
@@ -73,6 +86,7 @@ async def _add_doc(grant_id: str, title: str, content_html: str, user: User, db:
         grant_id=grant_id,
         title=title.strip()[:300] or "Untitled document",
         content_html=content_html,
+        document_id=document_id,
         position=(last or 0) + 1,
         created_by=user.id,
     )
@@ -107,12 +121,39 @@ async def import_writing_doc(
     data = await file.read()
     if len(data) > MAX_IMPORT_BYTES:
         raise HTTPException(413, "File is too large (max 20 MB)")
+    title = name.rsplit(".", 1)[0] if "." in name else name
+    if ext == "docx":
+        validate_docx(data)
+        word = await _store_word_file(grant_id, name, data, current_user, db)
+        return await _add_doc(grant_id, title, "", current_user, db, document_id=word.id)
     try:
         html = file_to_html(name, data)
     except Exception:  # noqa: BLE001 — malformed upload
         raise HTTPException(400, "Could not read that file")
-    title = name.rsplit(".", 1)[0] if "." in name else name
     return await _add_doc(grant_id, title, html, current_user, db)
+
+
+async def _store_word_file(grant_id: str, name: str, data: bytes, user: User, db: AsyncSession) -> Document:
+    """Keep the .docx as uploaded, as a grant Document (like a Saved file)."""
+    doc_id = str(uuid.uuid4())
+    key = storage.build_key(name, grant_id=grant_id, doc_id=doc_id)
+    await asyncio.to_thread(storage.upload_file, key, data, DOCX_TYPE)
+    doc = Document(
+        id=doc_id, file_name=name, file_format="docx", document_type="other",
+        file_url=f"{get_settings().api_url.rstrip('/')}/api/v1/documents/{doc_id}/content",
+        grant_id=grant_id, uploaded_by_id=user.id, notes=key,
+        processing_status=ProcessingStatus.NOT_PROCESSED,
+    )
+    db.add(doc)
+    db.add(DocumentVersion(document_id=doc_id, version=1, storage_key=key, size_bytes=len(data),
+                           source="upload", created_by=user.id))
+    await db.flush()
+    try:
+        from app.workers.celery_app import celery_app
+        celery_app.send_task("app.workers.embedding_tasks.parse_and_embed_document", args=[doc_id])
+    except Exception:  # noqa: BLE001 — parsing only feeds AI context
+        pass
+    return doc
 
 
 @router.patch("/{grant_id}/writing-docs/{doc_id}", response_model=WritingDocOut, dependencies=_editor)
@@ -122,7 +163,11 @@ async def update_writing_doc(
     doc = await _get_doc(grant_id, doc_id, db)
     if body.title is not None:
         doc.title = body.title.strip()
-    if body.content_html is not None:
+        if doc.document_id:  # the Word file's name follows its tab
+            word = await db.get(Document, doc.document_id)
+            if word:
+                word.file_name = f"{doc.title}.docx"
+    if body.content_html is not None and not doc.document_id:
         doc.content_html = body.content_html
     await db.commit()
     await db.refresh(doc)
@@ -137,5 +182,16 @@ async def delete_writing_doc(grant_id: str, doc_id: str, db: AsyncSession = Depe
             Comment.entity_type == "grant", Comment.entity_id == grant_id, Comment.document_id == doc_id,
         )
     )
+    word = await db.get(Document, doc.document_id) if doc.document_id else None
     await db.delete(doc)
+    keys: set[str] = set()
+    if word:
+        keys = set((await db.scalars(
+            select(DocumentVersion.storage_key).where(DocumentVersion.document_id == word.id)
+        )).all())
+        if (current := storage.resolve_storage_key(word.notes)):
+            keys.add(current)
+        await db.delete(word)
     await db.commit()
+    for key in keys:
+        await asyncio.to_thread(storage.delete_file, key)

@@ -1,12 +1,14 @@
 'use client';
 
 import { useEffect, useRef, useState } from 'react';
-import { FilePlus, FileText, FileUp, Loader2, Plus, X } from 'lucide-react';
+import { FilePlus, FileText, FileType2, FileUp, Loader2, Plus, X } from 'lucide-react';
 
 export interface WritingDoc {
   id: string;
   title: string;
   content_html: string;
+  /** Set for an imported .docx, which opens in the Word editor. */
+  document_id?: string | null;
 }
 
 /** The main proposal's tab id — also its comments `document_id`. */
@@ -46,7 +48,7 @@ export default function DocumentTabs({
     setEditingId(null);
   };
 
-  const tab = (id: string, title: string, removable: boolean) => {
+  const tab = (id: string, title: string, removable: boolean, word = false) => {
     const active = id === activeId;
     return (
       <div
@@ -62,9 +64,9 @@ export default function DocumentTabs({
         }}
         onClick={() => onSelect(id)}
         onDoubleClick={() => { if (removable) { setEditingId(id); setDraftTitle(title); } }}
-        title={removable ? `${title} — double-click to rename` : title}
+        title={removable ? `${title}${word ? ' (Word document)' : ''} — double-click to rename` : title}
       >
-        <FileText className="w-3.5 h-3.5 shrink-0" />
+        {word ? <FileType2 className="w-3.5 h-3.5 shrink-0" style={{ color: 'var(--accent-cool)' }} /> : <FileText className="w-3.5 h-3.5 shrink-0" />}
         {editingId === id ? (
           <input
             autoFocus
@@ -86,7 +88,8 @@ export default function DocumentTabs({
           <button
             onClick={(e) => {
               e.stopPropagation();
-              if (confirm(`Delete "${title}"? Its text and comments will be removed.`)) onDelete(id);
+              const what = word ? 'The Word file and its version history' : 'Its text and comments';
+              if (confirm(`Delete "${title}"? ${what} will be removed.`)) onDelete(id);
             }}
             title="Delete document"
             className="opacity-0 group-hover:opacity-100 transition-opacity"
@@ -104,7 +107,7 @@ export default function DocumentTabs({
     <div className="flex items-end" style={{ borderBottom: '1px solid var(--rule-subtle)' }}>
       <div className="flex items-end gap-0.5 min-w-0 overflow-x-auto">
         {tab(PROPOSAL_DOC_ID, 'Proposal', false)}
-        {docs.map((d) => tab(d.id, d.title, true))}
+        {docs.map((d) => tab(d.id, d.title, true, !!d.document_id))}
       </div>
       <div ref={menuRef} className="relative shrink-0 ml-1 mb-1">
         <button

@@ -1,39 +1,9 @@
 'use client';
 
-import { useEffect, useRef, useState } from 'react';
+import { useCallback, useEffect } from 'react';
 import { Download, Loader2, X } from 'lucide-react';
 import { grants } from '@/lib/api';
-
-/* eslint-disable @typescript-eslint/no-explicit-any */
-declare global {
-  interface Window {
-    DocsAPI?: { DocEditor: new (id: string, config: Record<string, unknown>) => { destroyEditor: () => void } };
-  }
-}
-
-// One script load per Document Server origin, shared across editor mounts.
-const scriptLoads = new Map<string, Promise<void>>();
-
-function loadDocsApi(serverUrl: string): Promise<void> {
-  if (window.DocsAPI) return Promise.resolve();
-  let p = scriptLoads.get(serverUrl);
-  if (!p) {
-    p = new Promise<void>((resolve, reject) => {
-      const s = document.createElement('script');
-      s.src = `${serverUrl}/web-apps/apps/api/documents/api.js`;
-      s.async = true;
-      s.onload = () => resolve();
-      s.onerror = () => {
-        scriptLoads.delete(serverUrl);
-        s.remove();
-        reject(new Error('Could not reach the spreadsheet editor server.'));
-      };
-      document.body.appendChild(s);
-    });
-    scriptLoads.set(serverUrl, p);
-  }
-  return p;
-}
+import { useOnlyOfficeEditor } from '@/lib/onlyoffice';
 
 interface Props {
   grantId: string;
@@ -50,52 +20,11 @@ interface Props {
  * through the Document Server's callback.
  */
 export default function SpreadsheetEditor({ grantId, sheetId, fileName, onDownload, downloading, onClose }: Props) {
-  const containerRef = useRef<HTMLDivElement>(null);
-  const editorRef = useRef<{ destroyEditor: () => void } | null>(null);
-  const [state, setState] = useState<'loading' | 'ready' | 'error'>('loading');
-  const [error, setError] = useState<string | null>(null);
-  const [readOnly, setReadOnly] = useState(false);
-
-  useEffect(() => {
-    let cancelled = false;
-    (async () => {
-      try {
-        const res = await grants.getSpreadsheetEditor(grantId, sheetId);
-        const { document_server_url, config, can_edit } = res.data;
-        await loadDocsApi(document_server_url);
-        if (cancelled || !window.DocsAPI || !containerRef.current) return;
-        setReadOnly(!can_edit);
-        // OnlyOffice swaps its mount node for an iframe, so React never owns it.
-        const mount = document.createElement('div');
-        mount.id = `oo-sheet-${sheetId}-${Date.now()}`;
-        containerRef.current.appendChild(mount);
-        editorRef.current = new window.DocsAPI.DocEditor(mount.id, {
-          ...config,
-          width: '100%',
-          height: '100%',
-          type: 'desktop',
-          events: {
-            onAppReady: () => !cancelled && setState('ready'),
-            onError: (e: any) => {
-              if (cancelled) return;
-              setError(e?.data?.errorDescription || 'The editor reported an error.');
-              setState('error');
-            },
-          },
-        });
-      } catch (e: any) {
-        if (cancelled) return;
-        setError(e?.response?.data?.detail || e?.message || 'Could not open the workbook.');
-        setState('error');
-      }
-    })();
-    return () => {
-      cancelled = true;
-      editorRef.current?.destroyEditor();
-      editorRef.current = null;
-      if (containerRef.current) containerRef.current.innerHTML = '';
-    };
-  }, [grantId, sheetId]);
+  const fetchConfig = useCallback(
+    () => grants.getSpreadsheetEditor(grantId, sheetId).then(r => r.data),
+    [grantId, sheetId],
+  );
+  const { containerRef, state, error, readOnly } = useOnlyOfficeEditor(fetchConfig, `sheet-${grantId}-${sheetId}`);
 
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => { if (e.key === 'Escape' && state === 'error') onClose(); };

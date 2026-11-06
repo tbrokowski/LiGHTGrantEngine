@@ -5,7 +5,7 @@ from .opportunity import Opportunity, OpportunityReview
 from .opportunity_cluster import OpportunityCluster
 from .active_grant import ActiveGrant
 from .task import Task
-from .document import Document
+from .document import Document, DocumentVersion
 from .section import ProposalSection
 from .archive import GrantArchive
 from .archive_cluster import ArchiveCluster
@@ -77,5 +77,5 @@ __all__ = [
     "EmailVerification", "OrgJoinRequest", "PasswordResetToken", "Feedback",
     "UserApiKey", "LLMUsage",
     "Conversation", "ConversationMember", "Message",
-    "GrantSpreadsheet", "GrantSpreadsheetVersion", "GrantWritingDoc",
+    "GrantSpreadsheet", "GrantSpreadsheetVersion", "GrantWritingDoc", "DocumentVersion",
 ]

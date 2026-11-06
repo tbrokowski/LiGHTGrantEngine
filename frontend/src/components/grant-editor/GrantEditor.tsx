@@ -1,5 +1,6 @@
 'use client';
 import { useState, useCallback, useRef, useEffect } from 'react';
+import { usePathname, useRouter, useSearchParams } from 'next/navigation';
 import { toast } from 'sonner';
 import { AlertCircle, AlertTriangle, Loader2, MessageCircle, Quote, Sparkles, X } from 'lucide-react';
 import { grants, grantWriting } from '@/lib/api';
@@ -27,9 +28,10 @@ import AIChatPanel from './AIChatPanel';
 import CitationsPanel from './CitationsPanel';
 import CommentsPanel from './CommentsPanel';
 import ReferencePanel, {
-  ReferencePicker, sameReference, type ReferenceItem, type ReferencePanelState,
+  ReferencePicker, sameReference, type GrantDocumentRef, type ReferenceItem, type ReferencePanelState,
 } from './ReferencePanel';
 import DocumentTabs, { PROPOSAL_DOC_ID, type WritingDoc } from './DocumentTabs';
+import WordDocEditor from '@/components/grant-workspace/WordDocEditor';
 import type { CommentBridge } from './editor-extensions';
 
 interface GrantDetail {
@@ -59,6 +61,8 @@ type SidebarTab = 'assistant' | 'citations' | 'comments';
 
 const MAX_REFERENCE_PANELS = 3;
 const DEFAULT_PANEL_WIDTH = 480;
+// The Word editor's toolbar and page need more room than a PDF or notes.
+const WORD_PANEL_WIDTH = 680;
 
 function loadReferencePanels(grantId: string): ReferencePanelState[] {
   try {
@@ -357,6 +361,10 @@ export default function GrantEditor({ grant, onGrantUpdate, onHeadingsChange }: 
 
   /** Apply an edit (AI insert, citation) to whichever document is open. */
   const editActiveDoc = (edit: (html: string) => string) => {
+    if (activeDoc?.document_id) {
+      toast.message('Word documents are edited in the Word editor — copy the text in there.');
+      return;
+    }
     if (activeDoc) saveWritingDoc(activeDoc.id, edit(activeDoc.content_html));
     else setDocumentHtml(edit);
   };
@@ -417,7 +425,8 @@ export default function GrantEditor({ grant, onGrantUpdate, onHeadingsChange }: 
   const openReference = (item: ReferenceItem) => {
     setPanels((prev) => {
       if (prev.some((p) => sameReference(p.item, item))) return prev; // already open
-      const panel = { id: `panel-${Date.now()}`, item, width: DEFAULT_PANEL_WIDTH };
+      const width = item.kind === 'word' ? WORD_PANEL_WIDTH : DEFAULT_PANEL_WIDTH;
+      const panel = { id: `panel-${Date.now()}`, item, width };
       // At the limit, the newest panel's content is replaced.
       return prev.length < MAX_REFERENCE_PANELS ? [...prev, panel] : [...prev.slice(0, -1), panel];
     });
@@ -443,6 +452,31 @@ export default function GrantEditor({ grant, onGrantUpdate, onHeadingsChange }: 
     document.addEventListener('mousemove', onMove);
     document.addEventListener('mouseup', onUp);
   };
+
+  // Saved files send a Word file here as ?beside=<document id>: open it in the
+  // split view, then drop the parameter so a reload doesn't reopen it.
+  const searchParams = useSearchParams();
+  const router = useRouter();
+  const pathname = usePathname();
+  useEffect(() => {
+    const beside = searchParams.get('beside');
+    if (!beside) return;
+    grants.getWordDoc(grant.id, beside)
+      .then((res) => openReference({ kind: 'word', docId: beside, fileName: res.data.file_name }))
+      .catch(() => toast.error('Could not open that document.'));
+    const rest = new URLSearchParams(searchParams.toString());
+    rest.delete('beside');
+    router.replace(rest.toString() ? `${pathname}?${rest}` : pathname);
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [searchParams]);
+
+  /** The proposal and the other writing documents, for the panel pickers. */
+  const grantDocuments: GrantDocumentRef[] = [
+    { id: PROPOSAL_DOC_ID, title: 'Proposal' },
+    ...docs.map((d) => ({ id: d.id, title: d.title, documentId: d.document_id })),
+  ];
+  const writingHtml = (id: string) =>
+    id === PROPOSAL_DOC_ID ? documentHtml : docs.find((d) => d.id === id)?.content_html ?? null;
 
   const openArchiveSource = (meta: ArchiveSourceMeta) => openReference({
     kind: 'archive',
@@ -502,7 +536,7 @@ export default function GrantEditor({ grant, onGrantUpdate, onHeadingsChange }: 
           )}
         </div>
         <div className="flex items-center gap-3 flex-shrink-0">
-          <ReferencePicker grantId={grant.id} onPick={openReference} variant="button" />
+          <ReferencePicker grantId={grant.id} documents={grantDocuments} onPick={openReference} variant="button" />
           {isProposal && <GoogleDocsControl
             grantId={grant.id}
             docLinked={docLinked}
@@ -547,6 +581,9 @@ export default function GrantEditor({ grant, onGrantUpdate, onHeadingsChange }: 
             <ReferencePanel
               grantId={grant.id}
               item={panel.item}
+              documents={grantDocuments}
+              getWritingHtml={writingHtml}
+              onEditDocument={setActiveDocId}
               onReplace={(item) => replaceReference(panel.id, item)}
               onClose={() => closeReference(panel.id)}
               callAnalysis={callAnalysis}
@@ -563,7 +600,7 @@ export default function GrantEditor({ grant, onGrantUpdate, onHeadingsChange }: 
           </div>
         ))}
         <div className="flex-1 min-w-[380px] overflow-y-auto grant-editor-scroll">
-          <div className="max-w-[880px] mx-auto px-6 py-6 space-y-6">
+          <div className={`${activeDoc?.document_id ? 'max-w-[1240px]' : 'max-w-[880px]'} mx-auto px-6 py-6 space-y-6`}>
             {isProposal && <ProposalInputs
               grantId={grant.id}
               grantIdea={grantIdea}
@@ -594,7 +631,15 @@ export default function GrantEditor({ grant, onGrantUpdate, onHeadingsChange }: 
                 onDelete={deleteWritingDoc}
                 busy={docsBusy}
               />
-              {isProposal || activeDoc ? (
+              {activeDoc?.document_id ? (
+                <WordDocEditor
+                  key={activeDocId}
+                  grantId={grant.id}
+                  docId={activeDoc.document_id}
+                  fileName={`${activeDoc.title}.docx`}
+                  variant="inline"
+                />
+              ) : isProposal || activeDoc ? (
                 <SingleDocEditor
                   key={activeDocId}
                   documentHtml={activeHtml}

@@ -19,15 +19,13 @@ import io
 import re
 import uuid
 import zipfile
-from datetime import datetime, timedelta, timezone
+from datetime import datetime
 from typing import Optional
-from urllib.parse import quote, urlsplit, urlunsplit
+from urllib.parse import quote
 
-import httpx
 import structlog
 from fastapi import APIRouter, Depends, File, HTTPException, Query, Request, UploadFile
 from fastapi.responses import Response
-from jose import JWTError, jwt
 from pydantic import BaseModel
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -39,7 +37,7 @@ from app.models.grant_spreadsheet import GrantSpreadsheet, GrantSpreadsheetVersi
 from app.models.user import User
 from app.models.workspace_file import WorkspaceFolder
 from app.routers.auth import get_current_user
-from app.services import storage
+from app.services import onlyoffice, storage
 from app.services.xlsx_protection import strip_protection
 
 log = structlog.get_logger()
@@ -94,15 +92,6 @@ class VersionOut(BaseModel):
 
 
 # ── Helpers ───────────────────────────────────────────────────────────────────
-
-def _onlyoffice_ready() -> bool:
-    return bool(settings.onlyoffice_url and settings.onlyoffice_jwt_secret)
-
-
-def _new_doc_key(spreadsheet_id: str) -> str:
-    # OnlyOffice keys: ≤128 chars of [0-9A-Za-z.=_-]
-    return f"{spreadsheet_id[:8]}-{uuid.uuid4().hex}"
-
 
 def _safe_name(name: str) -> str:
     return re.sub(r"[^A-Za-z0-9._ -]+", "_", name).strip() or "workbook"
@@ -167,57 +156,6 @@ async def _to_out(db: AsyncSession, sheets: list[GrantSpreadsheet]) -> list[Spre
     ]
 
 
-def _link_token(spreadsheet_id: str) -> str:
-    exp = datetime.now(timezone.utc) + timedelta(hours=24)
-    return jwt.encode(
-        {"sid": spreadsheet_id, "purpose": _LINK_PURPOSE, "exp": exp},
-        settings.secret_key, algorithm=settings.algorithm,
-    )
-
-
-def _check_link_token(token: str, spreadsheet_id: str) -> None:
-    try:
-        payload = jwt.decode(token, settings.secret_key, algorithms=[settings.algorithm])
-    except JWTError:
-        raise HTTPException(403, "Invalid link")
-    if payload.get("purpose") != _LINK_PURPOSE or payload.get("sid") != spreadsheet_id:
-        raise HTTPException(403, "Invalid link")
-
-
-def _backend_base() -> str:
-    return (settings.onlyoffice_backend_url or settings.api_url).rstrip("/")
-
-
-def _internal_docserver() -> str:
-    return (settings.onlyoffice_internal_url or settings.onlyoffice_url or "").rstrip("/")
-
-
-def _docserver_fetch_url(url: str) -> str:
-    """Point a Document Server file URL at an address this backend can reach,
-    and refuse URLs on any other host (no fetching arbitrary hosts)."""
-    allowed = {urlsplit(u).netloc for u in (settings.onlyoffice_url, settings.onlyoffice_internal_url) if u}
-    parts = urlsplit(url)
-    if parts.netloc not in allowed:
-        raise HTTPException(400, "Unexpected file host")
-    internal = urlsplit(_internal_docserver())
-    return urlunsplit((internal.scheme, internal.netloc, parts.path, parts.query, ""))
-
-
-async def _request_forcesave(doc_key: str) -> bool:
-    """Ask the Document Server to save the live session now. Returns True when
-    a save was started (a status-6 callback will follow), False when there was
-    nothing to save or no session is open."""
-    body = {"c": "forcesave", "key": doc_key}
-    body["token"] = jwt.encode(body, settings.onlyoffice_jwt_secret, algorithm="HS256")
-    try:
-        async with httpx.AsyncClient(timeout=5) as client:
-            res = await client.post(f"{_internal_docserver()}/coauthoring/CommandService.ashx", json=body)
-        return res.json().get("error") == 0
-    except Exception as exc:  # Document Server down → serve the last saved file
-        log.warning("onlyoffice_forcesave_failed", error=str(exc))
-        return False
-
-
 def _blank_xlsx() -> bytes:
     from openpyxl import Workbook
 
@@ -247,7 +185,7 @@ async def _create_workbook(
         id=str(uuid.uuid4()), grant_id=grant_id, folder_id=folder_id, file_name=file_name,
         file_ext=ext, uploaded_by=user.id, last_edited_by=user.id, storage_key="",
     )
-    sheet.doc_key = _new_doc_key(sheet.id)
+    sheet.doc_key = onlyoffice.new_doc_key(sheet.id)
     db.add(sheet)
     for version, content in enumerate(contents, start=1):
         key = _storage_key(sheet, version)
@@ -345,7 +283,7 @@ async def editor_config(
     db: AsyncSession = Depends(get_db),
 ):
     """Signed OnlyOffice config for opening this workbook in the browser."""
-    if not _onlyoffice_ready():
+    if not onlyoffice.ready():
         raise HTTPException(503, "The spreadsheet editor isn't configured (set ONLYOFFICE_URL and ONLYOFFICE_JWT_SECRET).")
     sheet = await _get_sheet(db, grant_id, spreadsheet_id)
 
@@ -355,8 +293,8 @@ async def editor_config(
     except HTTPException:
         can_edit = False
 
-    link = _link_token(sheet.id)
-    base = f"{_backend_base()}/api/v1/spreadsheets/{sheet.id}"
+    link = onlyoffice.link_token(sheet.id, _LINK_PURPOSE)
+    base = f"{onlyoffice.backend_base()}/api/v1/spreadsheets/{sheet.id}"
     config = {
         "documentType": "cell",
         "document": {
@@ -381,8 +319,8 @@ async def editor_config(
             },
         },
     }
-    config["token"] = jwt.encode(config, settings.onlyoffice_jwt_secret, algorithm="HS256")
-    return {"document_server_url": settings.onlyoffice_url.rstrip("/"), "config": config, "can_edit": can_edit}
+    config["token"] = onlyoffice.sign(config)
+    return {"document_server_url": onlyoffice.public_url(), "config": config, "can_edit": can_edit}
 
 
 @router.get("/{grant_id}/spreadsheets/{spreadsheet_id}/download")
@@ -390,7 +328,7 @@ async def download_spreadsheet(grant_id: str, spreadsheet_id: str, db: AsyncSess
     """Download the workbook in its original format. If people are editing it
     right now, their changes are saved first so the export is current."""
     sheet = await _get_sheet(db, grant_id, spreadsheet_id)
-    if _onlyoffice_ready() and await _request_forcesave(sheet.doc_key):
+    if onlyoffice.ready() and await onlyoffice.request_forcesave(sheet.doc_key):
         start_version = sheet.version
         for _ in range(20):  # wait up to ~10s for the status-6 callback
             await asyncio.sleep(0.5)
@@ -452,28 +390,12 @@ async def delete_spreadsheet(grant_id: str, spreadsheet_id: str, db: AsyncSessio
 @server_router.get("/{spreadsheet_id}/file")
 async def serve_file(spreadsheet_id: str, token: str = Query(...), db: AsyncSession = Depends(get_db)):
     """The Document Server fetches the current workbook from here."""
-    _check_link_token(token, spreadsheet_id)
+    onlyoffice.check_link_token(token, spreadsheet_id, _LINK_PURPOSE)
     sheet = await db.get(GrantSpreadsheet, spreadsheet_id)
     if not sheet:
         raise HTTPException(404, "Workbook not found")
     data = await asyncio.to_thread(storage.download_file, sheet.storage_key)
     return _attachment(data, sheet.file_name, sheet.file_ext)
-
-
-def _verify_callback(request: Request, body: dict) -> dict:
-    """Return the callback payload as signed by the Document Server."""
-    secret = settings.onlyoffice_jwt_secret
-    if not secret:
-        raise HTTPException(503, "OnlyOffice is not configured")
-    try:
-        if body.get("token"):
-            return jwt.decode(body["token"], secret, algorithms=["HS256"])
-        auth = request.headers.get("Authorization", "")
-        if auth.startswith("Bearer "):
-            return jwt.decode(auth[7:], secret, algorithms=["HS256"]).get("payload") or {}
-    except JWTError:
-        pass
-    raise HTTPException(403, "Invalid Document Server signature")
 
 
 @server_router.post("/{spreadsheet_id}/callback")
@@ -487,8 +409,8 @@ async def document_server_callback(
     it has changes (save, start a fresh session key); 6 = force save while
     editing continues (save, keep the key). Anything else needs no action.
     The Document Server expects {"error": 0} on success."""
-    _check_link_token(token, spreadsheet_id)
-    payload = _verify_callback(request, await request.json())
+    onlyoffice.check_link_token(token, spreadsheet_id, _LINK_PURPOSE)
+    payload = onlyoffice.verify_callback(request, await request.json())
     status = payload.get("status")
     if status not in (2, 6):
         return {"error": 0}
@@ -510,10 +432,7 @@ async def document_server_callback(
         return {"error": 1}
 
     try:
-        async with httpx.AsyncClient(timeout=60) as client:
-            res = await client.get(_docserver_fetch_url(payload["url"]))
-            res.raise_for_status()
-            data = res.content
+        data = await onlyoffice.fetch_saved_file(payload["url"])
         _validate_workbook(data, sheet.file_ext)
     except Exception as exc:
         log.error("onlyoffice_save_fetch_failed", spreadsheet_id=spreadsheet_id, error=str(exc))
@@ -536,7 +455,7 @@ async def document_server_callback(
     sheet.size_bytes = len(data)
     sheet.last_edited_by = editor_id or sheet.last_edited_by
     if status == 2:
-        sheet.doc_key = _new_doc_key(sheet.id)
+        sheet.doc_key = onlyoffice.new_doc_key(sheet.id)
     await db.commit()
     log.info("onlyoffice_saved", spreadsheet_id=spreadsheet_id, version=version, status=status)
     return {"error": 0}

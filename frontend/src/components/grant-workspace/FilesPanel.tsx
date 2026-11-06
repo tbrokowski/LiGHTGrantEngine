@@ -1,6 +1,7 @@
 'use client';
 
 import { useEffect, useMemo, useRef, useState, useCallback } from 'react';
+import { useRouter } from 'next/navigation';
 import {
   Paperclip, FolderOpen, Folder, Link as LinkIcon, LayoutTemplate, Users, Sparkles,
   File as FileIcon, FolderPlus, Upload, ChevronLeft, Plus, X, type LucideIcon,
@@ -94,10 +95,15 @@ function SourceIcon({ sourceType, className }: { sourceType: string; className?:
 }
 
 // ── File card (used on both the front track and inside a folder) ────────────
+const isWordFile = (f: WorkspaceFile) =>
+  (f.file_type ?? '').toLowerCase() === 'docx' || f.file_name.toLowerCase().endsWith('.docx');
+
 function FileCard({
-  file, canEdit, onDelete, dragging = false, onDragStart, onDragEnd,
+  file, canEdit, onDelete, onOpenWord, dragging = false, onDragStart, onDragEnd,
 }: {
   file: WorkspaceFile; canEdit: boolean; onDelete: () => void;
+  /** Uploaded .docx files open in the grant editor's split view instead of downloading. */
+  onOpenWord: (docId: string) => void;
   dragging?: boolean; onDragStart?: () => void; onDragEnd?: () => void;
 }) {
   const docId = file.file_url ? extractDocId(file.file_url) : null;
@@ -106,7 +112,8 @@ function FileCard({
   const handleOpen = (e: React.MouseEvent) => {
     if (!docId) return;
     e.preventDefault();
-    openPdfViewer(docId, file.file_name);
+    if (isWordFile(file)) onOpenWord(docId);
+    else openPdfViewer(docId, file.file_name);
   };
 
   return (
@@ -437,6 +444,7 @@ export default function FilesPanel({ grantId, canEdit = true }: Props) {
   const [addingFolder, setAddingFolder] = useState(false);
   const [newFolderName, setNewFolderName] = useState('');
   const [filter, setFilter] = useState<FileFilter>(null);
+  const router = useRouter();
   const [draggingId, setDraggingId] = useState<string | null>(null);
   // 'loose' = take the file out of its folder; otherwise a folder id.
   const [dropTarget, setDropTarget] = useState<string | null>(null);
@@ -508,6 +516,7 @@ export default function FilesPanel({ grantId, canEdit = true }: Props) {
       file={f}
       canEdit={canEdit}
       onDelete={() => handleDeleteFile(f.id)}
+      onOpenWord={(docId) => router.push(`/grants/${grantId}/write?beside=${encodeURIComponent(docId)}`)}
       dragging={draggingId === f.id}
       // Defer: Chrome cancels a drag if the DOM shifts (the "move out" strip) inside dragstart.
       onDragStart={() => setTimeout(() => setDraggingId(f.id), 0)}

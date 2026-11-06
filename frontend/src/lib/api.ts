@@ -380,6 +380,19 @@ export const grants = {
   },
   deleteWritingDoc: (grantId: string, docId: string) =>
     api.delete(`/grants/${grantId}/writing-docs/${docId}`),
+  // Word documents (.docx edited in OnlyOffice, with a Google Docs copy)
+  getWordDoc: (grantId: string, docId: string) =>
+    api.get(`/grants/${grantId}/word-docs/${docId}`),
+  getWordDocEditor: (grantId: string, docId: string, fitWidth = false) =>
+    api.get(`/grants/${grantId}/word-docs/${docId}/editor`, { params: fitWidth ? { fit_width: true } : {} }),
+  downloadWordDoc: (grantId: string, docId: string) =>
+    api.get(`/grants/${grantId}/word-docs/${docId}/download`, { responseType: 'blob' }),
+  openWordDocInGoogle: (grantId: string, docId: string, resolve?: 'app' | 'google') =>
+    api.post(`/grants/${grantId}/word-docs/${docId}/google`, resolve ? { resolve } : {}),
+  pullWordDocFromGoogle: (grantId: string, docId: string) =>
+    api.post(`/grants/${grantId}/word-docs/${docId}/google/pull`),
+  unlinkWordDocGoogle: (grantId: string, docId: string) =>
+    api.delete(`/grants/${grantId}/word-docs/${docId}/google`),
   // Google Docs sync
   getDocsStatus: (grantId: string) =>
     api.get(`/grants/${grantId}/docs/status`),

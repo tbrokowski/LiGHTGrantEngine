@@ -74,9 +74,42 @@ class Document(Base):
     last_parsed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
     notes: Mapped[str | None] = mapped_column(Text)
 
+    # Word files (.docx) on a grant are edited in place in the OnlyOffice
+    # Document Server (see routers/grant_word_docs.py). `oo_doc_key` names the
+    # live co-editing session and rotates whenever a new file replaces the
+    # stored one; `oo_session_users` is who has it open in the app right now.
+    edit_version: Mapped[int] = mapped_column(Integer, default=1, server_default="1")
+    oo_doc_key: Mapped[str | None] = mapped_column(String(128))
+    oo_session_users: Mapped[list | None] = mapped_column(JSON)
+    last_edited_by_id: Mapped[str | None] = mapped_column(String, ForeignKey("users.id", ondelete="SET NULL"))
+    edited_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    # A Google Docs copy, made from the user's Drive with their token. The app's
+    # file stays the source of truth: the copy is pushed to before it opens and
+    # pulled from when it was edited since `google_synced_at`.
+    google_file_id: Mapped[str | None] = mapped_column(String(200))
+    google_file_url: Mapped[str | None] = mapped_column(String(1000))
+    google_owner_id: Mapped[str | None] = mapped_column(String, ForeignKey("users.id", ondelete="SET NULL"))
+    google_synced_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    google_synced_version: Mapped[int | None] = mapped_column(Integer)
+
     # Vector embedding
     embedding: Mapped[list | None] = mapped_column(Vector(1536), nullable=True)
 
     opportunity: Mapped["Opportunity"] = relationship("Opportunity", back_populates="documents")  # type: ignore
     grant: Mapped["ActiveGrant"] = relationship("ActiveGrant", back_populates="documents")  # type: ignore
     sections: Mapped[list["ProposalSection"]] = relationship("ProposalSection", back_populates="document")  # type: ignore
+
+
+class DocumentVersion(Base):
+    """A saved snapshot of an edited Word document. Version 1 is the upload;
+    `source` says where each later one came from (editor | google)."""
+    __tablename__ = "document_versions"
+
+    id: Mapped[str] = mapped_column(String, primary_key=True, default=lambda: str(uuid.uuid4()))
+    document_id: Mapped[str] = mapped_column(String, ForeignKey("documents.id", ondelete="CASCADE"), nullable=False, index=True)
+    version: Mapped[int] = mapped_column(Integer, nullable=False)
+    storage_key: Mapped[str] = mapped_column(String(1000), nullable=False)
+    size_bytes: Mapped[int] = mapped_column(Integer, default=0)
+    source: Mapped[str] = mapped_column(String(20), default="editor")
+    created_by: Mapped[str | None] = mapped_column(String, ForeignKey("users.id", ondelete="SET NULL"))
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())

@@ -11,6 +11,9 @@ class GrantWritingDoc(Base):
     """An extra writing document in a grant's editor, beside the main proposal
     (which stays in `active_grants.editor_document`). Shown as a tab; comments
     on it use its id as `comments.document_id`.
+
+    With `document_id` set the tab is an imported Word file: the original .docx
+    lives on that Document and opens in OnlyOffice; `content_html` stays empty.
     """
     __tablename__ = "grant_writing_docs"
 
@@ -18,6 +21,7 @@ class GrantWritingDoc(Base):
     grant_id: Mapped[str] = mapped_column(String, ForeignKey("active_grants.id", ondelete="CASCADE"), nullable=False, index=True)
     title: Mapped[str] = mapped_column(String(300), nullable=False)
     content_html: Mapped[str] = mapped_column(Text, nullable=False, default="")
+    document_id: Mapped[str | None] = mapped_column(String, ForeignKey("documents.id", ondelete="CASCADE"), index=True)
     position: Mapped[int] = mapped_column(Integer, default=0)
     created_by: Mapped[str | None] = mapped_column(String, ForeignKey("users.id", ondelete="SET NULL"))
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
