@@ -2,8 +2,10 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import Link from 'next/link';
 import { Search, X, Trash2, Download, FolderPlus, Mail } from 'lucide-react';
-import { partners as partnersApi } from '@/lib/api';
+import { partners as partnersApi, funders as fundersApi } from '@/lib/api';
+import { useAuth, canUseFunders } from '@/lib/auth';
 import ConfirmModal from '@/components/ui/ConfirmModal';
+import { TIER_BY_KEY } from '@/components/funders/tiers';
 import {
   Avatar, GroupChip, GroupRef, PriorityBars, Segmented, TagPill, WeekStrip, card, btnOutline, btnQuiet, sinceLabel,
 } from '../crmUi';
@@ -21,6 +23,7 @@ export interface PersonRow {
   last_touch?: string | null;
   enrichment_status: string;
   created_at?: string;
+  funder_tier?: string | null;
 }
 
 type Sort = 'priority' | 'name' | 'last_touch' | 'created';
@@ -46,6 +49,8 @@ export default function PeoplePanel({
   const [confirmDelete, setConfirmDelete] = useState(false);
   const [prioMenu, setPrioMenu] = useState(false);
   const searchRef = useRef<HTMLInputElement>(null);
+  const { user } = useAuth();
+  const showFunders = canUseFunders(user);
 
   const load = useCallback(() => {
     const params: Record<string, unknown> = { limit: 500, sort_by: 'name', sort_dir: 'asc' };
@@ -97,6 +102,15 @@ export default function PeoplePanel({
   async function bulkPriority(p: number) {
     setPrioMenu(false);
     await partnersApi.bulkUpdate(Array.from(selected), { priority: p });
+    setSelected(new Set());
+    load();
+    onChanged();
+  }
+
+  // Selected people who aren't funders yet go onto the Funders tab, in "To sort".
+  async function bulkToFunders() {
+    const ids = (rows ?? []).filter(r => selected.has(r.id) && !r.funder_tier).map(r => r.id);
+    if (ids.length) await fundersApi.bulkTier(ids, 'unsorted');
     setSelected(new Set());
     load();
     onChanged();
@@ -174,6 +188,10 @@ export default function PeoplePanel({
             <button type="button" onClick={() => onAddToGroup(Array.from(selected))} className="h-7 px-2.5 text-xs flex items-center gap-1" style={btnQuiet}>
               <FolderPlus className="w-3 h-3" />Add to group
             </button>
+            {showFunders && (
+              <button type="button" onClick={bulkToFunders} className="h-7 px-2.5 text-xs" style={btnQuiet}
+                title="Put them on the Funders tab, in “To sort”">🐋 Add to Funders</button>
+            )}
             <button type="button" onClick={() => setPrioMenu(m => !m)} aria-expanded={prioMenu} className="h-7 px-2.5 text-xs" style={btnQuiet}>Set priority</button>
             {prioMenu && (
               <div className="absolute right-24 top-8 z-20 py-1 min-w-[140px]" style={{ ...card, boxShadow: 'var(--shadow-floating)' }}>
@@ -215,7 +233,15 @@ export default function PeoplePanel({
               <input type="checkbox" aria-label={`Select ${p.name}`} checked={selected.has(p.id)} onChange={() => toggle(p.id)} />
               <Avatar name={p.name} />
               <div className="min-w-0">
-                <Link href={`/partners/${p.id}`} className="block text-[13px] font-semibold truncate hover:underline" style={{ color: 'var(--ink-primary)' }}>{p.name}</Link>
+                <div className="flex items-center gap-1.5 min-w-0">
+                  <Link href={`/partners/${p.id}`} className="block text-[13px] font-semibold truncate hover:underline" style={{ color: 'var(--ink-primary)' }}>{p.name}</Link>
+                  {showFunders && p.funder_tier && TIER_BY_KEY[p.funder_tier] && (
+                    <Link href="/funders" title={`Funder · ${TIER_BY_KEY[p.funder_tier].one}`} aria-label={`Funder: ${TIER_BY_KEY[p.funder_tier].one}`}
+                      className="shrink-0 text-[12px] leading-none hover:scale-110 transition-transform">
+                      {TIER_BY_KEY[p.funder_tier].emoji}
+                    </Link>
+                  )}
+                </div>
                 <div className="flex gap-2 mt-0.5 min-w-0 overflow-hidden">
                   {p.groups.slice(0, 2).map(g => <GroupChip key={g.id} group={g} />)}
                   {!p.groups.length && p.title && <span className="text-[11px] truncate" style={{ color: 'var(--ink-muted)' }}>{p.title}</span>}

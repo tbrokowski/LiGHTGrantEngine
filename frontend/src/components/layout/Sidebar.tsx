@@ -3,7 +3,7 @@ import Image from 'next/image';
 import Link from 'next/link';
 import { usePathname } from 'next/navigation';
 import { useEffect, useCallback, useState } from 'react';
-import { useAuth, hasModulePermission, ModulePermissions } from '@/lib/auth';
+import { useAuth, hasModulePermission, hasOrgFeature, ModulePermissions } from '@/lib/auth';
 import { opportunities } from '@/lib/api';
 import { onOpportunitiesChanged } from '@/lib/opportunities-events';
 import { useInboxCounts } from '@/lib/inbox';
@@ -13,6 +13,8 @@ interface NavItem {
   href: string;
   label: string;
   permissionKey?: keyof ModulePermissions;
+  /** Organization switch the item needs (institutions.features). */
+  feature?: string;
 }
 
 const NAV: NavItem[] = [
@@ -25,6 +27,8 @@ const NAV: NavItem[] = [
   { href: '/finance',       label: 'Finance',  permissionKey: 'can_view_finance' },
   { href: '/archive',       label: 'Archive',  permissionKey: 'can_view_archive' },
   { href: '/partners',      label: 'Partners', permissionKey: 'can_view_partners' },
+  // LiGHT only: the partners sorted into whale tiers.
+  { href: '/funders',       label: 'Funders',  permissionKey: 'can_view_partners', feature: 'funders' },
 ];
 
 export default function Sidebar() {
@@ -48,7 +52,8 @@ export default function Sidebar() {
   useEffect(() => onOpportunitiesChanged(refreshCount), [refreshCount]);
 
   const visibleNav = NAV.filter(item =>
-    !item.permissionKey || hasModulePermission(user, item.permissionKey)
+    (!item.permissionKey || hasModulePermission(user, item.permissionKey))
+    && (!item.feature || hasOrgFeature(user, item.feature))
   );
 
   const isSettings = path.startsWith('/settings');

@@ -30,6 +30,7 @@ from app.routers import api_keys
 from app.routers import messages
 from app.routers import archive_insights
 from app.routers import partner_meetings, partner_documents, partner_organizations, partner_tasks, partner_groups
+from app.routers import funders
 
 settings = get_settings()
 logger = structlog.get_logger()
@@ -128,6 +129,7 @@ app.include_router(partner_organizations.router, prefix=f"{API}/partner-organiza
 app.include_router(partner_tasks.router,         prefix=f"{API}/partners",               tags=["partner-tasks"])
 app.include_router(partner_tasks.board_router,   prefix=f"{API}/partner-tasks",          tags=["partner-tasks"])
 app.include_router(partner_groups.router,        prefix=f"{API}/partner-groups",         tags=["partner-groups"])
+app.include_router(funders.router,               prefix=f"{API}/funders",                tags=["funders"])
 app.include_router(grant_workspace.router,         prefix=f"{API}/grants",  tags=["grant-workspace"])
 app.include_router(grant_writing.status_router,    prefix=f"{API}/grants",  tags=["grant-writing"])
 app.include_router(grant_writing.router,           prefix=f"{API}/grants",  tags=["grant-writing"])

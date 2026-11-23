@@ -809,6 +809,17 @@ export const partners = {
     api.get('/partners/export', { params: { format: 'csv', ...params }, responseType: 'blob' }),
 };
 
+// Funders tab (LiGHT): partners sorted into whale tiers.
+export const funders = {
+  list: () => api.get('/funders/'),
+  followUps: () => api.get('/funders/follow-ups'),
+  create: (data: Record<string, unknown>) => api.post('/funders/', data),
+  setTier: (partnerId: string, tier: string | null) => api.put(`/funders/${partnerId}/tier`, { tier }),
+  bulkTier: (ids: string[], tier: string | null) => api.post('/funders/bulk-tier', { ids, tier }),
+  getFeature: (institutionId: string) => api.get(`/funders/feature/${institutionId}`),
+  setFeature: (institutionId: string, enabled: boolean) => api.put(`/funders/feature/${institutionId}`, { enabled }),
+};
+
 // Partner groups — named sets of partners (sites, consortia, projects)
 export const partnerGroups = {
   list: () => api.get('/partner-groups/'),

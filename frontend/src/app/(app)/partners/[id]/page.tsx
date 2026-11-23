@@ -33,6 +33,7 @@ interface PartnerDetail {
   bio?: string | null;
   enrichment_sources?: string[];
   priority?: number;
+  funder_tier?: string | null;
   groups?: { id: string; name: string; color?: string | null }[];
   weeks?: number[];
   last_touch?: string | null;
@@ -136,6 +137,9 @@ export default function PartnerDetailPage() {
   const [duplicates, setDuplicates] = useState<PartnerDetail[]>([]);
   const [showMergeModal, setShowMergeModal] = useState(false);
   const [mergeTargetId, setMergeTargetId] = useState<string | null>(null);
+  // Opened from the Funders tab → the breadcrumb leads back there.
+  const [fromFunders, setFromFunders] = useState(false);
+  useEffect(() => { setFromFunders(new URLSearchParams(window.location.search).get('from') === 'funders'); }, []);
 
   const fetchPartner = useCallback(async () => {
     try {
@@ -240,7 +244,9 @@ export default function PartnerDetailPage() {
     <div className="px-6 py-6 max-w-6xl mx-auto">
       {/* Breadcrumb */}
       <div className="text-sm text-gray-400 mb-5 flex items-center gap-2">
-        <Link href="/partners" className="hover:text-gray-700">Partners</Link>
+        {fromFunders
+          ? <Link href="/funders" className="hover:text-gray-700">Funders</Link>
+          : <Link href="/partners" className="hover:text-gray-700">Partners</Link>}
         <span>/</span>
         <span className="text-gray-600">{partner.name}</span>
       </div>

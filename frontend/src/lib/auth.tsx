@@ -24,6 +24,9 @@ export interface AuthUser {
   institution_role: string | null;
   institution_is_personal: boolean;
   institution_name: string | null;
+  /** Per-organization switches that are on, e.g. ['funders'] (LiGHT). */
+  institution_features?: string[];
+  is_super_admin?: boolean;
   email_verified: boolean;
   onboarding_complete: boolean;
   ai_usage_cents: number;
@@ -134,4 +137,14 @@ export function canEditFinance(user: AuthUser | null): boolean {
   if (!user) return false;
   if (isInstitutionAdmin(user)) return true;
   return (ROLE_RANK[user.role] ?? -1) >= ROLE_RANK.grant_lead;
+}
+
+/** An organization-level switch, e.g. 'funders' (the Funders tab, LiGHT only). */
+export function hasOrgFeature(user: AuthUser | null, feature: string): boolean {
+  return !!user?.institution_features?.includes(feature);
+}
+
+/** The Funders tab: needs the org switch and access to Partners. */
+export function canUseFunders(user: AuthUser | null): boolean {
+  return hasOrgFeature(user, 'funders') && hasModulePermission(user, 'can_view_partners');
 }

@@ -12,6 +12,7 @@ import { JoinRequestsPanel } from '@/components/settings/JoinRequestsPanel';
 import { InvitePanel } from '@/components/settings/InvitePanel';
 import { ProfilePanel } from '@/components/settings/ProfilePanel';
 import { OrganizationsPanel } from '@/components/settings/OrganizationsPanel';
+import { OrgFeaturesPanel } from '@/components/settings/OrgFeaturesPanel';
 import { GrantFiltersPanel } from '@/components/settings/GrantFiltersPanel';
 import { FunderOrgsPanel } from '@/components/settings/FunderOrgsPanel';
 import { useAuth } from '@/lib/auth';
@@ -1062,6 +1063,7 @@ function SettingsPageInner() {
           <CollaboratorsPanel institutionId={currentUser.institution_id} />
           <JoinRequestsPanel institutionId={currentUser.institution_id} />
           <InvitePanel institutionId={currentUser.institution_id} />
+          {isPlatformAdmin && <OrgFeaturesPanel institutionId={currentUser.institution_id} />}
         </div>
       )}
 

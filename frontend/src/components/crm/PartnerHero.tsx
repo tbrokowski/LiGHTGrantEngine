@@ -2,7 +2,9 @@
 import { useEffect, useState } from 'react';
 import Link from 'next/link';
 import { RefreshCw, Linkedin, Globe, Mail, Phone, MapPin, GraduationCap, CheckSquare, ExternalLink, X } from 'lucide-react';
-import { partners as partnersApi, partnerGroups } from '@/lib/api';
+import { partners as partnersApi, partnerGroups, funders as fundersApi } from '@/lib/api';
+import { useAuth, canUseFunders } from '@/lib/auth';
+import { TierMenu, TierKey } from '@/components/funders/tiers';
 import OwnerSelect from './OwnerSelect';
 import AddToGroupModal from './AddToGroupModal';
 import GroupFormModal from './GroupFormModal';
@@ -38,6 +40,7 @@ interface PartnerHeroProps {
     last_touch?: string | null;
     last_touch_kind?: string | null;
     touches_90d?: number;
+    funder_tier?: string | null;
   };
   onEnrich: () => void;
   onScheduleMeeting: () => void;
@@ -62,6 +65,16 @@ export default function PartnerHero({
   const [priority, setPriority] = useState(partner.priority ?? 1);
   const [groups, setGroups] = useState<GroupRef[]>(partner.groups ?? []);
   const [groupModal, setGroupModal] = useState<null | 'add' | 'new'>(null);
+  const { user } = useAuth();
+  const showFunders = canUseFunders(user);
+  const [tier, setTier] = useState<string | null>(partner.funder_tier ?? null);
+  useEffect(() => { setTier(partner.funder_tier ?? null); }, [partner.funder_tier]);
+
+  async function changeTier(t: TierKey | null) {
+    const prev = tier;
+    setTier(t);
+    try { await fundersApi.setTier(partner.id, t); } catch { setTier(prev); }
+  }
   useEffect(() => { setGroups(partner.groups ?? []); }, [partner.groups]);
   useEffect(() => { setPriority(partner.priority ?? 1); }, [partner.priority]);
 
@@ -118,7 +131,13 @@ export default function PartnerHero({
                 </span>
               )}
             </div>
-            <div className="mt-2"><PrioritySwitch value={priority} onChange={changePriority} /></div>
+            <div className="mt-2 flex items-center gap-3 flex-wrap">
+              <PrioritySwitch value={priority} onChange={changePriority} />
+              {showFunders && (
+                <TierMenu value={tier} onChange={changeTier} allowRemove
+                  placeholder={<span className="text-xs px-2.5 h-[26px] inline-flex items-center rounded-full" style={{ border: '1px dashed var(--rule-strong)', color: 'var(--ink-muted)' }}>+ Add to Funders</span>} />
+              )}
+            </div>
             <div className="text-sm mt-2" style={{ color: 'var(--ink-secondary)' }}>
               {[partner.title, partner.department, partner.organization].filter(Boolean).join(' · ') || <span style={{ color: 'var(--ink-muted)' }}>No title or institution yet</span>}
             </div>

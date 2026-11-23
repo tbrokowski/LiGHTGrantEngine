@@ -26,6 +26,7 @@ from app.services.organization_setup import (
 )
 from app.services.email import send_email
 from app.services.membership import add_membership
+from app.services.funders import enabled_features
 
 router = APIRouter()
 settings = get_settings()
@@ -427,6 +428,7 @@ async def me(
         "module_permissions": effective_perms,
         "institution_is_personal": institution_is_personal,
         "institution_name": inst.name if inst else None,
+        "institution_features": enabled_features(inst),
         "has_password": bool(current_user.hashed_password),
     }
 

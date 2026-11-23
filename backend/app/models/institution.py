@@ -21,4 +21,6 @@ class Institution(Base):
     grant_profile: Mapped[dict] = mapped_column(JSON, default=dict)
     onboarding_complete: Mapped[bool] = mapped_column(Boolean, default=False, server_default="false", nullable=False)
     ai_budget_cents: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    # Per-organization switches, e.g. {"funders": true} (migration 077).
+    features: Mapped[dict] = mapped_column(JSON, default=dict, server_default="{}", nullable=False)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())

@@ -68,6 +68,8 @@ class Partner(Base):
     enrichment_sources: Mapped[list | None] = mapped_column(JSON)
     # 1 regular · 2 medium · 3 high (migration 063)
     priority: Mapped[int] = mapped_column(Integer, default=1, server_default="1", index=True)
+    # Set → this person is on the Funders tab (see app.services.funders.FUNDER_TIERS; migration 077).
+    funder_tier: Mapped[str | None] = mapped_column(String(40), index=True)
     # Unused since the reach-out suggestions were removed; kept to avoid a migration.
     snoozed_until: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
 

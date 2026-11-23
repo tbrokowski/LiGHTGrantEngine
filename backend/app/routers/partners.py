@@ -132,6 +132,7 @@ def _partner_summary(
         "owner_id": p.owner_id,
         "owner_name": owner_name,
         "priority": p.priority or 1,
+        "funder_tier": p.funder_tier,
     }
 
 
@@ -154,6 +155,7 @@ def _partner_full(p: Partner, owner_name: str | None = None) -> dict:
         "bio": p.bio,
         "enrichment_sources": p.enrichment_sources or [],
         "priority": p.priority or 1,
+        "funder_tier": p.funder_tier,
         "avatar_url": p.avatar_url,
         "department": p.department,
         "country": p.country,
@@ -1622,6 +1624,10 @@ async def merge_partners(
             # Auto-merge: keep non-null value
             if not getattr(primary, field) and getattr(other, field):
                 setattr(primary, field, getattr(other, field))
+
+    # Stay on the Funders tab if either record was; a real tier beats "unsorted".
+    if other.funder_tier and primary.funder_tier in (None, "unsorted"):
+        primary.funder_tier = other.funder_tier
 
     # Merge tags
     primary.tags = list(set((primary.tags or []) + (other.tags or [])))
