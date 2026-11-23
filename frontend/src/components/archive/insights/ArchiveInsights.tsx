@@ -10,14 +10,14 @@ import { archive, archiveInsights } from '@/lib/api';
 import { useAuth } from '@/lib/auth';
 import {
   type ConfidenceSettings, type FxSettings, type GapKey, type InsightEntry, type InsightTag,
-  DEFAULT_CONFIDENCE, DEFAULT_FX, DEFAULT_USD_RATES, dimensionOptions, downloadCsv, gapCounts, normalizeCurrency,
-  outcomeLabel, toCsv, yearOf,
+  DEFAULT_CONFIDENCE, DEFAULT_FX, DEFAULT_USD_RATES, dimensionOptions, gapCounts, normalizeCurrency,
 } from '@/lib/archiveStats';
 import BreakdownPanel, { type ChartMetric } from './BreakdownPanel';
 import CohortRail from './CohortRail';
 import DataPanel, { type EntryPatch } from './DataPanel';
 import OverviewPanel from './OverviewPanel';
 import TagsPanel from './TagsPanel';
+import ExportArchiveMenu from '../ExportArchiveMenu';
 import { GhostButton, Menu, Segmented, inputStyle } from './ui';
 
 type Tab = 'overview' | 'breakdown' | 'tags' | 'data';
@@ -253,18 +253,6 @@ export default function ArchiveInsights() {
     }
   }
 
-  function exportCohort() {
-    const tagById = new Map(tags.map(t => [t.id, t]));
-    const header = ['Title', 'Funder', 'Programme', 'Year', 'Outcome', 'Currency', 'Requested', 'Awarded',
-      'Odds at submission (%)', 'Submission date', 'Decision date', 'Lead PI', 'Tags'];
-    const body = cohort.map(e => [
-      e.title, e.funder, e.program, yearOf(e), outcomeLabel(e.outcome), normalizeCurrency(e.currency),
-      e.requested_amount, e.awarded_amount, e.win_confidence, e.submission_date, e.decision_date, e.lead_pi,
-      e.tag_ids.map(id => tagById.get(id)).filter(Boolean).map(t => (t!.group ? `${t!.group}: ${t!.name}` : t!.name)).join('; '),
-    ]);
-    downloadCsv('archive-selected-grants.csv', toCsv([header, ...body]));
-  }
-
   // ── Render ─────────────────────────────────────────────────────────────────
 
   if (loading) {
@@ -334,7 +322,7 @@ export default function ArchiveInsights() {
               onDelete={removeView}
             />
             <CurrencyMenu fx={fx} onChange={setFx} entries={entries} />
-            <GhostButton onClick={exportCohort} disabled={!cohort.length} title="Download the selected grants as CSV">Export</GhostButton>
+            <ExportArchiveMenu scopeLabel="Selected" scopeIds={cohort.map(e => e.id)} scopeIsAll={cohort.length === entries.length} totalCount={entries.length} />
           </div>
         </div>
 

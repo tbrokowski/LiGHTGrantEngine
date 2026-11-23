@@ -619,6 +619,12 @@ export const archiveInsights = {
     api.put(`/archive-insights/entries/${archiveId}/tags`, { tag_ids: tagIds }),
   setConfidence: (archiveIds: string[], confidence: number | null) =>
     api.post('/archive-insights/entries/confidence', { archive_ids: archiveIds, confidence }),
+  /** CSV of grants with notes, tags and comments; null ids = the whole archive. */
+  exportCsv: (archiveIds: string[] | null, includeComments = true) =>
+    api.post('/archive-insights/export', { archive_ids: archiveIds, include_comments: includeComments }, {
+      responseType: 'blob',
+      timeout: 120_000,
+    }),
   createView: (data: { name: string; config: Record<string, unknown> }) =>
     api.post('/archive-insights/views', data),
   updateView: (viewId: string, data: { name?: string; config?: Record<string, unknown> }) =>

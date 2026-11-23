@@ -12,7 +12,9 @@ import re
 import uuid
 from typing import Optional
 
-from fastapi import APIRouter, Depends, HTTPException
+from datetime import date
+
+from fastapi import APIRouter, Depends, HTTPException, Response
 from pydantic import BaseModel, Field
 from sqlalchemy import delete, func, select, update
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -371,6 +373,93 @@ async def set_entries_confidence(
         )
         await db.commit()
     return {"archive_ids": sorted(ids), "confidence": body.confidence}
+
+
+# ── CSV export ───────────────────────────────────────────────────────────────
+
+class ExportRequest(BaseModel):
+    # None = every grant in the organization's archive.
+    archive_ids: Optional[list[str]] = None
+    include_comments: bool = True
+
+
+async def _comments_for(db: AsyncSession, entity_type: str, ids: list[str]) -> dict[str, list]:
+    """entity id → its comments (oldest first), as ExportComment."""
+    from app.models.comment import Comment
+    from app.services.archive_export import ExportComment
+
+    if not ids:
+        return {}
+    rows = (await db.execute(
+        select(Comment, User.name)
+        .join(User, User.id == Comment.author_id, isouter=True)
+        .where(Comment.entity_type == entity_type, Comment.entity_id.in_(ids))
+        .order_by(Comment.created_at)
+    )).all()
+    out: dict[str, list] = {}
+    for c, author in rows:
+        name = "AI reviewer" if c.source == "ai_reviewer" else (author or "Unknown")
+        out.setdefault(c.entity_id, []).append(ExportComment(
+            created_at=c.created_at, author=name, text=c.text or "",
+            is_reply=bool(c.parent_id), resolved=bool(c.resolved),
+        ))
+    return out
+
+
+@router.post("/export")
+async def export_archive_csv(
+    body: ExportRequest,
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    """The organization's archived grants as CSV: figures, tags, notes,
+    lessons, debrief, reviewer feedback, and comments (on the archive entry
+    and on the proposal it came from)."""
+    from app.services.archive_export import export_row, tag_label, to_csv
+    from app.services.sharing import app_url
+
+    org_id = _require_viewer(current_user)
+    q = select(GrantArchive).where(GrantArchive.institution_id == org_id)
+    if body.archive_ids is not None:
+        if not body.archive_ids:
+            raise HTTPException(400, "Select at least one grant to export")
+        q = q.where(GrantArchive.id.in_(list(dict.fromkeys(body.archive_ids))))
+    archives = (await db.execute(
+        q.order_by(GrantArchive.call_year.desc().nulls_last(), GrantArchive.title)
+    )).scalars().all()
+
+    ids = [a.id for a in archives]
+    tags: dict[str, list[str]] = {}
+    if ids:
+        for archive_id, name, group in (await db.execute(
+            select(ArchiveTagLink.archive_id, ArchiveTag.name, ArchiveTag.group_name)
+            .join(ArchiveTag, ArchiveTag.id == ArchiveTagLink.tag_id)
+            .where(ArchiveTagLink.archive_id.in_(ids))
+            .order_by(ArchiveTag.group_name, ArchiveTag.name)
+        )).all():
+            tags.setdefault(archive_id, []).append(tag_label(name, group))
+
+    archive_comments = proposal_comments = {}
+    if body.include_comments:
+        archive_comments = await _comments_for(db, "archive", ids)
+        proposal_comments = await _comments_for(db, "grant", [a.grant_id for a in archives if a.grant_id])
+
+    base = app_url()
+    rows = [
+        export_row(
+            a, tags.get(a.id, []),
+            archive_comments.get(a.id, []),
+            proposal_comments.get(a.grant_id, []) if a.grant_id else [],
+            f"{base}/archive/{a.id}",
+        )
+        for a in archives
+    ]
+    filename = f"archive-export-{date.today().isoformat()}.csv"
+    return Response(
+        content=to_csv(rows),
+        media_type="text/csv; charset=utf-8",
+        headers={"Content-Disposition": f'attachment; filename="{filename}"'},
+    )
 
 
 # ── Saved views ──────────────────────────────────────────────────────────────

@@ -6,6 +6,7 @@ import { useAuth } from '@/lib/auth';
 import ArchiveInsights from '@/components/archive/insights/ArchiveInsights';
 import { Menu, Segmented } from '@/components/archive/insights/ui';
 import GrantFiguresEditor, { type GrantFigures } from '@/components/archive/GrantFiguresEditor';
+import ExportArchiveMenu from '@/components/archive/ExportArchiveMenu';
 import { toast } from 'sonner';
 import ArchiveGraphView, {
   type ArchiveGraphNode,
@@ -792,6 +793,15 @@ export default function ArchivePage() {
               }}
               onFocus={e => (e.currentTarget.style.borderColor = 'var(--accent-primary)')}
               onBlur={e => (e.currentTarget.style.borderColor = 'var(--rule-subtle)')}
+            />
+          )}
+          {viewMode === 'list' && entries.some(e => !e.shared_with_me) && (
+            <ExportArchiveMenu
+              scopeLabel="Shown"
+              scopeIds={filtered.filter(e => !e.shared_with_me).map(e => e.id)}
+              // Search runs on the server, so with a search the list isn't the whole archive.
+              scopeIsAll={!search && !outcomeFilter}
+              totalCount={search ? null : entries.filter(e => !e.shared_with_me).length}
             />
           )}
           <Segmented
