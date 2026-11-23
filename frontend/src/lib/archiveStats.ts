@@ -12,6 +12,12 @@
  *   win rate won / (won + lost), with a 95% Wilson interval
  *   yield    Σ awarded / Σ requested over decided grants whose amounts are
  *            known ("for every 1 requested, how much came back")
+ *   adjusted win rate
+ *            Σ w·won / Σ w over decided grants, where w is the team's own
+ *            win confidence at submission (0–100%). Long shots rated 5% barely
+ *            move it; a 0% rating drops the grant out. Unrated grants get a
+ *            settable weight (100% by default: they count fully). Its 95%
+ *            range uses the Kish effective sample size (Σw)² / Σw².
  * Money is converted to one base currency with editable rates.
  */
 
@@ -37,6 +43,8 @@ export interface InsightEntry {
   awarded_amount: number | null;
   currency: string | null;
   project_duration: string | null;
+  /** The team's odds of winning at submission, 0–100; null when unrated. */
+  win_confidence: number | null;
   created_at: string | null;
   tag_ids: string[];
 }
@@ -142,6 +150,52 @@ export function convert(amount: number | null | undefined, currency: string | nu
   return (amount * from) / to;
 }
 
+// ── Win confidence ───────────────────────────────────────────────────────────
+
+export interface ConfidenceSettings {
+  /** Weight (0–100) for decided grants nobody rated. */
+  unrated: number;
+}
+
+export const DEFAULT_CONFIDENCE: ConfidenceSettings = { unrated: 100 };
+
+/** Quick picks for rating a grant's odds, with plain-language names. */
+export const CONFIDENCE_PRESETS = [
+  { value: 5, label: 'Hail Mary' },
+  { value: 15, label: 'Long shot' },
+  { value: 30, label: 'Possible' },
+  { value: 50, label: 'Even odds' },
+  { value: 70, label: 'Strong' },
+  { value: 90, label: 'Near certain' },
+] as const;
+
+export function confidenceLabel(c: number | null | undefined): string {
+  if (c == null) return 'Unrated';
+  let best: typeof CONFIDENCE_PRESETS[number] = CONFIDENCE_PRESETS[0];
+  for (const p of CONFIDENCE_PRESETS) if (Math.abs(p.value - c) < Math.abs(best.value - c)) best = p;
+  return best.label;
+}
+
+function weightOf(e: InsightEntry, conf: ConfidenceSettings): number {
+  return Math.max(0, Math.min(100, e.win_confidence ?? conf.unrated)) / 100;
+}
+
+/** Weighted win rate and its 95% range over decided grants. */
+export function adjustedRate(entries: InsightEntry[], conf: ConfidenceSettings): { rate: number | null; ci: [number, number] | null; weight: number } {
+  let sw = 0, sw2 = 0, swWon = 0;
+  for (const e of entries) {
+    const c = outcomeClass(e.outcome);
+    if (c !== 'won' && c !== 'lost') continue;
+    const w = weightOf(e, conf);
+    sw += w; sw2 += w * w;
+    if (c === 'won') swWon += w;
+  }
+  if (sw <= 0) return { rate: null, ci: null, weight: 0 };
+  const rate = swWon / sw;
+  const nEff = (sw * sw) / sw2;
+  return { rate, ci: wilson(rate * nEff, nEff), weight: sw };
+}
+
 // ── Small statistics ─────────────────────────────────────────────────────────
 
 export function median(xs: number[]): number | null {
@@ -213,6 +267,7 @@ export const GAPS = [
   { key: 'decision_date', label: 'Decision date', hint: 'Decided grants with no decision date' },
   { key: 'submission_date', label: 'Submission date', hint: 'Submitted grants with no submission date' },
   { key: 'funder', label: 'Funder', hint: 'No funder recorded' },
+  { key: 'confidence', label: 'Confidence', hint: 'Submitted grants without your odds at submission — they count fully in the adjusted win rate' },
 ] as const;
 export type GapKey = typeof GAPS[number]['key'];
 
@@ -227,6 +282,7 @@ export function gapsOf(e: InsightEntry): GapKey[] {
   if ((cls === 'won' || cls === 'lost') && !e.decision_date) out.push('decision_date');
   if (isSubmitted(e) && !e.submission_date) out.push('submission_date');
   if (!e.funder?.trim()) out.push('funder');
+  if (isSubmitted(e) && e.win_confidence == null) out.push('confidence');
   return out;
 }
 
@@ -262,12 +318,23 @@ export interface Metrics {
   daysCount: number;
   /** Requested amount still awaiting a decision. */
   pipeline: number;
+  /** Win rate weighted by the team's confidence at submission. */
+  adjWinRate: number | null;
+  adjCi: [number, number] | null;
+  /** Decided grants with a confidence rating. */
+  rated: number;
+  /** Σ confidence over rated decided grants: the wins the team expected. */
+  expectedWins: number | null;
+  /** Wins among rated decided grants. */
+  ratedWins: number;
+  /** Mean squared error of the ratings (0 = perfect, 0.25 = coin-flip guessing). */
+  brier: number | null;
   /** Amounts left out because their currency has no rate. */
   unconverted: number;
   unconvertedCurrencies: string[];
 }
 
-export function computeMetrics(entries: InsightEntry[], fx: FxSettings): Metrics {
+export function computeMetrics(entries: InsightEntry[], fx: FxSettings, conf: ConfidenceSettings = DEFAULT_CONFIDENCE): Metrics {
   let won = 0, lost = 0, open = 0, other = 0, submitted = 0;
   const requests: number[] = [];
   const awards: number[] = [];
@@ -276,6 +343,7 @@ export function computeMetrics(entries: InsightEntry[], fx: FxSettings): Metrics
   let yieldReq = 0, yieldAw = 0, yieldN = 0;
   let unconverted = 0;
   const missingRates = new Set<string>();
+  let rated = 0, expected = 0, ratedWins = 0, brierSum = 0;
 
   const conv = (amt: number | null, cur: string | null) => {
     const v = convert(amt, cur, fx);
@@ -308,8 +376,14 @@ export function computeMetrics(entries: InsightEntry[], fx: FxSettings): Metrics
     if (cls === 'won' || cls === 'lost') {
       const d = daysToDecision(e);
       if (d != null) days.push(d);
+      if (e.win_confidence != null) {
+        const p = Math.max(0, Math.min(100, e.win_confidence)) / 100;
+        const y = cls === 'won' ? 1 : 0;
+        rated++; expected += p; ratedWins += y; brierSum += (p - y) ** 2;
+      }
     }
   }
+  const adj = adjustedRate(entries, conf);
 
   const decided = won + lost;
   return {
@@ -330,6 +404,12 @@ export function computeMetrics(entries: InsightEntry[], fx: FxSettings): Metrics
     medianDays: median(days),
     daysCount: days.length,
     pipeline,
+    adjWinRate: adj.rate,
+    adjCi: adj.ci,
+    rated,
+    expectedWins: rated ? expected : null,
+    ratedWins,
+    brier: rated ? brierSum / rated : null,
     unconverted,
     unconvertedCurrencies: [...missingRates].sort(),
   };
@@ -451,9 +531,9 @@ export interface SegmentStats extends Segment {
   p: number | null;
 }
 
-export function breakdown(entries: InsightEntry[], dim: string, tags: InsightTag[], fx: FxSettings): SegmentStats[] {
+export function breakdown(entries: InsightEntry[], dim: string, tags: InsightTag[], fx: FxSettings, conf: ConfidenceSettings = DEFAULT_CONFIDENCE): SegmentStats[] {
   return segmentsFor(entries, dim, tags, fx).map(seg => {
-    const m = computeMetrics(seg.entries, fx);
+    const m = computeMetrics(seg.entries, fx, conf);
     const ids = new Set(seg.entries.map(e => e.id));
     const rest = entries.filter(e => !ids.has(e.id));
     let restWon = 0, restLost = 0;
@@ -556,18 +636,23 @@ export interface YearRow {
   decided: number;
   winRate: number | null;
   ci: [number, number] | null;
+  adjWinRate: number | null;
+  adjCi: [number, number] | null;
 }
 
-export function yearTrend(entries: InsightEntry[], fx: FxSettings): YearRow[] {
+export function yearTrend(entries: InsightEntry[], fx: FxSettings, conf: ConfidenceSettings = DEFAULT_CONFIDENCE): YearRow[] {
+  const byYear = new Map<number, InsightEntry[]>();
   const rows = new Map<number, YearRow>();
   const zero = () => Object.fromEntries(OUTCOME_STACK.map(s => [s.key, 0])) as Record<StackKey, number>;
   for (const e of entries) {
     const y = yearOf(e);
     if (y == null) continue;
     if (!rows.has(y)) {
-      rows.set(y, { year: y, label: String(y), n: 0, counts: zero(), requestedBy: zero(), awarded: 0, requested: 0, won: 0, decided: 0, winRate: null, ci: null });
+      rows.set(y, { year: y, label: String(y), n: 0, counts: zero(), requestedBy: zero(), awarded: 0, requested: 0, won: 0, decided: 0, winRate: null, ci: null, adjWinRate: null, adjCi: null });
     }
     const r = rows.get(y)!;
+    if (!byYear.has(y)) byYear.set(y, []);
+    byYear.get(y)!.push(e);
     const sk = stackKey(e.outcome);
     const cls = outcomeClass(e.outcome);
     r.n++;
@@ -585,15 +670,58 @@ export function yearTrend(entries: InsightEntry[], fx: FxSettings): YearRow[] {
     const next = out[i + 1];
     if (next) {
       for (let y = out[i].year + 1; y < next.year; y++) {
-        filled.push({ year: y, label: String(y), n: 0, counts: zero(), requestedBy: zero(), awarded: 0, requested: 0, won: 0, decided: 0, winRate: null, ci: null });
+        filled.push({ year: y, label: String(y), n: 0, counts: zero(), requestedBy: zero(), awarded: 0, requested: 0, won: 0, decided: 0, winRate: null, ci: null, adjWinRate: null, adjCi: null });
       }
     }
   }
   for (const r of filled) {
     r.winRate = r.decided ? r.won / r.decided : null;
     r.ci = wilson(r.won, r.decided);
+    const adj = adjustedRate(byYear.get(r.year) ?? [], conf);
+    r.adjWinRate = adj.rate;
+    r.adjCi = adj.ci;
   }
   return filled;
+}
+
+// ── Calibration ──────────────────────────────────────────────────────────────
+
+export interface CalibrationBin {
+  label: string;
+  lo: number;
+  hi: number;
+  n: number;
+  won: number;
+  /** Mean stated confidence in the bin, 0–1. */
+  stated: number | null;
+  /** Share actually won, 0–1. */
+  actual: number | null;
+  ci: [number, number] | null;
+}
+
+/** Decided, rated grants grouped by the odds the team gave them. */
+export function calibration(entries: InsightEntry[]): CalibrationBin[] {
+  const edges = [0, 20, 40, 60, 80, 101];
+  const bins: CalibrationBin[] = edges.slice(0, -1).map((lo, i) => ({
+    label: `${lo}–${Math.min(edges[i + 1], 100)}%`, lo, hi: edges[i + 1], n: 0, won: 0, stated: null, actual: null, ci: null,
+  }));
+  const sums = bins.map(() => 0);
+  for (const e of entries) {
+    const c = outcomeClass(e.outcome);
+    if ((c !== 'won' && c !== 'lost') || e.win_confidence == null) continue;
+    const i = bins.findIndex(b => e.win_confidence! >= b.lo && e.win_confidence! < b.hi);
+    if (i < 0) continue;
+    bins[i].n++;
+    sums[i] += e.win_confidence;
+    if (c === 'won') bins[i].won++;
+  }
+  bins.forEach((b, i) => {
+    if (!b.n) return;
+    b.stated = sums[i] / b.n / 100;
+    b.actual = b.won / b.n;
+    b.ci = wilson(b.won, b.n);
+  });
+  return bins;
 }
 
 // ── Findings ─────────────────────────────────────────────────────────────────
@@ -607,9 +735,9 @@ export interface Finding {
 
 const pct = (x: number) => `${Math.round(x * 100)}%`;
 
-export function findings(entries: InsightEntry[], tags: InsightTag[], fx: FxSettings, fmtMoney: (v: number) => string): Finding[] {
+export function findings(entries: InsightEntry[], tags: InsightTag[], fx: FxSettings, fmtMoney: (v: number) => string, conf: ConfidenceSettings = DEFAULT_CONFIDENCE): Finding[] {
   const out: Finding[] = [];
-  const m = computeMetrics(entries, fx);
+  const m = computeMetrics(entries, fx, conf);
   if (!m.n) return out;
 
   if (m.decided) {
@@ -619,6 +747,27 @@ export function findings(entries: InsightEntry[], tags: InsightTag[], fx: FxSett
     });
   } else {
     out.push({ tone: 'neutral', text: 'None of the selected grants has a decision yet, so there is no win rate.' });
+  }
+
+  // Confidence-adjusted view.
+  if (m.adjWinRate != null && m.winRate != null && (m.rated > 0 || conf.unrated !== 100)) {
+    const longShots = entries.filter(e => {
+      const c = outcomeClass(e.outcome);
+      return (c === 'won' || c === 'lost') && e.win_confidence != null && e.win_confidence <= 20;
+    }).length;
+    const diff = Math.round((m.adjWinRate - m.winRate) * 100);
+    out.push({
+      tone: diff > 0 ? 'up' : diff < 0 ? 'down' : 'neutral',
+      text: `Weighted by your confidence, the win rate is ${pct(m.adjWinRate)} (raw ${pct(m.winRate)}${diff ? `, ${diff > 0 ? '+' : '−'}${Math.abs(diff)} points` : ''})`
+        + (longShots ? ` — ${longShots} long shot${longShots === 1 ? '' : 's'} rated 20% or less count for little.` : '.'),
+    });
+  }
+  if (m.expectedWins != null && m.rated >= 3 && m.expectedWins > 0) {
+    const ratio = m.ratedWins / m.expectedWins;
+    out.push({
+      tone: ratio >= 1.15 ? 'up' : ratio <= 0.85 ? 'down' : 'neutral',
+      text: `On the ${m.rated} decided grants you rated, your odds predicted ${m.expectedWins.toFixed(1)} wins; you won ${m.ratedWins} — ${ratio.toFixed(2)}× your own expectation.`,
+    });
   }
 
   // Tags that move the win rate, strongest evidence first.
@@ -636,7 +785,7 @@ export function findings(entries: InsightEntry[], tags: InsightTag[], fx: FxSett
   }
 
   // Funders.
-  const funders = breakdown(entries, 'funder', tags, fx).filter(s => !s.muted);
+  const funders = breakdown(entries, 'funder', tags, fx, conf).filter(s => !s.muted);
   const topAward = [...funders].filter(s => s.metrics.awarded > 0).sort((a, b) => b.metrics.awarded - a.metrics.awarded)[0];
   if (topAward && funders.length > 1) {
     out.push({
@@ -655,7 +804,7 @@ export function findings(entries: InsightEntry[], tags: InsightTag[], fx: FxSett
   }
 
   // Request size.
-  const sizes = breakdown(entries, 'size', tags, fx).filter(s => !s.muted && s.metrics.decided >= 3);
+  const sizes = breakdown(entries, 'size', tags, fx, conf).filter(s => !s.muted && s.metrics.decided >= 3);
   if (sizes.length >= 2) {
     const best = [...sizes].sort((a, b) => (b.metrics.winRate ?? 0) - (a.metrics.winRate ?? 0))[0];
     const worst = [...sizes].sort((a, b) => (a.metrics.winRate ?? 0) - (b.metrics.winRate ?? 0))[0];
@@ -669,7 +818,7 @@ export function findings(entries: InsightEntry[], tags: InsightTag[], fx: FxSett
   }
 
   // Trend: recent two years vs everything before.
-  const trend = yearTrend(entries, fx).filter(r => r.decided > 0);
+  const trend = yearTrend(entries, fx, conf).filter(r => r.decided > 0);
   if (trend.length >= 3) {
     const recent = trend.slice(-2);
     const earlier = trend.slice(0, -2);

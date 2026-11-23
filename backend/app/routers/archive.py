@@ -4,7 +4,7 @@ from typing import Optional
 from datetime import date
 
 from fastapi import APIRouter, Depends, File, Form, HTTPException, UploadFile
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 from sqlalchemy import select, or_, func, false
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -60,6 +60,7 @@ class ArchiveUpdate(BaseModel):
     reviewer_feedback: Optional[str] = None
     ai_retrieval_allowed: Optional[bool] = None
     text_reuse_allowed: Optional[bool] = None
+    win_confidence: Optional[int] = Field(None, ge=0, le=100)
 
 
 _SKIP_COLUMNS = frozenset({"embedding"})

@@ -1,4 +1,5 @@
-"""Archive Insights: org-scoped tags on archived grants, and saved views."""
+"""Archive Insights: org-scoped tags on archived grants, saved views, and each
+grant's win confidence (the team's odds at submission, 0–100)."""
 from alembic import op
 import sqlalchemy as sa
 
@@ -9,6 +10,8 @@ depends_on = None
 
 
 def upgrade() -> None:
+    op.add_column("grant_archives", sa.Column("win_confidence", sa.Integer(), nullable=True))
+
     op.create_table(
         "archive_tags",
         sa.Column("id", sa.String(), primary_key=True),
@@ -50,3 +53,4 @@ def downgrade() -> None:
     op.drop_table("archive_tag_links")
     op.drop_index("ix_archive_tags_institution_id", table_name="archive_tags")
     op.drop_table("archive_tags")
+    op.drop_column("grant_archives", "win_confidence")

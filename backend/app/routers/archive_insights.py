@@ -13,8 +13,8 @@ import uuid
 from typing import Optional
 
 from fastapi import APIRouter, Depends, HTTPException
-from pydantic import BaseModel
-from sqlalchemy import delete, func, select
+from pydantic import BaseModel, Field
+from sqlalchemy import delete, func, select, update
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.auth.permissions import can_edit_archive, has_module_permission
@@ -119,7 +119,7 @@ _ENTRY_FIELDS = (
     "id", "title", "funder", "program", "call_year", "submission_cycle", "lead_pi",
     "co_pis", "partner_institutions", "themes", "geographies", "submitted",
     "submission_date", "outcome", "decision_date", "requested_amount",
-    "awarded_amount", "currency", "project_duration", "created_at",
+    "awarded_amount", "currency", "project_duration", "win_confidence", "created_at",
 )
 
 
@@ -226,6 +226,12 @@ class TagApply(BaseModel):
 
 class EntryTags(BaseModel):
     tag_ids: list[str]
+
+
+class EntryConfidence(BaseModel):
+    archive_ids: list[str]
+    # None clears the rating.
+    confidence: Optional[int] = Field(None, ge=0, le=100)
 
 
 @router.get("/tags")
@@ -347,6 +353,24 @@ async def set_entry_tags(
         db.add(ArchiveTagLink(archive_id=archive_id, tag_id=tag_id))
     await db.commit()
     return {"archive_id": archive_id, "tag_ids": wanted}
+
+
+@router.post("/entries/confidence")
+async def set_entries_confidence(
+    body: EntryConfidence,
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    """Set (or clear) the team's win confidence on many grants at once —
+    e.g. rate every EOI at 30%."""
+    org_id = _require_editor(current_user)
+    ids = await _org_archive_ids(db, list(dict.fromkeys(body.archive_ids)), org_id)
+    if ids:
+        await db.execute(
+            update(GrantArchive).where(GrantArchive.id.in_(ids)).values(win_confidence=body.confidence)
+        )
+        await db.commit()
+    return {"archive_ids": sorted(ids), "confidence": body.confidence}
 
 
 # ── Saved views ──────────────────────────────────────────────────────────────

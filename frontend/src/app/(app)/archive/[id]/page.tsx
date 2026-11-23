@@ -8,6 +8,9 @@ import { useAuth } from '@/lib/auth';
 import { usePdfViewer } from '@/contexts/PdfViewerContext';
 import EditArchiveModal from '@/components/archive/EditArchiveModal';
 import ShareArchiveModal from '@/components/archive/ShareArchiveModal';
+import GrantFiguresEditor, { type GrantFigures } from '@/components/archive/GrantFiguresEditor';
+import { Menu } from '@/components/archive/insights/ui';
+import { confidenceLabel } from '@/lib/archiveStats';
 
 interface ProposalSection {
   id: string;
@@ -53,6 +56,7 @@ interface ArchiveDetail {
   requested_amount?: number;
   awarded_amount?: number;
   currency?: string;
+  win_confidence?: number | null;
   themes?: string[];
   geographies?: string[];
   abstract?: string;
@@ -334,19 +338,68 @@ export default function ArchiveDetailPage() {
               <div className="text-sm font-medium text-gray-800">{formatDate(entry.submission_date)}</div>
             </div>
           )}
-          {entry.requested_amount && (
+          {!canEdit && entry.requested_amount != null && (
             <div className="p-3 bg-gray-50 rounded-lg">
               <div className="text-xs text-gray-400 mb-0.5">Requested</div>
               <div className="text-sm font-medium text-gray-800">{entry.currency} {entry.requested_amount.toLocaleString()}</div>
             </div>
           )}
-          {entry.awarded_amount && (
+          {!canEdit && entry.awarded_amount != null && (
             <div className="p-3 bg-gray-50 rounded-lg">
               <div className="text-xs text-gray-400 mb-0.5">Awarded</div>
               <div className="text-sm font-medium text-gray-800">{entry.currency} {entry.awarded_amount.toLocaleString()}</div>
             </div>
           )}
         </div>
+
+        {canEdit && (
+          <Menu block align="right" width={300} button={(open, toggle) => {
+            const missingAward = (entry.outcome === 'awarded' || entry.outcome === 'partially_funded') && entry.awarded_amount == null;
+            const tile = (label: string, value: string | null, warn = false) => (
+              <button
+                type="button"
+                onClick={toggle}
+                className="p-3 rounded-lg text-left transition-colors"
+                style={{
+                  background: open ? 'var(--selection-bg)' : 'var(--surface-sunken)',
+                  border: warn ? '1px dashed var(--state-warning)' : '1px solid transparent',
+                }}
+                title="Click to edit amounts and odds"
+              >
+                <div className="text-xs text-gray-400 mb-0.5">{label}</div>
+                {value != null ? (
+                  <div className="text-sm font-medium text-gray-800 mono-data tabular-nums">{value}</div>
+                ) : (
+                  <div className="text-xs font-medium" style={{ color: warn ? 'var(--state-warning)' : 'var(--ink-muted)' }}>+ Add</div>
+                )}
+              </button>
+            );
+            return (
+              <div className="grid grid-cols-3 gap-3 mt-3">
+                {tile('Requested', entry.requested_amount != null ? `${entry.currency ?? ''} ${entry.requested_amount.toLocaleString()}`.trim() : null,
+                  entry.requested_amount == null && entry.outcome !== 'not_submitted')}
+                {tile('Awarded', entry.awarded_amount != null ? `${entry.currency ?? ''} ${entry.awarded_amount.toLocaleString()}`.trim() : null, missingAward)}
+                {tile('Our odds at submission', entry.win_confidence != null ? `${entry.win_confidence}% · ${confidenceLabel(entry.win_confidence)}` : null)}
+              </div>
+            );
+          }}>
+            {close => (
+              <GrantFiguresEditor
+                initial={{
+                  requested_amount: entry.requested_amount ?? null,
+                  awarded_amount: entry.awarded_amount ?? null,
+                  currency: entry.currency ?? null,
+                  win_confidence: entry.win_confidence ?? null,
+                }}
+                onClose={close}
+                onSave={async (patch: Partial<GrantFigures>) => {
+                  await archive.update(entry.id, patch as Record<string, unknown>);
+                  setEntry(prev => (prev ? { ...prev, ...patch } as ArchiveDetail : prev));
+                }}
+              />
+            )}
+          </Menu>
+        )}
 
         {entry.call_url && (
           <div className="mt-4 pt-4 border-t border-gray-100">

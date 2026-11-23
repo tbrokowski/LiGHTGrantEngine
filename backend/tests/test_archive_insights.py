@@ -89,3 +89,23 @@ def test_entry_dict_serializes_dates_lists_and_tags():
     assert d["themes"] == [] and d["co_pis"] == ["B"]
     assert d["tag_ids"] == ["t1", "t2"]
     assert "embedding" not in d and "internal_debrief" not in d
+
+
+def test_win_confidence_is_a_percentage():
+    from pydantic import ValidationError
+    from app.routers.archive import ArchiveUpdate
+    from app.routers.archive_insights import EntryConfidence
+
+    assert EntryConfidence(archive_ids=["a"], confidence=30).confidence == 30
+    assert EntryConfidence(archive_ids=["a"]).confidence is None  # clears
+    assert ArchiveUpdate(win_confidence=0).win_confidence == 0
+    for bad in (-1, 101):
+        with pytest.raises(ValidationError):
+            EntryConfidence(archive_ids=["a"], confidence=bad)
+        with pytest.raises(ValidationError):
+            ArchiveUpdate(win_confidence=bad)
+
+
+def test_entry_dict_carries_win_confidence():
+    a = GrantArchive(id="a1", title="T", win_confidence=25)
+    assert entry_dict(a, [])["win_confidence"] == 25

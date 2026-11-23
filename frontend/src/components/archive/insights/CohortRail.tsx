@@ -6,7 +6,7 @@
 import { useMemo, useState } from 'react';
 import {
   type InsightEntry, type InsightTag,
-  outcomeClass, outcomeLabel, yearOf, stackKey, OUTCOME_STACK,
+  outcomeClass, outcomeLabel, yearOf, stackKey, OUTCOME_STACK, CONFIDENCE_PRESETS,
 } from '@/lib/archiveStats';
 import TagPicker from './TagPicker';
 import { Menu, TagDot, inputStyle } from './ui';
@@ -19,7 +19,7 @@ const CLASS_FILTERS = [
 ] as const;
 
 export default function CohortRail({
-  entries, tags, selected, onSelect, canEdit, onToggleTag, onCreateTag,
+  entries, tags, selected, onSelect, canEdit, onToggleTag, onCreateTag, onSetConfidence,
 }: {
   entries: InsightEntry[];
   tags: InsightTag[];
@@ -28,6 +28,7 @@ export default function CohortRail({
   canEdit: boolean;
   onToggleTag: (tag: InsightTag, add: boolean, ids: string[]) => Promise<void>;
   onCreateTag: (name: string, group: string, ids: string[]) => Promise<void>;
+  onSetConfidence: (ids: string[], value: number | null) => Promise<void>;
 }) {
   const [search, setSearch] = useState('');
   const [classes, setClasses] = useState<Set<string>>(new Set());
@@ -259,6 +260,9 @@ export default function CohortRail({
                     <span className="inline-block w-1.5 h-1.5 rounded-full shrink-0" style={{ background: sk.color }} aria-hidden />
                     <span className="shrink-0">{outcomeLabel(e.outcome)}</span>
                     {y && <span className="mono-data shrink-0">· {y}</span>}
+                    {e.win_confidence != null && (
+                      <span className="mono-data shrink-0" title="Our odds at submission">· {e.win_confidence}%</span>
+                    )}
                     {e.funder && <span className="truncate">· {e.funder}</span>}
                   </span>
                   {e.tag_ids.length > 0 && (
@@ -279,11 +283,12 @@ export default function CohortRail({
 
       {/* Bulk tagging */}
       {canEdit && (
-        <div className="shrink-0 px-4 py-2.5" style={{ borderTop: '1px solid var(--rule-subtle)', background: 'var(--surface-sunken)' }}>
+        <div className="shrink-0 px-4 py-2.5 grid grid-cols-[1fr_auto] gap-2" style={{ borderTop: '1px solid var(--rule-subtle)', background: 'var(--surface-sunken)' }}>
           <Menu
             block
-            align="stretch"
+            align="left"
             placement="top"
+            width={268}
             button={(_open, toggle) => (
               <button
                 type="button"
@@ -295,7 +300,7 @@ export default function CohortRail({
                 <svg className="w-3.5 h-3.5" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2} aria-hidden>
                   <path strokeLinecap="round" strokeLinejoin="round" d="M7 7h.01M3 11.5V4a1 1 0 011-1h7.5a1 1 0 01.7.3l8.5 8.5a1 1 0 010 1.4l-7.5 7.5a1 1 0 01-1.4 0L3.3 12.2a1 1 0 01-.3-.7z" />
                 </svg>
-                Tag {selected.size} selected
+                Tag {selected.size}
               </button>
             )}
           >
@@ -308,8 +313,80 @@ export default function CohortRail({
               onCreate={(name, group) => onCreateTag(name, group, selectedEntries.map(e => e.id))}
             />
           </Menu>
+          <Menu
+            align="right"
+            placement="top"
+            width={248}
+            button={(open, toggle) => (
+              <button
+                type="button"
+                disabled={!selected.size}
+                onClick={toggle}
+                title="Set your odds at submission on the selected grants"
+                className="flex items-center justify-center gap-1.5 px-3 py-1.5 text-xs font-medium disabled:opacity-40"
+                style={{ border: '1px solid var(--rule-strong)', color: 'var(--ink-primary)', borderRadius: 'var(--radius-sm)', background: open ? 'var(--selection-bg)' : 'var(--surface-raised)' }}
+              >
+                <span className="mono-data">%</span> Set odds
+              </button>
+            )}
+          >
+            {close => (
+              <OddsPicker
+                count={selectedEntries.length}
+                current={selectedEntries.map(e => e.win_confidence)}
+                onPick={async v => { await onSetConfidence(selectedEntries.map(e => e.id), v); close(); }}
+              />
+            )}
+          </Menu>
         </div>
       )}
     </aside>
+  );
+}
+
+/** Rate many grants' odds at once: presets, a custom value, or clear. */
+function OddsPicker({ count, current, onPick }: {
+  count: number;
+  current: (number | null)[];
+  onPick: (value: number | null) => Promise<void>;
+}) {
+  const [custom, setCustom] = useState('');
+  const [busy, setBusy] = useState(false);
+  const same = current.length && current.every(c => c === current[0]) ? current[0] : undefined;
+  async function pick(v: number | null) {
+    setBusy(true);
+    try { await onPick(v); } finally { setBusy(false); }
+  }
+  const customValue = Number(custom.replace(/%$/, ''));
+  const customOk = custom.trim() !== '' && Number.isInteger(customValue) && customValue >= 0 && customValue <= 100;
+  return (
+    <div className="py-1">
+      <div className="ledger-label px-3 pt-1.5 pb-1">Odds at submission · {count} grant{count === 1 ? '' : 's'}</div>
+      {CONFIDENCE_PRESETS.map(p => (
+        <button key={p.value} type="button" disabled={busy} onClick={() => pick(p.value)}
+          className="w-full flex items-center justify-between px-3 py-1.5 text-xs disabled:opacity-50"
+          style={{ color: 'var(--ink-secondary)', background: same === p.value ? 'var(--selection-bg)' : undefined }}
+          onMouseEnter={e => (e.currentTarget.style.background = 'var(--selection-bg)')}
+          onMouseLeave={e => (e.currentTarget.style.background = same === p.value ? 'var(--selection-bg)' : 'transparent')}>
+          <span>{p.label}</span>
+          <span className="mono-data" style={{ color: 'var(--ink-muted)' }}>{p.value}%</span>
+        </button>
+      ))}
+      <div className="px-3 pt-2 pb-1.5 mt-1 flex items-center gap-1.5" style={{ borderTop: '1px solid var(--rule-subtle)' }}>
+        <input value={custom} onChange={e => setCustom(e.target.value)} inputMode="numeric" placeholder="Custom"
+          onKeyDown={e => { if (e.key === 'Enter' && customOk) pick(customValue); }}
+          className="w-20 px-2 py-1 text-xs mono-data text-right" style={inputStyle} aria-label="Custom odds in percent" />
+        <span className="text-xs" style={{ color: 'var(--ink-muted)' }}>%</span>
+        <button type="button" disabled={!customOk || busy} onClick={() => pick(customValue)}
+          className="ml-auto px-2 py-1 text-xs font-medium disabled:opacity-40"
+          style={{ background: 'var(--accent-primary)', color: 'var(--ink-inverse)', borderRadius: 'var(--radius-sm)' }}>
+          Set
+        </button>
+      </div>
+      <button type="button" disabled={busy} onClick={() => pick(null)}
+        className="w-full text-left px-3 py-1.5 text-[11px] hover:underline disabled:opacity-50" style={{ color: 'var(--ink-muted)' }}>
+        Clear odds (count fully as unrated)
+      </button>
+    </div>
   );
 }

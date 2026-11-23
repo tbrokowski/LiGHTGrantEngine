@@ -2,31 +2,33 @@
 import { useMemo, useState } from 'react';
 import { Bar, BarChart, CartesianGrid, ErrorBar, ResponsiveContainer, Tooltip, XAxis, YAxis } from 'recharts';
 import {
-  type FxSettings, type InsightEntry, type InsightTag, type SegmentStats,
+  type ConfidenceSettings, type FxSettings, type InsightEntry, type InsightTag, type SegmentStats,
   breakdown, dimensionOptions, downloadCsv, formatMoney, formatP, formatPct, toCsv,
 } from '@/lib/archiveStats';
 import { CHART, ChartTooltipBox, EmptyNote, GhostButton, SectionHeader, Segmented, TagDot, inputStyle } from './ui';
 
-export type ChartMetric = 'winRate' | 'count' | 'awarded' | 'requested' | 'yield';
+export type ChartMetric = 'winRate' | 'adjWinRate' | 'count' | 'awarded' | 'requested' | 'yield';
 
 const METRICS: { value: ChartMetric; label: string }[] = [
   { value: 'winRate', label: 'Win rate' },
+  { value: 'adjWinRate', label: 'Adj. win rate' },
   { value: 'count', label: 'Proposals' },
   { value: 'awarded', label: 'Awarded' },
   { value: 'requested', label: 'Requested' },
   { value: 'yield', label: 'Yield' },
 ];
 
-type SortKey = 'label' | 'n' | 'decided' | 'won' | 'winRate' | 'delta' | 'requested' | 'awarded' | 'yield' | 'medianAward' | 'medianDays';
+type SortKey = 'label' | 'n' | 'decided' | 'won' | 'winRate' | 'adjWinRate' | 'delta' | 'requested' | 'awarded' | 'yield' | 'medianAward' | 'medianDays';
 
 const CHART_LIMIT = 15;
 
 export default function BreakdownPanel({
-  entries, tags, fx, dimension, onDimension, metric, onMetric, onSelectOnly,
+  entries, tags, fx, conf, dimension, onDimension, metric, onMetric, onSelectOnly,
 }: {
   entries: InsightEntry[];
   tags: InsightTag[];
   fx: FxSettings;
+  conf: ConfidenceSettings;
   dimension: string;
   onDimension: (d: string) => void;
   metric: ChartMetric;
@@ -39,7 +41,7 @@ export default function BreakdownPanel({
 
   const options = useMemo(() => dimensionOptions(tags), [tags]);
   const dimLabel = options.find(o => o.key === dimension)?.label ?? dimension;
-  const all = useMemo(() => breakdown(entries, dimension, tags, fx), [entries, dimension, tags, fx]);
+  const all = useMemo(() => breakdown(entries, dimension, tags, fx, conf), [entries, dimension, tags, fx, conf]);
   const rows = useMemo(() => all.filter(s => s.metrics.decided >= minDecided), [all, minDecided]);
 
   const sorted = useMemo(() => {
@@ -51,6 +53,7 @@ export default function BreakdownPanel({
         case 'decided': return s.metrics.decided;
         case 'won': return s.metrics.won;
         case 'winRate': return s.metrics.winRate ?? -1;
+        case 'adjWinRate': return s.metrics.adjWinRate ?? -1;
         case 'delta': return s.delta ?? -9;
         case 'requested': return s.metrics.requested;
         case 'awarded': return s.metrics.awarded;
@@ -68,6 +71,7 @@ export default function BreakdownPanel({
   const metricValue = (s: SegmentStats): number | null => {
     switch (metric) {
       case 'winRate': return s.metrics.winRate != null ? s.metrics.winRate * 100 : null;
+      case 'adjWinRate': return s.metrics.adjWinRate != null ? s.metrics.adjWinRate * 100 : null;
       case 'count': return s.metrics.n;
       case 'awarded': return s.metrics.awarded;
       case 'requested': return s.metrics.requested;
@@ -77,31 +81,34 @@ export default function BreakdownPanel({
 
   const chartRows = sorted.slice(0, CHART_LIMIT).map(s => {
     const v = metricValue(s);
-    const ci = s.metrics.ci;
+    const ci = metric === 'adjWinRate' ? s.metrics.adjCi : s.metrics.ci;
+    const isRate = metric === 'winRate' || metric === 'adjWinRate';
     return {
       key: s.key,
       label: s.label.length > 28 ? `${s.label.slice(0, 27)}…` : s.label,
       full: s.label,
       value: v,
       // null (not [0, 0]) so recharts skips the whisker instead of drawing duplicate zero-length lines.
-      err: metric === 'winRate' && v != null && ci ? [v - ci[0] * 100, ci[1] * 100 - v] : null,
+      err: isRate && v != null && ci ? [v - ci[0] * 100, ci[1] * 100 - v] : null,
       s,
     };
   });
   const fmtValue = (v: number | null) => {
     if (v == null) return '—';
-    if (metric === 'winRate' || metric === 'yield') return `${Math.round(v)}%`;
+    if (metric === 'winRate' || metric === 'adjWinRate' || metric === 'yield') return `${Math.round(v)}%`;
     if (metric === 'count') return String(v);
     return money(v);
   };
 
   function exportCsv() {
     const header = ['Segment', 'Proposals', 'Decided', 'Won', 'Win rate', 'Win rate low (95%)', 'Win rate high (95%)',
+      'Confidence-adjusted win rate', 'Rated decided',
       'Difference vs rest (pts)', 'p-value', `Requested (${fx.base})`, `Awarded (${fx.base})`, 'Yield', `Median award (${fx.base})`, 'Median days to decision'];
     const body = sorted.map(s => [
       s.label, s.metrics.n, s.metrics.decided, s.metrics.won,
       s.metrics.winRate != null ? (s.metrics.winRate * 100).toFixed(1) : '',
       s.metrics.ci ? (s.metrics.ci[0] * 100).toFixed(1) : '', s.metrics.ci ? (s.metrics.ci[1] * 100).toFixed(1) : '',
+      s.metrics.adjWinRate != null ? (s.metrics.adjWinRate * 100).toFixed(1) : '', s.metrics.rated,
       s.delta != null ? (s.delta * 100).toFixed(1) : '', s.p != null ? s.p.toFixed(4) : '',
       Math.round(s.metrics.requested), Math.round(s.metrics.awarded),
       s.metrics.yield != null ? (s.metrics.yield * 100).toFixed(1) : '',
@@ -167,6 +174,7 @@ export default function BreakdownPanel({
             <SectionHeader
               title={`${METRICS.find(m => m.value === metric)!.label} by ${dimLabel.toLowerCase()}`}
               hint={metric === 'winRate' ? 'Whiskers show the 95% range; segments with few decisions are uncertain'
+                : metric === 'adjWinRate' ? `Each decided grant weighted by your odds at submission (unrated count ${conf.unrated}%); whiskers show the 95% range`
                 : metric === 'yield' ? `Awarded per ${fx.base} requested, over decided grants with amounts`
                 : sorted.length > CHART_LIMIT ? `First ${CHART_LIMIT} of ${sorted.length} — the table has all` : undefined}
             />
@@ -176,7 +184,7 @@ export default function BreakdownPanel({
                   <CartesianGrid horizontal={false} stroke={CHART.grid} />
                   <XAxis type="number" tickFormatter={v => fmtValue(v)} tick={{ fontSize: CHART.font, fill: CHART.tick }}
                     axisLine={{ stroke: CHART.axis }} tickLine={false}
-                    domain={metric === 'winRate' ? [0, 100] : [0, 'auto']} />
+                    domain={metric === 'winRate' || metric === 'adjWinRate' ? [0, 100] : [0, 'auto']} />
                   <YAxis type="category" dataKey="label" width={170} tick={{ fontSize: CHART.font, fill: CHART.ink }} axisLine={false} tickLine={false} />
                   <Tooltip
                     cursor={{ fill: 'rgba(0,0,0,0.04)' }}
@@ -188,6 +196,7 @@ export default function BreakdownPanel({
                           { label: 'Proposals', value: s.metrics.n },
                           { label: 'Funded / decided', value: `${s.metrics.won} / ${s.metrics.decided}` },
                           { label: 'Win rate', value: s.metrics.winRate != null ? `${formatPct(s.metrics.winRate)} (${formatPct(s.metrics.ci![0])}–${formatPct(s.metrics.ci![1])})` : '—' },
+                          { label: 'Confidence-adjusted', value: s.metrics.adjWinRate != null ? `${formatPct(s.metrics.adjWinRate)} (${s.metrics.rated} rated)` : '—' },
                           { label: 'vs everything else', value: s.delta != null ? `${s.delta >= 0 ? '+' : '−'}${Math.abs(Math.round(s.delta * 100))} pts · p ${formatP(s.p)}` : '—' },
                           { label: 'Awarded', value: money(s.metrics.awarded) },
                           { label: 'Requested', value: money(s.metrics.requested) },
@@ -196,7 +205,7 @@ export default function BreakdownPanel({
                     }}
                   />
                   <Bar dataKey="value" fill={CHART.series} radius={[0, 4, 4, 0]} maxBarSize={18} isAnimationActive={false}>
-                    {metric === 'winRate' && <ErrorBar dataKey="err" width={5} strokeWidth={1.25} stroke={CHART.ink} direction="x" />}
+                    {(metric === 'winRate' || metric === 'adjWinRate') && <ErrorBar dataKey="err" width={5} strokeWidth={1.25} stroke={CHART.ink} direction="x" />}
                   </Bar>
                 </BarChart>
               </ResponsiveContainer>
@@ -211,6 +220,7 @@ export default function BreakdownPanel({
                   {th('n', 'Proposals')}
                   {th('won', 'Won')}
                   {th('winRate', 'Win rate')}
+                  {th('adjWinRate', 'Adj. win rate')}
                   {th('delta', 'vs rest')}
                   {th('requested', 'Requested')}
                   {th('awarded', 'Awarded')}
@@ -238,6 +248,16 @@ export default function BreakdownPanel({
                       <td className="px-3 py-2 text-right mono-data tabular-nums whitespace-nowrap" style={{ opacity: thin ? 0.6 : 1 }}>
                         {formatPct(m.winRate)}
                         {m.ci && <span className="ml-1 text-[10px]" style={{ color: 'var(--ink-muted)' }}>{Math.round(m.ci[0] * 100)}–{Math.round(m.ci[1] * 100)}</span>}
+                      </td>
+                      <td className="px-3 py-2 text-right mono-data tabular-nums whitespace-nowrap"
+                        title={m.rated ? `${m.rated} of ${m.decided} decided grants rated` : 'No ratings — unrated grants count at the default weight'}
+                        style={{ opacity: m.decided < 3 ? 0.6 : 1 }}>
+                        {formatPct(m.adjWinRate)}
+                        {m.adjWinRate != null && m.winRate != null && Math.round((m.adjWinRate - m.winRate) * 100) !== 0 && (
+                          <span className="ml-1 text-[10px]" style={{ color: 'var(--ink-muted)' }}>
+                            {m.adjWinRate > m.winRate ? '+' : '−'}{Math.abs(Math.round((m.adjWinRate - m.winRate) * 100))}
+                          </span>
+                        )}
                       </td>
                       <td className="px-3 py-2 text-right mono-data tabular-nums whitespace-nowrap" title={s.p != null ? `Fisher exact p = ${formatP(s.p)}` : undefined}>
                         {s.delta == null ? '—' : (

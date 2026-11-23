@@ -4,7 +4,9 @@ import Link from 'next/link';
 import { archive } from '@/lib/api';
 import { useAuth } from '@/lib/auth';
 import ArchiveInsights from '@/components/archive/insights/ArchiveInsights';
-import { Segmented } from '@/components/archive/insights/ui';
+import { Menu, Segmented } from '@/components/archive/insights/ui';
+import GrantFiguresEditor, { type GrantFigures } from '@/components/archive/GrantFiguresEditor';
+import { toast } from 'sonner';
 import ArchiveGraphView, {
   type ArchiveGraphNode,
   type ArchiveGraphCluster,
@@ -31,6 +33,7 @@ interface ArchiveEntry {
   indexing_status?: string;
   indexing_error?: string | null;
   shared_with_me?: boolean;
+  win_confidence?: number | null;
 }
 
 const OUTCOMES = [
@@ -531,6 +534,67 @@ function NewArchiveModal({ onClose, onCreated }: { onClose: () => void; onCreate
   );
 }
 
+/** Amount column: awarded if known, else requested. Editors click to fill in or
+ *  change the money and the team's odds at submission. */
+function AmountCell({
+  entry, editable, openUp, onSaved,
+}: {
+  entry: ArchiveEntry;
+  editable: boolean;
+  openUp: boolean;
+  onSaved: (patch: Partial<GrantFigures>) => void;
+}) {
+  const awarded = formatAmount(entry.awarded_amount, entry.currency);
+  const requested = formatAmount(entry.requested_amount, entry.currency);
+  const text = awarded ?? requested;
+  const display = text ? (
+    <span className="mono-data text-[12px]" style={{ color: awarded ? 'var(--ink-secondary)' : 'var(--ink-muted)' }}>
+      {text}{!awarded && <span className="text-[10px] ml-1" style={{ color: 'var(--ink-faint)' }}>req.</span>}
+    </span>
+  ) : null;
+  if (!editable) return display ?? <span className="mono-data text-[12px]" style={{ color: 'var(--ink-muted)' }}>—</span>;
+
+  const missingAward = (entry.outcome === 'awarded' || entry.outcome === 'partially_funded') && entry.awarded_amount == null;
+  return (
+    <Menu align="right" placement={openUp ? 'top' : 'bottom'} width={300} button={(open, toggle) => (
+      <button
+        type="button"
+        onClick={toggle}
+        title={[requested && `Requested ${requested}`, awarded && `Awarded ${awarded}`, 'Click to edit'].filter(Boolean).join(' · ')}
+        className="inline-flex items-center gap-1.5 px-1.5 py-0.5 -mr-1.5 rounded-[var(--radius-xs)] transition-colors"
+        style={{ background: open ? 'var(--selection-bg)' : 'transparent' }}
+        onMouseEnter={e => (e.currentTarget.style.background = 'var(--selection-bg)')}
+        onMouseLeave={e => { if (!open) e.currentTarget.style.background = 'transparent'; }}
+      >
+        {display}
+        {(!text || missingAward) && (
+          <span className="text-[10.5px] font-medium px-1.5 rounded-full"
+            style={{ color: 'var(--state-warning)', border: '1px dashed var(--state-warning)' }}>
+            {text ? '+ award' : '+ Add'}
+          </span>
+        )}
+      </button>
+    )}>
+      {close => (
+        <GrantFiguresEditor
+          initial={{
+            requested_amount: entry.requested_amount,
+            awarded_amount: entry.awarded_amount,
+            currency: entry.currency,
+            win_confidence: entry.win_confidence ?? null,
+          }}
+          onClose={close}
+          onSave={async patch => {
+            await archive.update(entry.id, patch as Record<string, unknown>);
+            onSaved(patch);
+            toast.success('Saved');
+          }}
+        />
+      )}
+    </Menu>
+  );
+}
+
 const GRAPH_FILTERS_EMPTY: ArchiveGraphFilterState = {
   funder: '',
   outcome: '',
@@ -871,7 +935,7 @@ export default function ArchivePage() {
                     </td>
                   </tr>
                 ) : (
-                  filtered.map(entry => (
+                  filtered.map((entry, index) => (
                     <tr
                       key={entry.id}
                       className="transition-colors"
@@ -912,9 +976,12 @@ export default function ArchivePage() {
                         </span>
                       </td>
                       <td className="px-4 py-3.5 text-right hidden lg:table-cell whitespace-nowrap">
-                        <span className="mono-data text-[12px]" style={{ color: 'var(--ink-muted)' }}>
-                          {formatAmount(entry.awarded_amount ?? entry.requested_amount, entry.currency) ?? '—'}
-                        </span>
+                        <AmountCell
+                          entry={entry}
+                          editable={canUpload && !entry.shared_with_me}
+                          openUp={index >= filtered.length - 4 && index > 2}
+                          onSaved={patch => setEntries(prev => prev.map(e => (e.id === entry.id ? { ...e, ...patch } : e)))}
+                        />
                       </td>
                       <td className="px-4 py-3.5 hidden md:table-cell">
                         <div className="flex flex-col gap-1">

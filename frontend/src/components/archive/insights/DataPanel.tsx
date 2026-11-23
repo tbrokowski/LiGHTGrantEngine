@@ -14,9 +14,9 @@ import TagPicker from './TagPicker';
 import { Menu, Segmented, TagDot, inputStyle } from './ui';
 
 export type EntryPatch = Partial<Pick<InsightEntry,
-  'funder' | 'call_year' | 'outcome' | 'currency' | 'requested_amount' | 'awarded_amount' | 'submission_date' | 'decision_date'>>;
+  'funder' | 'call_year' | 'outcome' | 'currency' | 'requested_amount' | 'awarded_amount' | 'win_confidence' | 'submission_date' | 'decision_date'>>;
 
-type ColKey = 'funder' | 'call_year' | 'outcome' | 'currency' | 'requested_amount' | 'awarded_amount' | 'submission_date' | 'decision_date';
+type ColKey = 'funder' | 'call_year' | 'outcome' | 'currency' | 'requested_amount' | 'awarded_amount' | 'win_confidence' | 'submission_date' | 'decision_date';
 
 const COLS: { key: ColKey; label: string; gap?: GapKey; width: number; align?: 'right' }[] = [
   { key: 'funder', label: 'Funder', gap: 'funder', width: 160 },
@@ -25,6 +25,7 @@ const COLS: { key: ColKey; label: string; gap?: GapKey; width: number; align?: '
   { key: 'currency', label: 'Cur.', gap: 'currency', width: 64 },
   { key: 'requested_amount', label: 'Requested', gap: 'requested', width: 116, align: 'right' },
   { key: 'awarded_amount', label: 'Awarded', gap: 'awarded', width: 116, align: 'right' },
+  { key: 'win_confidence', label: 'Odds', gap: 'confidence', width: 72, align: 'right' },
   { key: 'submission_date', label: 'Submitted', gap: 'submission_date', width: 116 },
   { key: 'decision_date', label: 'Decided', gap: 'decision_date', width: 116 },
 ];
@@ -114,7 +115,7 @@ export default function DataPanel({
       </div>
 
       <div className="overflow-x-auto" style={{ borderTop: '1px solid var(--rule-subtle)' }}>
-        <table className="text-xs" style={{ minWidth: 1180, width: '100%' }}>
+        <table className="text-xs" style={{ minWidth: 1250, width: '100%' }}>
           <thead>
             <tr style={{ borderBottom: '1px solid var(--rule-subtle)', background: 'var(--surface-sunken)' }}>
               <th className="px-2 py-2 text-left ledger-label sticky left-0 z-[1]" style={{ minWidth: 260, background: 'var(--surface-sunken)', boxShadow: 'inset -1px 0 0 var(--rule-subtle)' }}>
@@ -202,7 +203,7 @@ export default function DataPanel({
       {rows.length > 0 && (
         <p className="text-[10.5px]" style={{ color: 'var(--ink-muted)' }}>
           {rows.length} grant{rows.length === 1 ? '' : 's'} · {totalGaps} missing value{totalGaps === 1 ? '' : 's'}.
-          Amounts accept 250k, 1.2M, or 1,200,000 and are stored in the grant’s own currency.
+          Amounts accept 250k, 1.2M, or 1,200,000 and are stored in the grant’s own currency. Odds are your chance of winning at submission, 0–100.
         </p>
       )}
     </div>
@@ -245,6 +246,7 @@ function display(e: InsightEntry, col: ColKey, fx: FxSettings): string | null {
       const v = e[col];
       return v == null ? null : formatMoney(v, normalizeCurrency(e.currency) ?? fx.base, false);
     }
+    case 'win_confidence': return e.win_confidence != null ? `${e.win_confidence}%` : null;
     case 'submission_date':
     case 'decision_date': return e[col] ? e[col]!.slice(0, 10) : null;
   }
@@ -277,6 +279,12 @@ function toPatch(col: ColKey, text: string, e: InsightEntry): EntryPatch | null 
       const c = normalizeCurrency(t)!;
       if (!/^[A-Z]{3}$/.test(c)) return 'Use a 3-letter code like EUR';
       return { currency: c };
+    }
+    case 'win_confidence': {
+      if (!t) return { win_confidence: null };
+      const v = Number(t.replace(/%$/, ''));
+      if (!Number.isInteger(v) || v < 0 || v > 100) return 'Odds: 0 to 100';
+      return { win_confidence: v };
     }
     case 'requested_amount':
     case 'awarded_amount': {
@@ -352,9 +360,9 @@ function CellEditor({
         <>
           <input {...common}
             type={col === 'submission_date' || col === 'decision_date' ? 'date' : 'text'}
-            inputMode={col === 'call_year' ? 'numeric' : undefined}
+            inputMode={col === 'call_year' || col === 'win_confidence' ? 'numeric' : undefined}
             list={col === 'currency' ? 'insight-currencies' : undefined}
-            placeholder={col.endsWith('amount') ? 'e.g. 250k' : undefined}
+            placeholder={col.endsWith('amount') ? 'e.g. 250k' : col === 'win_confidence' ? '0–100' : undefined}
             value={text}
             onFocus={ev => { if (ev.currentTarget.type === 'text') ev.currentTarget.select(); }}
             onChange={ev => { setText(ev.target.value); setError(''); }}
@@ -401,7 +409,7 @@ function Cell({
       style={{ background: emphasize && missing ? 'var(--state-warning-bg)' : undefined }}
     >
       {shown != null ? (
-        <span className={`${col.endsWith('amount') || col === 'call_year' || col.endsWith('date') ? 'mono-data tabular-nums' : ''} truncate block`}
+        <span className={`${col.endsWith('amount') || col === 'call_year' || col === 'win_confidence' || col.endsWith('date') ? 'mono-data tabular-nums' : ''} truncate block`}
           style={{ color: 'var(--ink-secondary)' }} title={shown}>
           {shown}
         </span>

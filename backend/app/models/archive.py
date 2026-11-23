@@ -54,6 +54,9 @@ class GrantArchive(Base):
     awarded_amount: Mapped[float | None] = mapped_column(Float)
     currency: Mapped[str | None] = mapped_column(String(10))
     project_duration: Mapped[str | None] = mapped_column(String(100))
+    # The team's own odds of winning when it submitted (0–100). Archive Insights
+    # weights the win rate by it so long shots count less.
+    win_confidence: Mapped[int | None] = mapped_column(Integer, nullable=True)
 
     repository_folder_url: Mapped[str | None] = mapped_column(String(1000))
     access_level: Mapped[str] = mapped_column(String(50), default="team_only")

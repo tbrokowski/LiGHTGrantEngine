@@ -617,6 +617,8 @@ export const archiveInsights = {
     api.post(`/archive-insights/tags/${tagId}/apply`, { archive_ids: archiveIds, remove }),
   setEntryTags: (archiveId: string, tagIds: string[]) =>
     api.put(`/archive-insights/entries/${archiveId}/tags`, { tag_ids: tagIds }),
+  setConfidence: (archiveIds: string[], confidence: number | null) =>
+    api.post('/archive-insights/entries/confidence', { archive_ids: archiveIds, confidence }),
   createView: (data: { name: string; config: Record<string, unknown> }) =>
     api.post('/archive-insights/views', data),
   updateView: (viewId: string, data: { name?: string; config?: Record<string, unknown> }) =>

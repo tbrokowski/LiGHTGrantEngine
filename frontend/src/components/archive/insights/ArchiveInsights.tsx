@@ -9,8 +9,8 @@ import { toast } from 'sonner';
 import { archive, archiveInsights } from '@/lib/api';
 import { useAuth } from '@/lib/auth';
 import {
-  type FxSettings, type GapKey, type InsightEntry, type InsightTag,
-  DEFAULT_FX, DEFAULT_USD_RATES, dimensionOptions, downloadCsv, gapCounts, normalizeCurrency,
+  type ConfidenceSettings, type FxSettings, type GapKey, type InsightEntry, type InsightTag,
+  DEFAULT_CONFIDENCE, DEFAULT_FX, DEFAULT_USD_RATES, dimensionOptions, downloadCsv, gapCounts, normalizeCurrency,
   outcomeLabel, toCsv, yearOf,
 } from '@/lib/archiveStats';
 import BreakdownPanel, { type ChartMetric } from './BreakdownPanel';
@@ -25,7 +25,7 @@ type Tab = 'overview' | 'breakdown' | 'tags' | 'data';
 interface SavedView {
   id: string;
   name: string;
-  config: { ids?: string[]; tab?: Tab; dimension?: string; metric?: ChartMetric; base?: string };
+  config: { ids?: string[]; tab?: Tab; dimension?: string; metric?: ChartMetric; base?: string; unrated?: number };
   created_by_id: string | null;
   created_by: string | null;
   updated_at: string | null;
@@ -37,6 +37,7 @@ interface Persisted {
   dimension?: string;
   metric?: ChartMetric;
   fx?: FxSettings;
+  conf?: ConfidenceSettings;
 }
 
 function errorDetail(err: unknown, fallback: string): string {
@@ -64,6 +65,7 @@ export default function ArchiveInsights() {
   const [dimension, setDimension] = useState('funder');
   const [metric, setMetric] = useState<ChartMetric>('winRate');
   const [fx, setFx] = useState<FxSettings>(DEFAULT_FX);
+  const [conf, setConf] = useState<ConfidenceSettings>(DEFAULT_CONFIDENCE);
   const [gap, setGap] = useState<GapKey | null>(null);
   const [scope, setScope] = useState<'selected' | 'all'>('selected');
   const [activeView, setActiveView] = useState<string | null>(null);
@@ -83,6 +85,7 @@ export default function ArchiveInsights() {
         setSelected(new Set((data.entries as InsightEntry[]).map(e => e.id).filter(id => !excluded.has(id))));
         if (saved.tab) setTab(saved.tab);
         if (saved.metric) setMetric(saved.metric);
+        if (typeof saved.conf?.unrated === 'number') setConf({ unrated: saved.conf.unrated });
         if (saved.fx?.base && saved.fx.usd) setFx({ base: saved.fx.base, usd: { ...DEFAULT_USD_RATES, ...saved.fx.usd } });
         const dims = dimensionOptions(data.tags as InsightTag[]).map(d => d.key);
         const firstGroup = dims.find(d => d.startsWith('group:'));
@@ -104,9 +107,9 @@ export default function ArchiveInsights() {
     if (!ready) return;
     try {
       const excluded = entries.filter(e => !selected.has(e.id)).map(e => e.id);
-      localStorage.setItem(storeKey, JSON.stringify({ excluded, tab, dimension, metric, fx } satisfies Persisted));
+      localStorage.setItem(storeKey, JSON.stringify({ excluded, tab, dimension, metric, fx, conf } satisfies Persisted));
     } catch { /* storage unavailable */ }
-  }, [ready, entries, selected, tab, dimension, metric, fx, storeKey]);
+  }, [ready, entries, selected, tab, dimension, metric, fx, conf, storeKey]);
 
   const cohort = useMemo(() => entries.filter(e => selected.has(e.id)), [entries, selected]);
   const cohortGaps = useMemo(() => {
@@ -125,6 +128,22 @@ export default function ArchiveInsights() {
       if (before) setEntries(prev => prev.map(e => (e.id === id ? before : e)));
       toast.error(errorDetail(err, 'Could not save that change.'));
       throw err;
+    }
+  }, [entries]);
+
+  const setConfidence = useCallback(async (ids: string[], value: number | null) => {
+    if (!ids.length) return;
+    const idSet = new Set(ids);
+    const before = new Map(entries.filter(e => idSet.has(e.id)).map(e => [e.id, e.win_confidence]));
+    setEntries(prev => prev.map(e => (idSet.has(e.id) ? { ...e, win_confidence: value } : e)));
+    try {
+      await archiveInsights.setConfidence(ids, value);
+      toast.success(value == null
+        ? `Cleared odds on ${ids.length} grant${ids.length === 1 ? '' : 's'}`
+        : `Rated ${ids.length} grant${ids.length === 1 ? '' : 's'} at ${value}%`);
+    } catch (err) {
+      setEntries(prev => prev.map(e => (before.has(e.id) ? { ...e, win_confidence: before.get(e.id) ?? null } : e)));
+      toast.error(errorDetail(err, 'Could not save the odds.'));
     }
   }, [entries]);
 
@@ -187,7 +206,7 @@ export default function ArchiveInsights() {
 
   // ── Saved views ────────────────────────────────────────────────────────────
 
-  const currentConfig = () => ({ ids: [...selected], tab, dimension, metric, base: fx.base });
+  const currentConfig = () => ({ ids: [...selected], tab, dimension, metric, base: fx.base, unrated: conf.unrated });
 
   function applyView(v: SavedView) {
     const known = new Set(entries.map(e => e.id));
@@ -197,6 +216,7 @@ export default function ArchiveInsights() {
     if (v.config.dimension && dimensionOptions(tags).some(d => d.key === v.config.dimension)) setDimension(v.config.dimension);
     if (v.config.metric) setMetric(v.config.metric);
     if (v.config.base) setFx(f => ({ ...f, base: v.config.base! }));
+    if (typeof v.config.unrated === 'number') setConf({ unrated: v.config.unrated });
     setActiveView(v.id);
     const missing = (v.config.ids?.length ?? 0) - ids.length;
     if (missing > 0) toast.message(`${missing} grant${missing === 1 ? ' in this view was' : 's in this view were'} deleted from the archive.`);
@@ -236,10 +256,10 @@ export default function ArchiveInsights() {
   function exportCohort() {
     const tagById = new Map(tags.map(t => [t.id, t]));
     const header = ['Title', 'Funder', 'Programme', 'Year', 'Outcome', 'Currency', 'Requested', 'Awarded',
-      'Submission date', 'Decision date', 'Lead PI', 'Tags'];
+      'Odds at submission (%)', 'Submission date', 'Decision date', 'Lead PI', 'Tags'];
     const body = cohort.map(e => [
       e.title, e.funder, e.program, yearOf(e), outcomeLabel(e.outcome), normalizeCurrency(e.currency),
-      e.requested_amount, e.awarded_amount, e.submission_date, e.decision_date, e.lead_pi,
+      e.requested_amount, e.awarded_amount, e.win_confidence, e.submission_date, e.decision_date, e.lead_pi,
       e.tag_ids.map(id => tagById.get(id)).filter(Boolean).map(t => (t!.group ? `${t!.group}: ${t!.name}` : t!.name)).join('; '),
     ]);
     downloadCsv('archive-selected-grants.csv', toCsv([header, ...body]));
@@ -272,6 +292,7 @@ export default function ArchiveInsights() {
           canEdit={canEdit}
           onToggleTag={toggleTag}
           onCreateTag={(n, g, ids) => createTag(n, g, ids)}
+          onSetConfidence={setConfidence}
         />
       </div>
 
@@ -327,6 +348,8 @@ export default function ArchiveInsights() {
               entries={cohort}
               tags={tags}
               fx={fx}
+              conf={conf}
+              onConf={setConf}
               onGap={g => { setGap(g); setScope('selected'); setTab('data'); }}
               onDimension={d => { setDimension(d); setTab('breakdown'); }}
             />
@@ -336,6 +359,7 @@ export default function ArchiveInsights() {
                 entries={cohort}
                 tags={tags}
                 fx={fx}
+                conf={conf}
                 dimension={dimension}
                 onDimension={setDimension}
                 metric={metric}
