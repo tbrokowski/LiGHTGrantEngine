@@ -5,16 +5,35 @@ from typing import Literal, Optional
 
 from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel
-from sqlalchemy import select, desc, or_
+from sqlalchemy import select, desc, or_, false
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.database import get_db
 from app.models.user import User
 from app.routers.auth import get_current_user
+from app.routers.partners import require_org_partner
 
-router = APIRouter()
+# Every route on `router` is /{partner_id}/tasks…: the partner must be in the active org.
+router = APIRouter(dependencies=[Depends(require_org_partner)])
 # Tasks across every partner and group — mounted at /partner-tasks.
 board_router = APIRouter()
+
+
+def task_org_filter(user: User):
+    """WHERE clause: tasks on a partner or group of the user's active
+    organization. Judged by the partner/group, not PartnerTask.institution_id,
+    which older tasks may lack."""
+    from app.models.partner import Partner
+    from app.models.partner_group import PartnerGroup
+    from app.models.partner_task import PartnerTask
+
+    inst = getattr(user, "institution_id", None)
+    if not inst:
+        return false()
+    return or_(
+        PartnerTask.partner_id.in_(select(Partner.id).where(Partner.institution_id == inst)),
+        PartnerTask.group_id.in_(select(PartnerGroup.id).where(PartnerGroup.institution_id == inst)),
+    )
 
 
 class TaskCreate(BaseModel):
@@ -203,9 +222,11 @@ class BoardTaskCreate(TaskCreate):
     group_id: Optional[str] = None
 
 
-async def _board_task(task_id: str, db: AsyncSession):
+async def _board_task(task_id: str, db: AsyncSession, user: User):
     from app.models.partner_task import PartnerTask
-    t = (await db.execute(select(PartnerTask).where(PartnerTask.id == task_id))).scalar_one_or_none()
+    t = (await db.execute(
+        select(PartnerTask).where(PartnerTask.id == task_id, task_org_filter(user))
+    )).scalar_one_or_none()
     if not t:
         raise HTTPException(404, "Task not found")
     return t
@@ -223,7 +244,7 @@ async def list_all_tasks(
     Overdue first, then by due date; recently completed ones follow when asked."""
     from app.models.partner_task import PartnerTask
 
-    stmt = select(PartnerTask)
+    stmt = select(PartnerTask).where(task_org_filter(current_user))
     if scope == "mine":
         stmt = stmt.where(PartnerTask.assigned_to == current_user.id)
     elif scope == "unassigned":
@@ -251,9 +272,14 @@ async def create_board_task(
 
     if bool(data.partner_id) == bool(data.group_id):
         raise HTTPException(400, "Pick either a partner or a group for this task.")
-    if data.partner_id and not (await db.execute(select(Partner.id).where(Partner.id == data.partner_id))).scalar():
+    inst = getattr(current_user, "institution_id", None)
+    if data.partner_id and not (inst and (await db.execute(
+        select(Partner.id).where(Partner.id == data.partner_id, Partner.institution_id == inst)
+    )).scalar()):
         raise HTTPException(404, "Partner not found")
-    if data.group_id and not (await db.execute(select(PartnerGroup.id).where(PartnerGroup.id == data.group_id))).scalar():
+    if data.group_id and not (inst and (await db.execute(
+        select(PartnerGroup.id).where(PartnerGroup.id == data.group_id, PartnerGroup.institution_id == inst)
+    )).scalar()):
         raise HTTPException(404, "Group not found")
     t = PartnerTask(
         id=str(uuid.uuid4()), created_by=current_user.id,
@@ -269,7 +295,7 @@ async def create_board_task(
 async def update_board_task(
     task_id: str, data: TaskUpdate, db: AsyncSession = Depends(get_db), current_user: User = Depends(get_current_user),
 ):
-    t = await _board_task(task_id, db)
+    t = await _board_task(task_id, db, current_user)
     fields = data.model_dump(exclude_unset=True)
     for k, v in fields.items():
         setattr(t, k, v)
@@ -284,6 +310,6 @@ async def update_board_task(
 async def delete_board_task(
     task_id: str, db: AsyncSession = Depends(get_db), current_user: User = Depends(get_current_user),
 ):
-    t = await _board_task(task_id, db)
+    t = await _board_task(task_id, db, current_user)
     await db.delete(t)
     await db.commit()

@@ -14,8 +14,10 @@ from app.models.partner import Partner
 from app.models.partner_meeting import PartnerMeeting
 from app.models.user import User
 from app.routers.auth import get_current_user
+from app.routers.partners import require_org_partner
 
-router = APIRouter()
+# Every route here is /{partner_id}/…: the partner must be in the active org.
+router = APIRouter(dependencies=[Depends(require_org_partner)])
 
 
 # ── Schemas ───────────────────────────────────────────────────────────────────

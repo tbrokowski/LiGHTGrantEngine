@@ -209,6 +209,20 @@ def partner_org_filter(user: User):
     return Partner.institution_id == user.institution_id
 
 
+async def require_org_partner(
+    partner_id: str,
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+) -> None:
+    """Router dependency for /partners/{partner_id}/… sub-resources (tasks,
+    meetings, documents): 404 unless the partner is in the active organization."""
+    found = (await db.execute(
+        select(Partner.id).where(Partner.id == partner_id, partner_org_filter(current_user))
+    )).scalar_one_or_none()
+    if not found:
+        raise HTTPException(404, "Partner not found")
+
+
 async def _get_partner_or_404(partner_id: str, db: AsyncSession, user: User) -> Partner:
     result = await db.execute(select(Partner).where(Partner.id == partner_id, partner_org_filter(user)))
     p = result.scalar_one_or_none()

@@ -354,3 +354,35 @@ def test_feed_cache_is_per_org_and_cleared_per_user():
     opp.invalidate_feed_cache("u1")
     assert set(opp._feed_cache) == {"u2:org-a"}
     opp._feed_cache.clear()
+
+
+# ── Partner tasks, meetings, documents ─────────────────────────────────────────
+
+def test_partner_task_board_is_org_scoped():
+    from app.routers.partner_tasks import task_org_filter
+    sql = _sql(task_org_filter(_user()))
+    assert "partners.institution_id = 'org-a'" in sql
+    assert "partner_groups.institution_id = 'org-a'" in sql
+    assert _sql(task_org_filter(_user(institution_id=None))) == "false"
+
+
+def test_partner_sub_resources_require_org_partner():
+    """Every /partners/{partner_id}/… route for tasks, meetings and documents
+    checks the partner is in the active organization."""
+    from app.routers import partner_documents, partner_meetings, partner_tasks
+    from app.routers.partners import require_org_partner
+    for r in (partner_tasks.router, partner_meetings.router, partner_documents.router):
+        assert any(d.dependency is require_org_partner for d in r.dependencies)
+        assert all("{partner_id}" in route.path for route in r.routes)
+
+
+def test_require_org_partner_hides_other_orgs_partners():
+    from app.routers.partners import require_org_partner
+
+    class _DB:
+        async def execute(self, _stmt):
+            return _Result([])
+
+    with pytest.raises(HTTPException) as e:
+        asyncio.run(require_org_partner("p-other", db=_DB(), current_user=_user()))
+    assert e.value.status_code == 404
