@@ -28,6 +28,7 @@ from app.routers import browser_sessions
 from app.routers import feedback
 from app.routers import api_keys
 from app.routers import messages
+from app.routers import archive_insights
 from app.routers import partner_meetings, partner_documents, partner_organizations, partner_tasks, partner_groups
 
 settings = get_settings()
@@ -115,6 +116,7 @@ app.include_router(grants.router,        prefix=f"{API}/grants",        tags=["g
 app.include_router(tasks.router,         prefix=f"{API}/tasks",         tags=["tasks"])
 app.include_router(documents.router,     prefix=f"{API}/documents",     tags=["documents"])
 app.include_router(archive.router,       prefix=f"{API}/archive",       tags=["archive"])
+app.include_router(archive_insights.router, prefix=f"{API}/archive-insights", tags=["archive"])
 app.include_router(ai_assistant.router,  prefix=f"{API}/ai",            tags=["ai"])
 app.include_router(notifications.router, prefix=f"{API}/notifications", tags=["notifications"])
 app.include_router(analytics.router,     prefix=f"{API}/analytics",     tags=["analytics"])

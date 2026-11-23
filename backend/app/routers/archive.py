@@ -44,6 +44,8 @@ class ArchiveCreate(BaseModel):
 class ArchiveUpdate(BaseModel):
     title: Optional[str] = None
     funder: Optional[str] = None
+    program: Optional[str] = None
+    submission_cycle: Optional[str] = None
     lead_pi: Optional[str] = None
     call_year: Optional[int] = None
     submission_date: Optional[date] = None

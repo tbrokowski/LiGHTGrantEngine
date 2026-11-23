@@ -605,6 +605,25 @@ export const archive = {
   unshare: (archiveId: string, shareId: string) => api.delete(`/archive/${archiveId}/shares/${shareId}`),
 };
 
+// ── Archive Insights (tags, saved views, statistics dataset) ────────────────
+export const archiveInsights = {
+  dataset: () => api.get('/archive-insights/dataset'),
+  createTag: (data: { name: string; group?: string; color?: string }) =>
+    api.post('/archive-insights/tags', data),
+  updateTag: (tagId: string, data: { name?: string; group?: string; color?: string }) =>
+    api.patch(`/archive-insights/tags/${tagId}`, data),
+  deleteTag: (tagId: string) => api.delete(`/archive-insights/tags/${tagId}`),
+  applyTag: (tagId: string, archiveIds: string[], remove = false) =>
+    api.post(`/archive-insights/tags/${tagId}/apply`, { archive_ids: archiveIds, remove }),
+  setEntryTags: (archiveId: string, tagIds: string[]) =>
+    api.put(`/archive-insights/entries/${archiveId}/tags`, { tag_ids: tagIds }),
+  createView: (data: { name: string; config: Record<string, unknown> }) =>
+    api.post('/archive-insights/views', data),
+  updateView: (viewId: string, data: { name?: string; config?: Record<string, unknown> }) =>
+    api.patch(`/archive-insights/views/${viewId}`, data),
+  deleteView: (viewId: string) => api.delete(`/archive-insights/views/${viewId}`),
+};
+
 // ── Sources ──────────────────────────────────────────────────────────────────
 export const sources = {
   list: () => api.get('/sources/'),

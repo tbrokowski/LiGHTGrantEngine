@@ -11,6 +11,7 @@ from .archive import GrantArchive
 from .archive_cluster import ArchiveCluster
 from .archive_edge import ArchiveEdge
 from .archive_share import ArchiveShare
+from .archive_tag import ArchiveTag, ArchiveTagLink, ArchiveInsightView
 from .language import ReusableLanguageBlock
 from .notification import Notification
 from .ai_run import AIRun
@@ -61,7 +62,7 @@ __all__ = [
     "Institution", "User", "Source", "SourceRun", "Opportunity", "OpportunityReview",
     "OpportunityCluster",
     "ActiveGrant", "Task", "Document", "ProposalSection", "GrantArchive",
-    "ArchiveCluster", "ArchiveEdge",
+    "ArchiveCluster", "ArchiveEdge", "ArchiveTag", "ArchiveTagLink", "ArchiveInsightView",
     "ReusableLanguageBlock", "Notification", "AIRun", "Comment", "FunderProfile",
     "Partner", "PartnerUpdate", "PartnerGrantLink",
     "PartnerOrganization", "PartnerMeeting", "PartnerDocument", "PartnerReminder", "PartnerTask",

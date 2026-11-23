@@ -3,7 +3,8 @@ import { useEffect, useState, useRef, useCallback } from 'react';
 import Link from 'next/link';
 import { archive } from '@/lib/api';
 import { useAuth } from '@/lib/auth';
-import ViewToggle from '@/components/opportunities/ViewToggle';
+import ArchiveInsights from '@/components/archive/insights/ArchiveInsights';
+import { Segmented } from '@/components/archive/insights/ui';
 import ArchiveGraphView, {
   type ArchiveGraphNode,
   type ArchiveGraphCluster,
@@ -553,7 +554,7 @@ export default function ArchivePage() {
   const [deleteError, setDeleteError] = useState('');
 
   // ── View toggle ─────────────────────────────────────────────────────────────
-  const [viewMode, setViewMode] = useState<'list' | 'graph'>('list');
+  const [viewMode, setViewMode] = useState<'list' | 'graph' | 'insights'>('list');
 
   // ── Graph view state ─────────────────────────────────────────────────────────
   const [graphNodes, setGraphNodes] = useState<ArchiveGraphNode[]>([]);
@@ -729,7 +730,16 @@ export default function ArchivePage() {
               onBlur={e => (e.currentTarget.style.borderColor = 'var(--rule-subtle)')}
             />
           )}
-          <ViewToggle view={viewMode} onChange={setViewMode} />
+          <Segmented
+            value={viewMode}
+            onChange={setViewMode}
+            ariaLabel="Archive view"
+            options={[
+              { value: 'list', label: 'List' },
+              { value: 'graph', label: 'Graph' },
+              { value: 'insights', label: 'Insights', title: 'Historical statistics on submitted grants' },
+            ]}
+          />
           {canUpload && (
             <button
               onClick={() => setShowModal(true)}
@@ -748,6 +758,9 @@ export default function ArchivePage() {
           )}
         </div>
       </div>
+
+      {/* ── Insights view ────────────────────────────────────────────────────── */}
+      {viewMode === 'insights' && <ArchiveInsights />}
 
       {/* ── Graph view ───────────────────────────────────────────────────────── */}
       {viewMode === 'graph' && (
