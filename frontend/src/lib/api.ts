@@ -827,6 +827,20 @@ export const funders = {
   setFeature: (institutionId: string, enabled: boolean) => api.put(`/funders/feature/${institutionId}`, { enabled }),
 };
 
+// Open threads on the Funders tab: team conversations with funders assigned
+export const funderThreads = {
+  list: (status: 'open' | 'closed' = 'open', partnerId?: string) =>
+    api.get('/funders/threads/', { params: { status, ...(partnerId ? { partner_id: partnerId } : {}) } }),
+  get: (id: string) => api.get(`/funders/threads/${id}`),
+  create: (data: { title: string; content?: string; partner_ids?: string[] }) => api.post('/funders/threads/', data),
+  update: (id: string, data: { title?: string; status?: 'open' | 'closed' }) => api.patch(`/funders/threads/${id}`, data),
+  remove: (id: string) => api.delete(`/funders/threads/${id}`),
+  post: (id: string, content: string) => api.post(`/funders/threads/${id}/posts`, { content }),
+  deletePost: (id: string, postId: string) => api.delete(`/funders/threads/${id}/posts/${postId}`),
+  assign: (id: string, partnerId: string) => api.post(`/funders/threads/${id}/funders`, { partner_id: partnerId }),
+  unassign: (id: string, partnerId: string) => api.delete(`/funders/threads/${id}/funders/${partnerId}`),
+};
+
 // Partner groups — named sets of partners (sites, consortia, projects)
 export const partnerGroups = {
   list: () => api.get('/partner-groups/'),

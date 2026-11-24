@@ -71,3 +71,36 @@ def test_outreach_feed_is_routed():
     from app.routers.funders import router
     paths = {r.path for r in router.routes}
     assert "/outreach" in paths and "/follow-ups" in paths
+
+
+def test_thread_validation():
+    from app.routers.funder_threads import PostIn, ThreadCreate, ThreadPatch
+
+    with pytest.raises(ValidationError):
+        ThreadCreate(title="   ")
+    with pytest.raises(ValidationError):
+        ThreadCreate(title="x" * 301)
+    t = ThreadCreate(title="  Swiss foundations push  ", content="   ")
+    assert t.title == "Swiss foundations push"
+    assert t.content is None  # a blank opening message means none
+    assert ThreadCreate(title="T", content=" hi ").content == "hi"
+    with pytest.raises(ValidationError):
+        PostIn(content="  ")
+    with pytest.raises(ValidationError):
+        ThreadPatch(status="archived")
+    assert ThreadPatch(status="closed").title is None
+
+
+def test_thread_routes_are_mounted():
+    from app.main import app
+
+    paths = {getattr(r, "path", "") for r in app.routes}
+    for p in (
+        "/api/v1/funders/threads/",
+        "/api/v1/funders/threads/{thread_id}",
+        "/api/v1/funders/threads/{thread_id}/posts",
+        "/api/v1/funders/threads/{thread_id}/posts/{post_id}",
+        "/api/v1/funders/threads/{thread_id}/funders",
+        "/api/v1/funders/threads/{thread_id}/funders/{partner_id}",
+    ):
+        assert p in paths, p

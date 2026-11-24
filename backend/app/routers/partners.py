@@ -1670,6 +1670,18 @@ async def merge_partners(
         .where(PartnerDocument.partner_id == other_id)
         .values(partner_id=partner_id)
     )
+    # Funder threads: move the duplicate's assignments (a thread both were on keeps one).
+    from app.models.funder_thread import FunderThreadPartner
+    await db.execute(
+        FunderThreadPartner.__table__.update()
+        .where(
+            FunderThreadPartner.partner_id == other_id,
+            FunderThreadPartner.thread_id.not_in(
+                select(FunderThreadPartner.thread_id).where(FunderThreadPartner.partner_id == partner_id)
+            ),
+        )
+        .values(partner_id=partner_id)
+    )
 
     # Delete the duplicate
     await db.delete(other)

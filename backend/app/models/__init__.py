@@ -57,6 +57,7 @@ from .llm_usage import LLMUsage
 from .message import Conversation, ConversationMember, Message
 from .grant_spreadsheet import GrantSpreadsheet, GrantSpreadsheetVersion
 from .grant_writing_doc import GrantWritingDoc
+from .funder_thread import FunderThread, FunderThreadPartner, FunderThreadPost
 
 __all__ = [
     "Institution", "User", "Source", "SourceRun", "Opportunity", "OpportunityReview",
@@ -79,4 +80,5 @@ __all__ = [
     "UserApiKey", "LLMUsage",
     "Conversation", "ConversationMember", "Message",
     "GrantSpreadsheet", "GrantSpreadsheetVersion", "GrantWritingDoc", "DocumentVersion",
+    "FunderThread", "FunderThreadPartner", "FunderThreadPost",
 ]

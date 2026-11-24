@@ -1,7 +1,7 @@
 'use client';
 // Funders (LiGHT): the partners who fund or move money, sorted into whale
-// tiers. Tasks and outreach up top, one sliding row of tiers, then the people
-// in the chosen tier. Each funder is a partner record, so a card opens the
+// tiers. Tasks, open threads and outreach up top, one sliding row of tiers,
+// then the people in the chosen tier. Each funder is a partner record, so a card opens the
 // partner page with its meetings, tasks, reminders and history.
 import { Suspense, useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useRouter } from 'next/navigation';
@@ -14,6 +14,7 @@ import NewTaskModal from '@/components/crm/NewTaskModal';
 import AddFunderModal from '@/components/funders/AddFunderModal';
 import LogTouchModal from '@/components/funders/LogTouchModal';
 import OutreachCard, { OutreachItem } from '@/components/funders/OutreachCard';
+import OpenThreadsCard from '@/components/funders/OpenThreadsCard';
 import TierBar from '@/components/funders/TierBar';
 import FunderCards from '@/components/funders/FunderCards';
 import { TIER_BY_KEY, TierKey, TierMark, tierRank } from '@/components/funders/tiers';
@@ -161,36 +162,39 @@ function FundersHome() {
           <p className="text-sm px-4 py-3 rounded-[var(--radius-md)]" style={{ background: 'var(--state-danger-bg)', color: 'var(--state-danger)' }}>{loadError}</p>
         )}
 
-        {/* Tasks + outreach */}
+        {/* Tasks and open threads, then outreach */}
         <section className="grid grid-cols-1 lg:grid-cols-2 gap-5 items-start">
-          <div className="flex flex-col min-w-0" style={card}>
-            <div className="flex items-center justify-between gap-3 px-[18px] pt-4 pb-3">
-              <h2 className="text-sm font-semibold" style={{ color: 'var(--ink-primary)' }}>
-                Tasks <span className="mono-data font-normal" style={{ color: 'var(--ink-muted)' }}>{tasks?.length || ''}</span>
-              </h2>
-              <button type="button" onClick={() => setModal({ kind: 'task' })} className="flex items-center gap-1.5 h-8 px-3 text-[13px] font-medium" style={btnOutline}>
-                <Plus className="w-3.5 h-3.5" />New task
-              </button>
-            </div>
-            <ul>
-              {tasks === null && Array.from({ length: 3 }).map((_, i) => (
-                <li key={i} className="px-[18px] py-3" style={{ borderTop: '1px solid var(--rule-subtle)' }}>
-                  <div className="h-4 w-1/2 animate-pulse rounded" style={{ background: 'var(--surface-sunken)' }} />
-                </li>
-              ))}
-              {shownTasks?.map(t => <TaskRow key={t.id} task={t} onToggle={toggleTask} />)}
-              {tasks && !tasks.length && (
-                <li className="px-[18px] py-8 text-center text-sm" style={{ borderTop: '1px solid var(--rule-subtle)', color: 'var(--ink-muted)' }}>
-                  No open tasks on funders.
-                </li>
+          <div className="flex flex-col gap-5 min-w-0">
+            <div className="flex flex-col min-w-0" style={card}>
+              <div className="flex items-center justify-between gap-3 px-[18px] pt-4 pb-3">
+                <h2 className="text-sm font-semibold" style={{ color: 'var(--ink-primary)' }}>
+                  Tasks <span className="mono-data font-normal" style={{ color: 'var(--ink-muted)' }}>{tasks?.length || ''}</span>
+                </h2>
+                <button type="button" onClick={() => setModal({ kind: 'task' })} className="flex items-center gap-1.5 h-8 px-3 text-[13px] font-medium" style={btnOutline}>
+                  <Plus className="w-3.5 h-3.5" />New task
+                </button>
+              </div>
+              <ul>
+                {tasks === null && Array.from({ length: 3 }).map((_, i) => (
+                  <li key={i} className="px-[18px] py-3" style={{ borderTop: '1px solid var(--rule-subtle)' }}>
+                    <div className="h-4 w-1/2 animate-pulse rounded" style={{ background: 'var(--surface-sunken)' }} />
+                  </li>
+                ))}
+                {shownTasks?.map(t => <TaskRow key={t.id} task={t} onToggle={toggleTask} />)}
+                {tasks && !tasks.length && (
+                  <li className="px-[18px] py-8 text-center text-sm" style={{ borderTop: '1px solid var(--rule-subtle)', color: 'var(--ink-muted)' }}>
+                    No open tasks on funders.
+                  </li>
+                )}
+              </ul>
+              {(tasks?.length ?? 0) > TASKS_SHOWN && (
+                <button type="button" onClick={() => setAllTasks(v => !v)} className="px-[18px] py-2.5 text-left text-[13px] hover:bg-[var(--surface-sunken)]"
+                  style={{ borderTop: '1px solid var(--rule-subtle)', color: 'var(--ink-secondary)' }}>
+                  {allTasks ? 'Show fewer' : `Show all ${tasks!.length}`}
+                </button>
               )}
-            </ul>
-            {(tasks?.length ?? 0) > TASKS_SHOWN && (
-              <button type="button" onClick={() => setAllTasks(v => !v)} className="px-[18px] py-2.5 text-left text-[13px] hover:bg-[var(--surface-sunken)]"
-                style={{ borderTop: '1px solid var(--rule-subtle)', color: 'var(--ink-secondary)' }}>
-                {allTasks ? 'Show fewer' : `Show all ${tasks!.length}`}
-              </button>
-            )}
+            </div>
+            <OpenThreadsCard funders={rows ?? []} />
           </div>
           <OutreachCard items={outreach} onLog={() => setModal({ kind: 'log' })} />
         </section>
