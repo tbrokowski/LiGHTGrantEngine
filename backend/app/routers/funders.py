@@ -153,6 +153,28 @@ async def funder_follow_ups(db: AsyncSession = Depends(get_db), current_user: Us
     return await task_dicts(tasks, db)
 
 
+@router.get("/outreach")
+async def funder_outreach(limit: int = 50, db: AsyncSession = Depends(get_db), current_user: User = Depends(get_current_user)):
+    """Recent emails, calls, meetings and notes logged on funders, newest first."""
+    await _funders_org(db, current_user)
+    from app.routers.partners import _update_dict
+
+    when = func.coalesce(PartnerUpdate.contact_date, PartnerUpdate.created_at)
+    rows = (await db.execute(
+        select(PartnerUpdate, Partner.name, Partner.funder_tier)
+        .join(Partner, Partner.id == PartnerUpdate.partner_id)
+        .where(partner_org_filter(current_user), Partner.funder_tier.isnot(None))
+        .order_by(when.desc())
+        .limit(max(1, min(limit, 200)))
+    )).all()
+    user_ids = {u.user_id for u, _, _ in rows if u.user_id}
+    names = dict((await db.execute(select(User.id, User.name).where(User.id.in_(user_ids)))).all()) if user_ids else {}
+    return [
+        {**_update_dict(u, names.get(u.user_id or "")), "partner_name": name, "funder_tier": tier}
+        for u, name, tier in rows
+    ]
+
+
 @router.post("/", status_code=201)
 async def create_funder(data: FunderCreate, db: AsyncSession = Depends(get_db), current_user: User = Depends(get_current_user)):
     """Add a new person straight onto the Funders tab (they're a partner too)."""

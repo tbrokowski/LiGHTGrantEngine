@@ -819,6 +819,7 @@ export const partners = {
 export const funders = {
   list: () => api.get('/funders/'),
   followUps: () => api.get('/funders/follow-ups'),
+  outreach: (limit = 50) => api.get('/funders/outreach', { params: { limit } }),
   create: (data: Record<string, unknown>) => api.post('/funders/', data),
   setTier: (partnerId: string, tier: string | null) => api.put(`/funders/${partnerId}/tier`, { tier }),
   bulkTier: (ids: string[], tier: string | null) => api.post('/funders/bulk-tier', { ids, tier }),

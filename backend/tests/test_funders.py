@@ -65,3 +65,9 @@ def test_starter_list_is_consistent():
     assert tiers["Karin Jestin"] == "dolphin"
     assert tiers["Chuck Slaughter"] == "shark"
     assert tiers["Sabrina Grassi"] == tiers["Janine Händel"] == "unsorted"
+
+
+def test_outreach_feed_is_routed():
+    from app.routers.funders import router
+    paths = {r.path for r in router.routes}
+    assert "/outreach" in paths and "/follow-ups" in paths
