@@ -146,6 +146,12 @@ async def list_archive(
         q = q.where(GrantArchive.outcome == outcome)
     if search:
         q = q.where(or_(GrantArchive.title.ilike(f"%{search}%"), GrantArchive.funder.ilike(f"%{search}%")))
+    # Most recently submitted first; undated entries by call year, then newest added.
+    q = q.order_by(
+        GrantArchive.submission_date.desc().nullslast(),
+        GrantArchive.call_year.desc().nullslast(),
+        GrantArchive.created_at.desc(),
+    )
     result = await db.execute(q)
     archives = result.scalars().all()
 
