@@ -1,51 +1,33 @@
 'use client';
-// Funder tiers — the whale scale the LiGHT team uses to sort funders. Order and
-// keys mirror app/services/funders.py FUNDER_TIERS. Tier colors are data (like
+// Funder tiers — the five-tier whale scale the LiGHT team uses to sort funders.
+// Order and keys mirror app/services/funders.py FUNDER_TIERS. Tier colors are data (like
 // group colors), so they're hex rather than tokens.
 import { useEffect, useLayoutEffect, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
 import { Check, ChevronDown } from 'lucide-react';
 import { card } from '@/components/crm/crmUi';
 
-export type TierKey =
-  | 'blue_whale' | 'whale_pod' | 'whale_calf' | 'matriarch'
-  | 'sperm_whale' | 'humpback_whale' | 'orca'
-  | 'dolphin' | 'pilot_fish' | 'shark'
-  | 'unsorted';
+export type TierKey = 'blue_whale' | 'sperm_whale' | 'whale_pod' | 'dolphin' | 'shark' | 'unsorted';
 
 export interface Tier {
   key: TierKey;
   label: string;
   /** Singular, for a person: "Blue Whale". */
   one: string;
+  /** What kind of funder the tier holds: "Wealth holders". */
+  kind: string;
   emoji: string;
   blurb: string;
   color: string;
-  zone: ZoneKey;
-  /** Emoji scale inside its badge (calves are smaller). */
-  scale?: number;
 }
 
-export type ZoneKey = 'holders' | 'investors' | 'advisors' | 'unsorted';
-
-export const ZONES: { key: ZoneKey; label: string; blurb: string }[] = [
-  { key: 'holders', label: 'Wealth holders', blurb: 'The people and families who hold the capital' },
-  { key: 'investors', label: 'Investors & philanthropists', blurb: 'Those who deploy it, in markets and in giving' },
-  { key: 'advisors', label: 'Advisors & dealmakers', blurb: 'The people around the money who open doors' },
-];
-
 export const TIERS: Tier[] = [
-  { key: 'blue_whale', label: 'Blue Whales', one: 'Blue Whale', emoji: '🐋', blurb: 'Billionaires / ultra-high-net-worth individuals', color: '#1E3A8A', zone: 'holders' },
-  { key: 'whale_pod', label: 'Whale Pods', one: 'Whale Pod', emoji: '🐳', blurb: 'Wealthy families / family dynasties', color: '#1D4ED8', zone: 'holders' },
-  { key: 'whale_calf', label: 'Whale Calves', one: 'Whale Calf', emoji: '🐋', blurb: 'Next-generation wealth holders / heirs', color: '#0284C7', zone: 'holders', scale: 0.72 },
-  { key: 'matriarch', label: 'Matriarchs', one: 'Matriarch', emoji: '🐳', blurb: 'Family patriarchs / matriarchs', color: '#6D28D9', zone: 'holders' },
-  { key: 'sperm_whale', label: 'Sperm Whales', one: 'Sperm Whale', emoji: '🐋', blurb: 'Highly concentrated, sophisticated investors', color: '#475569', zone: 'investors' },
-  { key: 'humpback_whale', label: 'Humpback Whales', one: 'Humpback Whale', emoji: '🐋', blurb: 'High-profile philanthropists', color: '#0F766E', zone: 'investors' },
-  { key: 'orca', label: 'Orcas', one: 'Orca', emoji: '🐋', blurb: 'Activist investors / strategic philanthropists', color: '#18181B', zone: 'investors' },
-  { key: 'dolphin', label: 'Dolphins', one: 'Dolphin', emoji: '🐬', blurb: 'Wealth advisors / philanthropic advisors', color: '#0891B2', zone: 'advisors' },
-  { key: 'pilot_fish', label: 'Pilot Fish', one: 'Pilot Fish', emoji: '🐟', blurb: 'Family office executives / wealth managers', color: '#A16207', zone: 'advisors' },
-  { key: 'shark', label: 'Sharks', one: 'Shark', emoji: '🦈', blurb: 'Fundraisers / investment bankers / dealmakers', color: '#BE123C', zone: 'advisors' },
-  { key: 'unsorted', label: 'To sort', one: 'To sort', emoji: '🫧', blurb: 'Added, but no tier picked yet', color: '#87867F', zone: 'unsorted' },
+  { key: 'blue_whale', label: 'Blue Whales', one: 'Blue Whale', kind: 'Wealth holders', emoji: '🐋', blurb: 'Billionaires, wealthy families and their heirs', color: '#1E3A8A' },
+  { key: 'sperm_whale', label: 'Sperm Whales', one: 'Sperm Whale', kind: 'Sophisticated investors', emoji: '🐋', blurb: 'Highly concentrated investors and high-profile philanthropists', color: '#475569' },
+  { key: 'whale_pod', label: 'Whale Pods', one: 'Whale Pod', kind: 'Philanthropic organizations', emoji: '🐳', blurb: 'Foundations and giving groups, like Open Athena', color: '#0F766E' },
+  { key: 'dolphin', label: 'Dolphins', one: 'Dolphin', kind: 'Smaller funders', emoji: '🐬', blurb: 'Smaller donors and investors', color: '#0891B2' },
+  { key: 'shark', label: 'Sharks', one: 'Shark', kind: 'Dealmakers', emoji: '🦈', blurb: 'Fundraisers, investment bankers and wealth advisors', color: '#BE123C' },
+  { key: 'unsorted', label: 'To sort', one: 'To sort', kind: 'Not sorted yet', emoji: '🫧', blurb: 'Added, but no tier picked yet', color: '#87867F' },
 ];
 
 export const TIER_BY_KEY: Record<string, Tier> = Object.fromEntries(TIERS.map(t => [t.key, t]));
@@ -62,7 +44,7 @@ export function TierMark({ tier, size = 28 }: { tier: Tier; size?: number }) {
   return (
     <span aria-hidden className="shrink-0 inline-flex items-center justify-center rounded-full"
       style={{ width: size, height: size, background: tint(tier.color, '1F'), boxShadow: `inset 0 0 0 1px ${tint(tier.color, '33')}` }}>
-      <span style={{ fontSize: Math.round(size * 0.56 * (tier.scale ?? 1)), lineHeight: 1 }}>{tier.emoji}</span>
+      <span style={{ fontSize: Math.round(size * 0.56), lineHeight: 1 }}>{tier.emoji}</span>
     </span>
   );
 }
@@ -141,22 +123,21 @@ export function TierMenu({
         <div ref={menuRef} role="menu" className="fixed z-[60] py-1 overflow-y-auto"
           style={{ ...card, boxShadow: 'var(--shadow-floating)', width: MENU_W, left: pos.left, top: pos.top, bottom: pos.bottom, maxHeight: pos.maxH }}
           onClick={e => e.stopPropagation()}>
-          {[...ZONES, { key: 'unsorted' as ZoneKey, label: '', blurb: '' }].map(z => (
-            <div key={z.key}>
-              {z.label && <div className="ledger-label px-3 pt-2 pb-1">{z.label}</div>}
-              {TIERS.filter(t => t.zone === z.key).map(t => (
-                <button key={t.key} type="button" role="menuitemradio" aria-checked={value === t.key}
-                  onClick={e => { e.preventDefault(); setOpen(false); if (t.key !== value) onChange(t.key); }}
-                  className="w-full flex items-center gap-2.5 px-3 py-1.5 text-left hover:bg-[var(--surface-sunken)]">
-                  <TierMark tier={t} size={24} />
-                  <span className="flex-1 min-w-0">
-                    <span className="block text-[13px] font-medium" style={{ color: 'var(--ink-primary)' }}>{t.label}</span>
-                    <span className="block text-[11px] truncate" style={{ color: 'var(--ink-muted)' }}>{t.blurb}</span>
-                  </span>
-                  {value === t.key && <Check className="w-3.5 h-3.5 shrink-0" style={{ color: 'var(--ink-primary)' }} />}
-                </button>
-              ))}
-            </div>
+          {TIERS.map(t => (
+            <button key={t.key} type="button" role="menuitemradio" aria-checked={value === t.key}
+              onClick={e => { e.preventDefault(); setOpen(false); if (t.key !== value) onChange(t.key); }}
+              className="w-full flex items-center gap-2.5 px-3 py-1.5 text-left hover:bg-[var(--surface-sunken)]"
+              style={t.key === 'unsorted' ? { borderTop: '1px solid var(--rule-subtle)', marginTop: 4, paddingTop: 8 } : undefined}>
+              <TierMark tier={t} size={24} />
+              <span className="flex-1 min-w-0">
+                <span className="flex items-baseline gap-1.5 min-w-0">
+                  <span className="text-[13px] font-medium shrink-0" style={{ color: 'var(--ink-primary)' }}>{t.label}</span>
+                  {t.key !== 'unsorted' && <span className="text-[11px] truncate" style={{ color: 'var(--ink-muted)' }}>{t.kind}</span>}
+                </span>
+                <span className="block text-[11px] truncate" style={{ color: 'var(--ink-muted)' }}>{t.blurb}</span>
+              </span>
+              {value === t.key && <Check className="w-3.5 h-3.5 shrink-0" style={{ color: 'var(--ink-primary)' }} />}
+            </button>
           ))}
           {allowRemove && value && (
             <button type="button" role="menuitem" onClick={e => { e.preventDefault(); setOpen(false); onChange(null); }}

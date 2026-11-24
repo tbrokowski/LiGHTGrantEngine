@@ -20,19 +20,14 @@ from app.models.partner_task import PartnerTask
 FEATURE = "funders"
 SEEDED_FLAG = "funders_seeded"
 
-# Ordered from the largest pools of capital down to the people around them.
+# Five tiers, from the largest pools of capital down to the people around them.
 # "unsorted" holds funders added before anyone has picked a tier.
 FUNDER_TIERS: tuple[str, ...] = (
-    "blue_whale",
-    "whale_pod",
-    "whale_calf",
-    "matriarch",
-    "sperm_whale",
-    "humpback_whale",
-    "orca",
-    "dolphin",
-    "pilot_fish",
-    "shark",
+    "blue_whale",   # wealth holders: billionaires, wealthy families, heirs
+    "sperm_whale",  # concentrated, sophisticated investors and big philanthropists
+    "whale_pod",    # philanthropic organizations: foundations, giving networks
+    "dolphin",      # smaller donors and investors
+    "shark",        # fundraisers, investment bankers, advisors, family offices
     "unsorted",
 )
 
@@ -131,9 +126,9 @@ STARTER_FUNDERS: tuple[StarterFunder, ...] = (
         notes="Tagged a Shark in Slack (Annie).",
     ),
     StarterFunder(
-        "Open Athena", "unsorted",
+        "Open Athena", "whale_pod",
         organization="Open Athena",
-        notes="Enya added this for the list. An organization, not a person yet: find the right contact and rename this record.",
+        notes="Enya added this for the list. A Whale Pod: an organization, not a person yet. Find the right contact and rename this record.",
         tasks=("Identify a contact at Open Athena",),
     ),
     StarterFunder(

@@ -15,13 +15,15 @@ def _inst(features):
 
 
 def test_tiers_run_from_blue_whales_to_unsorted():
-    assert FUNDER_TIERS[0] == "blue_whale"
-    assert FUNDER_TIERS[-1] == "unsorted"
+    assert FUNDER_TIERS == ("blue_whale", "sperm_whale", "whale_pod", "dolphin", "shark", "unsorted")
     assert tier_rank("dolphin") < tier_rank("shark") < tier_rank("unsorted") < tier_rank("nonsense")
 
 
 def test_tier_validation():
-    assert valid_tier("orca") and not valid_tier("minnow") and not valid_tier(None)
+    assert valid_tier("sperm_whale") and not valid_tier("minnow") and not valid_tier(None)
+    # The old ten-tier keys were folded into five (migration 079).
+    for old in ("whale_calf", "matriarch", "humpback_whale", "orca", "pilot_fish"):
+        assert not valid_tier(old)
     assert TierIn(tier=None).tier is None  # null takes someone off the tab
     with pytest.raises(ValidationError):
         TierIn(tier="minnow")

@@ -6,7 +6,7 @@ import { Search } from 'lucide-react';
 import { funders as fundersApi, partners as partnersApi } from '@/lib/api';
 import CrmModal, { fieldStyle, errDetail } from '@/components/crm/CrmModal';
 import { Avatar, Segmented, btnPrimary, btnQuiet } from '@/components/crm/crmUi';
-import { TIERS, TierKey, TierMark, TierPill, ZONES, tint } from './tiers';
+import { TIERS, TierKey, TierMark, TierPill, tint } from './tiers';
 
 interface Candidate { id: string; name: string; organization?: string | null; title?: string | null; funder_tier?: string | null }
 
@@ -83,29 +83,25 @@ export default function AddFunderModal({
       <div className="px-6 py-5 flex flex-col gap-5">
         <section>
           <div className="ledger-label mb-2">Tier</div>
-          <div className="flex flex-col gap-3">
-            {[...ZONES, { key: 'unsorted' as const, label: 'Not sure yet', blurb: '' }].map(z => (
-              <div key={z.key}>
-                <div className="text-[11px] mb-1.5" style={{ color: 'var(--ink-muted)' }}>{z.label}</div>
-                <div className="grid grid-cols-2 sm:grid-cols-4 gap-1.5">
-                  {TIERS.filter(t => t.zone === z.key).map(t => {
-                    const on = t.key === tier;
-                    return (
-                      <button key={t.key} type="button" onClick={() => setTier(t.key)} aria-pressed={on}
-                        className="flex items-center gap-2 px-2 py-1.5 text-left rounded-[var(--radius-md)] transition-colors"
-                        style={{
-                          border: `1px solid ${on ? t.color : 'var(--rule-subtle)'}`,
-                          background: on ? tint(t.color, '12') : 'var(--surface-base)',
-                        }}
-                        title={t.blurb}>
-                        <TierMark tier={t} size={24} />
-                        <span className="text-xs font-medium truncate" style={{ color: on ? t.color : 'var(--ink-primary)' }}>{t.label}</span>
-                      </button>
-                    );
-                  })}
-                </div>
-              </div>
-            ))}
+          <div className="grid grid-cols-2 sm:grid-cols-3 gap-1.5">
+            {TIERS.map(t => {
+              const on = t.key === tier;
+              return (
+                <button key={t.key} type="button" onClick={() => setTier(t.key)} aria-pressed={on}
+                  className="flex items-center gap-2 px-2 py-1.5 text-left rounded-[var(--radius-md)] transition-colors"
+                  style={{
+                    border: `1px solid ${on ? t.color : 'var(--rule-subtle)'}`,
+                    background: on ? tint(t.color, '12') : 'var(--surface-base)',
+                  }}
+                  title={t.blurb}>
+                  <TierMark tier={t} size={24} />
+                  <span className="min-w-0">
+                    <span className="block text-xs font-medium truncate" style={{ color: on ? t.color : 'var(--ink-primary)' }}>{t.key === 'unsorted' ? 'Not sure yet' : t.label}</span>
+                    {t.key !== 'unsorted' && <span className="block text-[11px] truncate" style={{ color: 'var(--ink-muted)' }}>{t.kind}</span>}
+                  </span>
+                </button>
+              );
+            })}
           </div>
           <p className="text-xs mt-2" style={{ color: 'var(--ink-muted)' }}>{chosen.emoji} {chosen.label}: {chosen.blurb}</p>
         </section>
